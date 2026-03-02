@@ -27,7 +27,9 @@ use backend::{
     move_bookmark_to_parent_of_working_copy, normalize_path, push_bookmark,
     rename_bookmark as rename_local_bookmark, render_patch_for_entry,
     reorder_bookmark_tip_older as reorder_local_bookmark_tip_older, repo_line_stats_from_context,
+    restore_all_working_copy_changes as restore_all_wc_changes,
     restore_working_copy_from_revision as restore_wc_from_revision,
+    restore_working_copy_selected_paths as restore_wc_selected_paths,
     set_local_bookmark_target_revision,
     squash_bookmark_head_into_parent as squash_local_bookmark_head_into_parent,
     sync_bookmark_from_remote, walk_repo_tree,
@@ -587,44 +589,14 @@ pub fn restore_working_copy_paths(repo_root: &Path, paths: &[String]) -> Result<
         return Err(anyhow!("no files selected to restore"));
     }
 
-    let mut command = std::process::Command::new("jj");
-    command.arg("restore").arg("--");
-    for path in &normalized_paths {
-        command.arg(path);
-    }
-
-    let output = command
-        .current_dir(repo_root)
-        .output()
-        .map_err(|err| anyhow!("failed to run jj restore: {err}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let message = stderr.trim();
-        if message.is_empty() {
-            return Err(anyhow!("failed to restore working-copy paths"));
-        }
-        return Err(anyhow!("failed to restore working-copy paths: {message}"));
-    }
-
-    Ok(normalized_paths.len())
+    let selected_paths = normalized_paths.into_iter().collect::<Vec<_>>();
+    let mut context = load_repo_context_at_root(repo_root, true)?;
+    restore_wc_selected_paths(&mut context, selected_paths.as_slice())
 }
 
 pub fn restore_all_working_copy_changes(repo_root: &Path) -> Result<()> {
-    let output = std::process::Command::new("jj")
-        .arg("restore")
-        .current_dir(repo_root)
-        .output()
-        .map_err(|err| anyhow!("failed to run jj restore: {err}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let message = stderr.trim();
-        if message.is_empty() {
-            return Err(anyhow!("failed to restore working-copy changes"));
-        }
-        return Err(anyhow!("failed to restore working-copy changes: {message}"));
-    }
-
-    Ok(())
+    let mut context = load_repo_context_at_root(repo_root, true)?;
+    restore_all_wc_changes(&mut context)
 }
 
 pub fn create_bookmark_at_revision(

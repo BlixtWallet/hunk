@@ -156,6 +156,130 @@ pub(super) fn restore_working_copy_from_revision(
     Ok(())
 }
 
+pub(super) fn restore_working_copy_selected_paths(
+    context: &mut RepoContext,
+    selected_paths: &[String],
+) -> Result<usize> {
+    if selected_paths.is_empty() {
+        return Err(anyhow!("no files selected to restore"));
+    }
+
+    let workspace_name = context.workspace.workspace_name().to_owned();
+    let wc_commit = current_wc_commit(context)?;
+    let base_tree = wc_commit.parent_tree(context.repo.as_ref())?;
+    let wc_tree = wc_commit.tree();
+
+    let mut normalized_paths = BTreeSet::new();
+    for path in selected_paths {
+        let normalized = normalize_path(path);
+        if normalized.is_empty() {
+            continue;
+        }
+        normalized_paths.insert(normalized);
+    }
+    if normalized_paths.is_empty() {
+        return Err(anyhow!("no valid files selected to restore"));
+    }
+
+    let mut repo_paths = Vec::with_capacity(normalized_paths.len());
+    for normalized in &normalized_paths {
+        let repo_path = RepoPathBuf::from_relative_path(Path::new(normalized.as_str()))
+            .with_context(|| format!("invalid repository path '{normalized}'"))?;
+        repo_paths.push(repo_path);
+    }
+
+    let matcher = FilesMatcher::new(repo_paths.iter());
+    let restored_tree = block_on(restore_tree(
+        &base_tree,
+        &wc_tree,
+        "parent".to_string(),
+        "working copy".to_string(),
+        &matcher,
+    ))
+    .context("failed to restore selected files in working copy")?;
+
+    if restored_tree.tree_ids_and_labels() == wc_tree.tree_ids_and_labels() {
+        return Err(anyhow!("selected files have no changes to restore"));
+    }
+
+    let mut locked_workspace = context
+        .workspace
+        .start_working_copy_mutation()
+        .context("failed to lock working copy for selected-path restore")?;
+
+    let mut tx = context.repo.start_transaction();
+    let rewritten_wc = tx
+        .repo_mut()
+        .rewrite_commit(&wc_commit)
+        .set_tree(restored_tree)
+        .write()
+        .context("failed to rewrite working-copy commit for selected-path restore")?;
+    tx.repo_mut()
+        .set_wc_commit(workspace_name.clone(), rewritten_wc.id().clone())
+        .context("failed to update working-copy commit for selected-path restore")?;
+    tx.repo_mut()
+        .rebase_descendants()
+        .context("failed to rebase descendants after selected-path restore")?;
+
+    let repo = tx
+        .commit("restore selected working-copy paths")
+        .context("failed to finalize selected-path restore")?;
+
+    let new_wc_commit = current_wc_commit_with_repo(repo.as_ref(), &workspace_name)?;
+    block_on(locked_workspace.locked_wc().check_out(&new_wc_commit))
+        .context("failed to update working-copy files after selected-path restore")?;
+    locked_workspace
+        .finish(repo.op_id().clone())
+        .context("failed to persist working-copy state after selected-path restore")?;
+
+    context.repo = repo;
+    Ok(repo_paths.len())
+}
+
+pub(super) fn restore_all_working_copy_changes(context: &mut RepoContext) -> Result<()> {
+    let workspace_name = context.workspace.workspace_name().to_owned();
+    let wc_commit = current_wc_commit(context)?;
+    let base_tree = wc_commit.parent_tree(context.repo.as_ref())?;
+    let wc_tree = wc_commit.tree();
+
+    if base_tree.tree_ids_and_labels() == wc_tree.tree_ids_and_labels() {
+        return Err(anyhow!("working copy has no changes to restore"));
+    }
+
+    let mut locked_workspace = context
+        .workspace
+        .start_working_copy_mutation()
+        .context("failed to lock working copy for restore")?;
+
+    let mut tx = context.repo.start_transaction();
+    let rewritten_wc = tx
+        .repo_mut()
+        .rewrite_commit(&wc_commit)
+        .set_tree(base_tree)
+        .write()
+        .context("failed to rewrite working-copy commit for restore")?;
+    tx.repo_mut()
+        .set_wc_commit(workspace_name.clone(), rewritten_wc.id().clone())
+        .context("failed to update working-copy commit for restore")?;
+    tx.repo_mut()
+        .rebase_descendants()
+        .context("failed to rebase descendants after restore")?;
+
+    let repo = tx
+        .commit("restore all working-copy changes")
+        .context("failed to finalize working-copy restore")?;
+
+    let new_wc_commit = current_wc_commit_with_repo(repo.as_ref(), &workspace_name)?;
+    block_on(locked_workspace.locked_wc().check_out(&new_wc_commit))
+        .context("failed to update working-copy files after restore")?;
+    locked_workspace
+        .finish(repo.op_id().clone())
+        .context("failed to persist working-copy state after restore")?;
+
+    context.repo = repo;
+    Ok(())
+}
+
 pub(super) fn move_bookmark_to_parent_of_working_copy(
     context: &mut RepoContext,
     branch_name: &str,
