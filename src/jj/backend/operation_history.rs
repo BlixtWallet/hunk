@@ -79,7 +79,9 @@ fn single_parent_operation(operation: &jj_lib::operation::Operation) -> Result<j
         .ok_or_else(|| anyhow!("Cannot restore root operation from operation history"))?
         .context("failed to load parent operation from operation history")?;
     if parents.next().is_some() {
-        return Err(anyhow!("cannot redo a merge operation"));
+        return Err(anyhow!(
+            "cannot restore a merge operation from operation history"
+        ));
     }
     Ok(parent)
 }
