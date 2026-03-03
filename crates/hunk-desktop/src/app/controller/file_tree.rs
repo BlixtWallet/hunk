@@ -25,7 +25,7 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) {
         self.focus_handle.focus(window, cx);
-        self.set_workspace_view_mode(WorkspaceViewMode::Files, cx);
+        self.set_workspace_view_mode(WorkspaceSwitchAction::Files.target_mode(), cx);
     }
 
     pub(super) fn switch_to_review_view_action(
@@ -35,7 +35,7 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) {
         self.focus_handle.focus(window, cx);
-        self.set_workspace_view_mode(WorkspaceViewMode::Diff, cx);
+        self.set_workspace_view_mode(WorkspaceSwitchAction::Review.target_mode(), cx);
     }
 
     pub(super) fn switch_to_graph_view_action(
@@ -45,14 +45,24 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) {
         self.focus_handle.focus(window, cx);
-        self.set_workspace_view_mode(WorkspaceViewMode::JjWorkspace, cx);
+        self.set_workspace_view_mode(WorkspaceSwitchAction::Graph.target_mode(), cx);
+    }
+
+    pub(super) fn switch_to_ai_view_action(
+        &mut self,
+        _: &SwitchToAiView,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.focus_handle.focus(window, cx);
+        self.set_workspace_view_mode(WorkspaceSwitchAction::Ai.target_mode(), cx);
     }
 
     pub(super) fn set_workspace_view_mode(&mut self, mode: WorkspaceViewMode, cx: &mut Context<Self>) {
         let previous_mode = self.workspace_view_mode;
         if previous_mode == mode {
             if !self.sidebar_collapsed
-                && mode != WorkspaceViewMode::JjWorkspace
+                && mode.supports_sidebar_tree()
                 && self.repo_tree.nodes.is_empty()
                 && !self.repo_tree.loading
             {

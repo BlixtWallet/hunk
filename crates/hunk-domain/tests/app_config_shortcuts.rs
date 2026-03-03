@@ -67,6 +67,10 @@ fn app_config_defaults_include_existing_keyboard_shortcuts() {
         strings(&["cmd-3", "ctrl-3"])
     );
     assert_eq!(
+        config.keyboard_shortcuts.switch_to_ai_view,
+        strings(&["cmd-4", "ctrl-4"])
+    );
+    assert_eq!(
         config.keyboard_shortcuts.open_project,
         strings(&["cmd-shift-o", "ctrl-shift-o"])
     );
@@ -148,6 +152,10 @@ next_hunk = ["f8"]
         strings(&["cmd-3", "ctrl-3"])
     );
     assert_eq!(
+        config.keyboard_shortcuts.switch_to_ai_view,
+        strings(&["cmd-4", "ctrl-4"])
+    );
+    assert_eq!(
         config.keyboard_shortcuts.open_settings,
         strings(&["cmd-,", "ctrl-,"])
     );
@@ -181,6 +189,10 @@ quit_app = []
     assert_eq!(
         config.keyboard_shortcuts.switch_to_graph_view,
         strings(&["cmd-3", "ctrl-3"])
+    );
+    assert_eq!(
+        config.keyboard_shortcuts.switch_to_ai_view,
+        strings(&["cmd-4", "ctrl-4"])
     );
     assert_eq!(
         config.keyboard_shortcuts.open_settings,

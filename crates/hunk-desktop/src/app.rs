@@ -42,7 +42,7 @@ use hunk_jj::jj_graph_tree::GraphLaneRow;
 
 use data::{
     DiffRowSegmentCache, DiffStreamRowMeta, FileRowRange, RepoTreeNode, RepoTreeNodeKind,
-    RepoTreeRow, WorkspaceViewMode,
+    RepoTreeRow, WorkspaceSwitchAction, WorkspaceViewMode,
 };
 
 const FPS_SAMPLE_INTERVAL: Duration = Duration::from_millis(250);
@@ -132,6 +132,7 @@ mod data;
 mod data_segments;
 mod highlight;
 mod render;
+mod workspace_view;
 
 actions!(
     diff_viewer,
@@ -152,6 +153,7 @@ actions!(
         SwitchToFilesView,
         SwitchToReviewView,
         SwitchToGraphView,
+        SwitchToAiView,
         OpenProject,
         SaveCurrentFile,
         OpenSettings,
@@ -457,6 +459,12 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
             .switch_to_graph_view
             .iter()
             .map(|shortcut| KeyBinding::new(shortcut.as_str(), SwitchToGraphView, None)),
+    );
+    bindings.extend(
+        shortcuts
+            .switch_to_ai_view
+            .iter()
+            .map(|shortcut| KeyBinding::new(shortcut.as_str(), SwitchToAiView, None)),
     );
     bindings.extend(
         shortcuts

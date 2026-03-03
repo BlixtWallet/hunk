@@ -50,6 +50,7 @@ fn validate_keyboard_shortcuts(shortcuts: &KeyboardShortcuts) -> Result<(), Stri
     validate_shortcut_list("Switch to Files View", &shortcuts.switch_to_files_view)?;
     validate_shortcut_list("Switch to Review View", &shortcuts.switch_to_review_view)?;
     validate_shortcut_list("Switch to Graph View", &shortcuts.switch_to_graph_view)?;
+    validate_shortcut_list("Switch to AI View", &shortcuts.switch_to_ai_view)?;
     validate_shortcut_list("Open Project", &shortcuts.open_project)?;
     validate_shortcut_list("Save Current File", &shortcuts.save_current_file)?;
     validate_shortcut_list("Open Settings", &shortcuts.open_settings)?;
@@ -382,6 +383,7 @@ impl DiffViewer {
                     &settings.shortcuts.switch_to_graph_view,
                     cx,
                 ),
+                switch_to_ai_view: self.config.keyboard_shortcuts.switch_to_ai_view.clone(),
                 open_project: read_shortcut_input(&settings.shortcuts.open_project, cx),
                 save_current_file: read_shortcut_input(
                     &settings.shortcuts.save_current_file,

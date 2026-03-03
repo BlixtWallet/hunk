@@ -599,7 +599,7 @@ impl DiffViewer {
 
         let should_reload_repo_tree = if root_changed {
             true
-        } else if self.workspace_view_mode == WorkspaceViewMode::JjWorkspace {
+        } else if !self.workspace_view_mode.supports_sidebar_tree() {
             false
         } else {
             self.workspace_view_mode == WorkspaceViewMode::Diff || repo_tree_structure_changed
@@ -608,8 +608,8 @@ impl DiffViewer {
             self.request_repo_tree_reload(cx);
         }
 
-        // Avoid expensive diff reload churn while using graph mode.
-        if self.workspace_view_mode == WorkspaceViewMode::JjWorkspace {
+        // Avoid expensive diff reload churn while using graph/AI modes.
+        if !self.workspace_view_mode.supports_diff_stream() {
             self.scroll_selected_after_reload = false;
         } else {
             // Always reload visible diff rows after any loaded snapshot.

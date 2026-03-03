@@ -1,0 +1,1339 @@
+use std::net::TcpListener;
+use std::net::TcpStream;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
+
+use codex_app_server_protocol::AskForApproval;
+use codex_app_server_protocol::CommandExecParams;
+use codex_app_server_protocol::CommandExecResponse;
+use codex_app_server_protocol::JSONRPCError;
+use codex_app_server_protocol::JSONRPCErrorError;
+use codex_app_server_protocol::JSONRPCMessage;
+use codex_app_server_protocol::JSONRPCNotification;
+use codex_app_server_protocol::JSONRPCRequest;
+use codex_app_server_protocol::JSONRPCResponse;
+use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::ReviewStartParams;
+use codex_app_server_protocol::ReviewStartResponse;
+use codex_app_server_protocol::ReviewTarget;
+use codex_app_server_protocol::SandboxPolicy;
+use codex_app_server_protocol::ServerNotification;
+use codex_app_server_protocol::SessionSource;
+use codex_app_server_protocol::Thread;
+use codex_app_server_protocol::ThreadArchiveResponse;
+use codex_app_server_protocol::ThreadCompactStartResponse;
+use codex_app_server_protocol::ThreadForkParams;
+use codex_app_server_protocol::ThreadForkResponse;
+use codex_app_server_protocol::ThreadListResponse;
+use codex_app_server_protocol::ThreadLoadedListResponse;
+use codex_app_server_protocol::ThreadReadResponse;
+use codex_app_server_protocol::ThreadResumeParams;
+use codex_app_server_protocol::ThreadResumeResponse;
+use codex_app_server_protocol::ThreadRollbackResponse;
+use codex_app_server_protocol::ThreadStartParams;
+use codex_app_server_protocol::ThreadStartResponse;
+use codex_app_server_protocol::ThreadStatus;
+use codex_app_server_protocol::ThreadStatusChangedNotification;
+use codex_app_server_protocol::ThreadUnarchiveResponse;
+use codex_app_server_protocol::ThreadUnsubscribeResponse;
+use codex_app_server_protocol::ThreadUnsubscribeStatus;
+use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnInterruptParams;
+use codex_app_server_protocol::TurnInterruptResponse;
+use codex_app_server_protocol::TurnStartParams;
+use codex_app_server_protocol::TurnStartResponse;
+use codex_app_server_protocol::TurnStatus;
+use codex_app_server_protocol::TurnSteerParams;
+use codex_app_server_protocol::TurnSteerResponse;
+use codex_app_server_protocol::UserInput;
+use hunk_codex::api;
+use hunk_codex::api::InitializeOptions;
+use hunk_codex::errors::CodexIntegrationError;
+use hunk_codex::state::ReducerEvent;
+use hunk_codex::state::StreamEvent;
+use hunk_codex::state::ThreadLifecycleStatus;
+use hunk_codex::threads::ThreadService;
+use hunk_codex::ws_client::JsonRpcSession;
+use hunk_codex::ws_client::WebSocketEndpoint;
+use serde_json::Value;
+use tungstenite::Message;
+use tungstenite::WebSocket;
+use tungstenite::accept;
+
+const WORKSPACE_CWD: &str = "/repo-a";
+const OTHER_CWD: &str = "/repo-b";
+const TIMEOUT: Duration = Duration::from_secs(2);
+
+#[test]
+fn listing_threads_is_scoped_to_current_workspace_cwd() {
+    let server = TestServer::spawn(Scenario::ListThreadsScoped);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    let response = service
+        .list_threads(&mut session, None, Some(50), TIMEOUT)
+        .expect("thread/list should succeed");
+
+    assert_eq!(response.data.len(), 1);
+    assert_eq!(response.data[0].id, "thread-in-workspace");
+    assert!(service.state().threads.contains_key("thread-in-workspace"));
+    assert!(
+        !service
+            .state()
+            .threads
+            .contains_key("thread-outside-workspace")
+    );
+
+    server.join();
+}
+
+#[test]
+fn resume_external_thread_updates_active_workspace_thread() {
+    let server = TestServer::spawn(Scenario::ResumeExternalThread);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    let response = service
+        .resume_thread(
+            &mut session,
+            ThreadResumeParams {
+                thread_id: "external-thread".to_string(),
+                ..ThreadResumeParams::default()
+            },
+            TIMEOUT,
+        )
+        .expect("thread/resume should succeed");
+
+    assert_eq!(response.thread.id, "external-thread");
+    assert_eq!(
+        service.active_thread_for_workspace(),
+        Some("external-thread")
+    );
+    assert!(service.state().turns.contains_key("resume-turn-1"));
+
+    server.join();
+}
+
+#[test]
+fn unsubscribe_semantics_apply_closed_status_on_unsubscribed() {
+    let server = TestServer::spawn(Scenario::UnsubscribeSemantics);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service
+        .start_thread(&mut session, ThreadStartParams::default(), TIMEOUT)
+        .expect("thread/start should succeed");
+    assert_eq!(
+        service
+            .state()
+            .threads
+            .get("thread-unsub")
+            .expect("thread should exist")
+            .status,
+        ThreadLifecycleStatus::Active
+    );
+
+    let first = service
+        .unsubscribe_thread(&mut session, "thread-unsub".to_string(), TIMEOUT)
+        .expect("first unsubscribe should succeed");
+    assert_eq!(first.status, ThreadUnsubscribeStatus::NotSubscribed);
+    assert_eq!(
+        service
+            .state()
+            .threads
+            .get("thread-unsub")
+            .expect("thread should exist")
+            .status,
+        ThreadLifecycleStatus::Active
+    );
+
+    let second = service
+        .unsubscribe_thread(&mut session, "thread-unsub".to_string(), TIMEOUT)
+        .expect("second unsubscribe should succeed");
+    assert_eq!(second.status, ThreadUnsubscribeStatus::Unsubscribed);
+    assert_eq!(
+        service
+            .state()
+            .threads
+            .get("thread-unsub")
+            .expect("thread should exist")
+            .status,
+        ThreadLifecycleStatus::Closed
+    );
+
+    server.join();
+}
+
+#[test]
+fn archive_and_unarchive_round_trip_updates_state() {
+    let server = TestServer::spawn(Scenario::ArchiveRoundTrip);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service
+        .start_thread(&mut session, ThreadStartParams::default(), TIMEOUT)
+        .expect("thread/start should succeed");
+
+    service
+        .archive_thread(&mut session, "thread-archive".to_string(), TIMEOUT)
+        .expect("thread/archive should succeed");
+    assert_eq!(
+        service
+            .state()
+            .threads
+            .get("thread-archive")
+            .expect("thread should exist")
+            .status,
+        ThreadLifecycleStatus::Archived
+    );
+
+    service
+        .unarchive_thread(&mut session, "thread-archive".to_string(), TIMEOUT)
+        .expect("thread/unarchive should succeed");
+    assert_eq!(
+        service
+            .state()
+            .threads
+            .get("thread-archive")
+            .expect("thread should exist")
+            .status,
+        ThreadLifecycleStatus::Active
+    );
+
+    server.join();
+}
+
+#[test]
+fn compact_start_applies_buffered_notifications_before_return() {
+    let server = TestServer::spawn(Scenario::CompactWithBufferedNotification);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service
+        .start_thread(&mut session, ThreadStartParams::default(), TIMEOUT)
+        .expect("thread/start should succeed");
+
+    service
+        .compact_thread(&mut session, "thread-compact".to_string(), TIMEOUT)
+        .expect("thread/compact/start should succeed");
+    assert_eq!(
+        service
+            .state()
+            .threads
+            .get("thread-compact")
+            .expect("thread should exist")
+            .status,
+        ThreadLifecycleStatus::Archived
+    );
+
+    server.join();
+}
+
+#[test]
+fn rollback_replaces_turn_set_and_prunes_removed_items() {
+    let server = TestServer::spawn(Scenario::RollbackPrunesTurns);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service
+        .resume_thread(
+            &mut session,
+            ThreadResumeParams {
+                thread_id: "thread-rollback".to_string(),
+                ..ThreadResumeParams::default()
+            },
+            TIMEOUT,
+        )
+        .expect("thread/resume should succeed");
+
+    let _ = service.state_mut().apply_stream_event(StreamEvent {
+        sequence: 999,
+        dedupe_key: Some("item-start:item-removed".to_string()),
+        payload: ReducerEvent::ItemStarted {
+            turn_id: "turn-removed".to_string(),
+            item_id: "item-removed".to_string(),
+            kind: "agentMessage".to_string(),
+        },
+    });
+
+    assert!(service.state().turns.contains_key("turn-removed"));
+    assert!(service.state().items.contains_key("item-removed"));
+
+    service
+        .rollback_thread(&mut session, "thread-rollback".to_string(), 1, TIMEOUT)
+        .expect("thread/rollback should succeed");
+
+    assert!(service.state().turns.contains_key("turn-keep"));
+    assert!(!service.state().turns.contains_key("turn-removed"));
+    assert!(!service.state().items.contains_key("item-removed"));
+
+    server.join();
+}
+
+#[test]
+fn loaded_list_read_and_fork_are_wired_with_workspace_cwd() {
+    let server = TestServer::spawn(Scenario::LoadedReadFork);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    let loaded = service
+        .list_loaded_threads(&mut session, None, Some(10), TIMEOUT)
+        .expect("thread/loaded/list should succeed");
+    assert_eq!(loaded.data, vec!["thread-read".to_string()]);
+
+    let read = service
+        .read_thread(&mut session, "thread-read".to_string(), true, TIMEOUT)
+        .expect("thread/read should succeed");
+    assert_eq!(read.thread.id, "thread-read");
+    assert!(service.state().turns.contains_key("read-turn-1"));
+
+    let fork = service
+        .fork_thread(
+            &mut session,
+            ThreadForkParams {
+                thread_id: "thread-read".to_string(),
+                ..ThreadForkParams::default()
+            },
+            TIMEOUT,
+        )
+        .expect("thread/fork should succeed");
+    assert_eq!(fork.thread.id, "thread-forked");
+    assert_eq!(service.active_thread_for_workspace(), Some("thread-forked"));
+
+    server.join();
+}
+
+#[test]
+fn unknown_thread_status_notification_is_ignored() {
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service.apply_server_notification(ServerNotification::ThreadStatusChanged(
+        ThreadStatusChangedNotification {
+            thread_id: "unknown-thread".to_string(),
+            status: ThreadStatus::NotLoaded,
+        },
+    ));
+
+    assert!(service.state().threads.is_empty());
+}
+
+#[test]
+fn turn_start_applies_streamed_delta_completion_and_diff() {
+    let server = TestServer::spawn(Scenario::TurnStartStreaming);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service
+        .start_thread(&mut session, ThreadStartParams::default(), TIMEOUT)
+        .expect("thread/start should succeed");
+
+    service
+        .start_turn(
+            &mut session,
+            TurnStartParams {
+                thread_id: "thread-turn-stream".to_string(),
+                input: vec![UserInput::Text {
+                    text: "hello".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                ..TurnStartParams::default()
+            },
+            TIMEOUT,
+        )
+        .expect("turn/start should succeed");
+
+    assert_eq!(
+        service
+            .state()
+            .turns
+            .get("turn-stream")
+            .expect("turn should exist")
+            .status,
+        hunk_codex::state::TurnStatus::Completed
+    );
+    assert_eq!(
+        service
+            .state()
+            .items
+            .get("item-stream")
+            .expect("item should exist")
+            .content,
+        "hello"
+    );
+    assert_eq!(
+        service
+            .state()
+            .turn_diffs
+            .get("turn-stream")
+            .map(String::as_str),
+        Some("diff --git a/a b/a")
+    );
+
+    server.join();
+}
+
+#[test]
+fn item_completed_snapshot_does_not_duplicate_existing_delta_content() {
+    let server = TestServer::spawn(Scenario::ItemCompletedNoDup);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service
+        .start_thread(&mut session, ThreadStartParams::default(), TIMEOUT)
+        .expect("thread/start should succeed");
+
+    service
+        .start_turn(
+            &mut session,
+            TurnStartParams {
+                thread_id: "thread-no-dup".to_string(),
+                input: vec![UserInput::Text {
+                    text: "hello".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                ..TurnStartParams::default()
+            },
+            TIMEOUT,
+        )
+        .expect("turn/start should succeed");
+
+    assert_eq!(
+        service
+            .state()
+            .items
+            .get("item-no-dup")
+            .expect("item should exist")
+            .content,
+        "hello"
+    );
+
+    server.join();
+}
+
+#[test]
+fn turn_steer_round_trip_returns_target_turn_id() {
+    let server = TestServer::spawn(Scenario::TurnSteerRoundTrip);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service
+        .start_thread(&mut session, ThreadStartParams::default(), TIMEOUT)
+        .expect("thread/start should succeed");
+
+    let response = service
+        .steer_turn(
+            &mut session,
+            TurnSteerParams {
+                thread_id: "thread-steer".to_string(),
+                input: vec![UserInput::Text {
+                    text: "continue".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                expected_turn_id: "turn-active".to_string(),
+            },
+            TIMEOUT,
+        )
+        .expect("turn/steer should succeed");
+
+    assert_eq!(response.turn_id, "turn-active");
+    server.join();
+}
+
+#[test]
+fn turn_interrupt_marks_turn_completed() {
+    let server = TestServer::spawn(Scenario::TurnInterrupt);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service
+        .start_thread(&mut session, ThreadStartParams::default(), TIMEOUT)
+        .expect("thread/start should succeed");
+    service
+        .start_turn(
+            &mut session,
+            TurnStartParams {
+                thread_id: "thread-interrupt".to_string(),
+                input: vec![UserInput::Text {
+                    text: "start".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                ..TurnStartParams::default()
+            },
+            TIMEOUT,
+        )
+        .expect("turn/start should succeed");
+
+    service
+        .interrupt_turn(
+            &mut session,
+            TurnInterruptParams {
+                thread_id: "thread-interrupt".to_string(),
+                turn_id: "turn-interrupt".to_string(),
+            },
+            TIMEOUT,
+        )
+        .expect("turn/interrupt should succeed");
+
+    assert_eq!(
+        service
+            .state()
+            .turns
+            .get("turn-interrupt")
+            .expect("turn should exist")
+            .status,
+        hunk_codex::state::TurnStatus::Completed
+    );
+
+    server.join();
+}
+
+#[test]
+fn review_start_selects_review_thread() {
+    let server = TestServer::spawn(Scenario::ReviewStartDetached);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service
+        .start_thread(&mut session, ThreadStartParams::default(), TIMEOUT)
+        .expect("thread/start should succeed");
+
+    let review = service
+        .start_review(
+            &mut session,
+            ReviewStartParams {
+                thread_id: "thread-review-root".to_string(),
+                target: ReviewTarget::Custom {
+                    instructions: "Review my diff".to_string(),
+                },
+                delivery: None,
+            },
+            TIMEOUT,
+        )
+        .expect("review/start should succeed");
+
+    assert_eq!(review.review_thread_id, "thread-review-detached");
+    assert_eq!(
+        service.active_thread_for_workspace(),
+        Some("thread-review-detached")
+    );
+    assert!(
+        service
+            .state()
+            .threads
+            .contains_key("thread-review-detached")
+    );
+    assert!(service.state().turns.contains_key("review-turn"));
+
+    server.join();
+}
+
+#[test]
+fn command_exec_injects_workspace_cwd_when_missing() {
+    let server = TestServer::spawn(Scenario::CommandExecRoundTrip);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    let response = service
+        .command_exec(
+            &mut session,
+            CommandExecParams {
+                command: vec!["pwd".to_string()],
+                timeout_ms: None,
+                cwd: None,
+                sandbox_policy: None,
+            },
+            TIMEOUT,
+        )
+        .expect("command/exec should succeed");
+
+    assert_eq!(response.exit_code, 0);
+    assert_eq!(response.stdout, "ok");
+    assert_eq!(response.stderr, "");
+
+    server.join();
+}
+
+#[test]
+fn command_exec_error_is_mapped_to_jsonrpc_server_error() {
+    let server = TestServer::spawn(Scenario::CommandExecServerError);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    let error = service
+        .command_exec(
+            &mut session,
+            CommandExecParams {
+                command: vec!["false".to_string()],
+                timeout_ms: None,
+                cwd: None,
+                sandbox_policy: None,
+            },
+            TIMEOUT,
+        )
+        .expect_err("command/exec should fail");
+
+    match error {
+        CodexIntegrationError::JsonRpcServerError { code, message } => {
+            assert_eq!(code, -32003);
+            assert_eq!(message, "command failed");
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    server.join();
+}
+
+#[derive(Clone)]
+enum Scenario {
+    ListThreadsScoped,
+    ResumeExternalThread,
+    UnsubscribeSemantics,
+    ArchiveRoundTrip,
+    CompactWithBufferedNotification,
+    RollbackPrunesTurns,
+    LoadedReadFork,
+    TurnStartStreaming,
+    ItemCompletedNoDup,
+    TurnSteerRoundTrip,
+    TurnInterrupt,
+    ReviewStartDetached,
+    CommandExecRoundTrip,
+    CommandExecServerError,
+}
+
+struct TestServer {
+    port: u16,
+    join: thread::JoinHandle<()>,
+}
+
+impl TestServer {
+    fn spawn(scenario: Scenario) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let join = thread::spawn(move || {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind should succeed");
+            let port = listener
+                .local_addr()
+                .expect("local addr should exist")
+                .port();
+            tx.send(port).expect("port should be sent");
+
+            let (stream, _) = listener.accept().expect("accept should succeed");
+            let mut socket = accept(stream).expect("websocket handshake should succeed");
+            run_initialize_handshake(&mut socket);
+
+            match scenario {
+                Scenario::ListThreadsScoped => run_list_threads_scoped(&mut socket),
+                Scenario::ResumeExternalThread => run_resume_external_thread(&mut socket),
+                Scenario::UnsubscribeSemantics => run_unsubscribe_semantics(&mut socket),
+                Scenario::ArchiveRoundTrip => run_archive_round_trip(&mut socket),
+                Scenario::CompactWithBufferedNotification => {
+                    run_compact_with_buffered_notification(&mut socket)
+                }
+                Scenario::RollbackPrunesTurns => run_rollback_prunes_turns(&mut socket),
+                Scenario::LoadedReadFork => run_loaded_read_fork(&mut socket),
+                Scenario::TurnStartStreaming => run_turn_start_streaming(&mut socket),
+                Scenario::ItemCompletedNoDup => run_item_completed_no_dup(&mut socket),
+                Scenario::TurnSteerRoundTrip => run_turn_steer_round_trip(&mut socket),
+                Scenario::TurnInterrupt => run_turn_interrupt(&mut socket),
+                Scenario::ReviewStartDetached => run_review_start_detached(&mut socket),
+                Scenario::CommandExecRoundTrip => run_command_exec_round_trip(&mut socket),
+                Scenario::CommandExecServerError => run_command_exec_server_error(&mut socket),
+            }
+        });
+
+        let port = rx.recv().expect("port should be received");
+        Self { port, join }
+    }
+
+    fn join(self) {
+        self.join
+            .join()
+            .expect("test server thread should complete");
+    }
+}
+
+fn run_initialize_handshake(socket: &mut WebSocket<TcpStream>) {
+    let initialize = expect_request(socket, api::method::INITIALIZE);
+    send_success_response(
+        socket,
+        initialize.id,
+        serde_json::json!({ "userAgent": "hunk-thread-service-test-server" }),
+    );
+    expect_notification(socket, api::method::INITIALIZED);
+}
+
+fn run_list_threads_scoped(socket: &mut WebSocket<TcpStream>) {
+    let request = expect_request(socket, api::method::THREAD_LIST);
+    let params = request
+        .params
+        .expect("thread/list params should be present");
+    assert_eq!(
+        param_string(&params, "cwd"),
+        Some(WORKSPACE_CWD.to_string())
+    );
+    assert_eq!(params.get("archived"), Some(&serde_json::json!(false)));
+
+    let response = ThreadListResponse {
+        data: vec![
+            thread(
+                "thread-in-workspace",
+                WORKSPACE_CWD,
+                ThreadStatus::Idle,
+                vec![],
+            ),
+            thread(
+                "thread-outside-workspace",
+                OTHER_CWD,
+                ThreadStatus::Idle,
+                vec![],
+            ),
+        ],
+        next_cursor: None,
+    };
+    send_typed_success_response(socket, request.id, &response);
+}
+
+fn run_resume_external_thread(socket: &mut WebSocket<TcpStream>) {
+    let request = expect_request(socket, api::method::THREAD_RESUME);
+    let params = request
+        .params
+        .expect("thread/resume params should be present");
+    assert_eq!(
+        param_string(&params, "threadId"),
+        Some("external-thread".to_string())
+    );
+    assert_eq!(
+        param_string(&params, "cwd"),
+        Some(WORKSPACE_CWD.to_string())
+    );
+
+    let response = thread_resume_response(thread(
+        "external-thread",
+        WORKSPACE_CWD,
+        ThreadStatus::Idle,
+        vec![turn("resume-turn-1", TurnStatus::Completed)],
+    ));
+    send_typed_success_response(socket, request.id, &response);
+}
+
+fn run_unsubscribe_semantics(socket: &mut WebSocket<TcpStream>) {
+    let start = expect_request(socket, api::method::THREAD_START);
+    let start_params = start.params.expect("thread/start params should be present");
+    assert_eq!(
+        param_string(&start_params, "cwd"),
+        Some(WORKSPACE_CWD.to_string())
+    );
+    send_typed_success_response(
+        socket,
+        start.id,
+        &thread_start_response(thread(
+            "thread-unsub",
+            WORKSPACE_CWD,
+            ThreadStatus::Idle,
+            vec![],
+        )),
+    );
+
+    let first = expect_request(socket, api::method::THREAD_UNSUBSCRIBE);
+    send_typed_success_response(
+        socket,
+        first.id,
+        &ThreadUnsubscribeResponse {
+            status: ThreadUnsubscribeStatus::NotSubscribed,
+        },
+    );
+
+    let second = expect_request(socket, api::method::THREAD_UNSUBSCRIBE);
+    send_thread_status_changed_notification(socket, "thread-unsub", ThreadStatus::NotLoaded);
+    send_typed_success_response(
+        socket,
+        second.id,
+        &ThreadUnsubscribeResponse {
+            status: ThreadUnsubscribeStatus::Unsubscribed,
+        },
+    );
+}
+
+fn run_archive_round_trip(socket: &mut WebSocket<TcpStream>) {
+    let start = expect_request(socket, api::method::THREAD_START);
+    send_typed_success_response(
+        socket,
+        start.id,
+        &thread_start_response(thread(
+            "thread-archive",
+            WORKSPACE_CWD,
+            ThreadStatus::Idle,
+            vec![],
+        )),
+    );
+
+    let archive = expect_request(socket, api::method::THREAD_ARCHIVE);
+    send_typed_success_response(socket, archive.id, &ThreadArchiveResponse {});
+
+    let unarchive = expect_request(socket, api::method::THREAD_UNARCHIVE);
+    send_typed_success_response(
+        socket,
+        unarchive.id,
+        &ThreadUnarchiveResponse {
+            thread: thread("thread-archive", WORKSPACE_CWD, ThreadStatus::Idle, vec![]),
+        },
+    );
+}
+
+fn run_compact_with_buffered_notification(socket: &mut WebSocket<TcpStream>) {
+    let start = expect_request(socket, api::method::THREAD_START);
+    send_typed_success_response(
+        socket,
+        start.id,
+        &thread_start_response(thread(
+            "thread-compact",
+            WORKSPACE_CWD,
+            ThreadStatus::Idle,
+            vec![],
+        )),
+    );
+
+    let compact = expect_request(socket, api::method::THREAD_COMPACT_START);
+    let compact_params = compact
+        .params
+        .expect("thread/compact/start params should be present");
+    assert_eq!(
+        param_string(&compact_params, "threadId"),
+        Some("thread-compact".to_string())
+    );
+    send_thread_archived_notification(socket, "thread-compact");
+    send_typed_success_response(socket, compact.id, &ThreadCompactStartResponse {});
+}
+
+fn run_rollback_prunes_turns(socket: &mut WebSocket<TcpStream>) {
+    let resume = expect_request(socket, api::method::THREAD_RESUME);
+    send_typed_success_response(
+        socket,
+        resume.id,
+        &thread_resume_response(thread(
+            "thread-rollback",
+            WORKSPACE_CWD,
+            ThreadStatus::Idle,
+            vec![
+                turn("turn-keep", TurnStatus::Completed),
+                turn("turn-removed", TurnStatus::Completed),
+            ],
+        )),
+    );
+
+    let rollback = expect_request(socket, api::method::THREAD_ROLLBACK);
+    let rollback_params = rollback
+        .params
+        .expect("thread/rollback params should be present");
+    assert_eq!(
+        param_string(&rollback_params, "threadId"),
+        Some("thread-rollback".to_string())
+    );
+    assert_eq!(rollback_params.get("numTurns"), Some(&serde_json::json!(1)));
+    send_typed_success_response(
+        socket,
+        rollback.id,
+        &ThreadRollbackResponse {
+            thread: thread(
+                "thread-rollback",
+                WORKSPACE_CWD,
+                ThreadStatus::Idle,
+                vec![turn("turn-keep", TurnStatus::Completed)],
+            ),
+        },
+    );
+}
+
+fn run_loaded_read_fork(socket: &mut WebSocket<TcpStream>) {
+    let loaded = expect_request(socket, api::method::THREAD_LOADED_LIST);
+    send_typed_success_response(
+        socket,
+        loaded.id,
+        &ThreadLoadedListResponse {
+            data: vec!["thread-read".to_string()],
+            next_cursor: None,
+        },
+    );
+
+    let read = expect_request(socket, api::method::THREAD_READ);
+    let read_params = read.params.expect("thread/read params should be present");
+    assert_eq!(
+        param_string(&read_params, "threadId"),
+        Some("thread-read".to_string())
+    );
+    assert_eq!(
+        read_params.get("includeTurns"),
+        Some(&serde_json::json!(true))
+    );
+    send_typed_success_response(
+        socket,
+        read.id,
+        &ThreadReadResponse {
+            thread: thread(
+                "thread-read",
+                WORKSPACE_CWD,
+                ThreadStatus::Idle,
+                vec![turn("read-turn-1", TurnStatus::Completed)],
+            ),
+        },
+    );
+
+    let fork = expect_request(socket, api::method::THREAD_FORK);
+    let fork_params = fork.params.expect("thread/fork params should be present");
+    assert_eq!(
+        param_string(&fork_params, "threadId"),
+        Some("thread-read".to_string())
+    );
+    assert_eq!(
+        param_string(&fork_params, "cwd"),
+        Some(WORKSPACE_CWD.to_string())
+    );
+    send_typed_success_response(
+        socket,
+        fork.id,
+        &ThreadForkResponse {
+            thread: thread(
+                "thread-forked",
+                WORKSPACE_CWD,
+                ThreadStatus::Idle,
+                vec![turn("fork-turn-1", TurnStatus::Completed)],
+            ),
+            model: "gpt-5-codex".to_string(),
+            model_provider: "openai".to_string(),
+            service_tier: None,
+            cwd: WORKSPACE_CWD.into(),
+            approval_policy: AskForApproval::OnRequest,
+            sandbox: SandboxPolicy::DangerFullAccess,
+            reasoning_effort: None,
+        },
+    );
+}
+
+fn run_turn_start_streaming(socket: &mut WebSocket<TcpStream>) {
+    let start_thread = expect_request(socket, api::method::THREAD_START);
+    send_typed_success_response(
+        socket,
+        start_thread.id,
+        &thread_start_response(thread(
+            "thread-turn-stream",
+            WORKSPACE_CWD,
+            ThreadStatus::Idle,
+            vec![],
+        )),
+    );
+
+    let start_turn = expect_request(socket, api::method::TURN_START);
+    let start_turn_params = start_turn
+        .params
+        .expect("turn/start params should be present");
+    assert_eq!(
+        param_string(&start_turn_params, "threadId"),
+        Some("thread-turn-stream".to_string())
+    );
+
+    send_notification(
+        socket,
+        "item/agentMessage/delta",
+        serde_json::json!({
+            "threadId": "thread-turn-stream",
+            "turnId": "turn-stream",
+            "itemId": "item-stream",
+            "delta": "hello"
+        }),
+    );
+    send_notification(
+        socket,
+        "turn/diff/updated",
+        serde_json::json!({
+            "threadId": "thread-turn-stream",
+            "turnId": "turn-stream",
+            "diff": "diff --git a/a b/a"
+        }),
+    );
+    send_notification(
+        socket,
+        "turn/completed",
+        serde_json::json!({
+            "threadId": "thread-turn-stream",
+            "turn": {
+                "id": "turn-stream",
+                "items": [],
+                "status": "completed",
+                "error": null
+            }
+        }),
+    );
+
+    send_typed_success_response(
+        socket,
+        start_turn.id,
+        &TurnStartResponse {
+            turn: turn("turn-stream", TurnStatus::InProgress),
+        },
+    );
+}
+
+fn run_item_completed_no_dup(socket: &mut WebSocket<TcpStream>) {
+    let start_thread = expect_request(socket, api::method::THREAD_START);
+    send_typed_success_response(
+        socket,
+        start_thread.id,
+        &thread_start_response(thread(
+            "thread-no-dup",
+            WORKSPACE_CWD,
+            ThreadStatus::Idle,
+            vec![],
+        )),
+    );
+
+    let start_turn = expect_request(socket, api::method::TURN_START);
+    send_notification(
+        socket,
+        "item/agentMessage/delta",
+        serde_json::json!({
+            "threadId": "thread-no-dup",
+            "turnId": "turn-no-dup",
+            "itemId": "item-no-dup",
+            "delta": "hello"
+        }),
+    );
+    send_notification(
+        socket,
+        "item/completed",
+        serde_json::json!({
+            "threadId": "thread-no-dup",
+            "turnId": "turn-no-dup",
+            "item": {
+                "type": "agentMessage",
+                "id": "item-no-dup",
+                "text": "hello",
+                "phase": null
+            }
+        }),
+    );
+    send_typed_success_response(
+        socket,
+        start_turn.id,
+        &TurnStartResponse {
+            turn: turn("turn-no-dup", TurnStatus::InProgress),
+        },
+    );
+}
+
+fn run_turn_steer_round_trip(socket: &mut WebSocket<TcpStream>) {
+    let start_thread = expect_request(socket, api::method::THREAD_START);
+    send_typed_success_response(
+        socket,
+        start_thread.id,
+        &thread_start_response(thread(
+            "thread-steer",
+            WORKSPACE_CWD,
+            ThreadStatus::Idle,
+            vec![],
+        )),
+    );
+
+    let steer = expect_request(socket, api::method::TURN_STEER);
+    let steer_params = steer.params.expect("turn/steer params should be present");
+    assert_eq!(
+        param_string(&steer_params, "threadId"),
+        Some("thread-steer".to_string())
+    );
+    assert_eq!(
+        param_string(&steer_params, "expectedTurnId"),
+        Some("turn-active".to_string())
+    );
+    send_typed_success_response(
+        socket,
+        steer.id,
+        &TurnSteerResponse {
+            turn_id: "turn-active".to_string(),
+        },
+    );
+}
+
+fn run_turn_interrupt(socket: &mut WebSocket<TcpStream>) {
+    let start_thread = expect_request(socket, api::method::THREAD_START);
+    send_typed_success_response(
+        socket,
+        start_thread.id,
+        &thread_start_response(thread(
+            "thread-interrupt",
+            WORKSPACE_CWD,
+            ThreadStatus::Idle,
+            vec![],
+        )),
+    );
+
+    let start_turn = expect_request(socket, api::method::TURN_START);
+    send_typed_success_response(
+        socket,
+        start_turn.id,
+        &TurnStartResponse {
+            turn: turn("turn-interrupt", TurnStatus::InProgress),
+        },
+    );
+
+    let interrupt = expect_request(socket, api::method::TURN_INTERRUPT);
+    let interrupt_params = interrupt
+        .params
+        .expect("turn/interrupt params should be present");
+    assert_eq!(
+        param_string(&interrupt_params, "threadId"),
+        Some("thread-interrupt".to_string())
+    );
+    assert_eq!(
+        param_string(&interrupt_params, "turnId"),
+        Some("turn-interrupt".to_string())
+    );
+    send_typed_success_response(socket, interrupt.id, &TurnInterruptResponse {});
+}
+
+fn run_review_start_detached(socket: &mut WebSocket<TcpStream>) {
+    let start_thread = expect_request(socket, api::method::THREAD_START);
+    send_typed_success_response(
+        socket,
+        start_thread.id,
+        &thread_start_response(thread(
+            "thread-review-root",
+            WORKSPACE_CWD,
+            ThreadStatus::Idle,
+            vec![],
+        )),
+    );
+
+    let review = expect_request(socket, api::method::REVIEW_START);
+    let review_params = review
+        .params
+        .expect("review/start params should be present");
+    assert_eq!(
+        param_string(&review_params, "threadId"),
+        Some("thread-review-root".to_string())
+    );
+    send_typed_success_response(
+        socket,
+        review.id,
+        &ReviewStartResponse {
+            turn: turn("review-turn", TurnStatus::InProgress),
+            review_thread_id: "thread-review-detached".to_string(),
+        },
+    );
+}
+
+fn run_command_exec_round_trip(socket: &mut WebSocket<TcpStream>) {
+    let command_exec = expect_request(socket, api::method::COMMAND_EXEC);
+    let command_exec_params = command_exec
+        .params
+        .expect("command/exec params should be present");
+    assert_eq!(
+        param_string(&command_exec_params, "cwd"),
+        Some(WORKSPACE_CWD.to_string())
+    );
+    send_typed_success_response(
+        socket,
+        command_exec.id,
+        &CommandExecResponse {
+            exit_code: 0,
+            stdout: "ok".to_string(),
+            stderr: String::new(),
+        },
+    );
+}
+
+fn run_command_exec_server_error(socket: &mut WebSocket<TcpStream>) {
+    let command_exec = expect_request(socket, api::method::COMMAND_EXEC);
+    let command_exec_params = command_exec
+        .params
+        .expect("command/exec params should be present");
+    assert_eq!(
+        param_string(&command_exec_params, "cwd"),
+        Some(WORKSPACE_CWD.to_string())
+    );
+    send_error_response(socket, command_exec.id, -32003, "command failed");
+}
+
+fn connect_initialized_session(port: u16) -> JsonRpcSession {
+    let endpoint = WebSocketEndpoint::loopback(port);
+    let mut session = JsonRpcSession::connect(&endpoint).expect("session should connect");
+    session
+        .initialize(InitializeOptions::default(), TIMEOUT)
+        .expect("initialize should succeed");
+    session
+}
+
+fn thread(id: &str, cwd: &str, status: ThreadStatus, turns: Vec<Turn>) -> Thread {
+    Thread {
+        id: id.to_string(),
+        preview: format!("preview-{id}"),
+        ephemeral: false,
+        model_provider: "openai".to_string(),
+        created_at: 1,
+        updated_at: 2,
+        status,
+        path: Some(format!("/tmp/.codex/threads/{id}.jsonl").into()),
+        cwd: cwd.into(),
+        cli_version: "0.1.0".to_string(),
+        source: SessionSource::AppServer,
+        agent_nickname: None,
+        agent_role: None,
+        git_info: None,
+        name: Some(format!("Thread {id}")),
+        turns,
+    }
+}
+
+fn turn(id: &str, status: TurnStatus) -> Turn {
+    Turn {
+        id: id.to_string(),
+        items: Vec::new(),
+        status,
+        error: None,
+    }
+}
+
+fn thread_start_response(thread: Thread) -> ThreadStartResponse {
+    ThreadStartResponse {
+        cwd: thread.cwd.clone(),
+        thread,
+        model: "gpt-5-codex".to_string(),
+        model_provider: "openai".to_string(),
+        service_tier: None,
+        approval_policy: AskForApproval::OnRequest,
+        sandbox: SandboxPolicy::DangerFullAccess,
+        reasoning_effort: None,
+    }
+}
+
+fn thread_resume_response(thread: Thread) -> ThreadResumeResponse {
+    ThreadResumeResponse {
+        cwd: thread.cwd.clone(),
+        thread,
+        model: "gpt-5-codex".to_string(),
+        model_provider: "openai".to_string(),
+        service_tier: None,
+        approval_policy: AskForApproval::OnRequest,
+        sandbox: SandboxPolicy::DangerFullAccess,
+        reasoning_effort: None,
+    }
+}
+
+fn send_thread_archived_notification(socket: &mut WebSocket<TcpStream>, thread_id: &str) {
+    send_notification(
+        socket,
+        "thread/archived",
+        serde_json::json!({ "threadId": thread_id }),
+    );
+}
+
+fn send_thread_status_changed_notification(
+    socket: &mut WebSocket<TcpStream>,
+    thread_id: &str,
+    status: ThreadStatus,
+) {
+    let notification = ThreadStatusChangedNotification {
+        thread_id: thread_id.to_string(),
+        status,
+    };
+    let params =
+        serde_json::to_value(notification).expect("notification serialization should succeed");
+    send_notification(socket, "thread/status/changed", params);
+}
+
+fn send_notification(socket: &mut WebSocket<TcpStream>, method: &str, params: Value) {
+    send_jsonrpc(
+        socket,
+        JSONRPCMessage::Notification(JSONRPCNotification {
+            method: method.to_string(),
+            params: Some(params),
+        }),
+    );
+}
+
+fn expect_request(socket: &mut WebSocket<TcpStream>, method: &str) -> JSONRPCRequest {
+    match read_jsonrpc(socket) {
+        JSONRPCMessage::Request(request) => {
+            assert_eq!(request.method, method, "unexpected method");
+            request
+        }
+        other => panic!("expected request, got: {other:?}"),
+    }
+}
+
+fn expect_notification(socket: &mut WebSocket<TcpStream>, method: &str) -> JSONRPCNotification {
+    match read_jsonrpc(socket) {
+        JSONRPCMessage::Notification(notification) => {
+            assert_eq!(
+                notification.method, method,
+                "unexpected notification method"
+            );
+            notification
+        }
+        other => panic!("expected notification, got: {other:?}"),
+    }
+}
+
+fn send_typed_success_response<T: serde::Serialize>(
+    socket: &mut WebSocket<TcpStream>,
+    id: RequestId,
+    result: &T,
+) {
+    let value = serde_json::to_value(result).expect("response serialization should succeed");
+    send_success_response(socket, id, value);
+}
+
+fn send_success_response(socket: &mut WebSocket<TcpStream>, id: RequestId, result: Value) {
+    send_jsonrpc(
+        socket,
+        JSONRPCMessage::Response(JSONRPCResponse { id, result }),
+    );
+}
+
+fn send_error_response(socket: &mut WebSocket<TcpStream>, id: RequestId, code: i64, message: &str) {
+    send_jsonrpc(
+        socket,
+        JSONRPCMessage::Error(JSONRPCError {
+            id,
+            error: JSONRPCErrorError {
+                code,
+                data: None,
+                message: message.to_string(),
+            },
+        }),
+    );
+}
+
+fn send_jsonrpc(socket: &mut WebSocket<TcpStream>, message: JSONRPCMessage) {
+    let payload = serde_json::to_string(&message).expect("serialize should succeed");
+    socket
+        .send(Message::Text(payload.into()))
+        .expect("socket send should succeed");
+}
+
+fn read_jsonrpc(socket: &mut WebSocket<TcpStream>) -> JSONRPCMessage {
+    loop {
+        let frame = socket.read().expect("socket read should succeed");
+        match frame {
+            Message::Text(text) => {
+                return serde_json::from_str(text.as_ref()).expect("json parse should succeed");
+            }
+            Message::Binary(bytes) => {
+                return serde_json::from_slice(bytes.as_ref()).expect("json parse should succeed");
+            }
+            Message::Ping(payload) => {
+                socket
+                    .send(Message::Pong(payload))
+                    .expect("pong send should succeed");
+            }
+            Message::Pong(_) | Message::Frame(_) => {}
+            Message::Close(_) => panic!("unexpected socket close"),
+        }
+    }
+}
+
+fn param_string(params: &Value, key: &str) -> Option<String> {
+    params
+        .get(key)
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+}
