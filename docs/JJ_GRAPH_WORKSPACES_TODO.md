@@ -6,6 +6,7 @@
 - Last Updated: 2026-03-03
 - Related docs:
   - `docs/JJ_GRAPH_WORKSPACE_RFC.md`
+  - `docs/JJ_GRAPH_WORKSPACES_GUIDE.md`
   - `docs/JJ_NATIVE_MODE_SPEC.md`
   - `docs/JJ_WORKSPACE_RFC.md`
 
@@ -399,19 +400,40 @@ Phase 7 review note (2026-03-03):
    - `cargo test --workspace` passed
 
 ### Phase 8: End-to-End Validation + Cleanup
-- [ ] Run full QA pass across Files, Review, and Graph modes after workspace features.
-- [ ] Remove temporary compatibility shims and dead code introduced during phased rollout.
-- [ ] Finalize docs updates:
+- [x] Run full QA pass across Files, Review, and Graph modes after workspace features.
+- [x] Remove temporary compatibility shims and dead code introduced during phased rollout.
+- [x] Finalize docs updates:
   - workflow guide,
   - glossary updates,
   - migration notes.
-- [ ] Deep code review gate complete.
-- [ ] Global quality gate complete.
+- [x] Deep code review gate complete.
+- [x] Global quality gate complete.
 
 Acceptance criteria:
 1. Graph workspace support is stable and production-ready.
 2. Bookmark workflows remain fully functional and tested.
 3. No known high-severity issues remain open.
+
+Phase 8 review note (2026-03-03):
+1. End-to-end QA coverage completed for core workspace rollout surfaces:
+   - Files mode: `cargo test -p hunk-jj --test repo_tree`,
+   - Review flows: `cargo test -p hunk-jj --test jj_branch_checkout_workflow`,
+   - Graph/workspace flows: `cargo test -p hunk-jj --test jj_graph_snapshot --test jj_workspace_switch --test jj_workspace_lifecycle`.
+2. Cleanup completed:
+   - removed temporary desktop compatibility shim `workspace_execution_context_or_legacy`,
+   - comment scope now uses synchronized `workspace_execution_context` only, preventing dual-path context derivation.
+3. Documentation finalized in `docs/JJ_GRAPH_WORKSPACES_GUIDE.md`:
+   - step-by-step workflow guide for mixed workspace/bookmark graph usage,
+   - JJ glossary updates for workspace-vs-bookmark terms,
+   - migration notes covering snapshot contract, desktop state, compatibility, and future DB migration path.
+4. Deep review outcomes:
+   - verified workspace actions remain explicitly guarded and separate from bookmark mutation surfaces,
+   - verified bookmark workflows remain intact while workspace support is active,
+   - verified no stale compatibility callsites remain in desktop controller code.
+5. Validation:
+   - `cargo fmt --all -- --check` passed
+   - `cargo clippy --workspace --all-targets --all-features -- -D warnings` passed
+   - `cargo test --workspace` passed
 
 ## Execution Map (Expected Touch Points)
 1. Backend model + snapshot:

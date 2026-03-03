@@ -110,9 +110,9 @@ impl DiffViewer {
     }
 
     fn comment_scope_fields(&self) -> Option<(String, String)> {
-        let context = self.workspace_execution_context_or_legacy()?;
+        let context = self.workspace_execution_context.as_ref()?;
         let repo_root = context.workspace_root.to_string_lossy().to_string();
-        let bookmark_name = Self::workspace_context_comment_bookmark_key(&context);
+        let bookmark_name = Self::workspace_context_comment_bookmark_key(context);
         Some((repo_root, bookmark_name))
     }
 

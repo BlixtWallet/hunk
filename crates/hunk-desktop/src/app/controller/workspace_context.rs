@@ -1,17 +1,4 @@
 impl DiffViewer {
-    pub(super) fn workspace_execution_context_or_legacy(&self) -> Option<WorkspaceExecutionContext> {
-        self.workspace_execution_context.clone().or_else(|| {
-            let workspace_root = self.repo_root.as_ref()?;
-            Some(Self::build_workspace_execution_context(
-                workspace_root.as_path(),
-                self.graph_current_workspace_name.as_deref(),
-                self.graph_active_bookmark.as_deref(),
-                self.branch_name.as_str(),
-                self.graph_working_copy_commit_id.as_deref(),
-            ))
-        })
-    }
-
     pub(super) fn sync_workspace_execution_context_from_state(&mut self) {
         self.workspace_execution_context = self.repo_root.as_ref().map(|workspace_root| {
             Self::build_workspace_execution_context(
