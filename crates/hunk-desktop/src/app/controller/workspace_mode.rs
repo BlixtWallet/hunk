@@ -136,9 +136,6 @@ impl DiffViewer {
         if !self.branch_has_upstream {
             return Some("Publish this bookmark before opening PR/MR.".to_string());
         }
-        if self.branch_ahead_count == 0 {
-            return Some("No new revisions to review for this bookmark.".to_string());
-        }
         None
     }
 
@@ -157,9 +154,6 @@ impl DiffViewer {
         }
         if !bookmark.tracked {
             return Some("Publish this bookmark before opening PR/MR.".to_string());
-        }
-        if !bookmark.needs_push {
-            return Some("No new revisions to review for this bookmark.".to_string());
         }
         None
     }
