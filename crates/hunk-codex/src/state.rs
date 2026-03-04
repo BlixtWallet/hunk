@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 pub enum ThreadLifecycleStatus {
     #[default]
     Active,
+    NotLoaded,
     Archived,
     Closed,
 }
@@ -45,6 +46,7 @@ pub struct ThreadSummary {
     pub cwd: String,
     pub title: Option<String>,
     pub status: ThreadLifecycleStatus,
+    pub updated_at: i64,
     pub last_sequence: u64,
 }
 
@@ -72,6 +74,7 @@ pub enum ReducerEvent {
         thread_id: String,
         cwd: String,
         title: Option<String>,
+        updated_at: Option<i64>,
     },
     ThreadStatusChanged {
         thread_id: String,
@@ -217,6 +220,7 @@ impl AiState {
                 thread_id,
                 cwd,
                 title,
+                updated_at,
             } => {
                 let thread =
                     self.threads
@@ -226,6 +230,7 @@ impl AiState {
                             cwd: cwd.clone(),
                             title: title.clone(),
                             status: ThreadLifecycleStatus::Active,
+                            updated_at: 0,
                             last_sequence: 0,
                         });
 
@@ -236,6 +241,9 @@ impl AiState {
                 thread.cwd = cwd;
                 thread.title = title;
                 thread.status = ThreadLifecycleStatus::Active;
+                if let Some(updated_at) = updated_at {
+                    thread.updated_at = updated_at;
+                }
                 thread.last_sequence = sequence;
                 ApplyOutcome::Applied
             }
@@ -411,6 +419,7 @@ impl AiState {
                 cwd: String::new(),
                 title: None,
                 status,
+                updated_at: 0,
                 last_sequence: 0,
             });
 
@@ -431,6 +440,7 @@ impl AiState {
                 cwd: String::new(),
                 title: None,
                 status: ThreadLifecycleStatus::Active,
+                updated_at: 0,
                 last_sequence: 0,
             });
     }

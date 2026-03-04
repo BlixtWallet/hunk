@@ -929,6 +929,8 @@ struct DiffViewer {
     ai_error_message: Option<String>,
     ai_state_snapshot: hunk_codex::state::AiState,
     ai_selected_thread_id: Option<String>,
+    ai_thread_list_scroll_handle: ScrollHandle,
+    ai_timeline_scroll_handle: ScrollHandle,
     ai_last_command_result: Option<String>,
     ai_pending_approvals: Vec<AiPendingApproval>,
     ai_pending_user_inputs: Vec<AiPendingUserInputRequest>,

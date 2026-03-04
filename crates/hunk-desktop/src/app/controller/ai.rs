@@ -124,9 +124,7 @@ impl DiffViewer {
             },
             cx,
         ) {
-            self.ai_composer_input_state.update(cx, |state, cx| {
-                state.set_value("", window, cx);
-            });
+            self.clear_ai_composer_input(window, cx);
         }
     }
 
@@ -135,37 +133,25 @@ impl DiffViewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let prompt = self.ai_composer_input_state.read(cx).value().trim().to_string();
-        if prompt.is_empty() {
-            self.ai_status_message = Some("Prompt cannot be empty.".to_string());
-            cx.notify();
+        if self.send_current_ai_prompt(cx) {
+            self.clear_ai_composer_input(window, cx);
+        }
+    }
+
+    pub(super) fn ai_send_prompt_action_from_keyboard(&mut self, cx: &mut Context<Self>) {
+        if !self.send_current_ai_prompt(cx) {
             return;
         }
-
-        let session_overrides = self.current_ai_turn_session_overrides();
-        let sent = if let Some(thread_id) = self.current_ai_thread_id() {
-            self.send_ai_worker_command(
-                AiWorkerCommand::SendPrompt {
-                    thread_id,
-                    prompt,
-                    session_overrides,
-                },
-                cx,
-            )
-        } else {
-            self.send_ai_worker_command(
-                AiWorkerCommand::StartThread {
-                    prompt: Some(prompt),
-                    session_overrides,
-                },
-                cx,
-            )
+        let ai_composer_state = self.ai_composer_input_state.clone();
+        let Some(window_handle) = cx.windows().into_iter().next() else {
+            return;
         };
-
-        if sent {
-            self.ai_composer_input_state.update(cx, |state, cx| {
+        if let Err(error) = cx.update_window(window_handle, |_, window, cx| {
+            ai_composer_state.update(cx, |state, cx| {
                 state.set_value("", window, cx);
             });
+        }) {
+            error!("failed to clear AI composer input after keyboard send: {error:#}");
         }
     }
 
@@ -271,7 +257,7 @@ impl DiffViewer {
         self.ai_selected_model = model_id;
         self.ai_selected_collaboration_mode = None;
         self.normalize_ai_selected_effort();
-        self.persist_current_ai_thread_session();
+        self.persist_current_ai_workspace_session();
         cx.notify();
     }
 
@@ -283,7 +269,7 @@ impl DiffViewer {
         self.ai_selected_effort = effort;
         self.ai_selected_collaboration_mode = None;
         self.normalize_ai_selected_effort();
-        self.persist_current_ai_thread_session();
+        self.persist_current_ai_workspace_session();
         cx.notify();
     }
 
@@ -307,7 +293,7 @@ impl DiffViewer {
             }
         }
         self.normalize_ai_selected_effort();
-        self.persist_current_ai_thread_session();
+        self.persist_current_ai_workspace_session();
         cx.notify();
     }
 
@@ -772,19 +758,40 @@ impl DiffViewer {
         }
     }
 
+    fn send_current_ai_prompt(&mut self, cx: &mut Context<Self>) -> bool {
+        let prompt = self.ai_composer_input_state.read(cx).value().trim().to_string();
+        if prompt.is_empty() {
+            self.ai_status_message = Some("Prompt cannot be empty.".to_string());
+            cx.notify();
+            return false;
+        }
+
+        let session_overrides = self.current_ai_turn_session_overrides();
+        if let Some(thread_id) = self.current_ai_thread_id() {
+            return self.send_ai_worker_command(
+                AiWorkerCommand::SendPrompt {
+                    thread_id,
+                    prompt,
+                    session_overrides,
+                },
+                cx,
+            );
+        }
+
+        self.send_ai_worker_command(
+            AiWorkerCommand::StartThread {
+                prompt: Some(prompt),
+                session_overrides,
+            },
+            cx,
+        )
+    }
+
     fn sync_ai_session_selection_from_state(&mut self) {
         let persisted = self
             .ai_workspace_key()
             .as_ref()
-            .and_then(|workspace| {
-                self.current_ai_thread_id().and_then(|thread_id| {
-                    self.state
-                        .ai_thread_session_overrides
-                        .get(workspace)
-                        .and_then(|threads| threads.get(thread_id.as_str()))
-                        .cloned()
-                })
-            })
+            .and_then(|workspace| self.state.ai_workspace_session_overrides.get(workspace).cloned())
             .unwrap_or_default();
 
         self.ai_selected_model = persisted.model.or_else(|| self.default_ai_model_id());
@@ -797,11 +804,8 @@ impl DiffViewer {
         self.normalize_ai_selected_effort();
     }
 
-    fn persist_current_ai_thread_session(&mut self) {
+    fn persist_current_ai_workspace_session(&mut self) {
         let Some(workspace) = self.ai_workspace_key() else {
-            return;
-        };
-        let Some(thread_id) = self.current_ai_thread_id() else {
             return;
         };
 
@@ -813,19 +817,20 @@ impl DiffViewer {
 
         if let Some(session) = normalized_thread_session_state(session) {
             self.state
-                .ai_thread_session_overrides
-                .entry(workspace)
-                .or_default()
-                .insert(thread_id, session);
-        } else if let Some(workspace_sessions) =
-            self.state.ai_thread_session_overrides.get_mut(workspace.as_str())
-        {
-            workspace_sessions.remove(thread_id.as_str());
-            if workspace_sessions.is_empty() {
-                self.state.ai_thread_session_overrides.remove(workspace.as_str());
-            }
+                .ai_workspace_session_overrides
+                .insert(workspace, session);
+        } else {
+            self.state
+                .ai_workspace_session_overrides
+                .remove(workspace.as_str());
         }
         self.persist_state();
+    }
+
+    fn clear_ai_composer_input(&self, window: &mut Window, cx: &mut Context<Self>) {
+        self.ai_composer_input_state.update(cx, |state, cx| {
+            state.set_value("", window, cx);
+        });
     }
 
     fn normalize_ai_selected_effort(&mut self) {
@@ -875,9 +880,10 @@ fn sorted_threads(state: &hunk_codex::state::AiState) -> Vec<ThreadSummary> {
     let mut threads = state.threads.values().cloned().collect::<Vec<_>>();
     threads.sort_by(|left, right| {
         right
-            .last_sequence
-            .cmp(&left.last_sequence)
-            .then_with(|| left.id.cmp(&right.id))
+            .updated_at
+            .cmp(&left.updated_at)
+            .then_with(|| right.last_sequence.cmp(&left.last_sequence))
+            .then_with(|| right.id.cmp(&left.id))
     });
     threads
 }
@@ -1036,7 +1042,7 @@ mod ai_tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn sorted_threads_orders_by_latest_sequence_then_id() {
+    fn sorted_threads_orders_by_updated_at_descending() {
         let mut state = AiState::default();
         state.threads.insert(
             "t-older".to_string(),
@@ -1045,6 +1051,7 @@ mod ai_tests {
                 cwd: "/repo".to_string(),
                 title: None,
                 status: ThreadLifecycleStatus::Active,
+                updated_at: 10,
                 last_sequence: 2,
             },
         );
@@ -1055,13 +1062,45 @@ mod ai_tests {
                 cwd: "/repo".to_string(),
                 title: None,
                 status: ThreadLifecycleStatus::Active,
-                last_sequence: 9,
+                updated_at: 20,
+                last_sequence: 1,
             },
         );
 
         let sorted = sorted_threads(&state);
         assert_eq!(sorted[0].id, "t-newer");
         assert_eq!(sorted[1].id, "t-older");
+    }
+
+    #[test]
+    fn sorted_threads_breaks_ties_in_descending_id_order() {
+        let mut state = AiState::default();
+        state.threads.insert(
+            "thread-a".to_string(),
+            ThreadSummary {
+                id: "thread-a".to_string(),
+                cwd: "/repo".to_string(),
+                title: None,
+                status: ThreadLifecycleStatus::Active,
+                updated_at: 7,
+                last_sequence: 7,
+            },
+        );
+        state.threads.insert(
+            "thread-z".to_string(),
+            ThreadSummary {
+                id: "thread-z".to_string(),
+                cwd: "/repo".to_string(),
+                title: None,
+                status: ThreadLifecycleStatus::Active,
+                updated_at: 7,
+                last_sequence: 7,
+            },
+        );
+
+        let sorted = sorted_threads(&state);
+        assert_eq!(sorted[0].id, "thread-z");
+        assert_eq!(sorted[1].id, "thread-a");
     }
 
     #[test]
@@ -1089,7 +1128,7 @@ mod ai_tests {
             .into_iter()
             .collect(),
             ai_workspace_include_hidden_models: Default::default(),
-            ai_thread_session_overrides: Default::default(),
+            ai_workspace_session_overrides: Default::default(),
         };
         assert!(workspace_mad_max_mode(&state, Some("/repo-a")));
         assert!(!workspace_mad_max_mode(&state, Some("/repo-b")));
@@ -1114,7 +1153,7 @@ mod ai_tests {
             ]
             .into_iter()
             .collect(),
-            ai_thread_session_overrides: Default::default(),
+            ai_workspace_session_overrides: Default::default(),
         };
         assert!(workspace_include_hidden_models(&state, Some("/repo-a")));
         assert!(!workspace_include_hidden_models(&state, Some("/repo-b")));

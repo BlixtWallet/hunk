@@ -31,6 +31,7 @@ use codex_app_server_protocol::SandboxMode;
 use codex_app_server_protocol::SandboxPolicy;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ToolRequestUserInputAnswer;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
@@ -410,9 +411,14 @@ impl AiWorkerRuntime {
                 self.emit_snapshot_after_sync(event_tx)?;
             }
             AiWorkerCommand::SelectThread { thread_id } => {
-                self.service
-                    .state_mut()
-                    .set_active_thread_for_cwd(self.cwd_key.clone(), thread_id);
+                self.service.resume_thread(
+                    &mut self.session,
+                    ThreadResumeParams {
+                        thread_id,
+                        ..ThreadResumeParams::default()
+                    },
+                    self.request_timeout,
+                )?;
                 self.emit_snapshot_after_sync(event_tx)?;
             }
             AiWorkerCommand::SendPrompt {

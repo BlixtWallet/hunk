@@ -32,6 +32,7 @@ use codex_app_server_protocol::ThreadArchiveResponse;
 use codex_app_server_protocol::ThreadCompactStartResponse;
 use codex_app_server_protocol::ThreadForkParams;
 use codex_app_server_protocol::ThreadForkResponse;
+use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadLoadedListResponse;
 use codex_app_server_protocol::ThreadReadResponse;
@@ -122,12 +123,13 @@ fn resume_external_thread_updates_active_workspace_thread() {
         Some("external-thread")
     );
     assert!(service.state().turns.contains_key("resume-turn-1"));
+    assert!(service.state().items.contains_key("resume-item-1"));
 
     server.join();
 }
 
 #[test]
-fn unsubscribe_semantics_apply_closed_status_on_unsubscribed() {
+fn unsubscribe_semantics_apply_not_loaded_status_on_unsubscribed() {
     let server = TestServer::spawn(Scenario::UnsubscribeSemantics);
     let mut session = connect_initialized_session(server.port);
     let mut service = ThreadService::new(WORKSPACE_CWD.into());
@@ -170,7 +172,7 @@ fn unsubscribe_semantics_apply_closed_status_on_unsubscribed() {
             .get("thread-unsub")
             .expect("thread should exist")
             .status,
-        ThreadLifecycleStatus::Closed
+        ThreadLifecycleStatus::NotLoaded
     );
 
     server.join();
@@ -466,6 +468,38 @@ fn unknown_thread_status_notification_is_ignored() {
 }
 
 #[test]
+fn known_thread_not_loaded_status_is_preserved() {
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+    let _ = service.state_mut().apply_stream_event(StreamEvent {
+        sequence: 1,
+        dedupe_key: None,
+        payload: ReducerEvent::ThreadStarted {
+            thread_id: "thread-known".to_string(),
+            cwd: WORKSPACE_CWD.to_string(),
+            title: None,
+            updated_at: Some(42),
+        },
+    });
+
+    service.apply_server_notification(ServerNotification::ThreadStatusChanged(
+        ThreadStatusChangedNotification {
+            thread_id: "thread-known".to_string(),
+            status: ThreadStatus::NotLoaded,
+        },
+    ));
+
+    assert_eq!(
+        service
+            .state()
+            .threads
+            .get("thread-known")
+            .expect("thread should exist")
+            .status,
+        ThreadLifecycleStatus::NotLoaded
+    );
+}
+
+#[test]
 fn server_request_resolved_notification_is_recorded_for_known_thread() {
     let mut service = ThreadService::new(WORKSPACE_CWD.into());
     let _ = service.state_mut().apply_stream_event(StreamEvent {
@@ -475,6 +509,7 @@ fn server_request_resolved_notification_is_recorded_for_known_thread() {
             thread_id: "thread-known".to_string(),
             cwd: WORKSPACE_CWD.to_string(),
             title: None,
+            updated_at: None,
         },
     });
 
@@ -940,7 +975,17 @@ fn run_resume_external_thread(socket: &mut WebSocket<TcpStream>) {
         "external-thread",
         WORKSPACE_CWD,
         ThreadStatus::Idle,
-        vec![turn("resume-turn-1", TurnStatus::Completed)],
+        vec![turn_with_items(
+            "resume-turn-1",
+            TurnStatus::Completed,
+            vec![ThreadItem::UserMessage {
+                id: "resume-item-1".to_string(),
+                content: vec![UserInput::Text {
+                    text: "resume prompt".to_string(),
+                    text_elements: Vec::new(),
+                }],
+            }],
+        )],
     ));
     send_typed_success_response(socket, request.id, &response);
 }
@@ -1716,6 +1761,15 @@ fn turn(id: &str, status: TurnStatus) -> Turn {
     Turn {
         id: id.to_string(),
         items: Vec::new(),
+        status,
+        error: None,
+    }
+}
+
+fn turn_with_items(id: &str, status: TurnStatus, items: Vec<ThreadItem>) -> Turn {
+    Turn {
+        id: id.to_string(),
+        items,
         status,
         error: None,
     }

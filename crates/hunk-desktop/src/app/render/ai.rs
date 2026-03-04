@@ -187,126 +187,145 @@ impl DiffViewer {
                                             ),
                                     )
                                     .child(
-                                            div()
-                                                .flex_1()
-                                                .min_h_0()
-                                                .overflow_y_scrollbar()
-                                                .child(
-                                                v_flex()
-                                                    .w_full()
-                                                    .gap_1()
-                                                    .p_2()
-                                                    .when(threads.is_empty(), |this| {
-                                                        this.child(
-                                                            div()
-                                                                .rounded_md()
-                                                                .border_1()
-                                                                .border_color(cx.theme().border)
-                                                                .bg(cx.theme().muted.opacity(if is_dark {
-                                                                    0.22
-                                                                } else {
-                                                                    0.40
-                                                                }))
-                                                                .p_2()
-                                                                .child(
+                                        div()
+                                            .flex_1()
+                                            .min_h_0()
+                                            .relative()
+                                            .child(
+                                                div()
+                                                    .id("ai-thread-list-scroll-area")
+                                                    .size_full()
+                                                    .track_scroll(&self.ai_thread_list_scroll_handle)
+                                                    .overflow_y_scroll()
+                                                    .child(
+                                                        v_flex()
+                                                            .w_full()
+                                                            .gap_1()
+                                                            .p_2()
+                                                            .when(threads.is_empty(), |this| {
+                                                                this.child(
                                                                     div()
-                                                                        .text_xs()
-                                                                        .text_color(
-                                                                            cx.theme().muted_foreground,
-                                                                        )
+                                                                        .rounded_md()
+                                                                        .border_1()
+                                                                        .border_color(cx.theme().border)
+                                                                        .bg(cx.theme().muted.opacity(if is_dark {
+                                                                            0.22
+                                                                        } else {
+                                                                            0.40
+                                                                        }))
+                                                                        .p_2()
                                                                         .child(
-                                                                            "No threads in this workspace yet.",
+                                                                            div()
+                                                                                .text_xs()
+                                                                                .text_color(
+                                                                                    cx.theme().muted_foreground,
+                                                                                )
+                                                                                .child(
+                                                                                    "No threads in this workspace yet.",
+                                                                                ),
                                                                         ),
-                                                                ),
-                                                        )
-                                                    })
-                                                    .children(threads.into_iter().map(|thread| {
-                                                        let thread_id = thread.id.clone();
-                                                        let title = thread
-                                                            .title
-                                                            .clone()
-                                                            .unwrap_or_else(|| thread.id.clone());
-                                                        let selected = selected_thread_id
-                                                            .as_deref()
-                                                            == Some(thread.id.as_str());
-                                                        let (status_label, status_color) =
-                                                            ai_thread_status_label(thread.status, cx);
-                                                        let view = view.clone();
-
-                                                        div()
-                                                            .rounded_md()
-                                                            .border_1()
-                                                            .border_color(if selected {
-                                                                cx.theme().accent.opacity(if is_dark {
-                                                                    0.90
-                                                                } else {
-                                                                    0.68
-                                                                })
-                                                            } else {
-                                                                cx.theme().border.opacity(if is_dark {
-                                                                    0.90
-                                                                } else {
-                                                                    0.74
-                                                                })
-                                                            })
-                                                            .bg(if selected {
-                                                                cx.theme().accent.opacity(if is_dark {
-                                                                    0.22
-                                                                } else {
-                                                                    0.13
-                                                                })
-                                                            } else {
-                                                                cx.theme().background.blend(
-                                                                    cx.theme().muted.opacity(if is_dark {
-                                                                        0.16
-                                                                    } else {
-                                                                        0.28
-                                                                    }),
                                                                 )
                                                             })
-                                                            .p_2()
-                                                            .gap_1()
-                                                            .hover(move |style| {
-                                                                style.bg(thread_hover_bg).cursor_pointer()
-                                                            })
-                                                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                                                view.update(cx, |this, cx| {
-                                                                    this.ai_select_thread(thread_id.clone(), cx);
-                                                                });
-                                                            })
-                                                            .child(
-                                                                h_flex()
-                                                                    .w_full()
-                                                                    .items_center()
-                                                                    .justify_between()
-                                                                    .gap_2()
+                                                            .children(threads.into_iter().map(|thread| {
+                                                                let thread_id = thread.id.clone();
+                                                                let title = thread
+                                                                    .title
+                                                                    .clone()
+                                                                    .unwrap_or_else(|| thread.id.clone());
+                                                                let selected = selected_thread_id
+                                                                    .as_deref()
+                                                                    == Some(thread.id.as_str());
+                                                                let (status_label, status_color) =
+                                                                    ai_thread_status_label(thread.status, cx);
+                                                                let view = view.clone();
+
+                                                                div()
+                                                                    .rounded_md()
+                                                                    .border_1()
+                                                                    .border_color(if selected {
+                                                                        cx.theme().accent.opacity(if is_dark {
+                                                                            0.90
+                                                                        } else {
+                                                                            0.68
+                                                                        })
+                                                                    } else {
+                                                                        cx.theme().border.opacity(if is_dark {
+                                                                            0.90
+                                                                        } else {
+                                                                            0.74
+                                                                        })
+                                                                    })
+                                                                    .bg(if selected {
+                                                                        cx.theme().accent.opacity(if is_dark {
+                                                                            0.22
+                                                                        } else {
+                                                                            0.13
+                                                                        })
+                                                                    } else {
+                                                                        cx.theme().background.blend(
+                                                                            cx.theme().muted.opacity(if is_dark {
+                                                                                0.16
+                                                                            } else {
+                                                                                0.28
+                                                                            }),
+                                                                        )
+                                                                    })
+                                                                    .p_2()
+                                                                    .gap_1()
+                                                                    .hover(move |style| {
+                                                                        style.bg(thread_hover_bg).cursor_pointer()
+                                                                    })
+                                                                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                                                        view.update(cx, |this, cx| {
+                                                                            this.ai_select_thread(thread_id.clone(), cx);
+                                                                        });
+                                                                    })
                                                                     .child(
-                                                                        div()
-                                                                            .text_sm()
-                                                                            .font_medium()
-                                                                            .truncate()
-                                                                            .child(title),
+                                                                        h_flex()
+                                                                            .w_full()
+                                                                            .items_center()
+                                                                            .justify_between()
+                                                                            .gap_2()
+                                                                            .child(
+                                                                                div()
+                                                                                    .text_sm()
+                                                                                    .font_medium()
+                                                                                    .truncate()
+                                                                                    .child(title),
+                                                                            )
+                                                                            .child(
+                                                                                div()
+                                                                                    .text_xs()
+                                                                                    .font_semibold()
+                                                                                    .text_color(status_color)
+                                                                                    .child(status_label),
+                                                                            ),
                                                                     )
                                                                     .child(
                                                                         div()
                                                                             .text_xs()
-                                                                            .font_semibold()
-                                                                            .text_color(status_color)
-                                                                            .child(status_label),
-                                                                    ),
-                                                            )
-                                                            .child(
-                                                                div()
-                                                                    .text_xs()
-                                                                    .text_color(cx.theme().muted_foreground)
-                                                                    .font_family(
-                                                                        cx.theme().mono_font_family.clone(),
+                                                                            .text_color(cx.theme().muted_foreground)
+                                                                            .font_family(
+                                                                                cx.theme().mono_font_family.clone(),
+                                                                            )
+                                                                            .truncate()
+                                                                            .child(thread.id),
                                                                     )
-                                                                    .truncate()
-                                                                    .child(thread.id),
-                                                            )
-                                                            .into_any_element()
-                                                    })),
+                                                                    .into_any_element()
+                                                            })),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .absolute()
+                                                    .top_0()
+                                                    .right_0()
+                                                    .bottom_0()
+                                                    .w(px(16.0))
+                                                    .child(
+                                                        Scrollbar::vertical(&self.ai_thread_list_scroll_handle)
+                                                            .scrollbar_show(ScrollbarShow::Always),
+                                                    ),
                                             ),
                                     ),
                             ),
@@ -320,14 +339,20 @@ impl DiffViewer {
                                     div()
                                         .flex_1()
                                         .min_h_0()
-                                        .overflow_y_scrollbar()
+                                        .relative()
                                         .child(
-                                            v_flex()
-                                                .w_full()
-                                                .min_h_0()
-                                                .gap_2()
-                                                .p_3()
-                                                .bg(cx.theme().background)
+                                            div()
+                                                .id("ai-timeline-scroll-area")
+                                                .size_full()
+                                                .track_scroll(&self.ai_timeline_scroll_handle)
+                                                .overflow_y_scroll()
+                                                .child(
+                                                    v_flex()
+                                                        .w_full()
+                                                        .min_h_0()
+                                                        .gap_2()
+                                                        .p_3()
+                                                        .bg(cx.theme().background)
                                                 .child(
                                                     h_flex()
                                                         .w_full()
@@ -671,211 +696,224 @@ impl DiffViewer {
                                                             ),
                                                     )
                                                 })
-                                                .when_some(selected_thread_id.clone(), |this, thread_id| {
-                                                    let turn_ids = self.ai_timeline_turn_ids(thread_id.as_str());
-                                                    this.when(turn_ids.is_empty(), |this| {
-                                                        this.child(
-                                                            div()
-                                                                .rounded_md()
-                                                                .border_1()
-                                                                .border_color(cx.theme().border)
-                                                                .bg(cx.theme().muted.opacity(if is_dark {
-                                                                    0.22
-                                                                } else {
-                                                                    0.40
-                                                                }))
-                                                                .p_3()
-                                                                .child(
+                                                        .when_some(selected_thread_id.clone(), |this, thread_id| {
+                                                            let turn_ids = self.ai_timeline_turn_ids(thread_id.as_str());
+                                                            this.when(turn_ids.is_empty(), |this| {
+                                                                this.child(
                                                                     div()
-                                                                        .text_sm()
-                                                                        .text_color(
-                                                                            cx.theme().muted_foreground,
-                                                                        )
-                                                                        .child("No turns yet. Send a prompt to start."),
-                                                                ),
-                                                        )
-                                                    })
-                                                    .children(turn_ids.into_iter().filter_map(|turn_id| {
-                                                        let turn = self.ai_state_snapshot.turns.get(&turn_id)?;
-                                                        let turn_status = ai_turn_status_label(turn.status);
-                                                        let item_ids = self.ai_timeline_item_ids(turn_id.as_str());
-                                                        let diff_preview = self
-                                                            .ai_state_snapshot
-                                                            .turn_diffs
-                                                            .get(turn_id.as_str())
-                                                            .cloned();
-
-                                                        Some(
-                                                            v_flex()
-                                                                .w_full()
-                                                                .gap_1p5()
-                                                                .p_2()
-                                                                .rounded_md()
-                                                                .border_1()
-                                                                .border_color(cx.theme().border)
-                                                                .bg(cx.theme().background.blend(
-                                                                    cx.theme().muted.opacity(if is_dark {
-                                                                        0.20
-                                                                    } else {
-                                                                        0.30
-                                                                    }),
-                                                                ))
-                                                                .child(
-                                                                    h_flex()
-                                                                        .w_full()
-                                                                        .items_center()
-                                                                        .justify_between()
+                                                                        .rounded_md()
+                                                                        .border_1()
+                                                                        .border_color(cx.theme().border)
+                                                                        .bg(cx.theme().muted.opacity(if is_dark {
+                                                                            0.22
+                                                                        } else {
+                                                                            0.40
+                                                                        }))
+                                                                        .p_3()
                                                                         .child(
                                                                             div()
-                                                                                .text_xs()
-                                                                                .font_semibold()
-                                                                                .child(format!(
-                                                                                    "Turn {}",
-                                                                                    turn.id
-                                                                                )),
-                                                                        )
-                                                                        .child(
-                                                                            div()
-                                                                                .text_xs()
+                                                                                .text_sm()
                                                                                 .text_color(
-                                                                                    if turn.status
-                                                                                        == TurnStatus::Completed
-                                                                                    {
-                                                                                        cx.theme().success
-                                                                                    } else {
-                                                                                        cx.theme().warning
-                                                                                    },
+                                                                                    cx.theme().muted_foreground,
                                                                                 )
-                                                                                .child(turn_status),
+                                                                                .child("No turns yet. Send a prompt to start."),
                                                                         ),
                                                                 )
-                                                                .children(item_ids.into_iter().filter_map(|item_id| {
-                                                                    let item = self.ai_state_snapshot.items.get(&item_id)?;
-                                                                    let status = ai_item_status_label(item.status);
-                                                                    let item_label = if item.kind == "enteredReviewMode" {
-                                                                        "Review Mode Entered".to_string()
-                                                                    } else if item.kind == "exitedReviewMode" {
-                                                                        "Review Mode Exited".to_string()
-                                                                    } else {
-                                                                        item.kind.clone()
-                                                                    };
+                                                            })
+                                                            .children(turn_ids.into_iter().filter_map(|turn_id| {
+                                                                let turn = self.ai_state_snapshot.turns.get(&turn_id)?;
+                                                                let turn_status = ai_turn_status_label(turn.status);
+                                                                let item_ids = self.ai_timeline_item_ids(turn_id.as_str());
+                                                                let diff_preview = self
+                                                                    .ai_state_snapshot
+                                                                    .turn_diffs
+                                                                    .get(turn_id.as_str())
+                                                                    .cloned();
 
-                                                                    Some(
-                                                                        v_flex()
-                                                                            .w_full()
-                                                                            .gap_0p5()
-                                                                            .p_2()
-                                                                            .rounded(px(8.0))
-                                                                            .border_1()
-                                                                            .border_color(
-                                                                                cx.theme().border.opacity(if is_dark {
-                                                                                    0.90
-                                                                                } else {
-                                                                                    0.72
-                                                                                }),
-                                                                            )
-                                                                            .bg(cx.theme().background.blend(
-                                                                                cx.theme().muted.opacity(if is_dark {
-                                                                                    0.10
-                                                                                } else {
-                                                                                    0.16
-                                                                                }),
-                                                                            ))
-                                                                            .child(
-                                                                                h_flex()
-                                                                                    .w_full()
-                                                                                    .items_center()
-                                                                                    .justify_between()
-                                                                                    .child(
-                                                                                        div()
-                                                                                            .text_xs()
-                                                                                            .font_medium()
-                                                                                            .child(item_label),
-                                                                                    )
-                                                                                    .child(
-                                                                                        div()
-                                                                                            .text_xs()
-                                                                                            .text_color(
-                                                                                                ai_item_status_color(
-                                                                                                    item.status,
-                                                                                                    cx,
-                                                                                                ),
-                                                                                            )
-                                                                                            .child(status),
-                                                                                    ),
-                                                                            )
-                                                                            .when(!item.content.is_empty(), |this| {
-                                                                                this.child(
+                                                                Some(
+                                                                    v_flex()
+                                                                        .w_full()
+                                                                        .gap_1p5()
+                                                                        .p_2()
+                                                                        .rounded_md()
+                                                                        .border_1()
+                                                                        .border_color(cx.theme().border)
+                                                                        .bg(cx.theme().background.blend(
+                                                                            cx.theme().muted.opacity(if is_dark {
+                                                                                0.20
+                                                                            } else {
+                                                                                0.30
+                                                                            }),
+                                                                        ))
+                                                                        .child(
+                                                                            h_flex()
+                                                                                .w_full()
+                                                                                .items_center()
+                                                                                .justify_between()
+                                                                                .child(
                                                                                     div()
                                                                                         .text_xs()
-                                                                                        .font_family(
-                                                                                            cx.theme()
-                                                                                                .mono_font_family
-                                                                                                .clone(),
-                                                                                        )
+                                                                                        .font_semibold()
+                                                                                        .child(format!(
+                                                                                            "Turn {}",
+                                                                                            turn.id
+                                                                                        )),
+                                                                                )
+                                                                                .child(
+                                                                                    div()
+                                                                                        .text_xs()
                                                                                         .text_color(
-                                                                                            cx.theme()
-                                                                                                .muted_foreground,
+                                                                                            if turn.status
+                                                                                                == TurnStatus::Completed
+                                                                                            {
+                                                                                                cx.theme().success
+                                                                                            } else {
+                                                                                                cx.theme().warning
+                                                                                            },
                                                                                         )
-                                                                                        .whitespace_normal()
-                                                                                        .child(item.content.clone()),
-                                                                                )
-                                                                            })
-                                                                            .into_any_element(),
-                                                                    )
-                                                                }))
-                                                                .when_some(diff_preview, |this, diff| {
-                                                                    this.child(
-                                                                        v_flex()
-                                                                            .w_full()
-                                                                            .gap_1()
-                                                                            .pt_1()
-                                                                            .border_t_1()
-                                                                            .border_color(cx.theme().border)
-                                                                            .child(
-                                                                                div()
-                                                                                    .text_xs()
-                                                                                    .font_semibold()
-                                                                                    .child("Turn Diff"),
-                                                                            )
-                                                                            .child(
-                                                                                div()
-                                                                                    .text_xs()
-                                                                                    .font_family(
-                                                                                        cx.theme()
-                                                                                            .mono_font_family
-                                                                                            .clone(),
+                                                                                        .child(turn_status),
+                                                                                ),
+                                                                        )
+                                                                        .children(item_ids.into_iter().filter_map(|item_id| {
+                                                                            let item = self.ai_state_snapshot.items.get(&item_id)?;
+                                                                            let status = ai_item_status_label(item.status);
+                                                                            let item_label = if item.kind == "enteredReviewMode" {
+                                                                                "Review Mode Entered".to_string()
+                                                                            } else if item.kind == "exitedReviewMode" {
+                                                                                "Review Mode Exited".to_string()
+                                                                            } else {
+                                                                                item.kind.clone()
+                                                                            };
+
+                                                                            Some(
+                                                                                v_flex()
+                                                                                    .w_full()
+                                                                                    .gap_0p5()
+                                                                                    .p_2()
+                                                                                    .rounded(px(8.0))
+                                                                                    .border_1()
+                                                                                    .border_color(
+                                                                                        cx.theme().border.opacity(if is_dark {
+                                                                                            0.90
+                                                                                        } else {
+                                                                                            0.72
+                                                                                        }),
                                                                                     )
-                                                                                    .text_color(
-                                                                                        cx.theme().muted_foreground,
+                                                                                    .bg(cx.theme().background.blend(
+                                                                                        cx.theme().muted.opacity(if is_dark {
+                                                                                            0.10
+                                                                                        } else {
+                                                                                            0.16
+                                                                                        }),
+                                                                                    ))
+                                                                                    .child(
+                                                                                        h_flex()
+                                                                                            .w_full()
+                                                                                            .items_center()
+                                                                                            .justify_between()
+                                                                                            .child(
+                                                                                                div()
+                                                                                                    .text_xs()
+                                                                                                    .font_medium()
+                                                                                                    .child(item_label),
+                                                                                            )
+                                                                                            .child(
+                                                                                                div()
+                                                                                                    .text_xs()
+                                                                                                    .text_color(
+                                                                                                        ai_item_status_color(
+                                                                                                            item.status,
+                                                                                                            cx,
+                                                                                                        ),
+                                                                                                    )
+                                                                                                    .child(status),
+                                                                                            ),
                                                                                     )
-                                                                                    .whitespace_normal()
-                                                                                    .child(diff),
+                                                                                    .when(!item.content.is_empty(), |this| {
+                                                                                        this.child(
+                                                                                            div()
+                                                                                                .text_xs()
+                                                                                                .font_family(
+                                                                                                    cx.theme()
+                                                                                                        .mono_font_family
+                                                                                                        .clone(),
+                                                                                                )
+                                                                                                .text_color(
+                                                                                                    cx.theme()
+                                                                                                        .muted_foreground,
+                                                                                                )
+                                                                                                .whitespace_normal()
+                                                                                                .child(item.content.clone()),
+                                                                                        )
+                                                                                    })
+                                                                                    .into_any_element(),
                                                                             )
-                                                                            .child({
-                                                                                let view = view.clone();
-                                                                                Button::new(
-                                                                                    format!(
-                                                                                        "ai-open-review-tab-{}",
-                                                                                        turn.id
-                                                                                    ),
-                                                                                )
-                                                                                .compact()
-                                                                                .outline()
-                                                                                .with_size(gpui_component::Size::Small)
-                                                                                .label("Open Review Tab")
-                                                                                .on_click(move |_, _, cx| {
-                                                                                    view.update(cx, |this, cx| {
-                                                                                        this.ai_open_review_tab(cx);
-                                                                                    });
-                                                                                })
-                                                                            }),
-                                                                    )
-                                                                })
-                                                                .into_any_element(),
-                                                        )
-                                                    }))
-                                                }),
+                                                                        }))
+                                                                        .when_some(diff_preview, |this, diff| {
+                                                                            this.child(
+                                                                                v_flex()
+                                                                                    .w_full()
+                                                                                    .gap_1()
+                                                                                    .pt_1()
+                                                                                    .border_t_1()
+                                                                                    .border_color(cx.theme().border)
+                                                                                    .child(
+                                                                                        div()
+                                                                                            .text_xs()
+                                                                                            .font_semibold()
+                                                                                            .child("Turn Diff"),
+                                                                                    )
+                                                                                    .child(
+                                                                                        div()
+                                                                                            .text_xs()
+                                                                                            .font_family(
+                                                                                                cx.theme()
+                                                                                                    .mono_font_family
+                                                                                                    .clone(),
+                                                                                            )
+                                                                                            .text_color(
+                                                                                                cx.theme().muted_foreground,
+                                                                                            )
+                                                                                            .whitespace_normal()
+                                                                                            .child(diff),
+                                                                                    )
+                                                                                    .child({
+                                                                                        let view = view.clone();
+                                                                                        Button::new(
+                                                                                            format!(
+                                                                                                "ai-open-review-tab-{}",
+                                                                                                turn.id
+                                                                                            ),
+                                                                                        )
+                                                                                        .compact()
+                                                                                        .outline()
+                                                                                        .with_size(gpui_component::Size::Small)
+                                                                                        .label("Open Review Tab")
+                                                                                        .on_click(move |_, _, cx| {
+                                                                                            view.update(cx, |this, cx| {
+                                                                                                this.ai_open_review_tab(cx);
+                                                                                            });
+                                                                                        })
+                                                                                    }),
+                                                                            )
+                                                                        })
+                                                                        .into_any_element(),
+                                                                )
+                                                            }))
+                                                        }),
+                                                ),
+                                        )
+                                        .child(
+                                            div()
+                                                .absolute()
+                                                .top_0()
+                                                .right_0()
+                                                .bottom_0()
+                                                .w(px(16.0))
+                                                .child(
+                                                    Scrollbar::vertical(&self.ai_timeline_scroll_handle)
+                                                        .scrollbar_show(ScrollbarShow::Always),
+                                                ),
                                         ),
                                 )
                                 .child(

@@ -235,6 +235,8 @@ impl DiffViewer {
             ai_error_message: None,
             ai_state_snapshot: hunk_codex::state::AiState::default(),
             ai_selected_thread_id: None,
+            ai_thread_list_scroll_handle: ScrollHandle::default(),
+            ai_timeline_scroll_handle: ScrollHandle::default(),
             ai_last_command_result: None,
             ai_pending_approvals: Vec::new(),
             ai_pending_user_inputs: Vec::new(),
@@ -347,6 +349,16 @@ impl DiffViewer {
         let editor_state = view.editor_input_state.clone();
         cx.observe(&editor_state, |this, _, cx| {
             this.sync_editor_dirty_from_input(cx);
+        })
+        .detach();
+
+        let ai_composer_state = view.ai_composer_input_state.clone();
+        cx.subscribe(&ai_composer_state, |this, _, event, cx| {
+            if let InputEvent::PressEnter { secondary } = event
+                && !secondary
+            {
+                this.ai_send_prompt_action_from_keyboard(cx);
+            }
         })
         .detach();
 

@@ -579,7 +579,7 @@ impl ThreadService {
         {
             self.apply_event(ReducerEvent::ThreadStatusChanged {
                 thread_id,
-                status: ThreadLifecycleStatus::Closed,
+                status: ThreadLifecycleStatus::NotLoaded,
             });
         }
         self.apply_queued_notifications(session);
@@ -791,6 +791,7 @@ impl ThreadService {
             thread_id,
             cwd: self.cwd_key(),
             title: None,
+            updated_at: None,
         });
     }
 
@@ -871,6 +872,7 @@ impl ThreadService {
             thread_id: thread.id.clone(),
             cwd: thread.cwd.to_string_lossy().to_string(),
             title,
+            updated_at: Some(thread.updated_at),
         });
         self.apply_event(ReducerEvent::ThreadStatusChanged {
             thread_id: thread.id.clone(),
@@ -886,6 +888,9 @@ impl ThreadService {
                 self.apply_event(ReducerEvent::TurnCompleted {
                     turn_id: turn.id.clone(),
                 });
+            }
+            for item in &turn.items {
+                self.apply_item_snapshot(&thread.id, &turn.id, item);
             }
         }
     }
@@ -954,7 +959,7 @@ impl ThreadService {
 
 fn lifecycle_status_from_thread_status(status: &ThreadStatus) -> ThreadLifecycleStatus {
     match status {
-        ThreadStatus::NotLoaded => ThreadLifecycleStatus::Closed,
+        ThreadStatus::NotLoaded => ThreadLifecycleStatus::NotLoaded,
         ThreadStatus::Idle | ThreadStatus::SystemError | ThreadStatus::Active { .. } => {
             ThreadLifecycleStatus::Active
         }

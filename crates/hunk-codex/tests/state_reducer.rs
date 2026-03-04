@@ -22,6 +22,7 @@ fn ordered_stream_application_updates_all_entities() {
                 thread_id: "t1".to_string(),
                 cwd: "/repo".to_string(),
                 title: Some("Main Thread".to_string()),
+                updated_at: Some(200),
             },
         ),
         event(
@@ -122,6 +123,7 @@ fn out_of_order_and_duplicate_events_are_idempotent() {
                 thread_id: "t1".to_string(),
                 cwd: "/repo".to_string(),
                 title: None,
+                updated_at: Some(100),
             },
         ),
         event(

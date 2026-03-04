@@ -22,7 +22,7 @@ pub struct AppState {
     pub last_project_path: Option<PathBuf>,
     pub ai_workspace_mad_max: BTreeMap<String, bool>,
     pub ai_workspace_include_hidden_models: BTreeMap<String, bool>,
-    pub ai_thread_session_overrides: BTreeMap<String, BTreeMap<String, AiThreadSessionState>>,
+    pub ai_workspace_session_overrides: BTreeMap<String, AiThreadSessionState>,
 }
 
 #[derive(Debug, Clone)]

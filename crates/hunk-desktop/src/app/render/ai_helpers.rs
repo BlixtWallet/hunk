@@ -16,6 +16,7 @@ fn ai_thread_status_label(
 ) -> (&'static str, Hsla) {
     match status {
         ThreadLifecycleStatus::Active => ("active", cx.theme().success),
+        ThreadLifecycleStatus::NotLoaded => ("not loaded", cx.theme().muted_foreground),
         ThreadLifecycleStatus::Archived => ("archived", cx.theme().warning),
         ThreadLifecycleStatus::Closed => ("closed", cx.theme().muted_foreground),
     }
@@ -332,7 +333,7 @@ fn render_ai_session_controls_panel(
                 .items_center()
                 .justify_between()
                 .gap_2()
-                .child(div().text_xs().font_semibold().child("Session"))
+                .child(div().text_xs().font_semibold().child("Workspace Defaults"))
                 .child(
                     div()
                         .text_xs()
