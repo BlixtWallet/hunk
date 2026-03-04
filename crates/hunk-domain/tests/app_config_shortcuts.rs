@@ -92,8 +92,8 @@ fn app_config_defaults_include_existing_keyboard_shortcuts() {
         "reduced motion should default to disabled"
     );
     assert!(
-        !config.show_fps_counter,
-        "fps counter should default to disabled"
+        config.show_fps_counter,
+        "fps counter should default to enabled"
     );
 }
 
@@ -112,8 +112,8 @@ theme = "dark"
         "configs missing reduce_motion should fall back to false"
     );
     assert!(
-        !config.show_fps_counter,
-        "configs missing show_fps_counter should fall back to false"
+        config.show_fps_counter,
+        "configs missing show_fps_counter should fall back to true"
     );
 }
 

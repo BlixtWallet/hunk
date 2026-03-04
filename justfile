@@ -7,6 +7,12 @@ build:
 release:
     cargo build -p hunk-desktop --release
 
+build-linux:
+    ./scripts/build_linux.sh
+
+build-windows:
+    ./scripts/build_windows.sh
+
 dev:
     bacon
 

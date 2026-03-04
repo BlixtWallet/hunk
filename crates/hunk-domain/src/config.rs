@@ -116,7 +116,7 @@ impl Default for AppConfig {
             show_whitespace: false,
             show_eol_markers: false,
             reduce_motion: false,
-            show_fps_counter: false,
+            show_fps_counter: true,
             keyboard_shortcuts: KeyboardShortcuts::default(),
             review_provider_mappings: Vec::new(),
             auto_refresh_interval_ms: default_auto_refresh_interval_ms(),

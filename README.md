@@ -63,6 +63,19 @@ cargo bundle -p hunk-desktop --release
 open target/release/bundle/osx/Hunk.app
 ```
 
+Cross-platform binary build helpers:
+
+```bash
+./scripts/build_linux.sh
+./scripts/build_windows.sh
+```
+
+Optional flags:
+
+- `--target <triple>` to override the default target triple.
+- `--debug` to build debug artifacts.
+- `--no-stage-runtime` to skip copying the bundled Codex runtime into the target output tree.
+
 ## Build Codex App-Server Binaries For Embedding
 
 Hunk embeds a native `codex` runtime and launches app-server mode with:
