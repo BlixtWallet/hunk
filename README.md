@@ -1,10 +1,11 @@
 # hunk
 
-A cross-platform Git diff viewer built with `gpui` + `gpui-component`.
+A cross-platform Git diff viewer and Codex orchestrator built with `gpui` + `gpui-component`.
 
 ## Why?
 
 Nobody writes code anymore, people just review code. So we need the best diff viewer possible so that vibe engineers can review code and tell AI what to fix.
+Hunk is also has full codex integration so you can use Codex inside of Hunk instead of codex-cli or any other desktop app.
 
 <img width="3320" height="2032" alt="Hunk (Window) 2026-03-03 09:27 AM" src="https://github.com/user-attachments/assets/8c67f351-dde7-4d44-83ea-0c232a62a147" />
 <img width="3320" height="2032" alt="Hunk (Window) 2026-03-03 09:42 AM" src="https://github.com/user-attachments/assets/5de96595-aa50-4f4c-b62e-170454126f3b" />
@@ -27,6 +28,7 @@ Nobody writes code anymore, people just review code. So we need the best diff vi
 - `crates/hunk-domain`: config/state/db/diff/markdown domain logic
 - `crates/hunk-jj`: JJ backend and graph/tree logic
 - `crates/hunk-desktop`: GPUI desktop app binary
+- `crates/hunk-codex`: Codex Websocket Server handling logic
 
 ## Requirements
 
