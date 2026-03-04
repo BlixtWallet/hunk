@@ -3,6 +3,7 @@ members = [
   "crates/hunk-domain",
   "crates/hunk-jj",
   "crates/hunk-desktop",
+  "crates/hunk-codex",
 ]
 default-members = ["crates/hunk-desktop"]
 resolver = "2"

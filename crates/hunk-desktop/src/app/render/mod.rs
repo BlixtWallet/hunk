@@ -44,5 +44,7 @@ include!("file_status.rs");
 include!("comments.rs");
 include!("diff.rs");
 include!("file_editor.rs");
+include!("ai.rs");
+include!("ai_helpers.rs");
 include!("settings.rs");
 include!("root.rs");

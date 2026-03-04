@@ -115,6 +115,16 @@ impl DiffViewer {
         let files_selected = self.workspace_view_mode == WorkspaceViewMode::Files;
         let diff_selected = self.workspace_view_mode == WorkspaceViewMode::Diff;
         let jj_selected = self.workspace_view_mode == WorkspaceViewMode::JjWorkspace;
+        let ai_selected = self.workspace_view_mode == WorkspaceViewMode::Ai;
+        let workspace_label = if ai_selected {
+            "Codex AI Workspace"
+        } else if jj_selected {
+            "JJ Graph Workspace"
+        } else if files_selected {
+            "Files Workspace"
+        } else {
+            "Review Workspace"
+        };
         let active_bookmark = self
             .checked_out_bookmark_name()
             .map_or_else(|| "detached".to_string(), ToOwned::to_owned);
@@ -137,7 +147,7 @@ impl DiffViewer {
                 h_flex()
                     .items_center()
                     .gap_1()
-                    .when(!jj_selected, |this| {
+                    .when(self.workspace_view_mode.supports_sidebar_tree(), |this| {
                         this.child({
                             let view = view.clone();
                             let mut button = Button::new("footer-toggle-sidebar")
@@ -221,7 +231,7 @@ impl DiffViewer {
                         let mut button = Button::new("footer-workspace-jj")
                             .compact()
                             .rounded(px(7.0))
-                            .label("Graph")
+                            .label("Git (JJ)")
                             .min_w(px(52.0))
                             .h(px(28.0))
                             .tooltip("Switch to JJ graph workspace (Cmd/Ctrl+3)")
@@ -241,11 +251,33 @@ impl DiffViewer {
                         }
                         button.into_any_element()
                     })
+                    .child({
+                        let view = view.clone();
+                        let mut button = Button::new("footer-workspace-ai")
+                            .compact()
+                            .rounded(px(7.0))
+                            .label("AI")
+                            .min_w(px(42.0))
+                            .h(px(28.0))
+                            .tooltip("Switch to AI coding workspace (Cmd/Ctrl+4)")
+                            .on_click(move |_, window, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.set_workspace_view_mode(WorkspaceViewMode::Ai, cx);
+                                    this.focus_handle.focus(window, cx);
+                                });
+                            });
+                        if ai_selected {
+                            button = button.primary();
+                        } else {
+                            button = button.outline();
+                        }
+                        button.into_any_element()
+                    })
                     .child(
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child("JJ Graph Workspace"),
+                            .child(workspace_label),
                     )
                     .child(
                         div()
@@ -298,6 +330,8 @@ impl Render for DiffViewer {
             .on_action(cx.listener(Self::switch_to_files_view_action))
             .on_action(cx.listener(Self::switch_to_review_view_action))
             .on_action(cx.listener(Self::switch_to_graph_view_action))
+            .on_action(cx.listener(Self::switch_to_ai_view_action))
+            .on_action(cx.listener(Self::ai_new_thread_action))
             .on_action(cx.listener(Self::open_project_action))
             .on_action(cx.listener(Self::save_current_file_action))
             .on_action(cx.listener(Self::open_settings_action))
@@ -310,11 +344,13 @@ impl Render for DiffViewer {
             .child(
                 div()
                     .flex_1()
+                    .w_full()
                     .min_h_0()
                     .child(match self.workspace_view_mode {
                         WorkspaceViewMode::Files => self.render_file_workspace_screen(window, cx),
                         WorkspaceViewMode::Diff => self.render_diff_workspace_screen(cx),
                         WorkspaceViewMode::JjWorkspace => self.render_jj_workspace_screen(cx),
+                        WorkspaceViewMode::Ai => self.render_ai_workspace_screen(cx),
                     }),
             )
             .child(self.render_app_footer(cx))

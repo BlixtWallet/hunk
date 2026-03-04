@@ -137,6 +137,19 @@ impl DiffViewer {
             }
         }
         let last_project_path = state.last_project_path.clone();
+        let initial_ai_workspace_key = last_project_path
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string());
+        let initial_ai_mad_max_mode = initial_ai_workspace_key
+            .as_ref()
+            .and_then(|workspace| state.ai_workspace_mad_max.get(workspace))
+            .copied()
+            .unwrap_or(false);
+        let initial_ai_include_hidden_models = initial_ai_workspace_key
+            .as_ref()
+            .and_then(|workspace| state.ai_workspace_include_hidden_models.get(workspace))
+            .copied()
+            .unwrap_or(false);
         let diff_show_whitespace = config.show_whitespace;
         let diff_show_eol_markers = config.show_eol_markers;
         let branch_input_state = cx.new(|cx| {
@@ -157,6 +170,14 @@ impl DiffViewer {
                 .rows(3)
                 .placeholder("Add comment for this diff row")
         });
+        let ai_composer_input_state = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line(true)
+                .rows(4)
+                .placeholder("Ask Codex to edit code, run commands, or explain changes.")
+        });
+        let ai_review_input_state =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Review focus (optional)"));
         let graph_action_input_state = cx.new(|cx| {
             InputState::new(window, cx).placeholder("Bookmark name for create/fork/rename")
         });
@@ -206,6 +227,39 @@ impl DiffViewer {
             pending_bookmark_switch: None,
             show_jj_terms_glossary: false,
             workspace_view_mode: WorkspaceViewMode::JjWorkspace,
+            ai_connection_state: AiConnectionState::Disconnected,
+            ai_status_message: None,
+            ai_error_message: None,
+            ai_state_snapshot: hunk_codex::state::AiState::default(),
+            ai_selected_thread_id: None,
+            ai_scroll_timeline_to_bottom: false,
+            ai_thread_list_scroll_handle: ScrollHandle::default(),
+            ai_timeline_list_state: ListState::new(0, ListAlignment::Top, px(360.0)),
+            ai_timeline_list_row_count: 0,
+            ai_timeline_visible_turn_limit_by_thread: BTreeMap::new(),
+            ai_expanded_command_output_item_ids: BTreeSet::new(),
+            ai_pending_approvals: Vec::new(),
+            ai_pending_user_inputs: Vec::new(),
+            ai_pending_user_input_answers: BTreeMap::new(),
+            ai_account: None,
+            ai_requires_openai_auth: false,
+            ai_pending_chatgpt_login_id: None,
+            ai_pending_chatgpt_auth_url: None,
+            ai_rate_limits: None,
+            ai_models: Vec::new(),
+            ai_experimental_features: Vec::new(),
+            ai_collaboration_modes: Vec::new(),
+            ai_include_hidden_models: initial_ai_include_hidden_models,
+            ai_selected_model: None,
+            ai_selected_effort: None,
+            ai_selected_collaboration_mode: None,
+            ai_mad_max_mode: initial_ai_mad_max_mode,
+            ai_event_epoch: 0,
+            ai_event_task: Task::ready(()),
+            ai_worker_thread: None,
+            ai_command_tx: None,
+            ai_composer_input_state,
+            ai_review_input_state,
             files: Vec::new(),
             file_status_by_path: BTreeMap::new(),
             branch_picker_open: false,
@@ -294,6 +348,14 @@ impl DiffViewer {
         let editor_state = view.editor_input_state.clone();
         cx.observe(&editor_state, |this, _, cx| {
             this.sync_editor_dirty_from_input(cx);
+        })
+        .detach();
+
+        let ai_composer_state = view.ai_composer_input_state.clone();
+        cx.subscribe(&ai_composer_state, |this, _, event, cx| {
+            if should_send_ai_prompt_from_input_event(event) {
+                this.ai_send_prompt_action_from_keyboard(cx);
+            }
         })
         .detach();
 
@@ -520,6 +582,7 @@ impl DiffViewer {
         self.project_path = Some(root.clone());
         self.set_last_project_path(Some(root.clone()));
         self.repo_root = Some(root);
+        self.ai_sync_workspace_preferences(cx);
         self.branch_name = branch_name;
         self.branch_has_upstream = branch_has_upstream;
         self.branch_ahead_count = branch_ahead_count;
@@ -599,7 +662,7 @@ impl DiffViewer {
 
         let should_reload_repo_tree = if root_changed {
             true
-        } else if self.workspace_view_mode == WorkspaceViewMode::JjWorkspace {
+        } else if !self.workspace_view_mode.supports_sidebar_tree() {
             false
         } else {
             self.workspace_view_mode == WorkspaceViewMode::Diff || repo_tree_structure_changed
@@ -608,8 +671,8 @@ impl DiffViewer {
             self.request_repo_tree_reload(cx);
         }
 
-        // Avoid expensive diff reload churn while using graph mode.
-        if self.workspace_view_mode == WorkspaceViewMode::JjWorkspace {
+        // Avoid expensive diff reload churn while using graph/AI modes.
+        if !self.workspace_view_mode.supports_diff_stream() {
             self.scroll_selected_after_reload = false;
         } else {
             // Always reload visible diff rows after any loaded snapshot.
@@ -1106,4 +1169,35 @@ impl DiffViewer {
         self.rebuild_comment_row_match_cache();
     }
 
+}
+
+fn should_send_ai_prompt_from_input_event(event: &InputEvent) -> bool {
+    matches!(event, InputEvent::PressEnter { secondary: false })
+}
+
+#[cfg(test)]
+mod ai_input_tests {
+    use super::should_send_ai_prompt_from_input_event;
+    use gpui_component::input::InputEvent;
+
+    #[test]
+    fn enter_sends_prompt() {
+        assert!(should_send_ai_prompt_from_input_event(&InputEvent::PressEnter {
+            secondary: false,
+        }));
+    }
+
+    #[test]
+    fn secondary_enter_does_not_send_prompt() {
+        assert!(!should_send_ai_prompt_from_input_event(
+            &InputEvent::PressEnter { secondary: true }
+        ));
+    }
+
+    #[test]
+    fn non_enter_events_do_not_send_prompt() {
+        assert!(!should_send_ai_prompt_from_input_event(&InputEvent::Change));
+        assert!(!should_send_ai_prompt_from_input_event(&InputEvent::Focus));
+        assert!(!should_send_ai_prompt_from_input_event(&InputEvent::Blur));
+    }
 }

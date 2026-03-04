@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::mpsc;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -16,7 +18,7 @@ use gpui::{
 use gpui_component::{
     ActiveTheme as _, Colorize as _, Root, StyledExt as _, Theme, ThemeMode, h_flex,
     highlighter::HighlightThemeStyle,
-    input::{InputEvent, InputState},
+    input::{Enter as InputEnter, InputEvent, InputState},
     menu::AppMenuBar,
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
@@ -40,9 +42,21 @@ use hunk_jj::jj::{
 };
 use hunk_jj::jj_graph_tree::GraphLaneRow;
 
+use ai_runtime::AiApprovalDecision;
+use ai_runtime::AiApprovalKind;
+use ai_runtime::AiConnectionState;
+use ai_runtime::AiPendingApproval;
+use ai_runtime::AiPendingUserInputQuestion;
+use ai_runtime::AiPendingUserInputRequest;
+use ai_runtime::AiSnapshot;
+use ai_runtime::AiTurnSessionOverrides;
+use ai_runtime::AiWorkerCommand;
+use ai_runtime::AiWorkerEvent;
+use ai_runtime::AiWorkerStartConfig;
+use ai_runtime::spawn_ai_worker;
 use data::{
     DiffRowSegmentCache, DiffStreamRowMeta, FileRowRange, RepoTreeNode, RepoTreeNodeKind,
-    RepoTreeRow, WorkspaceViewMode,
+    RepoTreeRow, WorkspaceSwitchAction, WorkspaceViewMode,
 };
 
 const FPS_SAMPLE_INTERVAL: Duration = Duration::from_millis(250);
@@ -68,6 +82,8 @@ const COMMENT_PREVIEW_MAX_ITEMS: usize = 64;
 const COMMENT_RECONCILE_MISS_THRESHOLD: u8 = 2;
 const COMMENT_FUZZY_MATCH_MIN_SCORE: i32 = 6;
 const COMMENT_FUZZY_RENAME_MATCH_MIN_SCORE: i32 = 11;
+const AI_TIMELINE_DEFAULT_VISIBLE_TURNS: usize = 80;
+const AI_TIMELINE_TURN_PAGE_SIZE: usize = 80;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GraphBookmarkSelection {
@@ -127,11 +143,14 @@ struct PendingBookmarkSwitch {
     unix_time: i64,
 }
 
+mod ai_rollout_fallback;
+mod ai_runtime;
 mod controller;
 mod data;
 mod data_segments;
 mod highlight;
 mod render;
+mod workspace_view;
 
 actions!(
     diff_viewer,
@@ -152,6 +171,8 @@ actions!(
         SwitchToFilesView,
         SwitchToReviewView,
         SwitchToGraphView,
+        SwitchToAiView,
+        AiNewThread,
         OpenProject,
         SaveCurrentFile,
         OpenSettings,
@@ -460,6 +481,14 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
     );
     bindings.extend(
         shortcuts
+            .switch_to_ai_view
+            .iter()
+            .map(|shortcut| KeyBinding::new(shortcut.as_str(), SwitchToAiView, None)),
+    );
+    bindings.push(KeyBinding::new("cmd-n", AiNewThread, Some("DiffViewer")));
+    bindings.push(KeyBinding::new("ctrl-n", AiNewThread, Some("DiffViewer")));
+    bindings.extend(
+        shortcuts
             .open_project
             .iter()
             .map(|shortcut| KeyBinding::new(shortcut.as_str(), OpenProject, None)),
@@ -507,6 +536,11 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
         "escape",
         RepoTreeCancelInlineEdit,
         Some("RepoTreeInlineEdit"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-enter",
+        InputEnter { secondary: true },
+        Some("Input"),
     ));
 
     cx.bind_keys(bindings);
@@ -901,6 +935,39 @@ struct DiffViewer {
     pending_bookmark_switch: Option<PendingBookmarkSwitch>,
     show_jj_terms_glossary: bool,
     workspace_view_mode: WorkspaceViewMode,
+    ai_connection_state: AiConnectionState,
+    ai_status_message: Option<String>,
+    ai_error_message: Option<String>,
+    ai_state_snapshot: hunk_codex::state::AiState,
+    ai_selected_thread_id: Option<String>,
+    ai_scroll_timeline_to_bottom: bool,
+    ai_thread_list_scroll_handle: ScrollHandle,
+    ai_timeline_list_state: ListState,
+    ai_timeline_list_row_count: usize,
+    ai_timeline_visible_turn_limit_by_thread: BTreeMap<String, usize>,
+    ai_expanded_command_output_item_ids: BTreeSet<String>,
+    ai_pending_approvals: Vec<AiPendingApproval>,
+    ai_pending_user_inputs: Vec<AiPendingUserInputRequest>,
+    ai_pending_user_input_answers: BTreeMap<String, BTreeMap<String, Vec<String>>>,
+    ai_account: Option<codex_app_server_protocol::Account>,
+    ai_requires_openai_auth: bool,
+    ai_pending_chatgpt_login_id: Option<String>,
+    ai_pending_chatgpt_auth_url: Option<String>,
+    ai_rate_limits: Option<codex_app_server_protocol::RateLimitSnapshot>,
+    ai_models: Vec<codex_app_server_protocol::Model>,
+    ai_experimental_features: Vec<codex_app_server_protocol::ExperimentalFeature>,
+    ai_collaboration_modes: Vec<codex_app_server_protocol::CollaborationModeMask>,
+    ai_include_hidden_models: bool,
+    ai_selected_model: Option<String>,
+    ai_selected_effort: Option<String>,
+    ai_selected_collaboration_mode: Option<String>,
+    ai_mad_max_mode: bool,
+    ai_event_epoch: usize,
+    ai_event_task: Task<()>,
+    ai_worker_thread: Option<JoinHandle<()>>,
+    ai_command_tx: Option<mpsc::Sender<AiWorkerCommand>>,
+    ai_composer_input_state: Entity<InputState>,
+    ai_review_input_state: Entity<InputState>,
     files: Vec<ChangedFile>,
     file_status_by_path: BTreeMap<String, FileStatus>,
     branch_picker_open: bool,
@@ -984,4 +1051,10 @@ struct DiffViewer {
     editor_markdown_preview_loading: bool,
     editor_markdown_preview_revision: usize,
     editor_markdown_preview: bool,
+}
+
+impl Drop for DiffViewer {
+    fn drop(&mut self) {
+        self.shutdown_ai_worker_blocking();
+    }
 }

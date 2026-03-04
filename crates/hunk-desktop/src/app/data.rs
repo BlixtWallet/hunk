@@ -15,6 +15,7 @@ use super::highlight::{
     StyledSegment, SyntaxTokenKind, build_line_segments, build_syntax_only_line_segments,
     render_with_whitespace_markers,
 };
+pub(super) use super::workspace_view::{WorkspaceSwitchAction, WorkspaceViewMode};
 use super::*;
 use hunk_domain::diff::parse_patch_side_by_side;
 use hunk_jj::jj::{RepoTreeEntry, RepoTreeEntryKind};
@@ -57,13 +58,6 @@ pub(super) struct RepoTreeRow {
     pub(super) file_status: Option<FileStatus>,
     pub(super) depth: usize,
     pub(super) expanded: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum WorkspaceViewMode {
-    Files,
-    Diff,
-    JjWorkspace,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
