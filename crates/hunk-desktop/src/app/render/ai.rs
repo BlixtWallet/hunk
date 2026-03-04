@@ -236,6 +236,37 @@ impl DiffViewer {
                                                             }),
                                                     ),
                                             )
+                                            .when_some(
+                                                self.ai_thread_inline_toast.clone(),
+                                                |this, message| {
+                                                    this.child(
+                                                        div()
+                                                            .w_full()
+                                                            .px_2()
+                                                            .pt_2()
+                                                            .child(
+                                                                div()
+                                                                    .rounded_md()
+                                                                    .border_1()
+                                                                    .border_color(cx.theme().success.opacity(if is_dark {
+                                                                        0.82
+                                                                    } else {
+                                                                        0.62
+                                                                    }))
+                                                                    .bg(cx.theme().success.opacity(if is_dark {
+                                                                        0.18
+                                                                    } else {
+                                                                        0.10
+                                                                    }))
+                                                                    .px_2()
+                                                                    .py_1()
+                                                                    .text_xs()
+                                                                    .text_color(cx.theme().success)
+                                                                    .child(message),
+                                                            ),
+                                                    )
+                                                },
+                                            )
                                             .child(
                                                 div()
                                                     .flex_1()
@@ -488,57 +519,76 @@ impl DiffViewer {
                                                     h_flex()
                                                         .w_full()
                                                         .items_center()
-                                                        .gap_1()
+                                                        .justify_between()
+                                                        .gap_2()
                                                         .child(
-                                                            div()
-                                                                .text_sm()
-                                                                .font_semibold()
-                                                                .child("Timeline:"),
-                                                        )
-                                                        .when_some(
-                                                            selected_thread_id.clone(),
-                                                            |this, thread_id| {
-                                                                let thread_id_hover_color =
-                                                                    cx.theme().foreground;
-                                                                let copy_thread_id = thread_id.clone();
-                                                                let view = view.clone();
-                                                                this.child(
+                                                            h_flex()
+                                                                .flex_1()
+                                                                .min_w_0()
+                                                                .items_center()
+                                                                .gap_1()
+                                                                .child(
                                                                     div()
-                                                                        .text_xs()
-                                                                        .text_color(
-                                                                            cx.theme().muted_foreground,
-                                                                        )
-                                                                        .font_family(
-                                                                            cx.theme()
-                                                                                .mono_font_family
-                                                                                .clone(),
-                                                                        )
-                                                                        .hover(move |style| {
-                                                                            style
+                                                                        .text_sm()
+                                                                        .font_semibold()
+                                                                        .child("Timeline:"),
+                                                                )
+                                                                .when_some(
+                                                                    selected_thread_id.clone(),
+                                                                    |this, thread_id| {
+                                                                        let thread_id_hover_color =
+                                                                            cx.theme().foreground;
+                                                                        let copy_thread_id =
+                                                                            thread_id.clone();
+                                                                        let view = view.clone();
+                                                                        this.child(
+                                                                            div()
+                                                                                .text_xs()
                                                                                 .text_color(
-                                                                                    thread_id_hover_color,
+                                                                                    cx.theme()
+                                                                                        .muted_foreground,
                                                                                 )
-                                                                                .cursor_pointer()
-                                                                        })
-                                                                        .on_mouse_down(
-                                                                            MouseButton::Left,
-                                                                            move |_, window, cx| {
-                                                                                view.update(
-                                                                                    cx,
-                                                                                    |this, cx| {
-                                                                                        this.ai_copy_thread_id_action(
-                                                                                            copy_thread_id.clone(),
-                                                                                            window,
+                                                                                .font_family(
+                                                                                    cx.theme()
+                                                                                        .mono_font_family
+                                                                                        .clone(),
+                                                                                )
+                                                                                .hover(move |style| {
+                                                                                    style
+                                                                                        .text_color(
+                                                                                            thread_id_hover_color,
+                                                                                        )
+                                                                                        .cursor_pointer()
+                                                                                })
+                                                                                .on_mouse_down(
+                                                                                    MouseButton::Left,
+                                                                                    move |_, window, cx| {
+                                                                                        view.update(
                                                                                             cx,
+                                                                                            |this, cx| {
+                                                                                                this.ai_copy_thread_id_action(
+                                                                                                    copy_thread_id.clone(),
+                                                                                                    window,
+                                                                                                    cx,
+                                                                                                );
+                                                                                            },
                                                                                         );
                                                                                     },
-                                                                                );
-                                                                            },
+                                                                                )
+                                                                                .child(thread_id),
                                                                         )
-                                                                        .child(thread_id),
-                                                                )
-                                                            },
-                                                        ),
+                                                                    },
+                                                                ),
+                                                        )
+                                                        .when(self.ai_mad_max_mode, |this| {
+                                                            this.child(
+                                                                div()
+                                                                    .flex_none()
+                                                                    .text_xs()
+                                                                    .text_color(cx.theme().danger)
+                                                                    .child("Mad Max auto-approvals enabled"),
+                                                            )
+                                                        }),
                                                 )
                                                 .when_some(self.ai_error_message.clone(), |this, error| {
                                                     this.child(
@@ -573,41 +623,13 @@ impl DiffViewer {
                                                     },
                                                 )
                                                 .when(
-                                                    self.ai_mad_max_mode
-                                                        || !pending_approvals_for_timeline.is_empty()
+                                                    !pending_approvals_for_timeline.is_empty()
                                                         || !pending_user_inputs_for_timeline.is_empty(),
                                                     |this| {
                                                         this.child(
                                                             v_flex()
                                                                 .w_full()
                                                                 .gap_1()
-                                                                .when(self.ai_mad_max_mode, |this| {
-                                                                    this.child(
-                                                                        div()
-                                                                            .rounded_md()
-                                                                            .border_1()
-                                                                            .border_color(
-                                                                                cx.theme().danger,
-                                                                            )
-                                                                            .bg(cx.theme().danger.opacity(if is_dark {
-                                                                                0.16
-                                                                            } else {
-                                                                                0.10
-                                                                            }))
-                                                                            .p_2()
-                                                                            .child(
-                                                                                div()
-                                                                                    .text_xs()
-                                                                                    .font_semibold()
-                                                                                    .text_color(
-                                                                                        cx.theme().danger,
-                                                                                    )
-                                                                                    .child(
-                                                                                        "Mad Max mode is enabled: approvals are auto-accepted with full sandbox access.",
-                                                                                    ),
-                                                                            ),
-                                                                    )
-                                                                })
                                                                 .when(
                                                                     !pending_approvals_for_timeline
                                                                         .is_empty(),

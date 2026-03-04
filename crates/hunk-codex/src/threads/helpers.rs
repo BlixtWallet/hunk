@@ -59,11 +59,57 @@ fn thread_item_seed_content(item: &ThreadItem) -> Option<String> {
         | ThreadItem::ExitedReviewMode { review, .. } => {
             (!review.is_empty()).then(|| review.clone())
         }
+        ThreadItem::WebSearch { query, action, .. } => {
+            let detail = web_search_detail(action.as_ref(), query.as_str());
+            (!detail.is_empty()).then(|| format!("Searched {detail}"))
+        }
         ThreadItem::DynamicToolCall { .. }
         | ThreadItem::CollabAgentToolCall { .. }
-        | ThreadItem::WebSearch { .. }
         | ThreadItem::ImageView { .. }
         | ThreadItem::ContextCompaction { .. } => None,
+    }
+}
+
+fn web_search_action_detail(action: &codex_app_server_protocol::WebSearchAction) -> String {
+    match action {
+        codex_app_server_protocol::WebSearchAction::Search { query, queries } => {
+            query.clone().filter(|value| !value.is_empty()).unwrap_or_else(|| {
+                let first = queries
+                    .as_ref()
+                    .and_then(|items| items.first())
+                    .cloned()
+                    .unwrap_or_default();
+                if queries.as_ref().is_some_and(|items| items.len() > 1) && !first.is_empty() {
+                    format!("{first} ...")
+                } else {
+                    first
+                }
+            })
+        }
+        codex_app_server_protocol::WebSearchAction::OpenPage { url } => {
+            url.clone().unwrap_or_default()
+        }
+        codex_app_server_protocol::WebSearchAction::FindInPage { url, pattern } => {
+            match (pattern, url) {
+                (Some(pattern), Some(url)) => format!("'{pattern}' in {url}"),
+                (Some(pattern), None) => format!("'{pattern}'"),
+                (None, Some(url)) => url.clone(),
+                (None, None) => String::new(),
+            }
+        }
+        codex_app_server_protocol::WebSearchAction::Other => String::new(),
+    }
+}
+
+fn web_search_detail(
+    action: Option<&codex_app_server_protocol::WebSearchAction>,
+    query: &str,
+) -> String {
+    let detail = action.map(web_search_action_detail).unwrap_or_default();
+    if detail.is_empty() {
+        query.to_string()
+    } else {
+        detail
     }
 }
 
@@ -142,5 +188,58 @@ fn request_id_key(request_id: &RequestId) -> String {
     match request_id {
         RequestId::Integer(value) => format!("int:{value}"),
         RequestId::String(value) => format!("str:{value}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn web_search_seed_content_prefers_action_query() {
+        let item = ThreadItem::WebSearch {
+            id: "ws_1".to_string(),
+            query: "fallback".to_string(),
+            action: Some(codex_app_server_protocol::WebSearchAction::Search {
+                query: Some("weather: 30009".to_string()),
+                queries: None,
+            }),
+        };
+
+        assert_eq!(
+            thread_item_seed_content(&item).as_deref(),
+            Some("Searched weather: 30009")
+        );
+    }
+
+    #[test]
+    fn web_search_seed_content_uses_fallback_query_when_action_empty() {
+        let item = ThreadItem::WebSearch {
+            id: "ws_2".to_string(),
+            query: "weather: New York, NY".to_string(),
+            action: None,
+        };
+
+        assert_eq!(
+            thread_item_seed_content(&item).as_deref(),
+            Some("Searched weather: New York, NY")
+        );
+    }
+
+    #[test]
+    fn web_search_seed_content_formats_find_in_page() {
+        let item = ThreadItem::WebSearch {
+            id: "ws_3".to_string(),
+            query: "fallback".to_string(),
+            action: Some(codex_app_server_protocol::WebSearchAction::FindInPage {
+                pattern: Some("rain".to_string()),
+                url: Some("https://example.com/weather".to_string()),
+            }),
+        };
+
+        assert_eq!(
+            thread_item_seed_content(&item).as_deref(),
+            Some("Searched 'rain' in https://example.com/weather")
+        );
     }
 }

@@ -8,6 +8,7 @@ use hunk_domain::state::AppState;
 
 impl DiffViewer {
     const AI_EVENT_POLL_INTERVAL: Duration = Duration::from_millis(33);
+    const AI_THREAD_INLINE_TOAST_DURATION: Duration = Duration::from_millis(2200);
 
     pub(super) fn ensure_ai_runtime_started(&mut self, cx: &mut Context<Self>) {
         if self.ai_command_tx.is_some() {
@@ -402,6 +403,28 @@ impl DiffViewer {
         cx.notify();
     }
 
+    fn show_ai_thread_inline_toast(&mut self, message: impl Into<String>, cx: &mut Context<Self>) {
+        self.ai_thread_inline_toast_epoch = self.ai_thread_inline_toast_epoch.wrapping_add(1);
+        let epoch = self.ai_thread_inline_toast_epoch;
+        self.ai_thread_inline_toast = Some(message.into());
+        self.ai_thread_inline_toast_task = cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Self::AI_THREAD_INLINE_TOAST_DURATION)
+                .await;
+            let Some(this) = this.upgrade() else {
+                return;
+            };
+            this.update(cx, |this, cx| {
+                if this.ai_thread_inline_toast_epoch != epoch {
+                    return;
+                }
+                this.ai_thread_inline_toast = None;
+                cx.notify();
+            });
+        });
+        cx.notify();
+    }
+
     pub(super) fn ai_archive_thread_action(&mut self, thread_id: String, cx: &mut Context<Self>) {
         if !self.send_ai_worker_command(
             AiWorkerCommand::ArchiveThread {
@@ -417,8 +440,7 @@ impl DiffViewer {
             self.ai_expanded_command_output_item_ids.clear();
             self.ai_scroll_timeline_to_bottom = true;
         }
-        self.ai_status_message = Some(format!("Archived thread {thread_id}."));
-        cx.notify();
+        self.show_ai_thread_inline_toast("Thread archived.", cx);
     }
 
     pub(super) fn ai_toggle_command_output_expansion_action(
