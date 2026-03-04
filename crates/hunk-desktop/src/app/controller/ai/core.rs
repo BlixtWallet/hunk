@@ -125,6 +125,7 @@ impl DiffViewer {
         ) {
             self.clear_ai_composer_input(window, cx);
         }
+        self.focus_ai_composer_input(window, cx);
     }
 
     pub(super) fn ai_new_thread_action(

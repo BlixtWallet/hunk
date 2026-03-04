@@ -322,6 +322,12 @@ impl DiffViewer {
         });
     }
 
+    fn focus_ai_composer_input(&self, window: &mut Window, cx: &mut Context<Self>) {
+        self.ai_composer_input_state.update(cx, |state, cx| {
+            state.focus(window, cx);
+        });
+    }
+
     fn normalize_ai_selected_effort(&mut self) {
         let Some(model_id) = self.ai_selected_model.as_ref() else {
             self.ai_selected_effort = None;
