@@ -72,7 +72,7 @@ Cross-platform binary build helpers:
 
 Optional flags:
 
-- `--target <triple>` to override the default target triple.
+- `--target <triple>` to override the default target triple (must match the script platform).
 - `--debug` to build debug artifacts.
 - `--no-stage-runtime` to skip copying the bundled Codex runtime into the target output tree.
 

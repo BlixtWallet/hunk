@@ -15,6 +15,7 @@ Usage:
 
 Options:
   --target <triple>   Override target triple (default: x86_64-unknown-linux-gnu)
+                      Must be a Linux target triple.
   --debug             Build debug profile instead of release
   --no-stage-runtime  Skip staging assets/codex-runtime/linux/codex
   -h, --help          Show this help
@@ -51,6 +52,31 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$TARGET_TRIPLE" != *linux* ]]; then
+  echo "error: linux build script requires a linux target triple, got '$TARGET_TRIPLE'" >&2
+  exit 1
+fi
+
+if command -v rustup >/dev/null 2>&1; then
+  if ! rustup target list --installed | grep -Fx "$TARGET_TRIPLE" >/dev/null 2>&1; then
+    echo "error: rust target '$TARGET_TRIPLE' is not installed" >&2
+    echo "hint: run 'rustup target add $TARGET_TRIPLE'" >&2
+    exit 1
+  fi
+fi
+
+TARGET_LIBDIR="$(rustc --target "$TARGET_TRIPLE" --print target-libdir 2>/dev/null || true)"
+if [[ -z "$TARGET_LIBDIR" || ! -d "$TARGET_LIBDIR" ]]; then
+  echo "error: rustc reported an invalid target library directory for '$TARGET_TRIPLE': $TARGET_LIBDIR" >&2
+  echo "hint: verify your active toolchain supports this target (for rustup: 'rustup target add $TARGET_TRIPLE')" >&2
+  exit 1
+fi
+if ! compgen -G "$TARGET_LIBDIR/libcore-*" >/dev/null && ! compgen -G "$TARGET_LIBDIR/core-*" >/dev/null; then
+  echo "error: target core libraries were not found in $TARGET_LIBDIR" >&2
+  echo "hint: verify your active toolchain supports this target (for rustup: 'rustup target add $TARGET_TRIPLE')" >&2
+  exit 1
+fi
+
 build_args=(build -p hunk-desktop --target "$TARGET_TRIPLE")
 if [[ "$PROFILE" == "release" ]]; then
   build_args+=(--release)
@@ -63,6 +89,10 @@ echo "Building hunk-desktop for Linux target '$TARGET_TRIPLE' ($PROFILE profile)
 )
 
 BINARY_PATH="$ROOT_DIR/target/$TARGET_TRIPLE/$PROFILE/hunk-desktop"
+if [[ ! -f "$BINARY_PATH" ]]; then
+  echo "error: expected Linux binary was not produced at $BINARY_PATH" >&2
+  exit 1
+fi
 echo "Built binary: $BINARY_PATH"
 
 if [[ "$STAGE_RUNTIME" == "1" ]]; then
@@ -78,4 +108,3 @@ if [[ "$STAGE_RUNTIME" == "1" ]]; then
     echo "Staged Linux runtime: $DEST_RUNTIME"
   fi
 fi
-
