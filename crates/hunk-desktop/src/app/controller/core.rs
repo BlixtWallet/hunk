@@ -237,6 +237,7 @@ impl DiffViewer {
             ai_timeline_list_state: ListState::new(0, ListAlignment::Top, px(360.0)),
             ai_timeline_list_row_count: 0,
             ai_timeline_visible_turn_limit_by_thread: BTreeMap::new(),
+            ai_in_progress_turn_started_at: BTreeMap::new(),
             ai_expanded_command_output_item_ids: BTreeSet::new(),
             ai_pending_approvals: Vec::new(),
             ai_pending_user_inputs: Vec::new(),

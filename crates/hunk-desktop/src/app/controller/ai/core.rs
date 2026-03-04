@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use hunk_domain::state::AiThreadSessionState;
 use hunk_codex::state::ThreadLifecycleStatus;
@@ -688,6 +688,17 @@ impl DiffViewer {
             .map(|turn| turn.id.clone())
     }
 
+    pub(super) fn ai_in_progress_turn_elapsed(
+        &self,
+        thread_id: &str,
+        turn_id: &str,
+    ) -> Option<Duration> {
+        let key = ai_in_progress_turn_tracking_key(thread_id, turn_id);
+        self.ai_in_progress_turn_started_at
+            .get(key.as_str())
+            .map(Instant::elapsed)
+    }
+
     fn ai_workspace_cwd(&self) -> Option<std::path::PathBuf> {
         self.repo_root.clone().or_else(|| self.project_path.clone())
     }
@@ -866,6 +877,10 @@ impl DiffViewer {
 
         added
     }
+}
+
+fn ai_in_progress_turn_tracking_key(thread_id: &str, turn_id: &str) -> String {
+    format!("{thread_id}::{turn_id}")
 }
 
 fn is_supported_ai_image_path(path: &std::path::Path) -> bool {

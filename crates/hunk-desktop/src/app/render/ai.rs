@@ -1,3 +1,5 @@
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use hunk_codex::state::ItemStatus;
 use hunk_codex::state::ThreadLifecycleStatus;
 use hunk_codex::state::TurnStatus;
@@ -63,6 +65,17 @@ impl DiffViewer {
         let in_progress_turn = selected_thread_id
             .as_ref()
             .and_then(|thread_id| self.current_ai_in_progress_turn_id(thread_id.as_str()));
+        let activity_status = selected_thread_id
+            .as_deref()
+            .zip(in_progress_turn.as_deref())
+            .map(|(thread_id, turn_id)| {
+                let label = ai_activity_indicator_text(&self.ai_state_snapshot, thread_id, turn_id);
+                let elapsed = self
+                    .ai_in_progress_turn_elapsed(thread_id, turn_id)
+                    .map(ai_activity_elapsed_label)
+                    .unwrap_or_else(|| "0s".to_string());
+                (label, elapsed)
+            });
         let (connection_label, connection_color) = ai_connection_label(self.ai_connection_state, cx);
         let composer_attachment_paths = self.ai_composer_local_images.clone();
         let composer_attachment_count = composer_attachment_paths.len();
@@ -898,6 +911,11 @@ impl DiffViewer {
                                                                         )
                                                                         .children(item_ids.into_iter().filter_map(|item_id| {
                                                                             let item = this.ai_state_snapshot.items.get(&item_id)?;
+                                                                            if matches!(item.kind.as_str(), "reasoning" | "webSearch")
+                                                                                && item.content.trim().is_empty()
+                                                                            {
+                                                                                return None;
+                                                                            }
                                                                             let status = ai_item_status_label(item.status);
                                                                             let item_label = ai_item_display_label(item.kind.as_str()).to_string();
                                                                             let command_output_collapsible =
@@ -1229,12 +1247,14 @@ impl DiffViewer {
                                                                 }),
                                                         )
                                                 })
-                                                .when_some(in_progress_turn.clone(), |this, turn_id| {
+                                                .when_some(activity_status.clone(), |this, status| {
+                                                    let (label, elapsed) = status;
                                                     this.child(
                                                         div()
                                                             .text_xs()
+                                                            .font_semibold()
                                                             .text_color(cx.theme().warning)
-                                                            .child(format!("In progress: {turn_id}")),
+                                                            .child(format!("{label} ({elapsed})")),
                                                     )
                                                 }),
                                         )
@@ -1435,4 +1455,81 @@ fn ai_composer_attachment_display_name(path: &std::path::Path) -> String {
         .filter(|value| !value.is_empty())
         .map(|value| value.to_string())
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
+}
+
+fn ai_activity_indicator_text(
+    state: &hunk_codex::state::AiState,
+    thread_id: &str,
+    turn_id: &str,
+) -> String {
+    let base = ai_activity_label_for_kind(ai_latest_in_progress_item_kind(
+        state, thread_id, turn_id,
+    ));
+    format!("{base}{}", ai_activity_dots())
+}
+
+fn ai_latest_in_progress_item_kind<'a>(
+    state: &'a hunk_codex::state::AiState,
+    thread_id: &str,
+    turn_id: &str,
+) -> Option<&'a str> {
+    state
+        .items
+        .values()
+        .filter(|item| {
+            item.thread_id == thread_id
+                && item.turn_id == turn_id
+                && !matches!(item.status, ItemStatus::Completed)
+        })
+        .max_by_key(|item| item.last_sequence)
+        .map(|item| item.kind.as_str())
+}
+
+fn ai_activity_label_for_kind(kind: Option<&str>) -> &'static str {
+    match kind {
+        Some("webSearch") => "Searching the web",
+        Some("reasoning") => "Reasoning",
+        Some("commandExecution") => "Running command",
+        Some("fileChange") => "Applying file changes",
+        Some("mcpToolCall") | Some("dynamicToolCall") | Some("collabAgentToolCall") => {
+            "Calling tools"
+        }
+        Some("imageView") => "Inspecting image",
+        _ => "Working",
+    }
+}
+
+fn ai_activity_elapsed_label(duration: Duration) -> String {
+    let seconds = duration.as_secs();
+    if seconds < 60 {
+        return format!("{seconds}s");
+    }
+    let minutes = seconds / 60;
+    let remainder = seconds % 60;
+    if minutes < 60 {
+        if remainder == 0 {
+            return format!("{minutes}m");
+        }
+        return format!("{minutes}m {remainder}s");
+    }
+    let hours = minutes / 60;
+    let minute_remainder = minutes % 60;
+    if minute_remainder == 0 {
+        format!("{hours}h")
+    } else {
+        format!("{hours}h {minute_remainder}m")
+    }
+}
+
+fn ai_activity_dots() -> &'static str {
+    let frame = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| (duration.as_millis() / 320) % 4)
+        .unwrap_or(0);
+    match frame {
+        0 => "",
+        1 => ".",
+        2 => "..",
+        _ => "...",
+    }
 }

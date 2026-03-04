@@ -956,6 +956,7 @@ struct DiffViewer {
     ai_timeline_list_state: ListState,
     ai_timeline_list_row_count: usize,
     ai_timeline_visible_turn_limit_by_thread: BTreeMap<String, usize>,
+    ai_in_progress_turn_started_at: BTreeMap<String, Instant>,
     ai_expanded_command_output_item_ids: BTreeSet<String>,
     ai_pending_approvals: Vec<AiPendingApproval>,
     ai_pending_user_inputs: Vec<AiPendingUserInputRequest>,

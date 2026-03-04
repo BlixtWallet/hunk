@@ -26,6 +26,7 @@ impl DiffViewer {
                                     this.ai_pending_approvals.clear();
                                     this.ai_pending_user_inputs.clear();
                                     this.ai_pending_user_input_answers.clear();
+                                    this.ai_in_progress_turn_started_at.clear();
                                     this.ai_account = None;
                                     this.ai_requires_openai_auth = false;
                                     this.ai_rate_limits = None;
@@ -97,6 +98,7 @@ impl DiffViewer {
                 self.ai_pending_approvals.clear();
                 self.ai_pending_user_inputs.clear();
                 self.ai_pending_user_input_answers.clear();
+                self.ai_in_progress_turn_started_at.clear();
                 self.ai_account = None;
                 self.ai_requires_openai_auth = false;
                 self.ai_rate_limits = None;
@@ -140,6 +142,7 @@ impl DiffViewer {
         } = snapshot;
 
         self.ai_state_snapshot = state;
+        self.sync_ai_in_progress_turn_started_at();
         self.ai_pending_approvals = pending_approvals;
         self.ai_pending_user_inputs = pending_user_inputs;
         self.sync_ai_pending_user_input_answers();
@@ -205,6 +208,25 @@ impl DiffViewer {
             .retain(|item_id| self.ai_state_snapshot.items.contains_key(item_id));
 
         self.sync_ai_session_selection_from_state();
+    }
+
+    fn sync_ai_in_progress_turn_started_at(&mut self) {
+        let now = Instant::now();
+        let mut in_progress_turn_keys = BTreeSet::new();
+
+        for turn in self
+            .ai_state_snapshot
+            .turns
+            .values()
+            .filter(|turn| turn.status == TurnStatus::InProgress)
+        {
+            let key = ai_in_progress_turn_tracking_key(turn.thread_id.as_str(), turn.id.as_str());
+            in_progress_turn_keys.insert(key.clone());
+            self.ai_in_progress_turn_started_at.entry(key).or_insert(now);
+        }
+
+        self.ai_in_progress_turn_started_at
+            .retain(|key, _| in_progress_turn_keys.contains(key));
     }
 
     fn sync_ai_pending_user_input_answers(&mut self) {
