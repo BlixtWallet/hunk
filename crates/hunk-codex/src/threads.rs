@@ -65,6 +65,7 @@ use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::TurnSteerParams;
 use codex_app_server_protocol::TurnSteerResponse;
+use codex_app_server_protocol::UserInput;
 use codex_app_server_protocol::{CollaborationModeListParams, CollaborationModeListResponse};
 use codex_app_server_protocol::{ExperimentalFeatureListParams, ExperimentalFeatureListResponse};
 
@@ -1094,6 +1095,14 @@ fn thread_item_kind(item: &ThreadItem) -> &'static str {
 
 fn thread_item_seed_content(item: &ThreadItem) -> Option<String> {
     match item {
+        ThreadItem::UserMessage { content, .. } => {
+            let text = content
+                .iter()
+                .filter_map(user_input_text_content)
+                .collect::<Vec<_>>()
+                .join("");
+            (!text.is_empty()).then_some(text)
+        }
         ThreadItem::AgentMessage { text, .. } | ThreadItem::Plan { text, .. } => {
             (!text.is_empty()).then(|| text.clone())
         }
@@ -1129,8 +1138,14 @@ fn thread_item_seed_content(item: &ThreadItem) -> Option<String> {
         | ThreadItem::CollabAgentToolCall { .. }
         | ThreadItem::WebSearch { .. }
         | ThreadItem::ImageView { .. }
-        | ThreadItem::ContextCompaction { .. }
-        | ThreadItem::UserMessage { .. } => None,
+        | ThreadItem::ContextCompaction { .. } => None,
+    }
+}
+
+fn user_input_text_content(input: &UserInput) -> Option<&str> {
+    match input {
+        UserInput::Text { text, .. } => Some(text.as_str()),
+        _ => None,
     }
 }
 

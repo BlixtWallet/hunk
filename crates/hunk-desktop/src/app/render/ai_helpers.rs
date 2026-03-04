@@ -12,13 +12,30 @@ fn ai_connection_label(
 
 fn ai_thread_status_label(
     status: ThreadLifecycleStatus,
+    has_in_progress_turn: bool,
     cx: &mut Context<DiffViewer>,
 ) -> (&'static str, Hsla) {
+    let label = ai_thread_status_text(status, has_in_progress_turn);
+    let color = match label {
+        "active" => cx.theme().success,
+        "archived" => cx.theme().warning,
+        _ => cx.theme().muted_foreground,
+    };
+    (label, color)
+}
+
+fn ai_thread_status_text(
+    status: ThreadLifecycleStatus,
+    has_in_progress_turn: bool,
+) -> &'static str {
+    if has_in_progress_turn {
+        return "active";
+    }
     match status {
-        ThreadLifecycleStatus::Active => ("active", cx.theme().success),
-        ThreadLifecycleStatus::NotLoaded => ("not loaded", cx.theme().muted_foreground),
-        ThreadLifecycleStatus::Archived => ("archived", cx.theme().warning),
-        ThreadLifecycleStatus::Closed => ("closed", cx.theme().muted_foreground),
+        ThreadLifecycleStatus::Active => "idle",
+        ThreadLifecycleStatus::NotLoaded => "not loaded",
+        ThreadLifecycleStatus::Archived => "archived",
+        ThreadLifecycleStatus::Closed => "closed",
     }
 }
 
@@ -43,6 +60,45 @@ fn ai_item_status_color(status: ItemStatus, cx: &mut Context<DiffViewer>) -> Hsl
         ItemStatus::Streaming => cx.theme().accent,
         ItemStatus::Completed => cx.theme().success,
     }
+}
+
+fn ai_item_display_label(kind: &str) -> &str {
+    match kind {
+        "userMessage" => "User",
+        "agentMessage" => "Agent",
+        "commandExecution" => "Command",
+        "fileChange" => "File Change",
+        "plan" => "Plan",
+        "reasoning" => "Reasoning",
+        "mcpToolCall" => "MCP Tool Call",
+        "dynamicToolCall" => "Tool Call",
+        "collabAgentToolCall" => "Collab Tool Call",
+        "webSearch" => "Web Search",
+        "imageView" => "Image View",
+        "enteredReviewMode" => "Review Mode Entered",
+        "exitedReviewMode" => "Review Mode Exited",
+        "contextCompaction" => "Context Compaction",
+        _ => kind,
+    }
+}
+
+fn ai_truncate_multiline_content(content: &str, max_lines: usize) -> (String, bool) {
+    if max_lines == 0 {
+        return (String::new(), !content.is_empty());
+    }
+
+    let lines = content.lines().collect::<Vec<_>>();
+    if lines.len() <= max_lines {
+        return (content.to_string(), false);
+    }
+
+    let mut truncated = lines
+        .into_iter()
+        .take(max_lines)
+        .collect::<Vec<_>>()
+        .join("\n");
+    truncated.push_str("\n...");
+    (truncated, true)
 }
 
 fn ai_approval_kind_label(kind: AiApprovalKind) -> &'static str {
@@ -903,7 +959,11 @@ fn render_ai_pending_user_inputs_panel(
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod ai_helper_tests {
+    use super::ai_thread_status_text;
+    use super::ai_item_display_label;
     use super::ai_rate_limit_summary;
+    use super::ai_truncate_multiline_content;
+    use hunk_codex::state::ThreadLifecycleStatus;
 
     fn rate_limit_window(
         used_percent: i32,
@@ -964,5 +1024,40 @@ mod ai_helper_tests {
         let (five_hour, weekly) = ai_rate_limit_summary(Some(&snapshot));
         assert!(five_hour.contains("5h: 11% used"));
         assert!(weekly.contains("weekly: 27% used"));
+    }
+
+    #[test]
+    fn truncate_multiline_content_only_marks_overflow_when_needed() {
+        let (single, single_truncated) = ai_truncate_multiline_content("line 1\nline 2", 3);
+        assert_eq!(single, "line 1\nline 2");
+        assert!(!single_truncated);
+
+        let (truncated, is_truncated) =
+            ai_truncate_multiline_content("line 1\nline 2\nline 3\nline 4", 3);
+        assert_eq!(truncated, "line 1\nline 2\nline 3\n...");
+        assert!(is_truncated);
+    }
+
+    #[test]
+    fn item_display_label_maps_user_and_agent_labels() {
+        assert_eq!(ai_item_display_label("userMessage"), "User");
+        assert_eq!(ai_item_display_label("agentMessage"), "Agent");
+        assert_eq!(ai_item_display_label("unknownKind"), "unknownKind");
+    }
+
+    #[test]
+    fn thread_status_text_is_active_only_when_turn_is_in_progress() {
+        assert_eq!(
+            ai_thread_status_text(ThreadLifecycleStatus::Active, true),
+            "active"
+        );
+        assert_eq!(
+            ai_thread_status_text(ThreadLifecycleStatus::Active, false),
+            "idle"
+        );
+        assert_eq!(
+            ai_thread_status_text(ThreadLifecycleStatus::NotLoaded, false),
+            "not loaded"
+        );
     }
 }

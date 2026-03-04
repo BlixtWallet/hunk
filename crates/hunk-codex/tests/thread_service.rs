@@ -129,6 +129,15 @@ fn resume_external_thread_updates_active_workspace_thread() {
     );
     assert!(service.state().turns.contains_key("resume-turn-1"));
     assert!(service.state().items.contains_key("resume-item-1"));
+    assert_eq!(
+        service
+            .state()
+            .items
+            .get("resume-item-1")
+            .expect("resume item should exist")
+            .content,
+        "resume prompt"
+    );
 
     server.join();
 }

@@ -178,9 +178,6 @@ impl DiffViewer {
         });
         let ai_review_input_state =
             cx.new(|cx| InputState::new(window, cx).placeholder("Review focus (optional)"));
-        let ai_command_input_state = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Run one-off command (for example: cargo test)")
-        });
         let graph_action_input_state = cx.new(|cx| {
             InputState::new(window, cx).placeholder("Bookmark name for create/fork/rename")
         });
@@ -238,7 +235,7 @@ impl DiffViewer {
             ai_scroll_timeline_to_bottom: false,
             ai_thread_list_scroll_handle: ScrollHandle::default(),
             ai_timeline_scroll_handle: ScrollHandle::default(),
-            ai_last_command_result: None,
+            ai_expanded_command_output_item_ids: BTreeSet::new(),
             ai_pending_approvals: Vec::new(),
             ai_pending_user_inputs: Vec::new(),
             ai_pending_user_input_answers: BTreeMap::new(),
@@ -261,7 +258,6 @@ impl DiffViewer {
             ai_command_tx: None,
             ai_composer_input_state,
             ai_review_input_state,
-            ai_command_input_state,
             files: Vec::new(),
             file_status_by_path: BTreeMap::new(),
             branch_picker_open: false,

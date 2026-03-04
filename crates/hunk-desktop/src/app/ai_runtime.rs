@@ -14,13 +14,12 @@ use codex_app_server_protocol::Account;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::CancelLoginAccountStatus;
 use codex_app_server_protocol::CollaborationModeMask;
-use codex_app_server_protocol::CommandExecParams;
 use codex_app_server_protocol::CommandExecutionApprovalDecision;
 use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
-use codex_app_server_protocol::DynamicToolCallOutputContentItem;
 use codex_app_server_protocol::ExperimentalFeature;
 use codex_app_server_protocol::FileChangeApprovalDecision;
 use codex_app_server_protocol::FileChangeRequestApprovalResponse;
+use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::LoginAccountParams;
 use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::Model;
@@ -138,7 +137,6 @@ pub struct AiTurnSessionOverrides {
 pub struct AiSnapshot {
     pub state: AiState,
     pub active_thread_id: Option<String>,
-    pub last_command_result: Option<String>,
     pub pending_approvals: Vec<AiPendingApproval>,
     pub pending_user_inputs: Vec<AiPendingUserInputRequest>,
     pub account: Option<Account>,
@@ -189,9 +187,6 @@ pub enum AiWorkerCommand {
     StartReview {
         thread_id: String,
         instructions: String,
-    },
-    CommandExec {
-        command_line: String,
     },
     ResolveApproval {
         request_id: String,
@@ -251,13 +246,13 @@ struct AiWorkerRuntime {
     codex_home: PathBuf,
     cwd_key: String,
     request_timeout: Duration,
-    last_command_result: Option<String>,
     mad_max_mode: bool,
     account: Option<Account>,
     requires_openai_auth: bool,
     pending_chatgpt_login_id: Option<String>,
     pending_chatgpt_auth_url: Option<String>,
     rate_limits: Option<RateLimitSnapshot>,
+    rate_limits_by_limit_id: HashMap<String, RateLimitSnapshot>,
     models: Vec<Model>,
     experimental_features: Vec<ExperimentalFeature>,
     collaboration_modes: Vec<CollaborationModeMask>,
@@ -356,13 +351,13 @@ impl AiWorkerRuntime {
             codex_home: config.codex_home,
             cwd_key,
             request_timeout: config.request_timeout,
-            last_command_result: None,
             mad_max_mode: config.mad_max_mode,
             account: None,
             requires_openai_auth: false,
             pending_chatgpt_login_id: None,
             pending_chatgpt_auth_url: None,
             rate_limits: None,
+            rate_limits_by_limit_id: HashMap::new(),
             models: Vec::new(),
             experimental_features: Vec::new(),
             collaboration_modes: Vec::new(),
@@ -474,41 +469,6 @@ impl AiWorkerRuntime {
                 )?;
                 self.emit_snapshot_after_sync(event_tx)?;
             }
-            AiWorkerCommand::CommandExec { command_line } => {
-                let command = split_command_line(command_line.as_str());
-                if command.is_empty() {
-                    let _ =
-                        event_tx.send(AiWorkerEvent::Error("Command cannot be empty".to_string()));
-                    return Ok(());
-                }
-
-                let sandbox_policy = command_exec_sandbox_policy(self.mad_max_mode);
-                let response = self.service.command_exec(
-                    &mut self.session,
-                    CommandExecParams {
-                        command,
-                        timeout_ms: None,
-                        cwd: None,
-                        sandbox_policy,
-                    },
-                    self.request_timeout,
-                )?;
-                let stderr = response.stderr.trim();
-                let stdout = response.stdout.trim();
-                self.last_command_result = Some(format!(
-                    "exit {}\n{}{}",
-                    response.exit_code,
-                    stdout,
-                    if stderr.is_empty() {
-                        "".to_string()
-                    } else if stdout.is_empty() {
-                        stderr.to_string()
-                    } else {
-                        format!("\n{stderr}")
-                    }
-                ));
-                self.emit_snapshot_after_sync(event_tx)?;
-            }
             AiWorkerCommand::ResolveApproval {
                 request_id,
                 decision,
@@ -596,6 +556,7 @@ impl AiWorkerRuntime {
                 self.pending_chatgpt_auth_url = None;
                 self.account = None;
                 self.rate_limits = None;
+                self.rate_limits_by_limit_id.clear();
                 self.refresh_account_state()?;
                 self.emit_snapshot_after_sync(event_tx)?;
             }
@@ -904,11 +865,12 @@ impl AiWorkerRuntime {
             .read_account_rate_limits(&mut self.session, self.request_timeout)
         {
             Ok(response) => {
-                self.rate_limits = Some(response.rate_limits);
+                self.apply_rate_limits_response(response);
                 Ok(())
             }
             Err(CodexIntegrationError::JsonRpcServerError { .. }) => {
                 self.rate_limits = None;
+                self.rate_limits_by_limit_id.clear();
                 Ok(())
             }
             Err(error) => Err(error),
@@ -976,7 +938,7 @@ impl AiWorkerRuntime {
                     refresh_rate_limits = true;
                 }
                 ServerNotification::AccountRateLimitsUpdated(update) => {
-                    self.rate_limits = Some(update.rate_limits.clone());
+                    self.apply_rate_limits_snapshot(update.rate_limits.clone());
                     changed = true;
                 }
                 ServerNotification::AccountLoginCompleted(completed) => {
@@ -1003,6 +965,33 @@ impl AiWorkerRuntime {
             changed = true;
         }
         Ok(changed)
+    }
+
+    fn apply_rate_limits_response(&mut self, response: GetAccountRateLimitsResponse) {
+        let fallback = response.rate_limits;
+        let fallback_limit_id = fallback
+            .limit_id
+            .clone()
+            .unwrap_or_else(|| "codex".to_string());
+        let mut snapshots_by_limit_id = response.rate_limits_by_limit_id.unwrap_or_default();
+        snapshots_by_limit_id
+            .entry(fallback_limit_id)
+            .or_insert_with(|| fallback.clone());
+
+        self.rate_limits_by_limit_id = snapshots_by_limit_id;
+        self.rate_limits =
+            preferred_rate_limit_snapshot(&self.rate_limits_by_limit_id, Some(&fallback));
+    }
+
+    fn apply_rate_limits_snapshot(&mut self, snapshot: RateLimitSnapshot) {
+        let limit_id = snapshot
+            .limit_id
+            .clone()
+            .unwrap_or_else(|| "codex".to_string());
+        self.rate_limits_by_limit_id
+            .insert(limit_id, snapshot.clone());
+        self.rate_limits =
+            preferred_rate_limit_snapshot(&self.rate_limits_by_limit_id, Some(&snapshot));
     }
 
     fn sync_server_requests(&mut self) -> Result<bool, CodexIntegrationError> {
@@ -1150,22 +1139,6 @@ impl AiWorkerRuntime {
                 ServerRequest::DynamicToolCall { request_id, params } => {
                     let response = self.tool_registry.execute(self.service.cwd(), &params);
                     self.session.respond_typed(request_id, &response)?;
-                    let status = if response.success {
-                        format!("Tool '{}' completed.", params.tool)
-                    } else {
-                        let failure_reason = response
-                            .content_items
-                            .iter()
-                            .find_map(|content| match content {
-                                DynamicToolCallOutputContentItem::InputText { text } => {
-                                    Some(text.clone())
-                                }
-                                DynamicToolCallOutputContentItem::InputImage { .. } => None,
-                            })
-                            .unwrap_or_else(|| "tool execution failed".to_string());
-                        format!("Tool '{}' failed: {failure_reason}", params.tool)
-                    };
-                    self.last_command_result = Some(status);
                     changed = true;
                 }
                 _ => {}
@@ -1284,7 +1257,6 @@ impl AiWorkerRuntime {
                 .service
                 .active_thread_for_workspace()
                 .map(ToOwned::to_owned),
-            last_command_result: self.last_command_result.clone(),
             pending_approvals,
             pending_user_inputs,
             account: self.account.clone(),
@@ -1299,10 +1271,6 @@ impl AiWorkerRuntime {
             mad_max_mode: self.mad_max_mode,
         })));
     }
-}
-
-fn split_command_line(raw: &str) -> Vec<String> {
-    raw.split_whitespace().map(ToOwned::to_owned).collect()
 }
 
 fn thread_missing_item_turn_ids(state: &AiState, thread_id: &str) -> BTreeSet<String> {
@@ -1378,13 +1346,6 @@ fn apply_thread_start_session_overrides(
     params.model = session_overrides.model.clone();
 }
 
-fn command_exec_sandbox_policy(mad_max_mode: bool) -> Option<SandboxPolicy> {
-    if mad_max_mode {
-        return Some(SandboxPolicy::DangerFullAccess);
-    }
-    None
-}
-
 fn parse_reasoning_effort(raw: &str) -> Option<ReasoningEffort> {
     serde_json::from_value::<ReasoningEffort>(serde_json::Value::String(raw.to_string())).ok()
 }
@@ -1394,6 +1355,31 @@ fn request_id_key(request_id: &RequestId) -> String {
         RequestId::String(value) => value.clone(),
         RequestId::Integer(value) => value.to_string(),
     }
+}
+
+fn preferred_rate_limit_snapshot(
+    snapshots_by_limit_id: &HashMap<String, RateLimitSnapshot>,
+    fallback: Option<&RateLimitSnapshot>,
+) -> Option<RateLimitSnapshot> {
+    codex_rate_limit_snapshot(snapshots_by_limit_id)
+        .or_else(|| fallback.cloned())
+        .or_else(|| first_rate_limit_snapshot(snapshots_by_limit_id))
+}
+
+fn codex_rate_limit_snapshot(
+    snapshots_by_limit_id: &HashMap<String, RateLimitSnapshot>,
+) -> Option<RateLimitSnapshot> {
+    snapshots_by_limit_id
+        .iter()
+        .find(|(limit_id, _)| limit_id.eq_ignore_ascii_case("codex"))
+        .map(|(_, snapshot)| snapshot.clone())
+}
+
+fn first_rate_limit_snapshot(
+    snapshots_by_limit_id: &HashMap<String, RateLimitSnapshot>,
+) -> Option<RateLimitSnapshot> {
+    let first_limit_id = snapshots_by_limit_id.keys().min()?.clone();
+    snapshots_by_limit_id.get(first_limit_id.as_str()).cloned()
 }
 
 fn ordered_pending_approvals(
@@ -1522,8 +1508,12 @@ fn open_url_in_system_browser(url: &str) -> Result<(), CodexIntegrationError> {
 
 #[cfg(test)]
 mod ai_tests {
+    use std::collections::HashMap;
+
     use codex_app_server_protocol::AccountLoginCompletedNotification;
     use codex_app_server_protocol::AskForApproval;
+    use codex_app_server_protocol::RateLimitSnapshot;
+    use codex_app_server_protocol::RateLimitWindow;
     use codex_app_server_protocol::SandboxMode;
     use codex_app_server_protocol::SandboxPolicy;
     use codex_app_server_protocol::ThreadStartParams;
@@ -1537,18 +1527,11 @@ mod ai_tests {
     use super::apply_login_completed_state;
     use super::apply_thread_start_policy;
     use super::apply_turn_start_policy;
-    use super::command_exec_sandbox_policy;
     use super::map_command_approval_decision;
     use super::map_file_change_approval_decision;
+    use super::preferred_rate_limit_snapshot;
     use super::should_retry_stale_turn_after_steer_error;
-    use super::split_command_line;
     use super::thread_missing_item_turn_ids;
-
-    #[test]
-    fn split_command_line_handles_repeated_whitespace() {
-        let command = split_command_line("cargo    test  -p hunk-codex");
-        assert_eq!(command, vec!["cargo", "test", "-p", "hunk-codex"]);
-    }
 
     #[test]
     fn thread_policy_defaults_to_on_request_when_not_mad_max() {
@@ -1575,15 +1558,6 @@ mod ai_tests {
     }
 
     #[test]
-    fn command_exec_policy_is_dangerous_only_in_mad_max() {
-        assert_eq!(command_exec_sandbox_policy(false), None);
-        assert_eq!(
-            command_exec_sandbox_policy(true),
-            Some(SandboxPolicy::DangerFullAccess)
-        );
-    }
-
-    #[test]
     fn approval_decision_mapping_is_stable() {
         assert_eq!(
             map_command_approval_decision(AiApprovalDecision::Accept),
@@ -1592,6 +1566,61 @@ mod ai_tests {
         assert_eq!(
             map_file_change_approval_decision(AiApprovalDecision::Decline),
             codex_app_server_protocol::FileChangeApprovalDecision::Decline
+        );
+    }
+
+    fn rate_limit_snapshot(limit_id: Option<&str>, used_percent: i32) -> RateLimitSnapshot {
+        RateLimitSnapshot {
+            limit_id: limit_id.map(ToOwned::to_owned),
+            limit_name: limit_id.map(ToOwned::to_owned),
+            primary: Some(RateLimitWindow {
+                used_percent,
+                window_duration_mins: Some(300),
+                resets_at: Some(1_700_000_000),
+            }),
+            secondary: Some(RateLimitWindow {
+                used_percent: used_percent.saturating_add(10),
+                window_duration_mins: Some(10_080),
+                resets_at: Some(1_700_100_000),
+            }),
+            credits: None,
+            plan_type: None,
+        }
+    }
+
+    #[test]
+    fn preferred_rate_limit_snapshot_prefers_codex_bucket() {
+        let mut snapshots = HashMap::new();
+        snapshots.insert(
+            "codex_other".to_string(),
+            rate_limit_snapshot(Some("codex_other"), 4),
+        );
+        snapshots.insert("codex".to_string(), rate_limit_snapshot(Some("codex"), 35));
+
+        let selected =
+            preferred_rate_limit_snapshot(&snapshots, None).expect("a snapshot should be selected");
+        assert_eq!(selected.limit_id.as_deref(), Some("codex"));
+        assert_eq!(
+            selected.primary.as_ref().map(|window| window.used_percent),
+            Some(35)
+        );
+    }
+
+    #[test]
+    fn preferred_rate_limit_snapshot_falls_back_when_codex_missing() {
+        let mut snapshots = HashMap::new();
+        snapshots.insert(
+            "codex_other".to_string(),
+            rate_limit_snapshot(Some("codex_other"), 7),
+        );
+
+        let fallback = rate_limit_snapshot(Some("fallback"), 22);
+        let selected = preferred_rate_limit_snapshot(&snapshots, Some(&fallback))
+            .expect("fallback snapshot should be selected");
+        assert_eq!(selected.limit_id.as_deref(), Some("fallback"));
+        assert_eq!(
+            selected.primary.as_ref().map(|window| window.used_percent),
+            Some(22)
         );
     }
 

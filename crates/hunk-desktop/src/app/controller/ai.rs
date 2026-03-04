@@ -202,25 +202,6 @@ impl DiffViewer {
         );
     }
 
-    pub(super) fn ai_run_command_action(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let command_line = self.ai_command_input_state.read(cx).value().trim().to_string();
-        if command_line.is_empty() {
-            self.ai_status_message = Some("Command cannot be empty.".to_string());
-            cx.notify();
-            return;
-        }
-
-        if self.send_ai_worker_command(AiWorkerCommand::CommandExec { command_line }, cx) {
-            self.ai_command_input_state.update(cx, |state, cx| {
-                state.set_value("", window, cx);
-            });
-        }
-    }
-
     pub(super) fn ai_set_mad_max_mode(&mut self, enabled: bool, cx: &mut Context<Self>) {
         let Some(workspace_key) = self.ai_workspace_key() else {
             self.ai_status_message = Some("Open a workspace before changing Mad Max mode.".to_string());
@@ -321,9 +302,27 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) {
         self.ai_scroll_timeline_to_bottom = true;
+        self.ai_expanded_command_output_item_ids.clear();
         self.ai_selected_thread_id = Some(thread_id.clone());
         self.sync_ai_session_selection_from_state();
         self.send_ai_worker_command(AiWorkerCommand::SelectThread { thread_id }, cx);
+        cx.notify();
+    }
+
+    pub(super) fn ai_toggle_command_output_expansion_action(
+        &mut self,
+        item_id: String,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .ai_expanded_command_output_item_ids
+            .contains(item_id.as_str())
+        {
+            self.ai_expanded_command_output_item_ids
+                .remove(item_id.as_str());
+        } else {
+            self.ai_expanded_command_output_item_ids.insert(item_id);
+        }
         cx.notify();
     }
 
@@ -694,8 +693,12 @@ impl DiffViewer {
 
     fn apply_ai_snapshot(&mut self, snapshot: AiSnapshot) {
         let previous_selected_thread = self.ai_selected_thread_id.clone();
+        let previous_selected_thread_sequence =
+            previous_selected_thread
+                .as_deref()
+                .map(|thread_id| thread_latest_timeline_sequence(&self.ai_state_snapshot, thread_id))
+                .unwrap_or(0);
         self.ai_state_snapshot = snapshot.state;
-        self.ai_last_command_result = snapshot.last_command_result;
         self.ai_pending_approvals = snapshot.pending_approvals;
         self.ai_pending_user_inputs = snapshot.pending_user_inputs;
         self.sync_ai_pending_user_input_answers();
@@ -734,11 +737,24 @@ impl DiffViewer {
             self.ai_selected_thread_id.as_deref(),
         ) {
             self.ai_scroll_timeline_to_bottom = true;
+            self.ai_expanded_command_output_item_ids.clear();
+        }
+        if let Some(selected_thread_id) = self.ai_selected_thread_id.as_deref()
+            && previous_selected_thread.as_deref() == Some(selected_thread_id)
+        {
+            let latest_sequence =
+                thread_latest_timeline_sequence(&self.ai_state_snapshot, selected_thread_id);
+            if latest_sequence > previous_selected_thread_sequence {
+                self.ai_scroll_timeline_to_bottom = true;
+            }
         }
         if self.ai_scroll_timeline_to_bottom && self.ai_selected_thread_id.is_some() {
             self.ai_timeline_scroll_handle.scroll_to_bottom();
             self.ai_scroll_timeline_to_bottom = false;
         }
+
+        self.ai_expanded_command_output_item_ids
+            .retain(|item_id| self.ai_state_snapshot.items.contains_key(item_id));
 
         self.sync_ai_session_selection_from_state();
     }
@@ -941,6 +957,34 @@ fn should_scroll_timeline_to_bottom_on_selection_change(
     previous_thread_id != next_thread_id && next_thread_id.is_some()
 }
 
+fn thread_latest_timeline_sequence(state: &hunk_codex::state::AiState, thread_id: &str) -> u64 {
+    let thread_sequence = state
+        .threads
+        .get(thread_id)
+        .map(|thread| thread.last_sequence)
+        .unwrap_or(0);
+    let turn_sequences = state
+        .turns
+        .values()
+        .filter(|turn| turn.thread_id == thread_id)
+        .map(|turn| turn.last_sequence);
+    let item_sequences = state
+        .items
+        .values()
+        .filter(|item| {
+            state
+                .turns
+                .get(item.turn_id.as_str())
+                .is_some_and(|turn| turn.thread_id == thread_id)
+        })
+        .map(|item| item.last_sequence);
+
+    turn_sequences
+        .chain(item_sequences)
+        .max()
+        .map_or(thread_sequence, |max_sequence| max_sequence.max(thread_sequence))
+}
+
 fn resolve_bundled_codex_executable_from_exe(current_exe: &std::path::Path) -> Option<std::path::PathBuf> {
     bundled_codex_executable_candidates(current_exe)
         .into_iter()
@@ -1060,6 +1104,7 @@ mod ai_tests {
     use super::resolve_bundled_codex_executable_from_exe;
     use super::sorted_threads;
     use super::should_scroll_timeline_to_bottom_on_selection_change;
+    use super::thread_latest_timeline_sequence;
     use super::workspace_include_hidden_models;
     use super::workspace_mad_max_mode;
     use crate::app::ai_runtime::AiPendingUserInputQuestion;
@@ -1159,6 +1204,45 @@ mod ai_tests {
             None,
         ));
         assert!(!should_scroll_timeline_to_bottom_on_selection_change(None, None));
+    }
+
+    #[test]
+    fn thread_latest_timeline_sequence_uses_turn_and_item_sequences() {
+        let mut state = AiState::default();
+        state.threads.insert(
+            "thread-a".to_string(),
+            ThreadSummary {
+                id: "thread-a".to_string(),
+                cwd: "/repo".to_string(),
+                title: None,
+                status: ThreadLifecycleStatus::Active,
+                updated_at: 1,
+                last_sequence: 3,
+            },
+        );
+        state.turns.insert(
+            "turn-a".to_string(),
+            hunk_codex::state::TurnSummary {
+                id: "turn-a".to_string(),
+                thread_id: "thread-a".to_string(),
+                status: hunk_codex::state::TurnStatus::InProgress,
+                last_sequence: 7,
+            },
+        );
+        state.items.insert(
+            "item-a".to_string(),
+            hunk_codex::state::ItemSummary {
+                id: "item-a".to_string(),
+                turn_id: "turn-a".to_string(),
+                kind: "agentMessage".to_string(),
+                status: ItemStatus::Streaming,
+                content: "chunk".to_string(),
+                last_sequence: 11,
+            },
+        );
+
+        assert_eq!(thread_latest_timeline_sequence(&state, "thread-a"), 11);
+        assert_eq!(thread_latest_timeline_sequence(&state, "missing"), 0);
     }
 
     #[test]
