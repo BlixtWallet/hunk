@@ -10,6 +10,7 @@ Hunk is also has full codex integration so you can use Codex inside of Hunk inst
 <img width="3320" height="2032" alt="Hunk (Window) 2026-03-03 09:27 AM" src="https://github.com/user-attachments/assets/8c67f351-dde7-4d44-83ea-0c232a62a147" />
 <img width="3320" height="2032" alt="Hunk (Window) 2026-03-03 09:42 AM" src="https://github.com/user-attachments/assets/5de96595-aa50-4f4c-b62e-170454126f3b" />
 <img width="3320" height="2032" alt="Hunk (Window) 2026-03-03 09:44 AM" src="https://github.com/user-attachments/assets/313b421d-f53d-4b2e-8288-30dcc735e75c" />
+<img width="3320" height="2032" alt="Hunk (Window) 2026-03-04 10:13 AM" src="https://github.com/user-attachments/assets/47d8d7ac-e5aa-4113-9485-362f281dd07e" />
 
 
 ## What it includes
