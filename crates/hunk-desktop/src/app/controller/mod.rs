@@ -32,6 +32,7 @@ include!("core_runtime.rs");
 include!("git_ops.rs");
 include!("operation_history.rs");
 include!("workspace_mode.rs");
+include!("ai.rs");
 include!("jj_graph.rs");
 include!("file_tree.rs");
 include!("editor.rs");

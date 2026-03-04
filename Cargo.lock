@@ -4152,11 +4152,13 @@ name = "hunk-desktop"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "codex-app-server-protocol",
  "futures",
  "gpui",
  "gpui-component",
  "gpui-component-assets",
  "gpui_platform",
+ "hunk-codex",
  "hunk-domain",
  "hunk-jj",
  "notify 8.2.0",

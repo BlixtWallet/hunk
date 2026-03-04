@@ -159,6 +159,16 @@ impl JsonRpcSession {
         std::mem::take(&mut self.server_notifications)
     }
 
+    pub fn poll_server_notifications(&mut self, timeout: Duration) -> Result<usize> {
+        let message = match self.read_message(timeout) {
+            Ok(message) => message,
+            Err(error) if is_read_timeout(&error) => return Ok(0),
+            Err(error) => return Err(error),
+        };
+
+        Ok(self.capture_incoming_message(message))
+    }
+
     pub fn notify(&mut self, method: &str, params: Option<Value>) -> Result<()> {
         let message = JSONRPCMessage::Notification(JSONRPCNotification {
             method: method.to_string(),
@@ -230,6 +240,18 @@ impl JsonRpcSession {
     fn capture_server_notification(&mut self, notification: JSONRPCNotification) {
         if let Ok(notification) = ServerNotification::try_from(notification) {
             self.server_notifications.push(notification);
+        }
+    }
+
+    fn capture_incoming_message(&mut self, message: JSONRPCMessage) -> usize {
+        match message {
+            JSONRPCMessage::Notification(notification) => {
+                self.capture_server_notification(notification);
+                1
+            }
+            JSONRPCMessage::Request(_) | JSONRPCMessage::Response(_) | JSONRPCMessage::Error(_) => {
+                0
+            }
         }
     }
 
@@ -310,4 +332,11 @@ fn backoff_for_attempt(base: Duration, attempt: u8) -> Duration {
 
 fn duration_ms(duration: Duration) -> u64 {
     duration.as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+fn is_read_timeout(error: &CodexIntegrationError) -> bool {
+    matches!(
+        error,
+        CodexIntegrationError::RequestTimedOut { method, .. } if method == "read"
+    )
 }

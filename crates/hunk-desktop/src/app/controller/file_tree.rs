@@ -136,6 +136,8 @@ impl DiffViewer {
             self.request_repo_tree_reload(cx);
             self.scroll_selected_after_reload = true;
             self.request_selected_diff_reload(cx);
+        } else if mode == WorkspaceViewMode::Ai {
+            self.ensure_ai_runtime_started(cx);
         }
         cx.notify();
     }

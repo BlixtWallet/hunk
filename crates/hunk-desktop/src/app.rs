@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::mpsc;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -40,6 +42,12 @@ use hunk_jj::jj::{
 };
 use hunk_jj::jj_graph_tree::GraphLaneRow;
 
+use ai_runtime::AiConnectionState;
+use ai_runtime::AiSnapshot;
+use ai_runtime::AiWorkerCommand;
+use ai_runtime::AiWorkerEvent;
+use ai_runtime::AiWorkerStartConfig;
+use ai_runtime::spawn_ai_worker;
 use data::{
     DiffRowSegmentCache, DiffStreamRowMeta, FileRowRange, RepoTreeNode, RepoTreeNodeKind,
     RepoTreeRow, WorkspaceSwitchAction, WorkspaceViewMode,
@@ -127,6 +135,7 @@ struct PendingBookmarkSwitch {
     unix_time: i64,
 }
 
+mod ai_runtime;
 mod controller;
 mod data;
 mod data_segments;
@@ -909,6 +918,19 @@ struct DiffViewer {
     pending_bookmark_switch: Option<PendingBookmarkSwitch>,
     show_jj_terms_glossary: bool,
     workspace_view_mode: WorkspaceViewMode,
+    ai_connection_state: AiConnectionState,
+    ai_status_message: Option<String>,
+    ai_error_message: Option<String>,
+    ai_state_snapshot: hunk_codex::state::AiState,
+    ai_selected_thread_id: Option<String>,
+    ai_last_command_result: Option<String>,
+    ai_event_epoch: usize,
+    ai_event_task: Task<()>,
+    ai_worker_thread: Option<JoinHandle<()>>,
+    ai_command_tx: Option<mpsc::Sender<AiWorkerCommand>>,
+    ai_composer_input_state: Entity<InputState>,
+    ai_review_input_state: Entity<InputState>,
+    ai_command_input_state: Entity<InputState>,
     files: Vec<ChangedFile>,
     file_status_by_path: BTreeMap<String, FileStatus>,
     branch_picker_open: bool,

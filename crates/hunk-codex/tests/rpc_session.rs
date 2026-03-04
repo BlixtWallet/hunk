@@ -14,6 +14,7 @@ use codex_app_server_protocol::JSONRPCNotification;
 use codex_app_server_protocol::JSONRPCRequest;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::ServerNotification;
 use hunk_codex::api::InitializeOptions;
 use hunk_codex::errors::CodexIntegrationError;
 use hunk_codex::ws_client::JsonRpcSession;
@@ -107,11 +108,41 @@ fn overloaded_error_retries_with_backoff() {
     server.join();
 }
 
+#[test]
+fn poll_server_notifications_captures_idle_notifications() {
+    let server = TestServer::spawn(Scenario::IdleNotification);
+    let endpoint = WebSocketEndpoint::loopback(server.port);
+    let mut session = JsonRpcSession::connect(&endpoint).expect("session should connect");
+
+    session
+        .initialize(InitializeOptions::default(), Duration::from_secs(2))
+        .expect("initialize should succeed");
+
+    let captured = session
+        .poll_server_notifications(Duration::from_secs(2))
+        .expect("poll should succeed");
+    assert_eq!(captured, 1);
+
+    let notifications = session.drain_server_notifications();
+    assert_eq!(notifications.len(), 1);
+    match &notifications[0] {
+        ServerNotification::TurnDiffUpdated(notification) => {
+            assert_eq!(notification.thread_id, "thread-live");
+            assert_eq!(notification.turn_id, "turn-live");
+            assert_eq!(notification.diff, "diff --git a/a b/a");
+        }
+        other => panic!("unexpected notification type: {other:?}"),
+    }
+
+    server.join();
+}
+
 #[derive(Clone)]
 enum Scenario {
     InitializeSuccess,
     RejectBeforeInitialize,
     DuplicateInitialize,
+    IdleNotification,
     OverloadedThenSuccess {
         overload_attempts: usize,
         attempts: Arc<AtomicUsize>,
@@ -141,6 +172,7 @@ impl TestServer {
                 Scenario::InitializeSuccess => run_initialize_success(&mut socket),
                 Scenario::RejectBeforeInitialize => run_reject_before_initialize(&mut socket),
                 Scenario::DuplicateInitialize => run_duplicate_initialize(&mut socket),
+                Scenario::IdleNotification => run_idle_notification(&mut socket),
                 Scenario::OverloadedThenSuccess {
                     overload_attempts,
                     attempts,
@@ -187,6 +219,26 @@ fn run_duplicate_initialize(socket: &mut WebSocket<TcpStream>) {
 
     let second = expect_request(socket, "initialize");
     send_error_response(socket, second.id, -32010, "already initialized");
+}
+
+fn run_idle_notification(socket: &mut WebSocket<TcpStream>) {
+    let initialize = expect_request(socket, "initialize");
+    send_success_response(
+        socket,
+        initialize.id,
+        serde_json::json!({ "userAgent": "hunk-test-server" }),
+    );
+    expect_notification(socket, "initialized");
+
+    send_notification(
+        socket,
+        "turn/diff/updated",
+        serde_json::json!({
+            "threadId": "thread-live",
+            "turnId": "turn-live",
+            "diff": "diff --git a/a b/a"
+        }),
+    );
 }
 
 fn run_overloaded_then_success(
@@ -250,6 +302,14 @@ fn send_error_response(socket: &mut WebSocket<TcpStream>, id: RequestId, code: i
         },
     });
     send_jsonrpc(socket, error);
+}
+
+fn send_notification(socket: &mut WebSocket<TcpStream>, method: &str, params: serde_json::Value) {
+    let notification = JSONRPCMessage::Notification(JSONRPCNotification {
+        method: method.to_string(),
+        params: Some(params),
+    });
+    send_jsonrpc(socket, notification);
 }
 
 fn send_jsonrpc(socket: &mut WebSocket<TcpStream>, message: JSONRPCMessage) {

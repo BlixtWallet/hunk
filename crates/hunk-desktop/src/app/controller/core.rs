@@ -157,6 +157,17 @@ impl DiffViewer {
                 .rows(3)
                 .placeholder("Add comment for this diff row")
         });
+        let ai_composer_input_state = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line(true)
+                .rows(4)
+                .placeholder("Ask Codex to edit code, run commands, or explain changes.")
+        });
+        let ai_review_input_state =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Review focus (optional)"));
+        let ai_command_input_state = cx.new(|cx| {
+            InputState::new(window, cx).placeholder("Run one-off command (for example: cargo test)")
+        });
         let graph_action_input_state = cx.new(|cx| {
             InputState::new(window, cx).placeholder("Bookmark name for create/fork/rename")
         });
@@ -206,6 +217,19 @@ impl DiffViewer {
             pending_bookmark_switch: None,
             show_jj_terms_glossary: false,
             workspace_view_mode: WorkspaceViewMode::JjWorkspace,
+            ai_connection_state: AiConnectionState::Disconnected,
+            ai_status_message: None,
+            ai_error_message: None,
+            ai_state_snapshot: hunk_codex::state::AiState::default(),
+            ai_selected_thread_id: None,
+            ai_last_command_result: None,
+            ai_event_epoch: 0,
+            ai_event_task: Task::ready(()),
+            ai_worker_thread: None,
+            ai_command_tx: None,
+            ai_composer_input_state,
+            ai_review_input_state,
+            ai_command_input_state,
             files: Vec::new(),
             file_status_by_path: BTreeMap::new(),
             branch_picker_open: false,

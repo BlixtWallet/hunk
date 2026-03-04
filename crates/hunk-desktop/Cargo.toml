@@ -32,3 +32,5 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 hunk-domain = { path = "../hunk-domain" }
 hunk-jj = { path = "../hunk-jj" }
+hunk-codex = { path = "../hunk-codex" }
+codex-app-server-protocol = { git = "https://github.com/openai/codex.git", rev = "6bee02a346d0aa8dc4d5dcb312545fa37408b6ca" }

@@ -529,6 +529,52 @@ fn review_start_selects_review_thread() {
 }
 
 #[test]
+fn review_start_streams_mode_entry_and_exit_items() {
+    let server = TestServer::spawn(Scenario::ReviewStartDetached);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service
+        .start_thread(&mut session, ThreadStartParams::default(), TIMEOUT)
+        .expect("thread/start should succeed");
+
+    service
+        .start_review(
+            &mut session,
+            ReviewStartParams {
+                thread_id: "thread-review-root".to_string(),
+                target: ReviewTarget::Custom {
+                    instructions: "Review my diff".to_string(),
+                },
+                delivery: None,
+            },
+            TIMEOUT,
+        )
+        .expect("review/start should succeed");
+
+    let state = service.state();
+    let entered = state
+        .items
+        .get("review-entered")
+        .expect("entered review item should exist");
+    assert_eq!(entered.turn_id, "review-turn");
+    assert_eq!(entered.kind, "enteredReviewMode");
+    assert_eq!(entered.status, hunk_codex::state::ItemStatus::Streaming);
+    assert_eq!(entered.content, "Reviewing working-copy diff");
+
+    let exited = state
+        .items
+        .get("review-exited")
+        .expect("exited review item should exist");
+    assert_eq!(exited.turn_id, "review-turn");
+    assert_eq!(exited.kind, "exitedReviewMode");
+    assert_eq!(exited.status, hunk_codex::state::ItemStatus::Completed);
+    assert_eq!(exited.content, "No blocking issues found.");
+
+    server.join();
+}
+
+#[test]
 fn command_exec_injects_workspace_cwd_when_missing() {
     let server = TestServer::spawn(Scenario::CommandExecRoundTrip);
     let mut session = connect_initialized_session(server.port);
@@ -1110,6 +1156,32 @@ fn run_review_start_detached(socket: &mut WebSocket<TcpStream>) {
     assert_eq!(
         param_string(&review_params, "threadId"),
         Some("thread-review-root".to_string())
+    );
+    send_notification(
+        socket,
+        "item/started",
+        serde_json::json!({
+            "threadId": "thread-review-detached",
+            "turnId": "review-turn",
+            "item": {
+                "type": "enteredReviewMode",
+                "id": "review-entered",
+                "review": "Reviewing working-copy diff"
+            }
+        }),
+    );
+    send_notification(
+        socket,
+        "item/completed",
+        serde_json::json!({
+            "threadId": "thread-review-detached",
+            "turnId": "review-turn",
+            "item": {
+                "type": "exitedReviewMode",
+                "id": "review-exited",
+                "review": "No blocking issues found."
+            }
+        }),
     );
     send_typed_success_response(
         socket,

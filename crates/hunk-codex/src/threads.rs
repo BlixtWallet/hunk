@@ -786,12 +786,14 @@ fn thread_item_seed_content(item: &ThreadItem) -> Option<String> {
             (!joined.is_empty()).then_some(joined)
         }
         ThreadItem::McpToolCall { error, .. } => error.as_ref().map(|value| value.message.clone()),
+        ThreadItem::EnteredReviewMode { review, .. }
+        | ThreadItem::ExitedReviewMode { review, .. } => {
+            (!review.is_empty()).then(|| review.clone())
+        }
         ThreadItem::DynamicToolCall { .. }
         | ThreadItem::CollabAgentToolCall { .. }
         | ThreadItem::WebSearch { .. }
         | ThreadItem::ImageView { .. }
-        | ThreadItem::EnteredReviewMode { .. }
-        | ThreadItem::ExitedReviewMode { .. }
         | ThreadItem::ContextCompaction { .. }
         | ThreadItem::UserMessage { .. } => None,
     }

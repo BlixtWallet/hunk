@@ -188,19 +188,20 @@ A phase is complete only when all items below are done.
 
 ## Phase 7: Turn APIs + Streaming Conversation UI
 - [x] Implement `turn/start`, `turn/steer`, `turn/interrupt`.
-- [ ] Implement `review/start` and render review-mode lifecycle items.
-- [ ] Render streaming deltas for agent message and tool output.
-- [ ] Render `turn/diff/updated` and link to Hunk diff workflows.
-- [ ] Implement robust in-flight turn state transitions and cancellation UI.
-- [ ] Implement `command/exec` UI action for one-off command runs outside thread turns.
+- [x] Implement `review/start` and render review-mode lifecycle items.
+- [x] Render streaming deltas for agent message and tool output.
+- [x] Render `turn/diff/updated` and link to Hunk diff workflows.
+- [x] Implement robust in-flight turn state transitions and cancellation UI.
+- [x] Implement `command/exec` UI action for one-off command runs outside thread turns.
 
 ### Required Tests
 - [x] Integration test: full turn stream from start to completion.
 - [x] Integration test: interrupt mid-turn and final state correctness.
-- [ ] Integration test: review-start emits expected mode-entry/mode-exit items.
+- [x] Integration test: review-start emits expected mode-entry/mode-exit items.
 - [x] Integration test: command-exec success/error mapping.
 - [x] Unit tests for delta accumulation correctness.
-- Phase 7 status (2026-03-03): backend turn/review/command-exec APIs and stream ingestion are implemented in `hunk-codex`; review-mode item rendering and desktop timeline/composer command wiring are still pending.
+- [x] Deep phase review gate complete.
+- Phase 7 review note (2026-03-03): desktop AI tab now runs against an embedded `hunk-codex` worker, renders live thread/turn/item state (including review-mode lifecycle markers and turn diff updates), supports turn interrupt + steer behavior, and exposes one-off `command/exec`; deep review tightened idle-notification polling and added explicit tests for review mode entry/exit and notification polling semantics.
 
 ---
 
