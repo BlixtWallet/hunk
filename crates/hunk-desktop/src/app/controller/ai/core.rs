@@ -114,11 +114,21 @@ impl DiffViewer {
     ) {
         let prompt = self.ai_composer_input_state.read(cx).value().trim().to_string();
         let prompt = (!prompt.is_empty()).then_some(prompt);
+        let local_image_paths = self.ai_composer_local_images.clone();
+        if !local_image_paths.is_empty() && !self.current_ai_model_supports_image_inputs() {
+            self.ai_status_message = Some(
+                "Selected model does not support image attachments. Remove attachments or switch models."
+                    .to_string(),
+            );
+            cx.notify();
+            return;
+        }
 
         let session_overrides = self.current_ai_turn_session_overrides();
         if self.send_ai_worker_command(
             AiWorkerCommand::StartThread {
                 prompt,
+                local_image_paths,
                 session_overrides,
             },
             cx,
@@ -153,6 +163,7 @@ impl DiffViewer {
         if !self.send_current_ai_prompt(cx) {
             return;
         }
+        self.ai_composer_local_images.clear();
         let ai_composer_state = self.ai_composer_input_state.clone();
         let Some(window_handle) = cx.windows().into_iter().next() else {
             return;
@@ -164,6 +175,74 @@ impl DiffViewer {
         }) {
             error!("failed to clear AI composer input after keyboard send: {error:#}");
         }
+    }
+
+    pub(super) fn ai_open_attachment_picker_action(&mut self, cx: &mut Context<Self>) {
+        let prompt = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: Some("Attach Images".into()),
+        });
+
+        self.ai_attachment_picker_task = cx.spawn(async move |this, cx| {
+            let selection = match prompt.await {
+                Ok(selection) => selection,
+                Err(err) => {
+                    error!("ai attachment picker prompt channel closed: {err}");
+                    return;
+                }
+            };
+
+            let selected_paths = match selection {
+                Ok(Some(paths)) => paths,
+                Ok(None) => return,
+                Err(err) => {
+                    if let Some(this) = this.upgrade() {
+                        this.update(cx, |this, cx| {
+                            this.ai_status_message =
+                                Some(format!("Failed to open image picker: {err:#}"));
+                            cx.notify();
+                        });
+                    }
+                    return;
+                }
+            };
+
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |this, cx| {
+                    let added = this.ai_add_composer_local_images(selected_paths);
+                    if added == 0 {
+                        this.ai_status_message =
+                            Some("No supported image files were selected.".to_string());
+                    } else {
+                        let suffix = if added == 1 { "" } else { "s" };
+                        this.ai_status_message = Some(format!("Attached {added} image{suffix}."));
+                    }
+                    cx.notify();
+                });
+            }
+        });
+    }
+
+    pub(super) fn ai_remove_composer_attachment_action(
+        &mut self,
+        path: std::path::PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        let before = self.ai_composer_local_images.len();
+        self.ai_composer_local_images.retain(|existing| existing != &path);
+        if self.ai_composer_local_images.len() != before {
+            cx.notify();
+        }
+    }
+
+    pub(super) fn ai_clear_composer_attachments_action(&mut self, cx: &mut Context<Self>) {
+        if self.ai_composer_local_images.is_empty() {
+            return;
+        }
+        self.ai_composer_local_images.clear();
+        cx.notify();
     }
 
     pub(super) fn ai_start_review_action(
@@ -762,4 +841,40 @@ impl DiffViewer {
         self.ai_event_epoch = self.ai_event_epoch.saturating_add(1);
         self.ai_event_epoch
     }
+
+    fn ai_add_composer_local_images<I>(&mut self, paths: I) -> usize
+    where
+        I: IntoIterator<Item = std::path::PathBuf>,
+    {
+        let mut added = 0;
+
+        for path in paths {
+            let normalized = std::fs::canonicalize(path.as_path()).unwrap_or(path);
+            if !normalized.is_file() || !is_supported_ai_image_path(normalized.as_path()) {
+                continue;
+            }
+            if self
+                .ai_composer_local_images
+                .iter()
+                .any(|existing| existing == &normalized)
+            {
+                continue;
+            }
+            self.ai_composer_local_images.push(normalized);
+            added += 1;
+        }
+
+        added
+    }
+}
+
+fn is_supported_ai_image_path(path: &std::path::Path) -> bool {
+    let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+        return false;
+    };
+
+    matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "tif" | "tiff"
+    )
 }

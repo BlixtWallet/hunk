@@ -64,6 +64,9 @@ impl DiffViewer {
             .as_ref()
             .and_then(|thread_id| self.current_ai_in_progress_turn_id(thread_id.as_str()));
         let (connection_label, connection_color) = ai_connection_label(self.ai_connection_state, cx);
+        let composer_attachment_paths = self.ai_composer_local_images.clone();
+        let composer_attachment_count = composer_attachment_paths.len();
+        let model_supports_image_inputs = self.current_ai_model_supports_image_inputs();
 
         v_flex()
             .size_full()
@@ -1196,12 +1199,36 @@ impl DiffViewer {
                                                 .w_full()
                                                 .items_center()
                                                 .justify_between()
-                                                .child(
-                                                    div()
-                                                        .text_sm()
-                                                        .font_semibold()
-                                                        .child("Composer"),
-                                                )
+                                                .child({
+                                                    let view = view.clone();
+                                                    h_flex()
+                                                        .items_center()
+                                                        .gap_1()
+                                                        .child(
+                                                            div()
+                                                                .text_sm()
+                                                                .font_semibold()
+                                                                .child("Composer"),
+                                                        )
+                                                        .child(
+                                                            Button::new("ai-open-attachment-picker-header")
+                                                                .compact()
+                                                                .outline()
+                                                                .with_size(gpui_component::Size::Small)
+                                                                .label("📎")
+                                                                .tooltip(if model_supports_image_inputs {
+                                                                    "Attach local screenshots/images to the next prompt."
+                                                                } else {
+                                                                    "Selected model does not support image attachments."
+                                                                })
+                                                                .disabled(!model_supports_image_inputs)
+                                                                .on_click(move |_, _, cx| {
+                                                                    view.update(cx, |this, cx| {
+                                                                        this.ai_open_attachment_picker_action(cx);
+                                                                    });
+                                                                }),
+                                                        )
+                                                })
                                                 .when_some(in_progress_turn.clone(), |this, turn_id| {
                                                     this.child(
                                                         div()
@@ -1212,6 +1239,126 @@ impl DiffViewer {
                                                 }),
                                         )
                                         .child(Input::new(&self.ai_composer_input_state).w_full().h(px(88.0)))
+                                        .when(composer_attachment_count > 0, |this| {
+                                            this.child(
+                                                h_flex()
+                                                    .w_full()
+                                                    .items_center()
+                                                    .justify_between()
+                                                    .gap_2()
+                                                    .flex_wrap()
+                                                    .child({
+                                                        let view = view.clone();
+                                                        Button::new("ai-clear-composer-attachments")
+                                                            .compact()
+                                                            .outline()
+                                                            .with_size(gpui_component::Size::Small)
+                                                            .label("Clear Attachments")
+                                                            .on_click(move |_, _, cx| {
+                                                                view.update(cx, |this, cx| {
+                                                                    this.ai_clear_composer_attachments_action(cx);
+                                                                });
+                                                            })
+                                                    })
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(cx.theme().muted_foreground)
+                                                            .child(ai_composer_attachment_count_label(
+                                                                composer_attachment_count,
+                                                            )),
+                                                    ),
+                                            )
+                                        })
+                                        .when(!composer_attachment_paths.is_empty(), |this| {
+                                            this.child(
+                                                h_flex().w_full().items_center().gap_1().flex_wrap().children(
+                                                    composer_attachment_paths
+                                                        .iter()
+                                                        .enumerate()
+                                                        .map(|(index, path)| {
+                                                            let remove_view = view.clone();
+                                                            let remove_path = path.clone();
+                                                            let path_display = path.display().to_string();
+                                                            let attachment_name = ai_composer_attachment_display_name(
+                                                                path.as_path(),
+                                                            );
+                                                            h_flex()
+                                                                .items_center()
+                                                                .gap_1()
+                                                                .rounded(px(6.0))
+                                                                .border_1()
+                                                                .border_color(cx.theme().border.opacity(if is_dark {
+                                                                    0.90
+                                                                } else {
+                                                                    0.74
+                                                                }))
+                                                                .bg(cx.theme().background.blend(
+                                                                    cx.theme().muted.opacity(if is_dark {
+                                                                        0.20
+                                                                    } else {
+                                                                        0.30
+                                                                    }),
+                                                                ))
+                                                                .px_2()
+                                                                .py_1()
+                                                                .child(Icon::new(IconName::File).size(px(12.0)))
+                                                                .child(
+                                                                    div()
+                                                                        .max_w(px(220.0))
+                                                                        .text_xs()
+                                                                        .truncate()
+                                                                        .child(attachment_name),
+                                                                )
+                                                                .child(
+                                                                    Button::new((
+                                                                        "ai-remove-composer-attachment",
+                                                                        index,
+                                                                    ))
+                                                                    .compact()
+                                                                    .outline()
+                                                                    .with_size(gpui_component::Size::Small)
+                                                                    .label("Remove")
+                                                                    .tooltip(format!(
+                                                                        "Remove {path_display}"
+                                                                    ))
+                                                                    .on_click(move |_, _, cx| {
+                                                                        remove_view.update(cx, |this, cx| {
+                                                                            this.ai_remove_composer_attachment_action(
+                                                                                remove_path.clone(),
+                                                                                cx,
+                                                                            );
+                                                                        });
+                                                                    }),
+                                                                )
+                                                                .into_any_element()
+                                                        }),
+                                                ),
+                                            )
+                                        })
+                                        .when(
+                                            composer_attachment_count > 0 && !model_supports_image_inputs,
+                                            |this| {
+                                                this.child(
+                                                    div()
+                                                        .rounded_md()
+                                                        .border_1()
+                                                        .border_color(cx.theme().warning)
+                                                        .bg(cx.theme().warning.opacity(if is_dark {
+                                                            0.14
+                                                        } else {
+                                                            0.08
+                                                        }))
+                                                        .p_2()
+                                                        .text_xs()
+                                                        .text_color(cx.theme().warning)
+                                                        .whitespace_normal()
+                                                        .child(
+                                                            "Selected model does not support image attachments. Remove attachments or switch models.",
+                                                        ),
+                                                )
+                                            },
+                                        )
                                         .child(
                                             h_flex()
                                                 .w_full()
@@ -1272,4 +1419,20 @@ impl DiffViewer {
             )
             .into_any_element()
     }
+}
+
+fn ai_composer_attachment_count_label(count: usize) -> String {
+    if count == 1 {
+        "1 image attached".to_string()
+    } else {
+        format!("{count} images attached")
+    }
+}
+
+fn ai_composer_attachment_display_name(path: &std::path::Path) -> String {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }

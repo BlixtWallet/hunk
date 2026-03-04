@@ -1,13 +1,18 @@
+use std::io;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::net::SocketAddr;
 use std::net::TcpStream;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Child;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::RecvTimeoutError;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -21,6 +26,9 @@ use crate::errors::Result;
 const STDERR_BUFFER_LIMIT: usize = 256;
 const READY_PROBE_INTERVAL: Duration = Duration::from_millis(75);
 const READY_PROBE_CONNECT_TIMEOUT: Duration = Duration::from_millis(200);
+const STOP_TERM_GRACE_TIMEOUT: Duration = Duration::from_millis(750);
+const STOP_TERM_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const STDERR_READER_JOIN_TIMEOUT: Duration = Duration::from_millis(750);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostLifecycleState {
@@ -86,6 +94,7 @@ pub struct HostRuntime {
     child: Option<Child>,
     stderr_lines: Arc<Mutex<Vec<String>>>,
     stderr_reader: Option<JoinHandle<()>>,
+    stderr_reader_done_rx: Option<Receiver<()>>,
 }
 
 impl HostRuntime {
@@ -96,6 +105,7 @@ impl HostRuntime {
             child: None,
             stderr_lines: Arc::new(Mutex::new(Vec::new())),
             stderr_reader: None,
+            stderr_reader_done_rx: None,
         }
     }
 
@@ -128,6 +138,11 @@ impl HostRuntime {
         self.state = HostLifecycleState::Starting;
 
         let mut command = self.config.build_command();
+        #[cfg(unix)]
+        {
+            // Run the host as its own process-group leader so we can signal descendants.
+            command.process_group(0);
+        }
         command
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -153,26 +168,81 @@ impl HostRuntime {
     }
 
     pub fn stop(&mut self) -> Result<()> {
-        self.stop_internal(HostLifecycleState::Stopped)
+        self.stop_internal(HostLifecycleState::Stopped, false)
     }
 
     pub fn force_kill(&mut self) -> Result<()> {
-        self.stop_internal(HostLifecycleState::Failed)
+        self.stop_internal(HostLifecycleState::Failed, true)
     }
 
-    fn stop_internal(&mut self, final_state: HostLifecycleState) -> Result<()> {
+    fn stop_internal(&mut self, final_state: HostLifecycleState, force: bool) -> Result<()> {
         if let Some(mut child) = self.child.take() {
+            let process_id = child.id();
+            if force {
+                self.force_stop_child(process_id, &mut child)?;
+            } else {
+                self.graceful_stop_child(process_id, &mut child)?;
+            }
+            let _ = child.wait();
+            #[cfg(unix)]
+            {
+                // Best-effort cleanup for any descendants that outlive the group leader.
+                let _ = signal_process_group(process_id, ProcessSignal::Kill);
+            }
+        }
+        self.join_stderr_reader();
+        self.state = final_state;
+        Ok(())
+    }
+
+    fn graceful_stop_child(&self, process_id: u32, child: &mut Child) -> Result<()> {
+        #[cfg(unix)]
+        {
+            if let Err(error) = signal_process_group(process_id, ProcessSignal::Term) {
+                let already_exited = matches!(child.try_wait(), Ok(Some(_)));
+                if !already_exited {
+                    return Err(CodexIntegrationError::HostProcessIo(error));
+                }
+            }
+
+            if wait_for_child_exit(child, STOP_TERM_GRACE_TIMEOUT)
+                .map_err(CodexIntegrationError::HostProcessIo)?
+            {
+                return Ok(());
+            }
+        }
+
+        self.force_stop_child(process_id, child)
+    }
+
+    fn force_stop_child(&self, process_id: u32, child: &mut Child) -> Result<()> {
+        #[cfg(unix)]
+        {
+            if let Err(error) = signal_process_group(process_id, ProcessSignal::Kill) {
+                let already_exited = matches!(child.try_wait(), Ok(Some(_)));
+                if !already_exited {
+                    if let Err(kill_error) = child.kill() {
+                        let already_exited = matches!(child.try_wait(), Ok(Some(_)));
+                        if !already_exited {
+                            return Err(CodexIntegrationError::HostProcessIo(kill_error));
+                        }
+                    }
+                    return Err(CodexIntegrationError::HostProcessIo(error));
+                }
+            }
+            Ok(())
+        }
+
+        #[cfg(not(unix))]
+        {
             if let Err(error) = child.kill() {
                 let already_exited = matches!(child.try_wait(), Ok(Some(_)));
                 if !already_exited {
                     return Err(CodexIntegrationError::HostProcessIo(error));
                 }
             }
-            let _ = child.wait();
+            Ok(())
         }
-        self.join_stderr_reader();
-        self.state = final_state;
-        Ok(())
     }
 
     fn wait_until_ready(&mut self, timeout: Duration) -> Result<()> {
@@ -236,10 +306,13 @@ impl HostRuntime {
 
     fn spawn_stderr_reader(&mut self, child: &mut Child) {
         let Some(stderr) = child.stderr.take() else {
+            self.stderr_reader_done_rx = None;
             return;
         };
 
         let lines = Arc::clone(&self.stderr_lines);
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        self.stderr_reader_done_rx = Some(done_rx);
         self.stderr_reader = Some(thread::spawn(move || {
             let reader = BufReader::new(stderr);
             for line in reader.lines() {
@@ -258,16 +331,85 @@ impl HostRuntime {
                     guard.drain(0..keep_from);
                 }
             }
+            let _ = done_tx.send(());
         }));
     }
 
     fn join_stderr_reader(&mut self) {
-        if let Some(join_handle) = self.stderr_reader.take()
-            && let Err(error) = join_handle.join()
-        {
+        let Some(join_handle) = self.stderr_reader.take() else {
+            self.stderr_reader_done_rx = None;
+            return;
+        };
+
+        let should_join = match self.stderr_reader_done_rx.take() {
+            Some(done_rx) => match done_rx.recv_timeout(STDERR_READER_JOIN_TIMEOUT) {
+                Ok(()) | Err(RecvTimeoutError::Disconnected) => true,
+                Err(RecvTimeoutError::Timeout) => {
+                    warn!("timed out waiting for codex stderr reader; detaching reader thread");
+                    false
+                }
+            },
+            None => true,
+        };
+        if !should_join {
+            return;
+        }
+
+        if let Err(error) = join_handle.join() {
             warn!("stderr reader join failed: {error:?}");
         }
     }
+}
+
+fn wait_for_child_exit(child: &mut Child, timeout: Duration) -> io::Result<bool> {
+    let started_at = Instant::now();
+    loop {
+        if child.try_wait()?.is_some() {
+            return Ok(true);
+        }
+        if started_at.elapsed() >= timeout {
+            return Ok(false);
+        }
+        thread::sleep(STOP_TERM_POLL_INTERVAL);
+    }
+}
+
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy)]
+enum ProcessSignal {
+    Term,
+    Kill,
+}
+
+#[cfg(unix)]
+impl ProcessSignal {
+    fn kill_arg(self) -> &'static str {
+        match self {
+            Self::Term => "-TERM",
+            Self::Kill => "-KILL",
+        }
+    }
+}
+
+#[cfg(unix)]
+fn signal_process_group(process_id: u32, signal: ProcessSignal) -> io::Result<()> {
+    let status = Command::new("kill")
+        .arg(signal.kill_arg())
+        .arg("--")
+        .arg(format!("-{process_id}"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    if status.success() {
+        return Ok(());
+    }
+
+    Err(io::Error::other(format!(
+        "kill {} -- -{} exited with status {}",
+        signal.kill_arg(),
+        process_id,
+        status
+    )))
 }
 
 impl Drop for HostRuntime {

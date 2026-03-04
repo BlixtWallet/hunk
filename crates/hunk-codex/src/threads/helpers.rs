@@ -27,14 +27,7 @@ fn thread_item_kind(item: &ThreadItem) -> &'static str {
 
 fn thread_item_seed_content(item: &ThreadItem) -> Option<String> {
     match item {
-        ThreadItem::UserMessage { content, .. } => {
-            let text = content
-                .iter()
-                .filter_map(user_input_text_content)
-                .collect::<Vec<_>>()
-                .join("");
-            (!text.is_empty()).then_some(text)
-        }
+        ThreadItem::UserMessage { content, .. } => user_message_seed_content(content.as_slice()),
         ThreadItem::AgentMessage { text, .. } | ThreadItem::Plan { text, .. } => {
             (!text.is_empty()).then(|| text.clone())
         }
@@ -74,11 +67,58 @@ fn thread_item_seed_content(item: &ThreadItem) -> Option<String> {
     }
 }
 
+fn user_message_seed_content(content: &[UserInput]) -> Option<String> {
+    let text = content
+        .iter()
+        .filter_map(user_input_text_content)
+        .collect::<Vec<_>>()
+        .join("");
+    let images = content
+        .iter()
+        .filter_map(user_input_local_image_name)
+        .collect::<Vec<_>>();
+
+    if text.is_empty() && images.is_empty() {
+        return None;
+    }
+
+    if images.is_empty() {
+        return Some(text);
+    }
+
+    let image_prefix = if images.len() == 1 {
+        "[image] "
+    } else {
+        "[images] "
+    };
+    let image_summary = format!("{image_prefix}{}", images.join(", "));
+    if text.is_empty() {
+        Some(image_summary)
+    } else {
+        Some(format!("{text}\n{image_summary}"))
+    }
+}
+
 fn user_input_text_content(input: &UserInput) -> Option<&str> {
     match input {
         UserInput::Text { text, .. } => Some(text.as_str()),
         _ => None,
     }
+}
+
+fn user_input_local_image_name(input: &UserInput) -> Option<String> {
+    match input {
+        UserInput::LocalImage { path } => Some(local_image_display_name(path.as_path())),
+        _ => None,
+    }
+}
+
+fn local_image_display_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
 fn thread_item_is_complete(item: &ThreadItem) -> bool {

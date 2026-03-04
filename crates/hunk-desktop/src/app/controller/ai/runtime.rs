@@ -249,11 +249,21 @@ impl DiffViewer {
 
     fn send_current_ai_prompt(&mut self, cx: &mut Context<Self>) -> bool {
         let prompt = self.ai_composer_input_state.read(cx).value().trim().to_string();
-        if prompt.is_empty() {
+        let local_image_paths = self.ai_composer_local_images.clone();
+        if prompt.is_empty() && local_image_paths.is_empty() {
             self.ai_status_message = Some("Prompt cannot be empty.".to_string());
             cx.notify();
             return false;
         }
+        if !local_image_paths.is_empty() && !self.current_ai_model_supports_image_inputs() {
+            self.ai_status_message = Some(
+                "Selected model does not support image attachments. Remove attachments or switch models."
+                    .to_string(),
+            );
+            cx.notify();
+            return false;
+        }
+        let prompt = (!prompt.is_empty()).then_some(prompt);
 
         let session_overrides = self.current_ai_turn_session_overrides();
         if let Some(thread_id) = self.current_ai_thread_id() {
@@ -261,6 +271,7 @@ impl DiffViewer {
                 AiWorkerCommand::SendPrompt {
                     thread_id,
                     prompt,
+                    local_image_paths,
                     session_overrides,
                 },
                 cx,
@@ -269,7 +280,8 @@ impl DiffViewer {
 
         self.send_ai_worker_command(
             AiWorkerCommand::StartThread {
-                prompt: Some(prompt),
+                prompt,
+                local_image_paths,
                 session_overrides,
             },
             cx,
@@ -316,7 +328,8 @@ impl DiffViewer {
         self.persist_state();
     }
 
-    fn clear_ai_composer_input(&self, window: &mut Window, cx: &mut Context<Self>) {
+    fn clear_ai_composer_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.ai_composer_local_images.clear();
         self.ai_composer_input_state.update(cx, |state, cx| {
             state.set_value("", window, cx);
         });
@@ -368,5 +381,22 @@ impl DiffViewer {
                 .iter()
                 .any(|option| reasoning_effort_key(&option.reasoning_effort) == effort_key)
         })
+    }
+
+    pub(crate) fn current_ai_model_supports_image_inputs(&self) -> bool {
+        self.current_ai_model_for_input_modalities()
+            .is_none_or(|model| {
+                model
+                    .input_modalities
+                    .contains(&codex_protocol::openai_models::InputModality::Image)
+            })
+    }
+
+    fn current_ai_model_for_input_modalities(&self) -> Option<&codex_app_server_protocol::Model> {
+        self.ai_selected_model
+            .as_deref()
+            .and_then(|model_id| self.ai_model_by_id(model_id))
+            .or_else(|| self.ai_models.iter().find(|model| model.is_default))
+            .or_else(|| self.ai_models.first())
     }
 }

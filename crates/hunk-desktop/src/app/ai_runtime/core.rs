@@ -177,6 +177,7 @@ pub enum AiWorkerCommand {
     },
     StartThread {
         prompt: Option<String>,
+        local_image_paths: Vec<PathBuf>,
         session_overrides: AiTurnSessionOverrides,
     },
     SelectThread {
@@ -187,7 +188,8 @@ pub enum AiWorkerCommand {
     },
     SendPrompt {
         thread_id: String,
-        prompt: String,
+        prompt: Option<String>,
+        local_image_paths: Vec<PathBuf>,
         session_overrides: AiTurnSessionOverrides,
     },
     InterruptTurn {
@@ -434,6 +436,7 @@ impl AiWorkerRuntime {
             }
             AiWorkerCommand::StartThread {
                 prompt,
+                local_image_paths,
                 session_overrides,
             } => {
                 let mut params = ThreadStartParams {
@@ -448,8 +451,15 @@ impl AiWorkerRuntime {
                 self.service
                     .state_mut()
                     .set_active_thread_for_cwd(self.cwd_key.clone(), response.thread.id.clone());
-                if let Some(prompt) = prompt {
-                    self.send_prompt(response.thread.id, prompt, session_overrides)?;
+                if prompt.as_ref().is_some_and(|value| !value.trim().is_empty())
+                    || !local_image_paths.is_empty()
+                {
+                    self.send_prompt(
+                        response.thread.id,
+                        prompt,
+                        local_image_paths,
+                        session_overrides,
+                    )?;
                 }
                 self.emit_snapshot_after_sync(event_tx)?;
             }
@@ -514,9 +524,10 @@ impl AiWorkerRuntime {
             AiWorkerCommand::SendPrompt {
                 thread_id,
                 prompt,
+                local_image_paths,
                 session_overrides,
             } => {
-                self.send_prompt(thread_id, prompt, session_overrides)?;
+                self.send_prompt(thread_id, prompt, local_image_paths, session_overrides)?;
                 self.emit_snapshot_after_sync(event_tx)?;
             }
             AiWorkerCommand::InterruptTurn { thread_id, turn_id } => {
@@ -642,11 +653,12 @@ impl AiWorkerRuntime {
     fn send_prompt(
         &mut self,
         thread_id: String,
-        prompt: String,
+        prompt: Option<String>,
+        local_image_paths: Vec<PathBuf>,
         session_overrides: AiTurnSessionOverrides,
     ) -> Result<(), CodexIntegrationError> {
-        let trimmed = prompt.trim();
-        if trimmed.is_empty() {
+        let trimmed = prompt.as_deref().map(str::trim).filter(|text| !text.is_empty());
+        if trimmed.is_none() && local_image_paths.is_empty() {
             return Ok(());
         }
 
@@ -654,10 +666,16 @@ impl AiWorkerRuntime {
             .state_mut()
             .set_active_thread_for_cwd(self.cwd_key.clone(), thread_id.clone());
 
-        let input = vec![UserInput::Text {
-            text: trimmed.to_string(),
-            text_elements: Vec::new(),
-        }];
+        let mut input = local_image_paths
+            .into_iter()
+            .map(|path| UserInput::LocalImage { path })
+            .collect::<Vec<_>>();
+        if let Some(text) = trimmed {
+            input.push(UserInput::Text {
+                text: text.to_string(),
+                text_elements: Vec::new(),
+            });
+        }
 
         if let Some(in_progress_turn_id) = self.in_progress_turn_id(thread_id.as_str()) {
             let steer_result = self.service.steer_turn(

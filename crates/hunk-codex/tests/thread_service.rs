@@ -195,7 +195,7 @@ fn resume_external_thread_updates_active_workspace_thread() {
             })
             .expect("resume item should exist")
             .content,
-        "resume prompt"
+        "resume prompt\n[image] resume-screenshot.png"
     );
 
     server.join();
@@ -1276,10 +1276,15 @@ fn run_resume_external_thread(socket: &mut WebSocket<TcpStream>) {
             TurnStatus::Completed,
             vec![ThreadItem::UserMessage {
                 id: "resume-item-1".to_string(),
-                content: vec![UserInput::Text {
-                    text: "resume prompt".to_string(),
-                    text_elements: Vec::new(),
-                }],
+                content: vec![
+                    UserInput::Text {
+                        text: "resume prompt".to_string(),
+                        text_elements: Vec::new(),
+                    },
+                    UserInput::LocalImage {
+                        path: PathBuf::from("/repo-a/screenshots/resume-screenshot.png"),
+                    },
+                ],
             }],
         )],
     ));
