@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use hunk_domain::state::AiThreadSessionState;
+use hunk_codex::state::ThreadLifecycleStatus;
 use hunk_codex::state::ThreadSummary;
 use hunk_codex::state::TurnStatus;
 use hunk_domain::state::AppState;
@@ -321,6 +322,25 @@ impl DiffViewer {
         cx.notify();
     }
 
+    pub(super) fn ai_archive_thread_action(&mut self, thread_id: String, cx: &mut Context<Self>) {
+        if !self.send_ai_worker_command(
+            AiWorkerCommand::ArchiveThread {
+                thread_id: thread_id.clone(),
+            },
+            cx,
+        ) {
+            return;
+        }
+
+        if self.ai_selected_thread_id.as_deref() == Some(thread_id.as_str()) {
+            self.ai_selected_thread_id = None;
+            self.ai_expanded_command_output_item_ids.clear();
+            self.ai_scroll_timeline_to_bottom = true;
+        }
+        self.ai_status_message = Some(format!("Archived thread {thread_id}."));
+        cx.notify();
+    }
+
     pub(super) fn ai_toggle_command_output_expansion_action(
         &mut self,
         item_id: String,
@@ -360,6 +380,9 @@ impl DiffViewer {
 
     pub(super) fn ai_visible_threads(&self) -> Vec<ThreadSummary> {
         sorted_threads(&self.ai_state_snapshot)
+            .into_iter()
+            .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
+            .collect()
     }
 
     pub(super) fn ai_timeline_turn_ids(&self, thread_id: &str) -> Vec<String> {
@@ -553,7 +576,11 @@ impl DiffViewer {
 
     pub(super) fn current_ai_thread_id(&self) -> Option<String> {
         if let Some(selected) = self.ai_selected_thread_id.as_ref()
-            && self.ai_state_snapshot.threads.contains_key(selected)
+            && self
+                .ai_state_snapshot
+                .threads
+                .get(selected)
+                .is_some_and(|thread| thread.status != ThreadLifecycleStatus::Archived)
         {
             return Some(selected.clone());
         }
@@ -561,6 +588,13 @@ impl DiffViewer {
         self.ai_workspace_key().and_then(|cwd| {
             self.ai_state_snapshot
                 .active_thread_for_cwd(cwd.as_str())
+                .and_then(|thread_id| {
+                    self.ai_state_snapshot
+                        .threads
+                        .get(thread_id)
+                        .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
+                        .map(|_| thread_id)
+                })
                 .map(ToOwned::to_owned)
         })
     }
@@ -873,7 +907,10 @@ impl DiffViewer {
         }
 
         if self.ai_selected_thread_id.as_ref().is_some_and(|selected| {
-            !self.ai_state_snapshot.threads.contains_key(selected)
+            self.ai_state_snapshot
+                .threads
+                .get(selected)
+                .is_none_or(|thread| thread.status == ThreadLifecycleStatus::Archived)
         }) {
             self.ai_selected_thread_id = None;
         }

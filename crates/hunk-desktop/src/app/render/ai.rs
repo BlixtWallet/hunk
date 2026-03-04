@@ -310,19 +310,6 @@ impl DiffViewer {
                                                                         } else {
                                                                             cx.theme().secondary_hover
                                                                         };
-                                                                        let thread_marker_color = if selected {
-                                                                            if is_dark {
-                                                                                cx.theme().success.lighten(0.18)
-                                                                            } else {
-                                                                                cx.theme().success.darken(0.08)
-                                                                            }
-                                                                        } else {
-                                                                            cx.theme().border.opacity(if is_dark {
-                                                                                0.82
-                                                                            } else {
-                                                                                0.68
-                                                                            })
-                                                                        };
                                                                         let thread_title_color = if selected {
                                                                             cx.theme().foreground
                                                                         } else {
@@ -342,7 +329,13 @@ impl DiffViewer {
                                                                                 thread.status,
                                                                                 cx,
                                                                             );
-                                                                        let view = view.clone();
+                                                                        let select_view = view.clone();
+                                                                        let archive_view = view.clone();
+                                                                        let archive_thread_id = thread.id.clone();
+                                                                        let archive_button_id = format!(
+                                                                            "ai-thread-archive-{}",
+                                                                            archive_thread_id.replace('\u{1f}', "--"),
+                                                                        );
 
                                                                         div()
                                                                             .rounded_md()
@@ -356,7 +349,7 @@ impl DiffViewer {
                                                                                 style.bg(thread_hover_bg).cursor_pointer()
                                                                             })
                                                                             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                                                                view.update(cx, |this, cx| {
+                                                                                select_view.update(cx, |this, cx| {
                                                                                     this.ai_select_thread(thread_id.clone(), cx);
                                                                                 });
                                                                             })
@@ -371,13 +364,6 @@ impl DiffViewer {
                                                                                             .min_w_0()
                                                                                             .items_center()
                                                                                             .gap_1()
-                                                                                            .child(
-                                                                                                div()
-                                                                                                    .w(px(8.0))
-                                                                                                    .h(px(8.0))
-                                                                                                    .rounded(px(999.0))
-                                                                                                    .bg(thread_marker_color),
-                                                                                            )
                                                                                             .child(
                                                                                                 div()
                                                                                                     .flex_1()
@@ -400,6 +386,35 @@ impl DiffViewer {
                                                                                                     .text_color(status_color)
                                                                                                     .child(status_label),
                                                                                             ),
+                                                                                    )
+                                                                                    .child(
+                                                                                        div()
+                                                                                            .on_mouse_down(
+                                                                                                MouseButton::Left,
+                                                                                                |_, _, cx| {
+                                                                                                    cx.stop_propagation();
+                                                                                                },
+                                                                                            )
+                                                                                            .child({
+                                                                                                let view = archive_view.clone();
+                                                                                                Button::new(archive_button_id)
+                                                                                                    .compact()
+                                                                                                    .outline()
+                                                                                                    .with_size(gpui_component::Size::Small)
+                                                                                                    .icon(
+                                                                                                        Icon::new(IconName::Inbox)
+                                                                                                            .size(px(12.0)),
+                                                                                                    )
+                                                                                                    .tooltip("Archive thread")
+                                                                                                    .on_click(move |_, _, cx| {
+                                                                                                        view.update(cx, |this, cx| {
+                                                                                                            this.ai_archive_thread_action(
+                                                                                                                archive_thread_id.clone(),
+                                                                                                                cx,
+                                                                                                            );
+                                                                                                        });
+                                                                                                    })
+                                                                                            }),
                                                                                     ),
                                                                             )
                                                                             .child(

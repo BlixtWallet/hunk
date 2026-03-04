@@ -50,6 +50,7 @@ use hunk_codex::host::HostConfig;
 use hunk_codex::host::HostRuntime;
 use hunk_codex::state::AiState;
 use hunk_codex::state::ServerRequestDecision;
+use hunk_codex::state::ThreadLifecycleStatus;
 use hunk_codex::state::TurnStatus as StateTurnStatus;
 use hunk_codex::threads::RolloutFallbackItem;
 use hunk_codex::threads::RolloutFallbackTurn;
@@ -173,6 +174,9 @@ pub enum AiWorkerCommand {
         session_overrides: AiTurnSessionOverrides,
     },
     SelectThread {
+        thread_id: String,
+    },
+    ArchiveThread {
         thread_id: String,
     },
     SendPrompt {
@@ -438,6 +442,44 @@ impl AiWorkerRuntime {
                     self.request_timeout,
                 )?;
                 self.hydrate_thread_from_rollout_fallback_if_needed(selected_thread_id.as_str());
+                self.emit_snapshot_after_sync(event_tx)?;
+            }
+            AiWorkerCommand::ArchiveThread { thread_id } => {
+                let was_active =
+                    self.service.active_thread_for_workspace() == Some(thread_id.as_str());
+                self.service.archive_thread(
+                    &mut self.session,
+                    thread_id.clone(),
+                    self.request_timeout,
+                )?;
+                if was_active {
+                    let replacement_thread_id = self
+                        .service
+                        .state()
+                        .threads
+                        .values()
+                        .filter(|thread| {
+                            thread.cwd == self.cwd_key
+                                && thread.status != ThreadLifecycleStatus::Archived
+                                && thread.id != thread_id
+                        })
+                        .max_by(|left, right| {
+                            left.created_at
+                                .cmp(&right.created_at)
+                                .then_with(|| left.id.cmp(&right.id))
+                        })
+                        .map(|thread| thread.id.clone());
+                    if let Some(next_thread_id) = replacement_thread_id {
+                        self.service
+                            .state_mut()
+                            .set_active_thread_for_cwd(self.cwd_key.clone(), next_thread_id);
+                    } else {
+                        self.service
+                            .state_mut()
+                            .active_thread_by_cwd
+                            .remove(self.cwd_key.as_str());
+                    }
+                }
                 self.emit_snapshot_after_sync(event_tx)?;
             }
             AiWorkerCommand::SendPrompt {
