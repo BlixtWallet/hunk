@@ -385,6 +385,73 @@ impl DiffViewer {
         items.into_iter().map(|(item_key, _)| item_key).collect()
     }
 
+    pub(super) fn sync_ai_timeline_list_state(&mut self, row_count: usize) {
+        if self.ai_timeline_list_row_count != row_count {
+            let previous_top = self.ai_timeline_list_state.logical_scroll_top();
+            self.ai_timeline_list_state.reset(row_count);
+            let item_ix = if row_count == 0 {
+                0
+            } else {
+                previous_top.item_ix.min(row_count.saturating_sub(1))
+            };
+            let offset_in_item = if row_count == 0 || item_ix != previous_top.item_ix {
+                px(0.)
+            } else {
+                previous_top.offset_in_item
+            };
+            self.ai_timeline_list_state.scroll_to(ListOffset {
+                item_ix,
+                offset_in_item,
+            });
+            self.ai_timeline_list_row_count = row_count;
+        }
+
+        if self.ai_scroll_timeline_to_bottom && row_count > 0 {
+            self.scroll_ai_timeline_list_to_bottom();
+            self.ai_scroll_timeline_to_bottom = false;
+        }
+    }
+
+    fn ai_visible_turn_count_for_thread(&self, thread_id: &str) -> usize {
+        let total_turn_count = self
+            .ai_state_snapshot
+            .turns
+            .values()
+            .filter(|turn| turn.thread_id == thread_id)
+            .count();
+        if total_turn_count == 0 {
+            return 0;
+        }
+        let configured_limit = self
+            .ai_timeline_visible_turn_limit_by_thread
+            .get(thread_id)
+            .copied()
+            .unwrap_or(AI_TIMELINE_DEFAULT_VISIBLE_TURNS);
+        configured_limit.min(total_turn_count)
+    }
+
+    fn ai_timeline_is_near_bottom_for_thread(&self, thread_id: &str) -> bool {
+        let visible_turn_count = self.ai_visible_turn_count_for_thread(thread_id);
+        if visible_turn_count <= 1 {
+            return true;
+        }
+        let top_ix = self.ai_timeline_list_state.logical_scroll_top().item_ix;
+        top_ix.saturating_add(6) >= visible_turn_count.saturating_sub(1)
+    }
+
+    fn scroll_ai_timeline_list_to_bottom(&self) {
+        let row_count = self.ai_timeline_list_state.item_count();
+        if row_count == 0 {
+            return;
+        }
+        // Use an end-of-list logical offset instead of reveal-item because reveal-item relies on
+        // measured row heights; immediately after a reset, rows are unmeasured (height=0).
+        self.ai_timeline_list_state.scroll_to(ListOffset {
+            item_ix: row_count,
+            offset_in_item: px(0.),
+        });
+    }
+
     pub(super) fn ai_visible_pending_approvals(&self) -> Vec<AiPendingApproval> {
         self.ai_pending_approvals.clone()
     }
@@ -403,6 +470,9 @@ impl DiffViewer {
             .get(thread_id.as_str())
             .copied()
             .unwrap_or(AI_TIMELINE_DEFAULT_VISIBLE_TURNS.min(total_turn_count));
+        if current_limit == usize::MAX {
+            return;
+        }
         let next_limit = current_limit
             .saturating_add(AI_TIMELINE_TURN_PAGE_SIZE)
             .min(total_turn_count);
@@ -420,7 +490,7 @@ impl DiffViewer {
             return;
         }
         self.ai_timeline_visible_turn_limit_by_thread
-            .insert(thread_id, total_turn_count);
+            .insert(thread_id, usize::MAX);
         cx.notify();
     }
 
@@ -695,6 +765,8 @@ impl DiffViewer {
                         }
                         cx.notify();
                     });
+                } else {
+                    return;
                 }
             }
         });
@@ -796,15 +868,12 @@ impl DiffViewer {
         {
             let latest_sequence =
                 thread_latest_timeline_sequence(&self.ai_state_snapshot, selected_thread_id);
-            if latest_sequence > previous_selected_thread_sequence {
+            if latest_sequence > previous_selected_thread_sequence
+                && self.ai_timeline_is_near_bottom_for_thread(selected_thread_id)
+            {
                 self.ai_scroll_timeline_to_bottom = true;
             }
         }
-        if self.ai_scroll_timeline_to_bottom && self.ai_selected_thread_id.is_some() {
-            self.ai_timeline_scroll_handle.scroll_to_bottom();
-            self.ai_scroll_timeline_to_bottom = false;
-        }
-
         self.ai_expanded_command_output_item_ids
             .retain(|item_id| self.ai_state_snapshot.items.contains_key(item_id));
 

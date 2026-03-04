@@ -36,6 +36,30 @@ impl DiffViewer {
         let pending_user_inputs_for_timeline = pending_user_inputs.clone();
         let pending_user_input_count = pending_user_inputs.len();
         let selected_thread_id = self.current_ai_thread_id();
+        let (timeline_total_turn_count, timeline_visible_turn_count, timeline_hidden_turn_count, timeline_visible_turn_ids) =
+            if let Some(thread_id) = selected_thread_id.as_deref() {
+                let turn_ids = self.ai_timeline_turn_ids(thread_id);
+                let total_turn_count = turn_ids.len();
+                let configured_limit = self
+                    .ai_timeline_visible_turn_limit_by_thread
+                    .get(thread_id)
+                    .copied()
+                    .unwrap_or(AI_TIMELINE_DEFAULT_VISIBLE_TURNS);
+                let visible_turn_count = configured_limit.min(total_turn_count);
+                let hidden_turn_count = total_turn_count.saturating_sub(visible_turn_count);
+                let visible_turn_ids = turn_ids.into_iter().skip(hidden_turn_count).collect::<Vec<_>>();
+                self.sync_ai_timeline_list_state(visible_turn_count);
+                (
+                    total_turn_count,
+                    visible_turn_count,
+                    hidden_turn_count,
+                    visible_turn_ids,
+                )
+            } else {
+                self.sync_ai_timeline_list_state(0);
+                (0, 0, 0, Vec::new())
+            };
+        let ai_timeline_list_state = self.ai_timeline_list_state.clone();
         let in_progress_turn = selected_thread_id
             .as_ref()
             .and_then(|thread_id| self.current_ai_in_progress_turn_id(thread_id.as_str()));
@@ -421,10 +445,9 @@ impl DiffViewer {
                                                     div()
                                                         .id("ai-timeline-scroll-area")
                                                         .size_full()
-                                                        .track_scroll(&self.ai_timeline_scroll_handle)
-                                                        .overflow_y_scroll()
                                                         .child(
                                                             v_flex()
+                                                                .size_full()
                                                                 .w_full()
                                                                 .min_h_0()
                                                                 .gap_2()
@@ -788,147 +811,30 @@ impl DiffViewer {
                                                     )
                                                 })
                                                         .when_some(selected_thread_id.clone(), |this, thread_id| {
-                                                            let turn_ids = self.ai_timeline_turn_ids(thread_id.as_str());
-                                                            let total_turn_count = turn_ids.len();
-                                                            let configured_limit = self
-                                                                .ai_timeline_visible_turn_limit_by_thread
-                                                                .get(thread_id.as_str())
-                                                                .copied()
-                                                                .unwrap_or(AI_TIMELINE_DEFAULT_VISIBLE_TURNS);
-                                                            let visible_turn_count = configured_limit.min(total_turn_count);
-                                                            let hidden_turn_count =
-                                                                total_turn_count.saturating_sub(visible_turn_count);
-                                                            let first_visible_turn_ix = hidden_turn_count;
-                                                            this.when(turn_ids.is_empty(), |this| {
-                                                                this.child(
-                                                                    div()
-                                                                        .rounded_md()
-                                                                        .border_1()
-                                                                        .border_color(cx.theme().border)
-                                                                        .bg(cx.theme().muted.opacity(if is_dark {
-                                                                            0.22
-                                                                        } else {
-                                                                            0.40
-                                                                        }))
-                                                                        .p_3()
-                                                                        .child(
-                                                                            div()
-                                                                                .text_sm()
-                                                                                .text_color(
-                                                                                    cx.theme().muted_foreground,
-                                                                                )
-                                                                                .child("No turns yet. Send a prompt to start."),
-                                                                        ),
-                                                                )
-                                                            })
-                                                            .when(hidden_turn_count > 0, |this| {
-                                                                let load_older_thread_id = thread_id.clone();
-                                                                let show_all_thread_id = thread_id.clone();
-                                                                let view = view.clone();
-                                                                this.child(
-                                                                    h_flex()
-                                                                        .w_full()
-                                                                        .items_center()
-                                                                        .justify_between()
-                                                                        .gap_2()
-                                                                        .rounded_md()
-                                                                        .border_1()
-                                                                        .border_color(
-                                                                            cx.theme().border.opacity(if is_dark {
-                                                                                0.90
-                                                                            } else {
-                                                                                0.74
-                                                                            }),
-                                                                        )
-                                                                        .bg(cx.theme().background.blend(
-                                                                            cx.theme().muted.opacity(if is_dark {
-                                                                                0.16
-                                                                            } else {
-                                                                                0.24
-                                                                            }),
-                                                                        ))
-                                                                        .p_2()
-                                                                        .child(
-                                                                            div()
-                                                                                .text_xs()
-                                                                                .text_color(
-                                                                                    cx.theme().muted_foreground,
-                                                                                )
-                                                                                .child(format!(
-                                                                                    "Showing latest {visible_turn_count} of {total_turn_count} turns.",
-                                                                                )),
-                                                                        )
-                                                                        .child(
-                                                                            h_flex()
-                                                                                .items_center()
-                                                                                .gap_1()
-                                                                                .child({
-                                                                                    let view =
-                                                                                        view.clone();
-                                                                                    Button::new(
-                                                                                        "ai-timeline-load-older-turns",
-                                                                                    )
-                                                                                    .compact()
-                                                                                    .outline()
-                                                                                    .with_size(
-                                                                                        gpui_component::Size::Small,
-                                                                                    )
-                                                                                    .label(
-                                                                                        "Load older",
-                                                                                    )
-                                                                                    .on_click(
-                                                                                        move |_, _, cx| {
-                                                                                            view.update(cx, |this, cx| {
-                                                                                                this.ai_load_older_turns_action(
-                                                                                                    load_older_thread_id
-                                                                                                        .clone(),
-                                                                                                    cx,
-                                                                                                );
-                                                                                            });
-                                                                                        },
-                                                                                    )
-                                                                                })
-                                                                                .child({
-                                                                                    let view =
-                                                                                        view.clone();
-                                                                                    Button::new(
-                                                                                        "ai-timeline-show-all-turns",
-                                                                                    )
-                                                                                    .compact()
-                                                                                    .outline()
-                                                                                    .with_size(
-                                                                                        gpui_component::Size::Small,
-                                                                                    )
-                                                                                    .label("Show all")
-                                                                                    .on_click(
-                                                                                        move |_, _, cx| {
-                                                                                            view.update(cx, |this, cx| {
-                                                                                                this.ai_show_full_timeline_action(
-                                                                                                    show_all_thread_id
-                                                                                                        .clone(),
-                                                                                                    cx,
-                                                                                                );
-                                                                                            });
-                                                                                        },
-                                                                                    )
-                                                                                }),
-                                                                        ),
-                                                                )
-                                                            })
-                                                            .children(turn_ids.into_iter().skip(first_visible_turn_ix).filter_map(|turn_id| {
-                                                                let turn = self.ai_state_snapshot.turns.get(&turn_id)?;
-                                                                let turn_status = ai_turn_status_label(turn.status);
-                                                                let item_ids = self.ai_timeline_item_ids(
-                                                                    turn.thread_id.as_str(),
-                                                                    turn.id.as_str(),
-                                                                );
-                                                                let diff_preview = self
-                                                                    .ai_state_snapshot
-                                                                    .turn_diffs
-                                                                    .get(turn_id.as_str())
-                                                                    .cloned();
+                                                            let timeline_turn_ids_for_list = timeline_visible_turn_ids.clone();
+                                                            let timeline_list_state = ai_timeline_list_state.clone();
+                                                            let view_for_list = view.clone();
+                                                            let timeline_list = list(timeline_list_state.clone(), {
+                                                                cx.processor(move |this, ix: usize, _window, cx| {
+                                                                    let Some(turn_id) = timeline_turn_ids_for_list.get(ix) else {
+                                                                        return div().w_full().h(px(0.0)).into_any_element();
+                                                                    };
+                                                                    let Some(turn) =
+                                                                        this.ai_state_snapshot.turns.get(turn_id.as_str())
+                                                                    else {
+                                                                        return div().w_full().h(px(0.0)).into_any_element();
+                                                                    };
+                                                                    let turn_status = ai_turn_status_label(turn.status);
+                                                                    let item_ids = this.ai_timeline_item_ids(
+                                                                        turn.thread_id.as_str(),
+                                                                        turn.id.as_str(),
+                                                                    );
+                                                                    let diff_preview = this
+                                                                        .ai_state_snapshot
+                                                                        .turn_diffs
+                                                                        .get(turn_id.as_str())
+                                                                        .cloned();
 
-                                                                Some(
                                                                     v_flex()
                                                                         .w_full()
                                                                         .gap_1p5()
@@ -973,13 +879,13 @@ impl DiffViewer {
                                                                                 ),
                                                                         )
                                                                         .children(item_ids.into_iter().filter_map(|item_id| {
-                                                                            let item = self.ai_state_snapshot.items.get(&item_id)?;
+                                                                            let item = this.ai_state_snapshot.items.get(&item_id)?;
                                                                             let status = ai_item_status_label(item.status);
                                                                             let item_label = ai_item_display_label(item.kind.as_str()).to_string();
                                                                             let command_output_collapsible =
                                                                                 item.kind == "commandExecution";
                                                                             let command_output_expanded = command_output_collapsible
-                                                                                && self.ai_expanded_command_output_item_ids.contains(item_id.as_str());
+                                                                                && this.ai_expanded_command_output_item_ids.contains(item_id.as_str());
                                                                             let (item_content, command_output_truncated) =
                                                                                 if command_output_collapsible && !command_output_expanded {
                                                                                     ai_truncate_multiline_content(
@@ -1061,7 +967,7 @@ impl DiffViewer {
                                                                                                 "ai-toggle-command-output-{}",
                                                                                                 item_key.replace('\u{1f}', "--"),
                                                                                             );
-                                                                                            let view = view.clone();
+                                                                                            let view = view_for_list.clone();
                                                                                             this.child(
                                                                                                 Button::new(
                                                                                                     button_id,
@@ -1110,7 +1016,7 @@ impl DiffViewer {
                                                                                             )),
                                                                                     )
                                                                                     .child({
-                                                                                        let view = view.clone();
+                                                                                        let view = view_for_list.clone();
                                                                                         Button::new(
                                                                                             format!(
                                                                                                 "ai-open-review-tab-{}",
@@ -1129,22 +1035,135 @@ impl DiffViewer {
                                                                                     }),
                                                                             )
                                                                         })
-                                                                        .into_any_element(),
+                                                                        .into_any_element()
+                                                                })
+                                                            })
+                                                            .size_full()
+                                                            .with_sizing_behavior(ListSizingBehavior::Auto);
+                                                            this.when(timeline_visible_turn_count == 0, |this| {
+                                                                this.child(
+                                                                    div()
+                                                                        .rounded_md()
+                                                                        .border_1()
+                                                                        .border_color(cx.theme().border)
+                                                                        .bg(cx.theme().muted.opacity(if is_dark {
+                                                                            0.22
+                                                                        } else {
+                                                                            0.40
+                                                                        }))
+                                                                        .p_3()
+                                                                        .child(
+                                                                            div()
+                                                                                .text_sm()
+                                                                                .text_color(
+                                                                                    cx.theme().muted_foreground,
+                                                                                )
+                                                                                .child("No turns yet. Send a prompt to start."),
+                                                                        ),
                                                                 )
-                                                            }))
+                                                            })
+                                                            .when(timeline_hidden_turn_count > 0, |this| {
+                                                                let load_older_thread_id = thread_id.clone();
+                                                                let show_all_thread_id = thread_id.clone();
+                                                                let view = view.clone();
+                                                                this.child(
+                                                                    h_flex()
+                                                                        .w_full()
+                                                                        .items_center()
+                                                                        .justify_between()
+                                                                        .gap_2()
+                                                                        .rounded_md()
+                                                                        .border_1()
+                                                                        .border_color(
+                                                                            cx.theme().border.opacity(if is_dark {
+                                                                                0.90
+                                                                            } else {
+                                                                                0.74
+                                                                            }),
+                                                                        )
+                                                                        .bg(cx.theme().background.blend(
+                                                                            cx.theme().muted.opacity(if is_dark {
+                                                                                0.16
+                                                                            } else {
+                                                                                0.24
+                                                                            }),
+                                                                        ))
+                                                                        .p_2()
+                                                                        .child(
+                                                                            div()
+                                                                                .text_xs()
+                                                                                .text_color(
+                                                                                    cx.theme().muted_foreground,
+                                                                                )
+                                                                                .child(format!(
+                                                                                    "Showing latest {timeline_visible_turn_count} of {timeline_total_turn_count} turns.",
+                                                                                )),
+                                                                        )
+                                                                        .child(
+                                                                            h_flex()
+                                                                                .items_center()
+                                                                                .gap_1()
+                                                                                .child({
+                                                                                    let view = view.clone();
+                                                                                    Button::new("ai-timeline-load-older-turns")
+                                                                                        .compact()
+                                                                                        .outline()
+                                                                                        .with_size(gpui_component::Size::Small)
+                                                                                        .label("Load older")
+                                                                                        .on_click(move |_, _, cx| {
+                                                                                            view.update(cx, |this, cx| {
+                                                                                                this.ai_load_older_turns_action(
+                                                                                                    load_older_thread_id.clone(),
+                                                                                                    cx,
+                                                                                                );
+                                                                                            });
+                                                                                        })
+                                                                                })
+                                                                                .child({
+                                                                                    let view = view.clone();
+                                                                                    Button::new("ai-timeline-show-all-turns")
+                                                                                        .compact()
+                                                                                        .outline()
+                                                                                        .with_size(gpui_component::Size::Small)
+                                                                                        .label("Show all")
+                                                                                        .on_click(move |_, _, cx| {
+                                                                                            view.update(cx, |this, cx| {
+                                                                                                this.ai_show_full_timeline_action(
+                                                                                                    show_all_thread_id.clone(),
+                                                                                                    cx,
+                                                                                                );
+                                                                                            });
+                                                                                        })
+                                                                                }),
+                                                                        ),
+                                                                )
+                                                            })
+                                                            .when(timeline_visible_turn_count > 0, |this| {
+                                                                this.child(
+                                                                    div()
+                                                                        .flex_1()
+                                                                        .min_h_0()
+                                                                        .relative()
+                                                                        .child(
+                                                                            div()
+                                                                                .size_full()
+                                                                                .child(timeline_list),
+                                                                        )
+                                                                        .child(
+                                                                            div()
+                                                                                .absolute()
+                                                                                .top_0()
+                                                                                .right_0()
+                                                                                .bottom_0()
+                                                                                .w(px(16.0))
+                                                                                .child(
+                                                                                    Scrollbar::vertical(&timeline_list_state)
+                                                                                        .scrollbar_show(ScrollbarShow::Always),
+                                                                                ),
+                                                                        ),
+                                                                )
+                                                            })
                                                         }),
-                                                ),
-                                        )
-                                        .child(
-                                            div()
-                                                .absolute()
-                                                .top_0()
-                                                .right_0()
-                                                .bottom_0()
-                                                .w(px(16.0))
-                                                .child(
-                                                    Scrollbar::vertical(&self.ai_timeline_scroll_handle)
-                                                        .scrollbar_show(ScrollbarShow::Always),
                                                 ),
                                         ),
                                 )
