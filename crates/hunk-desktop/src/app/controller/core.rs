@@ -235,6 +235,7 @@ impl DiffViewer {
             ai_scroll_timeline_to_bottom: false,
             ai_thread_list_scroll_handle: ScrollHandle::default(),
             ai_timeline_scroll_handle: ScrollHandle::default(),
+            ai_timeline_visible_turn_limit_by_thread: BTreeMap::new(),
             ai_expanded_command_output_item_ids: BTreeSet::new(),
             ai_pending_approvals: Vec::new(),
             ai_pending_user_inputs: Vec::new(),

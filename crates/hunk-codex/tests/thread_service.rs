@@ -68,6 +68,7 @@ use hunk_codex::state::ReducerEvent;
 use hunk_codex::state::ServerRequestDecision;
 use hunk_codex::state::StreamEvent;
 use hunk_codex::state::ThreadLifecycleStatus;
+use hunk_codex::state::turn_storage_key;
 use hunk_codex::threads::RolloutFallbackItem;
 use hunk_codex::threads::RolloutFallbackTurn;
 use hunk_codex::threads::ThreadService;
@@ -81,6 +82,50 @@ use tungstenite::accept;
 const WORKSPACE_CWD: &str = "/repo-a";
 const OTHER_CWD: &str = "/repo-b";
 const TIMEOUT: Duration = Duration::from_secs(2);
+
+fn has_turn(state: &hunk_codex::state::AiState, thread_id: &str, turn_id: &str) -> bool {
+    state
+        .turns
+        .values()
+        .any(|turn| turn.thread_id == thread_id && turn.id == turn_id)
+}
+
+fn has_item(
+    state: &hunk_codex::state::AiState,
+    thread_id: &str,
+    turn_id: &str,
+    item_id: &str,
+) -> bool {
+    state
+        .items
+        .values()
+        .any(|item| item.thread_id == thread_id && item.turn_id == turn_id && item.id == item_id)
+}
+
+fn get_turn<'a>(
+    state: &'a hunk_codex::state::AiState,
+    thread_id: &str,
+    turn_id: &str,
+) -> &'a hunk_codex::state::TurnSummary {
+    state
+        .turns
+        .values()
+        .find(|turn| turn.thread_id == thread_id && turn.id == turn_id)
+        .expect("turn should exist")
+}
+
+fn get_item<'a>(
+    state: &'a hunk_codex::state::AiState,
+    thread_id: &str,
+    turn_id: &str,
+    item_id: &str,
+) -> &'a hunk_codex::state::ItemSummary {
+    state
+        .items
+        .values()
+        .find(|item| item.thread_id == thread_id && item.turn_id == turn_id && item.id == item_id)
+        .expect("item should exist")
+}
 
 #[test]
 fn listing_threads_is_scoped_to_current_workspace_cwd() {
@@ -127,13 +172,27 @@ fn resume_external_thread_updates_active_workspace_thread() {
         service.active_thread_for_workspace(),
         Some("external-thread")
     );
-    assert!(service.state().turns.contains_key("resume-turn-1"));
-    assert!(service.state().items.contains_key("resume-item-1"));
+    assert!(has_turn(
+        service.state(),
+        "external-thread",
+        "resume-turn-1"
+    ));
+    assert!(has_item(
+        service.state(),
+        "external-thread",
+        "resume-turn-1",
+        "resume-item-1"
+    ));
     assert_eq!(
         service
             .state()
             .items
-            .get("resume-item-1")
+            .values()
+            .find(|item| {
+                item.thread_id == "external-thread"
+                    && item.turn_id == "resume-turn-1"
+                    && item.id == "resume-item-1"
+            })
             .expect("resume item should exist")
             .content,
         "resume prompt"
@@ -278,22 +337,37 @@ fn rollback_replaces_turn_set_and_prunes_removed_items() {
         sequence: 999,
         dedupe_key: Some("item-start:item-removed".to_string()),
         payload: ReducerEvent::ItemStarted {
+            thread_id: "thread-rollback".to_string(),
             turn_id: "turn-removed".to_string(),
             item_id: "item-removed".to_string(),
             kind: "agentMessage".to_string(),
         },
     });
 
-    assert!(service.state().turns.contains_key("turn-removed"));
-    assert!(service.state().items.contains_key("item-removed"));
+    assert!(has_turn(service.state(), "thread-rollback", "turn-removed"));
+    assert!(has_item(
+        service.state(),
+        "thread-rollback",
+        "turn-removed",
+        "item-removed"
+    ));
 
     service
         .rollback_thread(&mut session, "thread-rollback".to_string(), 1, TIMEOUT)
         .expect("thread/rollback should succeed");
 
-    assert!(service.state().turns.contains_key("turn-keep"));
-    assert!(!service.state().turns.contains_key("turn-removed"));
-    assert!(!service.state().items.contains_key("item-removed"));
+    assert!(has_turn(service.state(), "thread-rollback", "turn-keep"));
+    assert!(!has_turn(
+        service.state(),
+        "thread-rollback",
+        "turn-removed"
+    ));
+    assert!(!has_item(
+        service.state(),
+        "thread-rollback",
+        "turn-removed",
+        "item-removed"
+    ));
 
     server.join();
 }
@@ -313,7 +387,7 @@ fn loaded_list_read_and_fork_are_wired_with_workspace_cwd() {
         .read_thread(&mut session, "thread-read".to_string(), true, TIMEOUT)
         .expect("thread/read should succeed");
     assert_eq!(read.thread.id, "thread-read");
-    assert!(service.state().turns.contains_key("read-turn-1"));
+    assert!(has_turn(service.state(), "thread-read", "read-turn-1"));
 
     let fork = service
         .fork_thread(
@@ -543,12 +617,7 @@ fn idle_status_notification_completes_in_progress_turns() {
     ));
 
     assert_eq!(
-        service
-            .state()
-            .turns
-            .get("turn-known")
-            .expect("turn should exist")
-            .status,
+        get_turn(service.state(), "thread-known", "turn-known").status,
         hunk_codex::state::TurnStatus::Completed
     );
 }
@@ -589,12 +658,7 @@ fn thread_closed_notification_marks_not_loaded_and_completes_in_progress_turns()
         ThreadLifecycleStatus::NotLoaded
     );
     assert_eq!(
-        service
-            .state()
-            .turns
-            .get("turn-known")
-            .expect("turn should exist")
-            .status,
+        get_turn(service.state(), "thread-known", "turn-known").status,
         hunk_codex::state::TurnStatus::Completed
     );
 }
@@ -633,12 +697,7 @@ fn non_retryable_error_notification_completes_turn() {
     }));
 
     assert_eq!(
-        service
-            .state()
-            .turns
-            .get("turn-known")
-            .expect("turn should exist")
-            .status,
+        get_turn(service.state(), "thread-known", "turn-known").status,
         hunk_codex::state::TurnStatus::Completed
     );
 }
@@ -677,12 +736,7 @@ fn retryable_error_notification_keeps_turn_in_progress() {
     }));
 
     assert_eq!(
-        service
-            .state()
-            .turns
-            .get("turn-known")
-            .expect("turn should exist")
-            .status,
+        get_turn(service.state(), "thread-known", "turn-known").status,
         hunk_codex::state::TurnStatus::InProgress
     );
 }
@@ -720,12 +774,7 @@ fn rollout_fallback_history_is_ingested_into_turn_items() {
     );
 
     assert_eq!(
-        service
-            .state()
-            .turns
-            .get("turn-known")
-            .expect("turn should exist")
-            .status,
+        get_turn(service.state(), "thread-known", "turn-known").status,
         hunk_codex::state::TurnStatus::Completed
     );
     assert_eq!(
@@ -733,7 +782,7 @@ fn rollout_fallback_history_is_ingested_into_turn_items() {
             .state()
             .items
             .values()
-            .filter(|item| item.turn_id == "turn-known")
+            .filter(|item| item.thread_id == "thread-known" && item.turn_id == "turn-known")
             .count(),
         2
     );
@@ -795,28 +844,24 @@ fn turn_start_applies_streamed_delta_completion_and_diff() {
         .expect("turn/start should succeed");
 
     assert_eq!(
-        service
-            .state()
-            .turns
-            .get("turn-stream")
-            .expect("turn should exist")
-            .status,
+        get_turn(service.state(), "thread-turn-stream", "turn-stream").status,
         hunk_codex::state::TurnStatus::Completed
     );
     assert_eq!(
-        service
-            .state()
-            .items
-            .get("item-stream")
-            .expect("item should exist")
-            .content,
+        get_item(
+            service.state(),
+            "thread-turn-stream",
+            "turn-stream",
+            "item-stream"
+        )
+        .content,
         "hello"
     );
     assert_eq!(
         service
             .state()
             .turn_diffs
-            .get("turn-stream")
+            .get(turn_storage_key("thread-turn-stream", "turn-stream").as_str())
             .map(String::as_str),
         Some("diff --git a/a b/a")
     );
@@ -850,12 +895,13 @@ fn item_completed_snapshot_does_not_duplicate_existing_delta_content() {
         .expect("turn/start should succeed");
 
     assert_eq!(
-        service
-            .state()
-            .items
-            .get("item-no-dup")
-            .expect("item should exist")
-            .content,
+        get_item(
+            service.state(),
+            "thread-no-dup",
+            "turn-no-dup",
+            "item-no-dup"
+        )
+        .content,
         "hello"
     );
 
@@ -927,12 +973,7 @@ fn turn_interrupt_marks_turn_completed() {
         .expect("turn/interrupt should succeed");
 
     assert_eq!(
-        service
-            .state()
-            .turns
-            .get("turn-interrupt")
-            .expect("turn should exist")
-            .status,
+        get_turn(service.state(), "thread-interrupt", "turn-interrupt").status,
         hunk_codex::state::TurnStatus::Completed
     );
 
@@ -974,7 +1015,11 @@ fn review_start_selects_review_thread() {
             .threads
             .contains_key("thread-review-detached")
     );
-    assert!(service.state().turns.contains_key("review-turn"));
+    assert!(has_turn(
+        service.state(),
+        "thread-review-detached",
+        "review-turn"
+    ));
 
     server.join();
 }
@@ -1004,19 +1049,23 @@ fn review_start_streams_mode_entry_and_exit_items() {
         .expect("review/start should succeed");
 
     let state = service.state();
-    let entered = state
-        .items
-        .get("review-entered")
-        .expect("entered review item should exist");
+    let entered = get_item(
+        state,
+        "thread-review-detached",
+        "review-turn",
+        "review-entered",
+    );
     assert_eq!(entered.turn_id, "review-turn");
     assert_eq!(entered.kind, "enteredReviewMode");
     assert_eq!(entered.status, hunk_codex::state::ItemStatus::Streaming);
     assert_eq!(entered.content, "Reviewing working-copy diff");
 
-    let exited = state
-        .items
-        .get("review-exited")
-        .expect("exited review item should exist");
+    let exited = get_item(
+        state,
+        "thread-review-detached",
+        "review-turn",
+        "review-exited",
+    );
     assert_eq!(exited.turn_id, "review-turn");
     assert_eq!(exited.kind, "exitedReviewMode");
     assert_eq!(exited.status, hunk_codex::state::ItemStatus::Completed);

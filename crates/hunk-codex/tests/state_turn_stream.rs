@@ -14,6 +14,8 @@ fn turn_stream_reaches_correct_final_state() {
             200,
             "item-completed:i1",
             ReducerEvent::ItemCompleted {
+                thread_id: "t1".to_string(),
+                turn_id: "r1".to_string(),
                 item_id: "i1".to_string(),
             },
         ),
@@ -39,6 +41,7 @@ fn turn_stream_reaches_correct_final_state() {
             120,
             "item-start:i1",
             ReducerEvent::ItemStarted {
+                thread_id: "t1".to_string(),
                 turn_id: "r1".to_string(),
                 item_id: "i1".to_string(),
                 kind: "commandExecution".to_string(),
@@ -48,6 +51,8 @@ fn turn_stream_reaches_correct_final_state() {
             140,
             "item-delta:i1:1",
             ReducerEvent::ItemDelta {
+                thread_id: "t1".to_string(),
+                turn_id: "r1".to_string(),
                 item_id: "i1".to_string(),
                 delta: "running".to_string(),
             },
@@ -65,15 +70,24 @@ fn turn_stream_reaches_correct_final_state() {
             210,
             "turn-completed:r1",
             ReducerEvent::TurnCompleted {
+                thread_id: "t1".to_string(),
                 turn_id: "r1".to_string(),
             },
         ),
     ]);
 
-    let turn = state.turns.get("r1").expect("turn should exist");
+    let turn = state
+        .turns
+        .values()
+        .find(|turn| turn.thread_id == "t1" && turn.id == "r1")
+        .expect("turn should exist");
     assert_eq!(turn.status, TurnStatus::Completed);
 
-    let item = state.items.get("i1").expect("item should exist");
+    let item = state
+        .items
+        .values()
+        .find(|item| item.thread_id == "t1" && item.turn_id == "r1" && item.id == "i1")
+        .expect("item should exist");
     assert_eq!(item.status, ItemStatus::Completed);
     assert_eq!(item.content, "running");
 

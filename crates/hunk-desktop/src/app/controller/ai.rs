@@ -125,6 +125,17 @@ impl DiffViewer {
         }
     }
 
+    pub(super) fn ai_new_thread_action(
+        &mut self,
+        _: &AiNewThread,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.focus_handle.focus(window, cx);
+        self.set_workspace_view_mode(WorkspaceSwitchAction::Ai.target_mode(), cx);
+        self.ai_create_thread_action(window, cx);
+    }
+
     pub(super) fn ai_send_prompt_action(
         &mut self,
         window: &mut Window,
@@ -354,24 +365,24 @@ impl DiffViewer {
         let mut turns = self
             .ai_state_snapshot
             .turns
-            .values()
-            .filter(|turn| turn.thread_id == thread_id)
-            .cloned()
+            .iter()
+            .filter(|(_, turn)| turn.thread_id == thread_id)
+            .map(|(turn_key, turn)| (turn_key.clone(), turn.clone()))
             .collect::<Vec<_>>();
-        turns.sort_by_key(|turn| turn.last_sequence);
-        turns.into_iter().map(|turn| turn.id).collect()
+        turns.sort_by_key(|(_, turn)| turn.last_sequence);
+        turns.into_iter().map(|(turn_key, _)| turn_key).collect()
     }
 
-    pub(super) fn ai_timeline_item_ids(&self, turn_id: &str) -> Vec<String> {
+    pub(super) fn ai_timeline_item_ids(&self, thread_id: &str, turn_id: &str) -> Vec<String> {
         let mut items = self
             .ai_state_snapshot
             .items
-            .values()
-            .filter(|item| item.turn_id == turn_id)
-            .cloned()
+            .iter()
+            .filter(|(_, item)| item.thread_id == thread_id && item.turn_id == turn_id)
+            .map(|(item_key, item)| (item_key.clone(), item.clone()))
             .collect::<Vec<_>>();
-        items.sort_by_key(|item| item.last_sequence);
-        items.into_iter().map(|item| item.id).collect()
+        items.sort_by_key(|(_, item)| item.last_sequence);
+        items.into_iter().map(|(item_key, _)| item_key).collect()
     }
 
     pub(super) fn ai_visible_pending_approvals(&self) -> Vec<AiPendingApproval> {
@@ -380,6 +391,37 @@ impl DiffViewer {
 
     pub(super) fn ai_visible_pending_user_inputs(&self) -> Vec<AiPendingUserInputRequest> {
         self.ai_pending_user_inputs.clone()
+    }
+
+    pub(super) fn ai_load_older_turns_action(&mut self, thread_id: String, cx: &mut Context<Self>) {
+        let total_turn_count = self.ai_timeline_turn_ids(thread_id.as_str()).len();
+        if total_turn_count == 0 {
+            return;
+        }
+        let current_limit = self
+            .ai_timeline_visible_turn_limit_by_thread
+            .get(thread_id.as_str())
+            .copied()
+            .unwrap_or(AI_TIMELINE_DEFAULT_VISIBLE_TURNS.min(total_turn_count));
+        let next_limit = current_limit
+            .saturating_add(AI_TIMELINE_TURN_PAGE_SIZE)
+            .min(total_turn_count);
+        if next_limit == current_limit {
+            return;
+        }
+        self.ai_timeline_visible_turn_limit_by_thread
+            .insert(thread_id, next_limit);
+        cx.notify();
+    }
+
+    pub(super) fn ai_show_full_timeline_action(&mut self, thread_id: String, cx: &mut Context<Self>) {
+        let total_turn_count = self.ai_timeline_turn_ids(thread_id.as_str()).len();
+        if total_turn_count == 0 {
+            return;
+        }
+        self.ai_timeline_visible_turn_limit_by_thread
+            .insert(thread_id, total_turn_count);
+        cx.notify();
     }
 
     pub(super) fn ai_select_pending_user_input_option_action(
@@ -594,19 +636,11 @@ impl DiffViewer {
         let event_rx = event_rx;
         self.ai_event_task = cx.spawn(async move |this, cx| {
             loop {
-                let mut has_events = false;
+                let mut buffered_events = Vec::new();
                 loop {
                     match event_rx.try_recv() {
                         Ok(event) => {
-                            has_events = true;
-                            if let Some(this) = this.upgrade() {
-                                this.update(cx, |this, cx| {
-                                    if this.ai_event_epoch != epoch {
-                                        return;
-                                    }
-                                    this.apply_ai_worker_event(event, cx);
-                                });
-                            }
+                            buffered_events.push(event);
                         }
                         Err(std::sync::mpsc::TryRecvError::Empty) => break,
                         Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -644,10 +678,23 @@ impl DiffViewer {
                     }
                 }
 
-                if !has_events {
+                if buffered_events.is_empty() {
                     cx.background_executor()
                         .timer(Self::AI_EVENT_POLL_INTERVAL)
                         .await;
+                    continue;
+                }
+
+                if let Some(this) = this.upgrade() {
+                    this.update(cx, |this, cx| {
+                        if this.ai_event_epoch != epoch {
+                            return;
+                        }
+                        for event in buffered_events {
+                            this.apply_ai_worker_event(event, cx);
+                        }
+                        cx.notify();
+                    });
                 }
             }
         });
@@ -687,8 +734,6 @@ impl DiffViewer {
                 Self::push_error_notification(format!("Codex AI failed: {message}"), cx);
             }
         }
-
-        cx.notify();
     }
 
     fn apply_ai_snapshot(&mut self, snapshot: AiSnapshot) {
@@ -712,8 +757,15 @@ impl DiffViewer {
         self.ai_collaboration_modes = snapshot.collaboration_modes;
         self.ai_include_hidden_models = snapshot.include_hidden_models;
         self.ai_mad_max_mode = snapshot.mad_max_mode;
+        self.ai_timeline_visible_turn_limit_by_thread
+            .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
 
-        if let Some(active_thread_id) = snapshot.active_thread_id {
+        if let Some(active_thread_id) = snapshot.active_thread_id
+            && self
+                .ai_selected_thread_id
+                .as_ref()
+                .is_none_or(|selected| !self.ai_state_snapshot.threads.contains_key(selected))
+        {
             self.ai_selected_thread_id = Some(active_thread_id);
         }
 
@@ -971,12 +1023,7 @@ fn thread_latest_timeline_sequence(state: &hunk_codex::state::AiState, thread_id
     let item_sequences = state
         .items
         .values()
-        .filter(|item| {
-            state
-                .turns
-                .get(item.turn_id.as_str())
-                .is_some_and(|turn| turn.thread_id == thread_id)
-        })
+        .filter(|item| item.thread_id == thread_id)
         .map(|item| item.last_sequence);
 
     turn_sequences
@@ -1233,6 +1280,7 @@ mod ai_tests {
             "item-a".to_string(),
             hunk_codex::state::ItemSummary {
                 id: "item-a".to_string(),
+                thread_id: "thread-a".to_string(),
                 turn_id: "turn-a".to_string(),
                 kind: "agentMessage".to_string(),
                 status: ItemStatus::Streaming,

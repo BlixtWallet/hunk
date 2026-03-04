@@ -82,6 +82,8 @@ const COMMENT_PREVIEW_MAX_ITEMS: usize = 64;
 const COMMENT_RECONCILE_MISS_THRESHOLD: u8 = 2;
 const COMMENT_FUZZY_MATCH_MIN_SCORE: i32 = 6;
 const COMMENT_FUZZY_RENAME_MATCH_MIN_SCORE: i32 = 11;
+const AI_TIMELINE_DEFAULT_VISIBLE_TURNS: usize = 80;
+const AI_TIMELINE_TURN_PAGE_SIZE: usize = 80;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GraphBookmarkSelection {
@@ -170,6 +172,7 @@ actions!(
         SwitchToReviewView,
         SwitchToGraphView,
         SwitchToAiView,
+        AiNewThread,
         OpenProject,
         SaveCurrentFile,
         OpenSettings,
@@ -482,6 +485,8 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
             .iter()
             .map(|shortcut| KeyBinding::new(shortcut.as_str(), SwitchToAiView, None)),
     );
+    bindings.push(KeyBinding::new("cmd-n", AiNewThread, Some("DiffViewer")));
+    bindings.push(KeyBinding::new("ctrl-n", AiNewThread, Some("DiffViewer")));
     bindings.extend(
         shortcuts
             .open_project
@@ -938,6 +943,7 @@ struct DiffViewer {
     ai_scroll_timeline_to_bottom: bool,
     ai_thread_list_scroll_handle: ScrollHandle,
     ai_timeline_scroll_handle: ScrollHandle,
+    ai_timeline_visible_turn_limit_by_thread: BTreeMap<String, usize>,
     ai_expanded_command_output_item_ids: BTreeSet<String>,
     ai_pending_approvals: Vec<AiPendingApproval>,
     ai_pending_user_inputs: Vec<AiPendingUserInputRequest>,

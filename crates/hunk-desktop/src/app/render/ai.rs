@@ -789,6 +789,16 @@ impl DiffViewer {
                                                 })
                                                         .when_some(selected_thread_id.clone(), |this, thread_id| {
                                                             let turn_ids = self.ai_timeline_turn_ids(thread_id.as_str());
+                                                            let total_turn_count = turn_ids.len();
+                                                            let configured_limit = self
+                                                                .ai_timeline_visible_turn_limit_by_thread
+                                                                .get(thread_id.as_str())
+                                                                .copied()
+                                                                .unwrap_or(AI_TIMELINE_DEFAULT_VISIBLE_TURNS);
+                                                            let visible_turn_count = configured_limit.min(total_turn_count);
+                                                            let hidden_turn_count =
+                                                                total_turn_count.saturating_sub(visible_turn_count);
+                                                            let first_visible_turn_ix = hidden_turn_count;
                                                             this.when(turn_ids.is_empty(), |this| {
                                                                 this.child(
                                                                     div()
@@ -811,10 +821,107 @@ impl DiffViewer {
                                                                         ),
                                                                 )
                                                             })
-                                                            .children(turn_ids.into_iter().filter_map(|turn_id| {
+                                                            .when(hidden_turn_count > 0, |this| {
+                                                                let load_older_thread_id = thread_id.clone();
+                                                                let show_all_thread_id = thread_id.clone();
+                                                                let view = view.clone();
+                                                                this.child(
+                                                                    h_flex()
+                                                                        .w_full()
+                                                                        .items_center()
+                                                                        .justify_between()
+                                                                        .gap_2()
+                                                                        .rounded_md()
+                                                                        .border_1()
+                                                                        .border_color(
+                                                                            cx.theme().border.opacity(if is_dark {
+                                                                                0.90
+                                                                            } else {
+                                                                                0.74
+                                                                            }),
+                                                                        )
+                                                                        .bg(cx.theme().background.blend(
+                                                                            cx.theme().muted.opacity(if is_dark {
+                                                                                0.16
+                                                                            } else {
+                                                                                0.24
+                                                                            }),
+                                                                        ))
+                                                                        .p_2()
+                                                                        .child(
+                                                                            div()
+                                                                                .text_xs()
+                                                                                .text_color(
+                                                                                    cx.theme().muted_foreground,
+                                                                                )
+                                                                                .child(format!(
+                                                                                    "Showing latest {visible_turn_count} of {total_turn_count} turns.",
+                                                                                )),
+                                                                        )
+                                                                        .child(
+                                                                            h_flex()
+                                                                                .items_center()
+                                                                                .gap_1()
+                                                                                .child({
+                                                                                    let view =
+                                                                                        view.clone();
+                                                                                    Button::new(
+                                                                                        "ai-timeline-load-older-turns",
+                                                                                    )
+                                                                                    .compact()
+                                                                                    .outline()
+                                                                                    .with_size(
+                                                                                        gpui_component::Size::Small,
+                                                                                    )
+                                                                                    .label(
+                                                                                        "Load older",
+                                                                                    )
+                                                                                    .on_click(
+                                                                                        move |_, _, cx| {
+                                                                                            view.update(cx, |this, cx| {
+                                                                                                this.ai_load_older_turns_action(
+                                                                                                    load_older_thread_id
+                                                                                                        .clone(),
+                                                                                                    cx,
+                                                                                                );
+                                                                                            });
+                                                                                        },
+                                                                                    )
+                                                                                })
+                                                                                .child({
+                                                                                    let view =
+                                                                                        view.clone();
+                                                                                    Button::new(
+                                                                                        "ai-timeline-show-all-turns",
+                                                                                    )
+                                                                                    .compact()
+                                                                                    .outline()
+                                                                                    .with_size(
+                                                                                        gpui_component::Size::Small,
+                                                                                    )
+                                                                                    .label("Show all")
+                                                                                    .on_click(
+                                                                                        move |_, _, cx| {
+                                                                                            view.update(cx, |this, cx| {
+                                                                                                this.ai_show_full_timeline_action(
+                                                                                                    show_all_thread_id
+                                                                                                        .clone(),
+                                                                                                    cx,
+                                                                                                );
+                                                                                            });
+                                                                                        },
+                                                                                    )
+                                                                                }),
+                                                                        ),
+                                                                )
+                                                            })
+                                                            .children(turn_ids.into_iter().skip(first_visible_turn_ix).filter_map(|turn_id| {
                                                                 let turn = self.ai_state_snapshot.turns.get(&turn_id)?;
                                                                 let turn_status = ai_turn_status_label(turn.status);
-                                                                let item_ids = self.ai_timeline_item_ids(turn_id.as_str());
+                                                                let item_ids = self.ai_timeline_item_ids(
+                                                                    turn.thread_id.as_str(),
+                                                                    turn.id.as_str(),
+                                                                );
                                                                 let diff_preview = self
                                                                     .ai_state_snapshot
                                                                     .turn_diffs
@@ -872,7 +979,7 @@ impl DiffViewer {
                                                                             let command_output_collapsible =
                                                                                 item.kind == "commandExecution";
                                                                             let command_output_expanded = command_output_collapsible
-                                                                                && self.ai_expanded_command_output_item_ids.contains(item.id.as_str());
+                                                                                && self.ai_expanded_command_output_item_ids.contains(item_id.as_str());
                                                                             let (item_content, command_output_truncated) =
                                                                                 if command_output_collapsible && !command_output_expanded {
                                                                                     ai_truncate_multiline_content(
@@ -949,13 +1056,15 @@ impl DiffViewer {
                                                                                             && (command_output_truncated
                                                                                                 || command_output_expanded),
                                                                                         |this| {
-                                                                                            let item_id = item.id.clone();
+                                                                                            let item_key = item_id.clone();
+                                                                                            let button_id = format!(
+                                                                                                "ai-toggle-command-output-{}",
+                                                                                                item_key.replace('\u{1f}', "--"),
+                                                                                            );
                                                                                             let view = view.clone();
                                                                                             this.child(
                                                                                                 Button::new(
-                                                                                                    format!(
-                                                                                                        "ai-toggle-command-output-{item_id}"
-                                                                                                    ),
+                                                                                                    button_id,
                                                                                                 )
                                                                                                 .compact()
                                                                                                 .outline()
@@ -968,7 +1077,7 @@ impl DiffViewer {
                                                                                                 .on_click(move |_, _, cx| {
                                                                                                     view.update(cx, |this, cx| {
                                                                                                         this.ai_toggle_command_output_expansion_action(
-                                                                                                            item_id.clone(),
+                                                                                                            item_key.clone(),
                                                                                                             cx,
                                                                                                         );
                                                                                                     });

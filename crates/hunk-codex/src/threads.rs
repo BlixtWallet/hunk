@@ -79,6 +79,7 @@ use crate::state::ServerRequestDecision;
 use crate::state::StreamEvent;
 use crate::state::ThreadLifecycleStatus;
 use crate::state::TurnStatus as StateTurnStatus;
+use crate::state::item_storage_key;
 use crate::ws_client::JsonRpcSession;
 
 #[derive(Debug, Clone)]
@@ -470,6 +471,7 @@ impl ThreadService {
         let response: TurnInterruptResponse =
             session.request_typed(api::method::TURN_INTERRUPT, Some(&params), timeout)?;
         self.apply_event(ReducerEvent::TurnCompleted {
+            thread_id: params.thread_id,
             turn_id: params.turn_id,
         });
         self.apply_queued_notifications(session);
@@ -661,6 +663,7 @@ impl ThreadService {
             ServerNotification::TurnDiffUpdated(notification) => {
                 if self.is_known_thread(&notification.thread_id) {
                     self.apply_event(ReducerEvent::TurnDiffUpdated {
+                        thread_id: notification.thread_id,
                         turn_id: notification.turn_id,
                         diff: notification.diff,
                     });
@@ -683,7 +686,11 @@ impl ThreadService {
                         &notification.turn_id,
                         &notification.item,
                     );
-                    self.apply_event(ReducerEvent::ItemCompleted { item_id });
+                    self.apply_event(ReducerEvent::ItemCompleted {
+                        thread_id: notification.thread_id,
+                        turn_id: notification.turn_id,
+                        item_id,
+                    });
                 }
             }
             ServerNotification::AgentMessageDelta(notification) => {
@@ -756,6 +763,7 @@ impl ThreadService {
                         turn_id: notification.turn_id.clone(),
                     });
                     self.apply_event(ReducerEvent::TurnCompleted {
+                        thread_id: notification.thread_id,
                         turn_id: notification.turn_id,
                     });
                 }
@@ -823,26 +831,38 @@ impl ThreadService {
                     turn.turn_id,
                     item_index.saturating_add(1)
                 );
-                if self.state.items.contains_key(&item_id) {
+                if self
+                    .state
+                    .items
+                    .contains_key(item_storage_key(&thread_id, &turn.turn_id, &item_id).as_str())
+                {
                     continue;
                 }
 
                 self.apply_event(ReducerEvent::ItemStarted {
+                    thread_id: thread_id.clone(),
                     turn_id: turn.turn_id.clone(),
                     item_id: item_id.clone(),
                     kind: item.kind.clone(),
                 });
                 if !item.content.is_empty() {
                     self.apply_event(ReducerEvent::ItemDelta {
+                        thread_id: thread_id.clone(),
+                        turn_id: turn.turn_id.clone(),
                         item_id: item_id.clone(),
                         delta: item.content.clone(),
                     });
                 }
-                self.apply_event(ReducerEvent::ItemCompleted { item_id });
+                self.apply_event(ReducerEvent::ItemCompleted {
+                    thread_id: thread_id.clone(),
+                    turn_id: turn.turn_id.clone(),
+                    item_id,
+                });
             }
 
             if turn.completed {
                 self.apply_event(ReducerEvent::TurnCompleted {
+                    thread_id: thread_id.clone(),
                     turn_id: turn.turn_id.clone(),
                 });
             }
@@ -883,6 +903,7 @@ impl ThreadService {
         });
         if !matches!(turn.status, TurnStatus::InProgress) {
             self.apply_event(ReducerEvent::TurnCompleted {
+                thread_id: thread_id.to_string(),
                 turn_id: turn.id.clone(),
             });
         }
@@ -890,16 +911,18 @@ impl ThreadService {
 
     fn apply_item_snapshot(&mut self, thread_id: &str, turn_id: &str, item: &ThreadItem) {
         let item_id = item.id().to_string();
+        let item_key = item_storage_key(thread_id, turn_id, item_id.as_str());
         let should_seed_content = self
             .state
             .items
-            .get(&item_id)
+            .get(item_key.as_str())
             .is_none_or(|existing| existing.content.is_empty());
         self.apply_event(ReducerEvent::TurnStarted {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
         });
         self.apply_event(ReducerEvent::ItemStarted {
+            thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
             item_id: item_id.clone(),
             kind: thread_item_kind(item).to_string(),
@@ -907,13 +930,19 @@ impl ThreadService {
 
         if should_seed_content && let Some(seed_content) = thread_item_seed_content(item) {
             self.apply_event(ReducerEvent::ItemDelta {
+                thread_id: thread_id.to_string(),
+                turn_id: turn_id.to_string(),
                 item_id: item_id.clone(),
                 delta: seed_content,
             });
         }
 
         if thread_item_is_complete(item) {
-            self.apply_event(ReducerEvent::ItemCompleted { item_id });
+            self.apply_event(ReducerEvent::ItemCompleted {
+                thread_id: thread_id.to_string(),
+                turn_id: turn_id.to_string(),
+                item_id,
+            });
         }
     }
 
@@ -934,11 +963,14 @@ impl ThreadService {
             turn_id: turn_id.to_string(),
         });
         self.apply_event(ReducerEvent::ItemStarted {
+            thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
             item_id: item_id.to_string(),
             kind: kind.to_string(),
         });
         self.apply_event(ReducerEvent::ItemDelta {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
             item_id: item_id.to_string(),
             delta: delta.to_string(),
         });
@@ -967,6 +999,7 @@ impl ThreadService {
             });
             if !matches!(turn.status, TurnStatus::InProgress) {
                 self.apply_event(ReducerEvent::TurnCompleted {
+                    thread_id: thread.id.clone(),
                     turn_id: turn.id.clone(),
                 });
             }
@@ -981,21 +1014,24 @@ impl ThreadService {
     fn replace_thread_turns_from_snapshot(&mut self, thread: &Thread) {
         let keep_turn_ids: BTreeSet<String> =
             thread.turns.iter().map(|turn| turn.id.clone()).collect();
-        let removed_turn_ids: BTreeSet<String> = self
+        let removed_turn_keys: BTreeSet<String> = self
             .state
             .turns
-            .values()
-            .filter(|turn| turn.thread_id == thread.id && !keep_turn_ids.contains(&turn.id))
-            .map(|turn| turn.id.clone())
+            .iter()
+            .filter(|(_, turn)| turn.thread_id == thread.id && !keep_turn_ids.contains(&turn.id))
+            .map(|(turn_key, _)| turn_key.clone())
             .collect();
 
-        for turn_id in &removed_turn_ids {
-            self.state.turns.remove(turn_id);
+        for turn_key in &removed_turn_keys {
+            self.state.turns.remove(turn_key);
         }
 
         self.state
             .items
-            .retain(|_, item| !removed_turn_ids.contains(&item.turn_id));
+            .retain(|_, item| item.thread_id != thread.id || keep_turn_ids.contains(&item.turn_id));
+        self.state
+            .turn_diffs
+            .retain(|turn_key, _| !removed_turn_keys.contains(turn_key));
     }
 
     fn ensure_thread_in_workspace(&self, thread: &Thread) -> Result<()> {
@@ -1031,7 +1067,10 @@ impl ThreadService {
             .collect::<Vec<_>>();
 
         for turn_id in in_progress_turn_ids {
-            self.apply_event(ReducerEvent::TurnCompleted { turn_id });
+            self.apply_event(ReducerEvent::TurnCompleted {
+                thread_id: thread_id.to_string(),
+                turn_id,
+            });
         }
     }
 

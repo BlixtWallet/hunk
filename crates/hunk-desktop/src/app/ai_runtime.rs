@@ -1287,7 +1287,7 @@ fn thread_missing_item_turn_ids(state: &AiState, thread_id: &str) -> BTreeSet<St
     let turns_with_items = state
         .items
         .values()
-        .filter(|item| turn_ids.contains(item.turn_id.as_str()))
+        .filter(|item| item.thread_id == thread_id && turn_ids.contains(item.turn_id.as_str()))
         .map(|item| item.turn_id.clone())
         .collect::<BTreeSet<_>>();
     turn_ids
@@ -1708,6 +1708,7 @@ mod ai_tests {
             sequence: 2,
             dedupe_key: None,
             payload: ReducerEvent::ItemStarted {
+                thread_id: "thread-1".to_string(),
                 turn_id: "turn-1".to_string(),
                 item_id: "item-1".to_string(),
                 kind: "agentMessage".to_string(),
@@ -1739,6 +1740,7 @@ mod ai_tests {
             sequence: 3,
             dedupe_key: None,
             payload: ReducerEvent::ItemStarted {
+                thread_id: "thread-1".to_string(),
                 turn_id: "turn-2".to_string(),
                 item_id: "item-2".to_string(),
                 kind: "agentMessage".to_string(),
@@ -1749,6 +1751,43 @@ mod ai_tests {
         assert_eq!(
             missing_turns.into_iter().collect::<Vec<_>>(),
             vec!["turn-1".to_string()]
+        );
+    }
+
+    #[test]
+    fn thread_rollout_fallback_ignores_items_from_other_threads_with_same_turn_id() {
+        let mut state = AiState::default();
+        let _ = state.apply_stream_event(StreamEvent {
+            sequence: 1,
+            dedupe_key: None,
+            payload: ReducerEvent::TurnStarted {
+                thread_id: "thread-a".to_string(),
+                turn_id: "turn-shared".to_string(),
+            },
+        });
+        let _ = state.apply_stream_event(StreamEvent {
+            sequence: 2,
+            dedupe_key: None,
+            payload: ReducerEvent::TurnStarted {
+                thread_id: "thread-b".to_string(),
+                turn_id: "turn-shared".to_string(),
+            },
+        });
+        let _ = state.apply_stream_event(StreamEvent {
+            sequence: 3,
+            dedupe_key: None,
+            payload: ReducerEvent::ItemStarted {
+                thread_id: "thread-b".to_string(),
+                turn_id: "turn-shared".to_string(),
+                item_id: "item-1".to_string(),
+                kind: "agentMessage".to_string(),
+            },
+        });
+
+        let missing_turns = thread_missing_item_turn_ids(&state, "thread-a");
+        assert_eq!(
+            missing_turns.into_iter().collect::<Vec<_>>(),
+            vec!["turn-shared".to_string()]
         );
     }
 }
