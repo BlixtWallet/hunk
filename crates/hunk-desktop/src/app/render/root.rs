@@ -102,7 +102,8 @@ impl DiffViewer {
         }
 
         let is_dark = cx.theme().mode.is_dark();
-        let show_loading_overlay = self.workflow_loading || self.graph_loading;
+        let show_loading_overlay =
+            self.workflow_loading && !self.jj_workflow_ready_for_right_panel();
 
         div()
             .size_full()

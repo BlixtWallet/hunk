@@ -19,8 +19,10 @@ impl SnapshotRefreshScope {
 
 impl DiffViewer {
     const AUTO_REFRESH_MAX_INTERVAL_MS: u64 = 60_000;
+    const AUTO_REFRESH_QUICK_PROBE_MS: u64 = 3_000;
     const AUTO_REFRESH_BACKOFF_STEPS: u32 = 6;
     const REPO_WATCH_DEBOUNCE: Duration = Duration::from_millis(150);
+    const GRAPH_REFRESH_DEBOUNCE: Duration = Duration::from_millis(280);
 
     fn load_app_config() -> (Option<ConfigStore>, AppConfig) {
         let store = match ConfigStore::new() {
@@ -486,6 +488,8 @@ impl DiffViewer {
             repo_watch_task: Task::ready(()),
             repo_watch_refresh_epoch: 0,
             repo_watch_refresh_task: Task::ready(()),
+            graph_refresh_epoch: 0,
+            graph_refresh_task: Task::ready(()),
             snapshot_epoch: 0,
             snapshot_task: Task::ready(()),
             snapshot_loading: false,
@@ -634,6 +638,9 @@ impl DiffViewer {
         }
         if force {
             self.auto_refresh_unmodified_streak = 0;
+        }
+        if scope.includes_graph() {
+            self.cancel_pending_graph_refresh();
         }
         let cold_start = self.last_snapshot_fingerprint.is_none();
 
@@ -956,6 +963,7 @@ impl DiffViewer {
                         this.line_stats_loading
                     );
 
+                    this.schedule_background_graph_refresh(cx);
                     cx.notify();
                     this.maybe_run_pending_snapshot_refresh(cx);
                 });
@@ -1285,6 +1293,7 @@ impl DiffViewer {
         self.graph_loading = false;
         self.line_stats_loading = false;
         self.snapshot_refresh_pending_force = false;
+        self.cancel_pending_graph_refresh();
 
         if !missing_repository {
             self.repo_discovery_failed = false;

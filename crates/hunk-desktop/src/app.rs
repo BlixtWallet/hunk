@@ -1027,6 +1027,8 @@ struct DiffViewer {
     repo_watch_task: Task<()>,
     repo_watch_refresh_epoch: usize,
     repo_watch_refresh_task: Task<()>,
+    graph_refresh_epoch: usize,
+    graph_refresh_task: Task<()>,
     snapshot_epoch: usize,
     snapshot_task: Task<()>,
     snapshot_loading: bool,

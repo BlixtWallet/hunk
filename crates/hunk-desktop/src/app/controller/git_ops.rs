@@ -1,9 +1,3 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum GitActionRefreshScope {
-    Full,
-    WorkflowOnly,
-}
-
 impl DiffViewer {
     fn push_error_notification(message: String, cx: &mut Context<Self>) {
         let window_handles = cx.windows().into_iter().collect::<Vec<_>>();
@@ -117,33 +111,20 @@ impl DiffViewer {
         self.git_action_label = None;
     }
 
-    fn refresh_after_git_action(
-        &mut self,
-        scope: GitActionRefreshScope,
-        cx: &mut Context<Self>,
-    ) {
-        match scope {
-            GitActionRefreshScope::Full => {
-                // A forced snapshot refresh now applies workflow first, then graph/line-stats.
-                self.request_snapshot_refresh_internal(true, cx);
-            }
-            GitActionRefreshScope::WorkflowOnly => {
-                self.request_snapshot_refresh_workflow_only(true, cx);
-            }
-        }
+    fn refresh_after_git_action(&mut self, cx: &mut Context<Self>) {
+        self.request_snapshot_refresh_workflow_only(true, cx);
     }
 
     fn run_git_action<F>(&mut self, action_name: &'static str, cx: &mut Context<Self>, action: F)
     where
         F: FnOnce(std::path::PathBuf) -> anyhow::Result<String> + Send + 'static,
     {
-        self.run_git_action_with_refresh_scope(action_name, GitActionRefreshScope::Full, cx, action);
+        self.run_git_action_with_refresh(action_name, cx, action);
     }
 
-    fn run_git_action_with_refresh_scope<F>(
+    fn run_git_action_with_refresh<F>(
         &mut self,
         action_name: &'static str,
-        refresh_scope: GitActionRefreshScope,
         cx: &mut Context<Self>,
         action: F,
     ) where
@@ -178,7 +159,7 @@ impl DiffViewer {
                             } else {
                                 Some(message)
                             };
-                            this.refresh_after_git_action(refresh_scope, cx);
+                            this.refresh_after_git_action(cx);
                         }
                         Err(err) => {
                             error!("{action_name} failed: {err:#}");
@@ -872,7 +853,7 @@ impl DiffViewer {
                                 error!("failed to clear commit input after commit: {err:#}");
                             }
 
-                            this.refresh_after_git_action(GitActionRefreshScope::Full, cx);
+                            this.refresh_after_git_action(cx);
                         }
                         Err(err) => {
                             error!("Commit failed: {err:#}");
@@ -914,9 +895,8 @@ impl DiffViewer {
             return;
         }
 
-        self.run_git_action_with_refresh_scope(
+        self.run_git_action_with_refresh(
             "Undo file changes",
-            GitActionRefreshScope::WorkflowOnly,
             cx,
             move |repo_root| {
                 restore_working_copy_paths(&repo_root, std::slice::from_ref(&file_path))?;
@@ -941,9 +921,8 @@ impl DiffViewer {
             return;
         }
 
-        self.run_git_action_with_refresh_scope(
+        self.run_git_action_with_refresh(
             "Undo all working-copy changes",
-            GitActionRefreshScope::WorkflowOnly,
             cx,
             move |repo_root| {
                 restore_all_working_copy_changes(&repo_root)?;
@@ -964,9 +943,8 @@ impl DiffViewer {
         let source_revision_id = candidate.source_revision_id.clone();
         let changed_file_count = candidate.changed_file_count;
 
-        self.run_git_action_with_refresh_scope(
+        self.run_git_action_with_refresh(
             "Recover working copy",
-            GitActionRefreshScope::WorkflowOnly,
             cx,
             move |repo_root| {
                 restore_working_copy_from_revision(&repo_root, &source_revision_id)?;
