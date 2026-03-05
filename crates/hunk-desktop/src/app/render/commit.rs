@@ -17,10 +17,14 @@ impl DiffViewer {
         } else {
             self.git_action_label.clone()
         };
+        let detail_text = detail.unwrap_or_else(|| {
+            "Actions update this banner when operations complete.".to_string()
+        });
 
         v_flex()
             .w_full()
-            .min_h(px(52.0))
+            .h(px(52.0))
+            .overflow_hidden()
             .px_2()
             .py_1()
             .gap_0p5()
@@ -42,6 +46,8 @@ impl DiffViewer {
             })
             .child(
                 div()
+                    .w_full()
+                    .min_w_0()
                     .text_xs()
                     .font_medium()
                     .text_color(if loading {
@@ -49,17 +55,19 @@ impl DiffViewer {
                     } else {
                         cx.theme().muted_foreground
                     })
-                    .whitespace_normal()
+                    .whitespace_nowrap()
+                    .truncate()
                     .child(headline),
             )
             .child(
                 div()
+                    .w_full()
+                    .min_w_0()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground.opacity(0.9))
-                    .whitespace_normal()
-                    .child(detail.unwrap_or_else(|| {
-                        "Actions update this banner when operations complete.".to_string()
-                    })),
+                    .whitespace_nowrap()
+                    .truncate()
+                    .child(detail_text),
             )
             .into_any_element()
     }
@@ -68,22 +76,32 @@ impl DiffViewer {
         let view = cx.entity();
         let is_dark = cx.theme().mode.is_dark();
         let branch_syncable = self.can_run_active_bookmark_actions();
-        let show_sync = branch_syncable && self.branch_has_upstream;
-        let show_publish = branch_syncable && !self.branch_has_upstream;
-        let show_push = branch_syncable && self.branch_has_upstream;
         let sync_disabled = !self.can_sync_current_bookmark();
         let publish_disabled = !self.can_publish_current_bookmark();
         let push_revisions_disabled = !self.can_push_current_bookmark_revisions();
-        let revisions_to_push = self.branch_ahead_count;
+        let sync_tooltip = if !branch_syncable {
+            "Activate a bookmark before syncing."
+        } else if !self.branch_has_upstream {
+            "Publish this bookmark before syncing."
+        } else if !self.files.is_empty() {
+            "Commit or discard working-copy changes before syncing."
+        } else {
+            "Fetch and update this bookmark from its upstream remote."
+        };
+        let publish_state_tooltip = if self.branch_has_upstream {
+            "This bookmark already tracks upstream. Use Push Revisions below."
+        } else if !branch_syncable {
+            "Activate a bookmark before publishing."
+        } else if !self.files.is_empty() {
+            "Commit or discard working-copy changes before publishing."
+        } else {
+            "Publish this bookmark to upstream and start tracking it."
+        };
         let active_review_blocker = self.active_review_action_blocker();
         let review_url_disabled = active_review_blocker.is_some();
         let recovery_candidate = self.latest_working_copy_recovery_candidate_for_active_bookmark();
         let pending_switch = self.pending_bookmark_switch();
-        let push_revisions_label = match revisions_to_push {
-            0 => "Push Revisions".to_string(),
-            1 => "Push 1 Revision".to_string(),
-            count => format!("Push {count} Revisions"),
-        };
+        let push_revisions_label = "Push Revisions".to_string();
         let push_revisions_tooltip = if !branch_syncable {
             "Activate a bookmark before pushing revisions."
         } else if !self.branch_has_upstream {
@@ -320,53 +338,48 @@ impl DiffViewer {
 
                         button.into_any_element()
                     })
-                    .when(show_sync, |this| {
-                        this.child({
-                            let view = view.clone();
-                            Button::new("sync-branch")
-                                .outline()
-                                .compact()
-                                .with_size(gpui_component::Size::Small)
-                                .rounded(px(7.0))
-                                .label("Sync Bookmark")
-                                .tooltip("Fetch and update this bookmark from its upstream remote.")
-                                .disabled(sync_disabled)
-                                .on_click(move |_, _, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.sync_current_bookmark_from_remote(cx);
-                                    });
-                                })
-                        })
-                    })
-                    .when(show_publish, |this| {
-                        this.child({
-                            let view = view.clone();
-                            Button::new("publish-bookmark")
-                                .primary()
-                                .compact()
-                                .with_size(gpui_component::Size::Small)
-                                .rounded(px(7.0))
-                                .label("Publish Bookmark")
-                                .tooltip("Publish this bookmark to upstream and start tracking it.")
-                                .disabled(publish_disabled)
-                                .on_click(move |_, _, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.publish_current_bookmark(cx);
-                                    });
-                                })
+                    .child({
+                        let view = view.clone();
+                        Button::new("sync-branch")
+                            .outline()
+                            .compact()
+                            .with_size(gpui_component::Size::Small)
+                            .rounded(px(7.0))
+                            .min_w(px(120.0))
+                            .label("Sync Bookmark")
+                            .tooltip(sync_tooltip)
+                            .disabled(sync_disabled)
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.sync_current_bookmark_from_remote(cx);
+                                });
                             })
                     })
-                    .when(show_push, |this| {
-                        this.child(
-                            Button::new("bookmark-published-state")
-                                .outline()
-                                .compact()
-                                .with_size(gpui_component::Size::Small)
-                                .rounded(px(7.0))
-                                .label("Bookmark Published")
-                                .tooltip("This bookmark already tracks upstream. Use Push Revisions below.")
-                                .disabled(true),
-                        )
+                    .child({
+                        let view = view.clone();
+                        let mut button = Button::new("bookmark-publish-state")
+                            .compact()
+                            .with_size(gpui_component::Size::Small)
+                            .rounded(px(7.0))
+                            .min_w(px(140.0))
+                            .label(if self.branch_has_upstream {
+                                "Bookmark Published"
+                            } else {
+                                "Publish Bookmark"
+                            })
+                            .tooltip(publish_state_tooltip)
+                            .disabled(self.branch_has_upstream || publish_disabled)
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.publish_current_bookmark(cx);
+                                });
+                            });
+                        if self.branch_has_upstream {
+                            button = button.outline();
+                        } else {
+                            button = button.primary();
+                        }
+                        button.into_any_element()
                     })
                     .child({
                         let view = view.clone();
@@ -407,15 +420,6 @@ impl DiffViewer {
                                     this.copy_current_bookmark_review_url(cx);
                                 });
                             })
-                    })
-                    .when_some(active_review_blocker, |this, reason| {
-                        this.child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .whitespace_normal()
-                                .child(format!("PR/MR unavailable: {reason}")),
-                        )
                     }),
             )
             .when_some(recovery_candidate.as_ref(), |this, candidate| {

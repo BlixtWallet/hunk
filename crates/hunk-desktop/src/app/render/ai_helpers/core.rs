@@ -470,7 +470,7 @@ fn render_ai_session_controls_panel(
                 div()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child("Collab"),
+                    .child("Mode"),
             )
             .child({
                         let view = view.clone();
@@ -740,4 +740,3 @@ fn ai_collaboration_picker_label(selected: Option<&str>) -> String {
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| "Off".to_string())
 }
-
