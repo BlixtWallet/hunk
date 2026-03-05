@@ -196,20 +196,21 @@ impl DiffViewer {
 
     fn apply_editor_document(&mut self, language: String, text: String, cx: &mut Context<Self>) {
         let editor_input_state = self.editor_input_state.clone();
-        let Some(window_handle) = cx.windows().into_iter().next() else {
-            self.editor_error = Some("Cannot open editor without an active window.".to_string());
-            return;
-        };
-
-        if let Err(err) = cx.update_window(window_handle, |_, window, cx| {
+        match Self::update_any_window(cx, |window, cx| {
             editor_input_state.update(cx, |input, cx| {
                 input.set_highlighter(language.clone(), cx);
                 input.set_value(text.clone(), window, cx);
                 input.focus(window, cx);
             });
         }) {
-            error!("failed to apply editor document: {err:#}");
-            self.editor_error = Some("Failed to initialize editor view.".to_string());
+            Ok(true) => {}
+            Ok(false) => {
+                self.editor_error = Some("Cannot open editor without an active window.".to_string());
+            }
+            Err(err) => {
+                error!("failed to apply editor document: {err:#}");
+                self.editor_error = Some("Failed to initialize editor view.".to_string());
+            }
         }
     }
 
@@ -335,11 +336,7 @@ impl DiffViewer {
 
     fn reset_editor_input(&mut self, cx: &mut Context<Self>) {
         let editor_input_state = self.editor_input_state.clone();
-        let Some(window_handle) = cx.windows().into_iter().next() else {
-            return;
-        };
-
-        if let Err(err) = cx.update_window(window_handle, |_, window, cx| {
+        if let Err(err) = Self::update_any_window(cx, |window, cx| {
             editor_input_state.update(cx, |input, cx| {
                 input.set_highlighter("text", cx);
                 input.set_value("", window, cx);
@@ -347,6 +344,26 @@ impl DiffViewer {
         }) {
             error!("failed to reset editor input: {err:#}");
         }
+    }
+
+    fn update_any_window(
+        cx: &mut Context<Self>,
+        mut update: impl FnMut(&mut Window, &mut App),
+    ) -> anyhow::Result<bool> {
+        let window_handles = cx.windows().into_iter().collect::<Vec<_>>();
+        for window_handle in window_handles {
+            match cx.update_window(window_handle, |_, window, cx| update(window, cx)) {
+                Ok(()) => return Ok(true),
+                Err(err) if Self::is_window_not_found_error(&err) => continue,
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(false)
+    }
+
+    fn is_window_not_found_error(err: &anyhow::Error) -> bool {
+        err.chain()
+            .any(|cause| cause.to_string().contains("window not found"))
     }
 
     fn next_editor_epoch(&mut self) -> usize {
