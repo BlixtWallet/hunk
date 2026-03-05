@@ -30,6 +30,9 @@ fn refresh_working_copy_snapshot(context: &mut RepoContext) -> Result<()> {
             .repo_mut()
             .rewrite_commit(&wc_commit)
             .set_tree(new_tree)
+            // Working-copy snapshot rewrites are internal state updates and should
+            // never fail due to commit-signing configuration.
+            .set_sign_behavior(SignBehavior::Drop)
             .write()
             .context("failed to record working-copy snapshot")?;
         tx.repo_mut()

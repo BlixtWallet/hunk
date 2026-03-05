@@ -493,19 +493,60 @@ impl DiffViewer {
                 Ok(source_dir) => {
                     cx.background_executor()
                         .spawn(async move {
-                            let fingerprint = load_snapshot_fingerprint(&source_dir)?;
-                            if previous_fingerprint.as_ref() == Some(&fingerprint) {
-                                return Ok(SnapshotRefreshResult::Unchanged(fingerprint));
-                            }
+                            let load_once = || -> Result<SnapshotRefreshResult> {
+                                let fingerprint = load_snapshot_fingerprint(&source_dir)?;
+                                if previous_fingerprint.as_ref() == Some(&fingerprint) {
+                                    return Ok(SnapshotRefreshResult::Unchanged(fingerprint));
+                                }
 
-                            let snapshot = load_snapshot(&source_dir)?;
-                            let graph_snapshot =
-                                load_graph_snapshot(&source_dir, GraphSnapshotOptions::default())?;
-                            Ok(SnapshotRefreshResult::Loaded {
-                                fingerprint,
-                                snapshot: Box::new(snapshot),
-                                graph_snapshot: Box::new(graph_snapshot),
-                            })
+                                let snapshot = load_snapshot_without_refresh(&source_dir)?;
+                                let graph_snapshot = load_graph_snapshot_without_refresh(
+                                    &source_dir,
+                                    GraphSnapshotOptions::default(),
+                                )?;
+                                Ok(SnapshotRefreshResult::Loaded {
+                                    fingerprint,
+                                    snapshot: Box::new(snapshot),
+                                    graph_snapshot: Box::new(graph_snapshot),
+                                })
+                            };
+
+                            match load_once() {
+                                Ok(result) => Ok(result),
+                                Err(primary_err) => {
+                                    warn!(
+                                        "snapshot refresh failed with working-copy refresh; retrying without refresh: {primary_err:#}"
+                                    );
+
+                                    let fallback = || -> Result<SnapshotRefreshResult> {
+                                        let fingerprint =
+                                            load_snapshot_fingerprint_without_refresh(&source_dir)?;
+                                        if previous_fingerprint.as_ref() == Some(&fingerprint) {
+                                            return Ok(SnapshotRefreshResult::Unchanged(
+                                                fingerprint,
+                                            ));
+                                        }
+
+                                        let snapshot = load_snapshot_without_refresh(&source_dir)?;
+                                        let graph_snapshot = load_graph_snapshot_without_refresh(
+                                            &source_dir,
+                                            GraphSnapshotOptions::default(),
+                                        )?;
+                                        Ok(SnapshotRefreshResult::Loaded {
+                                            fingerprint,
+                                            snapshot: Box::new(snapshot),
+                                            graph_snapshot: Box::new(graph_snapshot),
+                                        })
+                                    };
+
+                                    match fallback() {
+                                        Ok(result) => Ok(result),
+                                        Err(fallback_err) => Err(primary_err.context(format!(
+                                            "snapshot refresh fallback without working-copy refresh failed: {fallback_err:#}"
+                                        ))),
+                                    }
+                                }
+                            }
                         })
                         .await
                 }
@@ -817,6 +858,14 @@ impl DiffViewer {
 
     fn apply_snapshot_error(&mut self, err: anyhow::Error, cx: &mut Context<Self>) {
         let missing_repository = Self::is_missing_repository_error(&err);
+        let error_message = Self::format_error_chain(&err);
+
+        if !missing_repository {
+            self.repo_discovery_failed = false;
+            self.error_message = Some(error_message);
+            cx.notify();
+            return;
+        }
 
         self.cancel_patch_reload();
         self.last_snapshot_fingerprint = None;
@@ -875,12 +924,8 @@ impl DiffViewer {
         )];
         self.sync_diff_list_state();
         self.recompute_diff_layout();
-        self.repo_discovery_failed = missing_repository;
-        self.error_message = if missing_repository {
-            None
-        } else {
-            Some(err.to_string())
-        };
+        self.repo_discovery_failed = true;
+        self.error_message = None;
         self.repo_tree.nodes.clear();
         self.repo_tree.rows.clear();
         self.repo_tree.file_count = 0;
@@ -896,6 +941,20 @@ impl DiffViewer {
         self.clear_full_repo_tree_cache();
         self.clear_editor_state(cx);
         cx.notify();
+    }
+
+    fn format_error_chain(err: &anyhow::Error) -> String {
+        err.chain()
+            .enumerate()
+            .map(|(index, cause)| {
+                if index == 0 {
+                    cause.to_string()
+                } else {
+                    format!("caused by ({index}): {cause}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" | ")
     }
 
     fn is_missing_repository_error(err: &anyhow::Error) -> bool {

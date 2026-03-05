@@ -375,9 +375,48 @@ fn load_workflow_snapshot_from_context(context: &backend::RepoContext) -> Result
 }
 
 pub fn load_snapshot(cwd: &Path) -> Result<RepoSnapshot> {
+    load_snapshot_with_refresh(cwd, true)
+}
+
+pub fn load_snapshot_without_refresh(cwd: &Path) -> Result<RepoSnapshot> {
+    load_snapshot_with_refresh(cwd, false)
+}
+
+pub fn load_workflow_snapshot(cwd: &Path) -> Result<WorkflowSnapshot> {
     let context = load_repo_context(cwd, true)?;
-    let workflow = load_workflow_snapshot_from_context(&context)?;
-    let line_stats = repo_line_stats_from_context(&context)?;
+    load_workflow_snapshot_from_context(&context)
+}
+
+pub fn load_graph_snapshot(
+    repo_root: &Path,
+    options: GraphSnapshotOptions,
+) -> Result<GraphSnapshot> {
+    load_graph_snapshot_with_refresh(repo_root, options, true)
+}
+
+pub fn load_graph_snapshot_without_refresh(
+    repo_root: &Path,
+    options: GraphSnapshotOptions,
+) -> Result<GraphSnapshot> {
+    load_graph_snapshot_with_refresh(repo_root, options, false)
+}
+
+pub fn load_snapshot_fingerprint(cwd: &Path) -> Result<RepoSnapshotFingerprint> {
+    load_snapshot_fingerprint_with_refresh(cwd, true)
+}
+
+pub fn load_snapshot_fingerprint_without_refresh(cwd: &Path) -> Result<RepoSnapshotFingerprint> {
+    load_snapshot_fingerprint_with_refresh(cwd, false)
+}
+
+fn load_snapshot_with_refresh(cwd: &Path, refresh_snapshot: bool) -> Result<RepoSnapshot> {
+    let context = load_repo_context(cwd, refresh_snapshot)?;
+    load_snapshot_from_context(&context)
+}
+
+fn load_snapshot_from_context(context: &backend::RepoContext) -> Result<RepoSnapshot> {
+    let workflow = load_workflow_snapshot_from_context(context)?;
+    let line_stats = repo_line_stats_from_context(context)?;
     Ok(RepoSnapshot {
         root: workflow.root,
         branch_name: workflow.branch_name,
@@ -393,21 +432,20 @@ pub fn load_snapshot(cwd: &Path) -> Result<RepoSnapshot> {
     })
 }
 
-pub fn load_workflow_snapshot(cwd: &Path) -> Result<WorkflowSnapshot> {
-    let context = load_repo_context(cwd, true)?;
-    load_workflow_snapshot_from_context(&context)
-}
-
-pub fn load_graph_snapshot(
+fn load_graph_snapshot_with_refresh(
     repo_root: &Path,
     options: GraphSnapshotOptions,
+    refresh_snapshot: bool,
 ) -> Result<GraphSnapshot> {
-    let context = load_repo_context_at_root(repo_root, true)?;
+    let context = load_repo_context_at_root(repo_root, refresh_snapshot)?;
     build_graph_snapshot_from_context(&context, options)
 }
 
-pub fn load_snapshot_fingerprint(cwd: &Path) -> Result<RepoSnapshotFingerprint> {
-    let context = load_repo_context(cwd, true)?;
+fn load_snapshot_fingerprint_with_refresh(
+    cwd: &Path,
+    refresh_snapshot: bool,
+) -> Result<RepoSnapshotFingerprint> {
+    let context = load_repo_context(cwd, refresh_snapshot)?;
     let files = load_changed_files_from_context(&context)?;
     let current_bookmarks = current_bookmarks_from_context(&context)?;
     let active_bookmark = load_active_bookmark_preference(&context.root);

@@ -37,6 +37,7 @@ use jj_lib::rewrite::{
     restore_tree, squash_commits,
 };
 use jj_lib::settings::UserSettings;
+use jj_lib::signing::SignBehavior;
 use jj_lib::str_util::StringExpression;
 use jj_lib::working_copy::SnapshotOptions;
 use jj_lib::workspace::{Workspace, default_working_copy_factories};

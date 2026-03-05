@@ -2,7 +2,7 @@ use anyhow::Context as _;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use notify::Watcher;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use super::data::{
     DiffSegmentQuality, DiffStream, DiffStreamRowKind, RepoTreeNodeKind,
@@ -18,8 +18,9 @@ use hunk_jj::jj::{
     abandon_bookmark_head, checkout_or_create_bookmark_with_change_transfer, commit_selected_paths,
     commit_staged, count_non_ignored_repo_tree_entries, create_bookmark_at_revision,
     describe_bookmark_head, graph_bookmark_drop_validation, graph_bookmark_revision_chain,
-    load_graph_snapshot, load_patches_for_files, load_repo_tree, load_snapshot,
-    load_snapshot_fingerprint, load_workflow_snapshot, move_bookmark_to_revision,
+    load_graph_snapshot_without_refresh, load_patches_for_files, load_repo_tree,
+    load_snapshot_fingerprint, load_snapshot_fingerprint_without_refresh,
+    load_snapshot_without_refresh, load_workflow_snapshot, move_bookmark_to_revision,
     push_current_bookmark, redo_last_operation as redo_last_jj_operation, rename_bookmark,
     reorder_bookmark_tip_older, restore_all_working_copy_changes,
     restore_working_copy_from_revision, restore_working_copy_paths,
