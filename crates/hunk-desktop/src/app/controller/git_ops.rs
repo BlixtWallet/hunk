@@ -111,6 +111,13 @@ impl DiffViewer {
         self.git_action_label = None;
     }
 
+    fn refresh_workflow_and_full_snapshot_after_action(&mut self, cx: &mut Context<Self>) {
+        // Keep right-pane controls responsive by applying workflow state first, then
+        // refresh graph/tree state in the background.
+        self.request_workflow_refresh(cx);
+        self.request_snapshot_refresh_internal(true, cx);
+    }
+
     fn run_git_action<F>(&mut self, action_name: &'static str, cx: &mut Context<Self>, action: F)
     where
         F: FnOnce(std::path::PathBuf) -> anyhow::Result<String> + Send + 'static,
@@ -144,7 +151,7 @@ impl DiffViewer {
                             } else {
                                 Some(message)
                             };
-                            this.request_snapshot_refresh_internal(true, cx);
+                            this.refresh_workflow_and_full_snapshot_after_action(cx);
                         }
                         Err(err) => {
                             error!("{action_name} failed: {err:#}");
@@ -237,15 +244,6 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) {
         self.request_activate_or_create_bookmark_with_dirty_guard(branch_name, cx);
-    }
-
-    pub(super) fn checkout_bookmark_with_change_transfer(
-        &mut self,
-        branch_name: String,
-        cx: &mut Context<Self>,
-    ) {
-        self.pending_bookmark_switch = None;
-        self.activate_or_create_bookmark(branch_name, true, cx);
     }
 
     pub(super) fn toggle_commit_file_included(
@@ -847,7 +845,7 @@ impl DiffViewer {
                                 error!("failed to clear commit input after commit: {err:#}");
                             }
 
-                            this.request_snapshot_refresh(cx);
+                            this.refresh_workflow_and_full_snapshot_after_action(cx);
                         }
                         Err(err) => {
                             error!("Commit failed: {err:#}");
@@ -865,8 +863,8 @@ impl DiffViewer {
         });
     }
 
-    pub(super) fn toggle_bookmark_picker(&mut self, cx: &mut Context<Self>) {
-        self.branch_picker_open = !self.branch_picker_open;
+    pub(super) fn toggle_revision_stack_collapsed(&mut self, cx: &mut Context<Self>) {
+        self.revision_stack_collapsed = !self.revision_stack_collapsed;
         cx.notify();
     }
 
