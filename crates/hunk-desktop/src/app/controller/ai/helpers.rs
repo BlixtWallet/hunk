@@ -22,7 +22,7 @@ fn workspace_include_hidden_models(state: &AppState, workspace_key: Option<&str>
     workspace_key
         .and_then(|workspace| state.ai_workspace_include_hidden_models.get(workspace))
         .copied()
-        .unwrap_or(false)
+        .unwrap_or(true)
 }
 
 fn reasoning_effort_key(effort: &codex_protocol::openai_models::ReasoningEffort) -> String {

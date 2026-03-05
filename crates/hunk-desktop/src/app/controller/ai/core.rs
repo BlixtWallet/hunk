@@ -73,34 +73,6 @@ impl DiffViewer {
         self.send_ai_worker_command(AiWorkerCommand::RefreshSessionMetadata, cx);
     }
 
-    pub(super) fn ai_set_include_hidden_models_action(
-        &mut self,
-        enabled: bool,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(workspace_key) = self.ai_workspace_key() else {
-            self.ai_status_message = Some("Open a workspace before changing model visibility.".to_string());
-            cx.notify();
-            return;
-        };
-        self.ai_include_hidden_models = enabled;
-        if enabled {
-            self.state
-                .ai_workspace_include_hidden_models
-                .insert(workspace_key, true);
-        } else {
-            self.state
-                .ai_workspace_include_hidden_models
-                .remove(workspace_key.as_str());
-        }
-        self.persist_state();
-        self.send_ai_worker_command_if_running(
-            AiWorkerCommand::SetIncludeHiddenModels { enabled },
-            cx,
-        );
-        cx.notify();
-    }
-
     pub(super) fn ai_start_chatgpt_login_action(&mut self, cx: &mut Context<Self>) {
         self.send_ai_worker_command(AiWorkerCommand::StartChatgptLogin, cx);
     }
@@ -288,7 +260,7 @@ impl DiffViewer {
             return;
         };
 
-        let instructions = self.ai_review_input_state.read(cx).value().trim().to_string();
+        let instructions = self.ai_composer_input_state.read(cx).value().trim().to_string();
         let instructions = if instructions.is_empty() {
             "Review the current working-copy changes for correctness and regressions.".to_string()
         } else {
@@ -302,9 +274,7 @@ impl DiffViewer {
             },
             cx,
         ) {
-            self.ai_review_input_state.update(cx, |state, cx| {
-                state.set_value("", window, cx);
-            });
+            self.clear_ai_composer_input(window, cx);
         }
     }
 

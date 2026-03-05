@@ -1007,7 +1007,6 @@ struct DiffViewer {
     ai_command_tx: Option<mpsc::Sender<AiWorkerCommand>>,
     ai_composer_input_state: Entity<InputState>,
     ai_composer_local_images: Vec<PathBuf>,
-    ai_review_input_state: Entity<InputState>,
     files: Vec<ChangedFile>,
     file_status_by_path: BTreeMap<String, FileStatus>,
     revision_stack_collapsed: bool,

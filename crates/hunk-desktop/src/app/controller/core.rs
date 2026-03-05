@@ -332,7 +332,7 @@ impl DiffViewer {
             .as_ref()
             .and_then(|workspace| state.ai_workspace_include_hidden_models.get(workspace))
             .copied()
-            .unwrap_or(false);
+            .unwrap_or(true);
         let diff_show_whitespace = config.show_whitespace;
         let diff_show_eol_markers = config.show_eol_markers;
         let branch_input_state = cx.new(|cx| {
@@ -357,10 +357,8 @@ impl DiffViewer {
             InputState::new(window, cx)
                 .multi_line(true)
                 .rows(4)
-                .placeholder("Ask Codex to edit code, run commands, or explain changes.")
+                .placeholder("Ask Codex to edit code, run commands, explain changes, or focus a review.")
         });
-        let ai_review_input_state =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Review focus (optional)"));
         let graph_action_input_state = cx.new(|cx| {
             InputState::new(window, cx).placeholder("Bookmark name for create/fork/rename")
         });
@@ -453,7 +451,6 @@ impl DiffViewer {
             ai_command_tx: None,
             ai_composer_input_state,
             ai_composer_local_images: Vec::new(),
-            ai_review_input_state,
             files: Vec::new(),
             file_status_by_path: BTreeMap::new(),
             revision_stack_collapsed: true,

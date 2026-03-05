@@ -299,7 +299,6 @@ struct AiSessionControlsPanelView<'a> {
     models: &'a [codex_app_server_protocol::Model],
     experimental_features: &'a [codex_app_server_protocol::ExperimentalFeature],
     collaboration_modes: &'a [codex_app_server_protocol::CollaborationModeMask],
-    include_hidden_models: bool,
     selected_model: Option<&'a str>,
     selected_effort: Option<&'a str>,
     selected_collaboration_mode: Option<&'a str>,
@@ -315,7 +314,6 @@ fn render_ai_session_controls_panel_for_view(
             models: this.ai_models.as_slice(),
             experimental_features: this.ai_experimental_features.as_slice(),
             collaboration_modes: this.ai_collaboration_modes.as_slice(),
-            include_hidden_models: this.ai_include_hidden_models,
             selected_model: this.ai_selected_model.as_deref(),
             selected_effort: this.ai_selected_effort.as_deref(),
             selected_collaboration_mode: this.ai_selected_collaboration_mode.as_deref(),
@@ -357,31 +355,33 @@ fn render_ai_session_controls_panel(
         "collaboration_modes",
     ) && !panel.collaboration_modes.is_empty();
     let collaboration_label = ai_collaboration_picker_label(panel.selected_collaboration_mode);
-    let model_items = panel
+    let (visible_models, hidden_models): (Vec<_>, Vec<_>) = panel
         .models
         .iter()
-        .map(|model| {
-            let suffix = if model.hidden { " (hidden)" } else { "" };
-            (model.id.clone(), format!("{}{}", model.display_name, suffix))
-        })
-        .collect::<Vec<_>>();
+        .map(|model| (model.id.clone(), model.display_name.clone(), model.hidden))
+        .partition(|(_, _, hidden)| !*hidden);
     let collaboration_items = panel
         .collaboration_modes
         .iter()
         .map(|mode| mode.name.clone())
         .collect::<Vec<_>>();
 
-    h_flex()
-        .items_center()
+    v_flex()
+        .min_w_0()
         .gap_1()
-        .flex_wrap()
-        .child(div().text_xs().text_color(cx.theme().muted_foreground).child("Model"))
-        .child({
+        .child(
+            h_flex()
+                .min_w_0()
+                .items_center()
+                .gap_1()
+                .flex_wrap()
+                .child({
                     let view = view.clone();
                     let selected_model = panel.selected_model.map(ToOwned::to_owned);
                     Button::new("ai-session-model-dropdown")
                         .compact()
                         .outline()
+                        .rounded(px(16.0))
                         .with_size(gpui_component::Size::Small)
                         .dropdown_caret(true)
                         .label(model_label)
@@ -398,10 +398,11 @@ fn render_ai_session_controls_panel(
                                         }
                                     }),
                             );
-                            for (model_id, label) in &model_items {
+                            for (model_id, label, _) in &visible_models {
                                 let model_id_value = model_id.clone();
+                                let label = label.clone();
                                 menu = menu.item(
-                                    PopupMenuItem::new(label.clone())
+                                    PopupMenuItem::new(label)
                                         .checked(
                                             selected_model
                                                 .as_deref()
@@ -421,16 +422,45 @@ fn render_ai_session_controls_panel(
                                         }),
                                 );
                             }
+                            if !hidden_models.is_empty() {
+                                menu = menu
+                                    .item(PopupMenuItem::separator())
+                                    .item(PopupMenuItem::label("Hidden Models"));
+                                for (model_id, label, _) in &hidden_models {
+                                    let model_id_value = model_id.clone();
+                                    let label = label.clone();
+                                    menu = menu.item(
+                                        PopupMenuItem::new(label)
+                                            .checked(
+                                                selected_model
+                                                    .as_deref()
+                                                    == Some(model_id_value.as_str()),
+                                            )
+                                            .on_click({
+                                                let view = view.clone();
+                                                move |_, _, cx| {
+                                                    let selected = model_id_value.clone();
+                                                    view.update(cx, |this, cx| {
+                                                        this.ai_select_model_action(
+                                                            Some(selected.clone()),
+                                                            cx,
+                                                        );
+                                                    });
+                                                }
+                                            }),
+                                    );
+                                }
+                            }
                             menu
                         })
                 })
-        .child(div().text_xs().text_color(cx.theme().muted_foreground).child("Effort"))
-        .child({
+                .child({
                     let view = view.clone();
                     let selected_effort = panel.selected_effort.map(ToOwned::to_owned);
                     Button::new("ai-session-effort-dropdown")
                         .compact()
                         .outline()
+                        .rounded(px(16.0))
                         .with_size(gpui_component::Size::Small)
                         .dropdown_caret(true)
                         .disabled(selected_model.is_none())
@@ -474,19 +504,14 @@ fn render_ai_session_controls_panel(
                             menu
                         })
                 })
-        .when(collaboration_enabled, |this| {
-            this.child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child("Mode"),
-            )
-            .child({
+                .when(collaboration_enabled, |this| {
+                    this.child({
                         let view = view.clone();
                         let selected = panel.selected_collaboration_mode.map(ToOwned::to_owned);
                         Button::new("ai-session-collaboration-dropdown")
                             .compact()
                             .outline()
+                            .rounded(px(16.0))
                             .with_size(gpui_component::Size::Small)
                             .dropdown_caret(true)
                             .label(collaboration_label)
@@ -530,25 +555,8 @@ fn render_ai_session_controls_panel(
                                 menu
                             })
                     })
-        })
-        .child({
-                    let view = view.clone();
-                    let enable_hidden = !panel.include_hidden_models;
-                    Button::new("ai-session-toggle-hidden-models")
-                        .compact()
-                        .outline()
-                        .with_size(gpui_component::Size::Small)
-                        .label(if panel.include_hidden_models {
-                            "Hidden Models On"
-                        } else {
-                            "Hidden Models Off"
-                        })
-                        .on_click(move |_, _, cx| {
-                            view.update(cx, |this, cx| {
-                                this.ai_set_include_hidden_models_action(enable_hidden, cx);
-                            });
-                        })
-                })
+                }),
+        )
         .when(selected_model_unavailable, |this| {
             this.child(
                 div()

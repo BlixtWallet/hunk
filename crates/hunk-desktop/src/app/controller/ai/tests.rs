@@ -678,10 +678,10 @@ mod ai_tests {
     }
 
     #[test]
-    fn workspace_include_hidden_models_defaults_to_false_when_missing() {
+    fn workspace_include_hidden_models_defaults_to_true_when_missing() {
         let state = AppState::default();
-        assert!(!workspace_include_hidden_models(&state, Some("/repo")));
-        assert!(!workspace_include_hidden_models(&state, None));
+        assert!(workspace_include_hidden_models(&state, Some("/repo")));
+        assert!(workspace_include_hidden_models(&state, None));
     }
 
     #[test]
@@ -700,7 +700,7 @@ mod ai_tests {
         };
         assert!(workspace_include_hidden_models(&state, Some("/repo-a")));
         assert!(!workspace_include_hidden_models(&state, Some("/repo-b")));
-        assert!(!workspace_include_hidden_models(&state, Some("/repo-c")));
+        assert!(workspace_include_hidden_models(&state, Some("/repo-c")));
     }
 
     #[test]
