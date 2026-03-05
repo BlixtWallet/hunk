@@ -119,6 +119,10 @@ impl DiffViewer {
 
     fn apply_ai_snapshot(&mut self, snapshot: AiSnapshot) {
         let previous_selected_thread = self.ai_selected_thread_id.clone();
+        let previous_visible_row_ids = previous_selected_thread
+            .as_deref()
+            .map(|thread_id| current_ai_renderable_visible_row_ids(self, thread_id))
+            .unwrap_or_default();
         let previous_selected_thread_sequence =
             previous_selected_thread
                 .as_deref()
@@ -145,6 +149,12 @@ impl DiffViewer {
             include_hidden_models,
             mad_max_mode,
         } = snapshot;
+        let changed_row_ids = previous_selected_thread
+            .as_deref()
+            .map(|thread_id| {
+                timeline_row_ids_with_height_changes(&self.ai_state_snapshot, &state, thread_id)
+            })
+            .unwrap_or_default();
 
         self.ai_state_snapshot = state;
         self.rebuild_ai_timeline_indexes();
@@ -215,6 +225,27 @@ impl DiffViewer {
         }
         self.ai_expanded_timeline_row_ids
             .retain(|row_id| self.ai_timeline_rows_by_id.contains_key(row_id));
+
+        let next_visible_row_ids = self
+            .ai_selected_thread_id
+            .as_deref()
+            .map(|thread_id| current_ai_renderable_visible_row_ids(self, thread_id))
+            .unwrap_or_default();
+        if should_reset_ai_timeline_measurements(
+            previous_selected_thread.as_deref(),
+            self.ai_selected_thread_id.as_deref(),
+            previous_visible_row_ids.as_slice(),
+            next_visible_row_ids.as_slice(),
+            self.ai_timeline_list_row_count,
+        ) {
+            reset_ai_timeline_list_measurements(self, next_visible_row_ids.len());
+        } else {
+            invalidate_ai_timeline_row_measurements(
+                self,
+                next_visible_row_ids.as_slice(),
+                &changed_row_ids,
+            );
+        }
 
         self.sync_ai_session_selection_from_state();
     }

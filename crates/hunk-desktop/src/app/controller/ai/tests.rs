@@ -20,8 +20,11 @@ mod ai_tests {
     use super::normalized_user_input_answers;
     use super::resolve_bundled_codex_executable_from_exe;
     use super::should_follow_timeline_output;
+    use super::should_reset_ai_timeline_measurements;
     use super::should_scroll_timeline_to_bottom_on_new_activity;
     use super::sorted_threads;
+    use super::timeline_turn_ids_by_thread;
+    use super::timeline_row_ids_with_height_changes;
     use super::timeline_visible_row_ids_for_turns;
     use super::timeline_visible_turn_ids;
     use super::should_scroll_timeline_to_bottom_on_selection_change;
@@ -40,7 +43,7 @@ mod ai_tests {
     use hunk_codex::state::ThreadSummary;
     use hunk_domain::state::AiThreadSessionState;
     use hunk_domain::state::AppState;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::env;
     use std::path::PathBuf;
     use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -201,6 +204,35 @@ mod ai_tests {
     }
 
     #[test]
+    fn timeline_turn_ids_by_thread_uses_plain_turn_ids_instead_of_storage_keys() {
+        let mut state = AiState::default();
+        state.turns.insert(
+            hunk_codex::state::turn_storage_key("thread-1", "turn-2"),
+            hunk_codex::state::TurnSummary {
+                id: "turn-2".to_string(),
+                thread_id: "thread-1".to_string(),
+                status: hunk_codex::state::TurnStatus::Completed,
+                last_sequence: 2,
+            },
+        );
+        state.turns.insert(
+            hunk_codex::state::turn_storage_key("thread-1", "turn-1"),
+            hunk_codex::state::TurnSummary {
+                id: "turn-1".to_string(),
+                thread_id: "thread-1".to_string(),
+                status: hunk_codex::state::TurnStatus::Completed,
+                last_sequence: 1,
+            },
+        );
+
+        let turn_ids_by_thread = timeline_turn_ids_by_thread(&state);
+        assert_eq!(
+            turn_ids_by_thread.get("thread-1"),
+            Some(&vec!["turn-1".to_string(), "turn-2".to_string()]),
+        );
+    }
+
+    #[test]
     fn timeline_visible_row_ids_filter_by_visible_turns_and_preserve_row_order() {
         let row_ids = vec![
             "item:1".to_string(),
@@ -274,6 +306,105 @@ mod ai_tests {
                 "item:3".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn timeline_row_ids_with_height_changes_tracks_streamed_item_and_diff_updates() {
+        let mut previous = AiState::default();
+        previous.turns.insert(
+            hunk_codex::state::turn_storage_key("thread-1", "turn-1"),
+            hunk_codex::state::TurnSummary {
+                id: "turn-1".to_string(),
+                thread_id: "thread-1".to_string(),
+                status: hunk_codex::state::TurnStatus::InProgress,
+                last_sequence: 1,
+            },
+        );
+        previous.items.insert(
+            hunk_codex::state::item_storage_key("thread-1", "turn-1", "item-1"),
+            hunk_codex::state::ItemSummary {
+                id: "item-1".to_string(),
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                kind: "agentMessage".to_string(),
+                status: ItemStatus::Streaming,
+                content: "hello".to_string(),
+                display_metadata: None,
+                last_sequence: 2,
+            },
+        );
+        previous.turn_diffs.insert(
+            hunk_codex::state::turn_storage_key("thread-1", "turn-1"),
+            "@@ -1 +1 @@\n-old\n+new".to_string(),
+        );
+
+        let mut next = previous.clone();
+        next.items.insert(
+            hunk_codex::state::item_storage_key("thread-1", "turn-1", "item-1"),
+            hunk_codex::state::ItemSummary {
+                id: "item-1".to_string(),
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                kind: "agentMessage".to_string(),
+                status: ItemStatus::Completed,
+                content: "hello world".to_string(),
+                display_metadata: None,
+                last_sequence: 3,
+            },
+        );
+        next.turn_diffs.insert(
+            hunk_codex::state::turn_storage_key("thread-1", "turn-1"),
+            "@@ -1 +1 @@\n-old line\n+new line".to_string(),
+        );
+
+        let changed_row_ids =
+            timeline_row_ids_with_height_changes(&previous, &next, "thread-1");
+        assert_eq!(
+            changed_row_ids,
+            BTreeSet::from([
+                format!(
+                    "item:{}",
+                    hunk_codex::state::item_storage_key("thread-1", "turn-1", "item-1")
+                ),
+                format!(
+                    "turn-diff:{}",
+                    hunk_codex::state::turn_storage_key("thread-1", "turn-1")
+                ),
+            ]),
+        );
+    }
+
+    #[test]
+    fn timeline_measurements_reset_when_thread_or_visible_rows_change() {
+        let row_ids = vec!["row-1".to_string(), "row-2".to_string()];
+        assert!(should_reset_ai_timeline_measurements(
+            Some("thread-1"),
+            Some("thread-2"),
+            row_ids.as_slice(),
+            row_ids.as_slice(),
+            row_ids.len(),
+        ));
+        assert!(should_reset_ai_timeline_measurements(
+            Some("thread-1"),
+            Some("thread-1"),
+            row_ids.as_slice(),
+            ["row-3".to_string(), "row-4".to_string()].as_slice(),
+            row_ids.len(),
+        ));
+        assert!(should_reset_ai_timeline_measurements(
+            Some("thread-1"),
+            Some("thread-1"),
+            row_ids.as_slice(),
+            row_ids.as_slice(),
+            0,
+        ));
+        assert!(!should_reset_ai_timeline_measurements(
+            Some("thread-1"),
+            Some("thread-1"),
+            row_ids.as_slice(),
+            row_ids.as_slice(),
+            row_ids.len(),
+        ));
     }
 
     #[test]

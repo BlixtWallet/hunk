@@ -82,6 +82,32 @@ fn timeline_visible_turn_ids(
     )
 }
 
+fn timeline_turn_ids_by_thread(
+    state: &hunk_codex::state::AiState,
+) -> BTreeMap<String, Vec<String>> {
+    let mut turn_ids_by_thread = BTreeMap::<String, Vec<(u64, String)>>::new();
+    for turn in state.turns.values() {
+        turn_ids_by_thread
+            .entry(turn.thread_id.clone())
+            .or_default()
+            .push((turn.last_sequence, turn.id.clone()));
+    }
+
+    turn_ids_by_thread
+        .into_iter()
+        .map(|(thread_id, mut entries)| {
+            entries.sort_by(|left, right| {
+                left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1))
+            });
+            let ids = entries
+                .into_iter()
+                .map(|(_, turn_id)| turn_id)
+                .collect::<Vec<_>>();
+            (thread_id, ids)
+        })
+        .collect()
+}
+
 fn timeline_visible_row_ids_for_turns(
     row_ids: &[String],
     rows_by_id: &BTreeMap<String, AiTimelineRow>,
@@ -103,6 +129,166 @@ fn timeline_visible_row_ids_for_turns(
         })
         .cloned()
         .collect::<Vec<_>>()
+}
+
+fn ai_timeline_item_is_renderable_for_layout(item: &hunk_codex::state::ItemSummary) -> bool {
+    if matches!(item.kind.as_str(), "reasoning" | "webSearch") {
+        let has_content = !item.content.trim().is_empty();
+        let has_metadata = item.display_metadata.as_ref().is_some_and(|metadata| {
+            metadata
+                .summary
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+                || metadata
+                    .details_json
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty())
+        });
+        return has_content || has_metadata;
+    }
+
+    true
+}
+
+fn ai_timeline_row_is_renderable_for_layout(
+    state: &hunk_codex::state::AiState,
+    row: &AiTimelineRow,
+) -> bool {
+    match &row.source {
+        AiTimelineRowSource::Item { item_key } => state
+            .items
+            .get(item_key.as_str())
+            .is_some_and(ai_timeline_item_is_renderable_for_layout),
+        AiTimelineRowSource::TurnDiff { turn_key } => state
+            .turn_diffs
+            .get(turn_key.as_str())
+            .is_some_and(|diff| !diff.trim().is_empty()),
+    }
+}
+
+fn current_ai_renderable_visible_row_ids(this: &DiffViewer, thread_id: &str) -> Vec<String> {
+    let (_, _, _, visible_row_ids) = this.ai_timeline_visible_rows_for_thread(thread_id);
+    visible_row_ids
+        .into_iter()
+        .filter(|row_id| {
+            this.ai_timeline_row(row_id.as_str()).is_some_and(|row| {
+                ai_timeline_row_is_renderable_for_layout(&this.ai_state_snapshot, row)
+            })
+        })
+        .collect()
+}
+
+fn timeline_row_ids_with_height_changes(
+    previous_state: &hunk_codex::state::AiState,
+    next_state: &hunk_codex::state::AiState,
+    thread_id: &str,
+) -> BTreeSet<String> {
+    let mut changed_row_ids = BTreeSet::new();
+
+    let item_keys = previous_state
+        .items
+        .iter()
+        .filter(|(_, item)| item.thread_id == thread_id)
+        .map(|(item_key, _)| item_key.clone())
+        .chain(
+            next_state
+                .items
+                .iter()
+                .filter(|(_, item)| item.thread_id == thread_id)
+                .map(|(item_key, _)| item_key.clone()),
+        )
+        .collect::<BTreeSet<_>>();
+    for item_key in item_keys {
+        if previous_state.items.get(item_key.as_str()) != next_state.items.get(item_key.as_str()) {
+            changed_row_ids.insert(format!("item:{item_key}"));
+        }
+    }
+
+    let turn_keys = previous_state
+        .turns
+        .iter()
+        .filter(|(_, turn)| turn.thread_id == thread_id)
+        .map(|(turn_key, _)| turn_key.clone())
+        .chain(
+            next_state
+                .turns
+                .iter()
+                .filter(|(_, turn)| turn.thread_id == thread_id)
+                .map(|(turn_key, _)| turn_key.clone()),
+        )
+        .collect::<BTreeSet<_>>();
+    for turn_key in turn_keys {
+        if previous_state.turn_diffs.get(turn_key.as_str())
+            != next_state.turn_diffs.get(turn_key.as_str())
+        {
+            changed_row_ids.insert(format!("turn-diff:{turn_key}"));
+        }
+    }
+
+    changed_row_ids
+}
+
+fn should_reset_ai_timeline_measurements(
+    previous_thread_id: Option<&str>,
+    next_thread_id: Option<&str>,
+    previous_visible_row_ids: &[String],
+    next_visible_row_ids: &[String],
+    cached_row_count: usize,
+) -> bool {
+    previous_thread_id != next_thread_id
+        || previous_visible_row_ids != next_visible_row_ids
+        || cached_row_count != next_visible_row_ids.len()
+}
+
+fn reset_ai_timeline_list_measurements(this: &mut DiffViewer, row_count: usize) {
+    let previous_top = this.ai_timeline_list_state.logical_scroll_top();
+    this.ai_timeline_list_state.reset(row_count);
+    let item_ix = if row_count == 0 {
+        0
+    } else {
+        previous_top.item_ix.min(row_count.saturating_sub(1))
+    };
+    let offset_in_item = if row_count == 0 || item_ix != previous_top.item_ix {
+        px(0.)
+    } else {
+        previous_top.offset_in_item
+    };
+    this.ai_timeline_list_state.scroll_to(ListOffset {
+        item_ix,
+        offset_in_item,
+    });
+    this.ai_timeline_list_row_count = row_count;
+}
+
+fn invalidate_ai_timeline_row_measurements(
+    this: &mut DiffViewer,
+    visible_row_ids: &[String],
+    changed_row_ids: &BTreeSet<String>,
+) {
+    if visible_row_ids.is_empty() || changed_row_ids.is_empty() {
+        return;
+    }
+    if this.ai_timeline_list_row_count != visible_row_ids.len() {
+        reset_ai_timeline_list_measurements(this, visible_row_ids.len());
+        return;
+    }
+
+    let invalidated_indexes = visible_row_ids
+        .iter()
+        .enumerate()
+        .filter_map(|(ix, row_id)| changed_row_ids.contains(row_id.as_str()).then_some(ix))
+        .collect::<Vec<_>>();
+    if invalidated_indexes.is_empty() {
+        return;
+    }
+    if invalidated_indexes.len() == visible_row_ids.len() {
+        reset_ai_timeline_list_measurements(this, visible_row_ids.len());
+        return;
+    }
+
+    for ix in invalidated_indexes {
+        this.ai_timeline_list_state.splice(ix..ix + 1, 1);
+    }
 }
 
 fn should_sync_selected_thread_from_active_thread(

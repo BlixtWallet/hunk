@@ -418,6 +418,7 @@ fn ai_timeline_row_with_animation(
     row_id: &str,
     row: gpui::Div,
 ) -> AnyElement {
+    let row = div().w_full().py_1().child(row);
     if this.reduced_motion_enabled() {
         row.into_any_element()
     } else {

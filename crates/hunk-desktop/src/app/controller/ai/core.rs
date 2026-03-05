@@ -430,6 +430,8 @@ impl DiffViewer {
         self.ai_scroll_timeline_to_bottom = true;
         self.ai_expanded_timeline_row_ids.clear();
         self.ai_selected_thread_id = Some(thread_id.clone());
+        let visible_row_ids = current_ai_renderable_visible_row_ids(self, thread_id.as_str());
+        reset_ai_timeline_list_measurements(self, visible_row_ids.len());
         self.sync_ai_session_selection_from_state();
         self.send_ai_worker_command(AiWorkerCommand::SelectThread { thread_id }, cx);
         cx.notify();
@@ -487,10 +489,16 @@ impl DiffViewer {
         row_id: String,
         cx: &mut Context<Self>,
     ) {
+        let changed_row_id = row_id.clone();
         if self.ai_expanded_timeline_row_ids.contains(row_id.as_str()) {
             self.ai_expanded_timeline_row_ids.remove(row_id.as_str());
         } else {
             self.ai_expanded_timeline_row_ids.insert(row_id);
+        }
+        if let Some(selected_thread_id) = self.ai_selected_thread_id.as_deref() {
+            let visible_row_ids = current_ai_renderable_visible_row_ids(self, selected_thread_id);
+            let changed_row_ids = [changed_row_id].into_iter().collect::<BTreeSet<_>>();
+            invalidate_ai_timeline_row_measurements(self, visible_row_ids.as_slice(), &changed_row_ids);
         }
         cx.notify();
     }
@@ -567,27 +575,7 @@ impl DiffViewer {
     }
 
     fn rebuild_ai_timeline_indexes(&mut self) {
-        let mut turn_ids_by_thread = BTreeMap::<String, Vec<(u64, String)>>::new();
-        for (turn_key, turn) in &self.ai_state_snapshot.turns {
-            turn_ids_by_thread
-                .entry(turn.thread_id.clone())
-                .or_default()
-                .push((turn.last_sequence, turn_key.clone()));
-        }
-
-        self.ai_timeline_turn_ids_by_thread = turn_ids_by_thread
-            .into_iter()
-            .map(|(thread_id, mut entries)| {
-                entries.sort_by(|left, right| {
-                    left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1))
-                });
-                let ids = entries
-                    .into_iter()
-                    .map(|(_, turn_id)| turn_id)
-                    .collect::<Vec<_>>();
-                (thread_id, ids)
-            })
-            .collect();
+        self.ai_timeline_turn_ids_by_thread = timeline_turn_ids_by_thread(&self.ai_state_snapshot);
 
         let mut rows_by_thread = BTreeMap::<String, Vec<(u64, String)>>::new();
         let mut rows_by_id = BTreeMap::<String, AiTimelineRow>::new();
@@ -653,23 +641,7 @@ impl DiffViewer {
 
     pub(super) fn sync_ai_timeline_list_state(&mut self, row_count: usize) {
         if self.ai_timeline_list_row_count != row_count {
-            let previous_top = self.ai_timeline_list_state.logical_scroll_top();
-            self.ai_timeline_list_state.reset(row_count);
-            let item_ix = if row_count == 0 {
-                0
-            } else {
-                previous_top.item_ix.min(row_count.saturating_sub(1))
-            };
-            let offset_in_item = if row_count == 0 || item_ix != previous_top.item_ix {
-                px(0.)
-            } else {
-                previous_top.offset_in_item
-            };
-            self.ai_timeline_list_state.scroll_to(ListOffset {
-                item_ix,
-                offset_in_item,
-            });
-            self.ai_timeline_list_row_count = row_count;
+            reset_ai_timeline_list_measurements(self, row_count);
         }
 
         if self.ai_scroll_timeline_to_bottom && row_count > 0 {
@@ -745,7 +717,11 @@ impl DiffViewer {
             return;
         }
         self.ai_timeline_visible_turn_limit_by_thread
-            .insert(thread_id, next_limit);
+            .insert(thread_id.clone(), next_limit);
+        if self.ai_selected_thread_id.as_deref() == Some(thread_id.as_str()) {
+            let visible_row_ids = current_ai_renderable_visible_row_ids(self, thread_id.as_str());
+            reset_ai_timeline_list_measurements(self, visible_row_ids.len());
+        }
         cx.notify();
     }
 
@@ -755,7 +731,11 @@ impl DiffViewer {
             return;
         }
         self.ai_timeline_visible_turn_limit_by_thread
-            .insert(thread_id, usize::MAX);
+            .insert(thread_id.clone(), usize::MAX);
+        if self.ai_selected_thread_id.as_deref() == Some(thread_id.as_str()) {
+            let visible_row_ids = current_ai_renderable_visible_row_ids(self, thread_id.as_str());
+            reset_ai_timeline_list_measurements(self, visible_row_ids.len());
+        }
         cx.notify();
     }
 
