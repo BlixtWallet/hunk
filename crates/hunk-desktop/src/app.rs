@@ -1115,6 +1115,7 @@ struct DiffViewer {
     ai_attachment_picker_task: Task<()>,
     ai_worker_thread: Option<JoinHandle<()>>,
     ai_command_tx: Option<mpsc::Sender<AiWorkerCommand>>,
+    ai_worker_workspace_key: Option<String>,
     ai_composer_input_state: Entity<InputState>,
     ai_composer_drafts: BTreeMap<AiComposerDraftKey, AiComposerDraft>,
     files: Vec<ChangedFile>,

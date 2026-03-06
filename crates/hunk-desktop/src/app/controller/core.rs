@@ -135,9 +135,11 @@ impl DiffViewer {
             return;
         }
 
+        let previous_ai_workspace_key = self.ai_workspace_key();
+        self.sync_ai_visible_composer_prompt_to_draft(cx);
         self.project_path = Some(root.clone());
         self.repo_root = Some(root.clone());
-        self.ai_sync_workspace_preferences(cx);
+        self.ai_handle_workspace_change(previous_ai_workspace_key, cx);
         self.branch_name = if cache.branch_name.is_empty() {
             "unknown".to_string()
         } else {
@@ -419,6 +421,7 @@ impl DiffViewer {
             ai_attachment_picker_task: Task::ready(()),
             ai_worker_thread: None,
             ai_command_tx: None,
+            ai_worker_workspace_key: None,
             ai_composer_input_state,
             ai_composer_drafts: BTreeMap::new(),
             files: Vec::new(),
@@ -1249,8 +1252,12 @@ impl DiffViewer {
 
             if let Some(this) = this.upgrade() {
                 this.update(cx, |this, cx| {
+                    let previous_ai_workspace_key = this.ai_workspace_key();
+                    this.sync_ai_visible_composer_prompt_to_draft(cx);
                     this.project_path = Some(selected_path.clone());
+                    this.repo_root = None;
                     this.set_last_project_path(Some(selected_path));
+                    this.ai_handle_workspace_change(previous_ai_workspace_key, cx);
                     this.git_status_message = None;
                     this.start_repo_watch(cx);
                     this.request_snapshot_refresh_internal(
@@ -1289,10 +1296,12 @@ impl DiffViewer {
         let previous_selected_status = self.selected_status;
         let previous_files = self.files.clone();
 
+        let previous_ai_workspace_key = self.ai_workspace_key();
+        self.sync_ai_visible_composer_prompt_to_draft(cx);
         self.project_path = Some(root.clone());
         self.set_last_project_path(Some(root.clone()));
         self.repo_root = Some(root);
-        self.ai_sync_workspace_preferences(cx);
+        self.ai_handle_workspace_change(previous_ai_workspace_key, cx);
         self.working_copy_commit_id = Some(working_copy_commit_id);
         self.branch_name = branch_name;
         self.branch_has_upstream = branch_has_upstream;
@@ -1405,7 +1414,10 @@ impl DiffViewer {
         self.cancel_patch_reload();
         self.pending_dirty_paths.clear();
         self.last_snapshot_fingerprint = None;
+        let previous_ai_workspace_key = self.ai_workspace_key();
+        self.sync_ai_visible_composer_prompt_to_draft(cx);
         self.repo_root = None;
+        self.ai_handle_workspace_change(previous_ai_workspace_key, cx);
         self.branch_name = "unknown".to_string();
         self.branch_has_upstream = false;
         self.branch_ahead_count = 0;

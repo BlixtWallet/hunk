@@ -22,6 +22,7 @@ mod ai_tests {
     use super::normalized_thread_session_state;
     use super::normalized_user_input_answers;
     use super::resolve_bundled_codex_executable_from_exe;
+    use super::resolved_ai_workspace_cwd;
     use super::should_follow_timeline_output;
     use super::should_reset_ai_timeline_measurements;
     use super::should_scroll_timeline_to_bottom_on_new_activity;
@@ -1352,6 +1353,26 @@ mod ai_tests {
         assert!(workspace_include_hidden_models(&state, Some("/repo-a")));
         assert!(!workspace_include_hidden_models(&state, Some("/repo-b")));
         assert!(workspace_include_hidden_models(&state, Some("/repo-c")));
+    }
+
+    #[test]
+    fn resolved_ai_workspace_cwd_prefers_repo_root_when_paths_are_related() {
+        let project = PathBuf::from("/repo/subdir");
+        let repo_root = PathBuf::from("/repo");
+        assert_eq!(
+            resolved_ai_workspace_cwd(Some(project.as_path()), Some(repo_root.as_path())),
+            Some(repo_root),
+        );
+    }
+
+    #[test]
+    fn resolved_ai_workspace_cwd_prefers_selected_project_when_repo_root_is_stale() {
+        let project = PathBuf::from("/repo-b");
+        let stale_repo_root = PathBuf::from("/repo-a");
+        assert_eq!(
+            resolved_ai_workspace_cwd(Some(project.as_path()), Some(stale_repo_root.as_path())),
+            Some(project),
+        );
     }
 
     #[test]

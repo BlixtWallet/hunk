@@ -28,6 +28,7 @@ impl DiffViewer {
             cx.notify();
             return;
         };
+        let worker_workspace_key = cwd.to_string_lossy().to_string();
 
         let Some(codex_home) = Self::resolve_codex_home_path() else {
             self.ai_connection_state = AiConnectionState::Failed;
@@ -59,6 +60,7 @@ impl DiffViewer {
         self.ai_status_message = Some("Starting Codex App Server...".to_string());
         self.ai_command_tx = Some(command_tx);
         self.ai_worker_thread = Some(worker);
+        self.ai_worker_workspace_key = Some(worker_workspace_key);
 
         let epoch = self.next_ai_event_epoch();
         self.start_ai_event_listener(event_rx, epoch, cx);
@@ -891,7 +893,7 @@ impl DiffViewer {
     }
 
     fn ai_workspace_cwd(&self) -> Option<std::path::PathBuf> {
-        self.repo_root.clone().or_else(|| self.project_path.clone())
+        resolved_ai_workspace_cwd(self.project_path.as_deref(), self.repo_root.as_deref())
     }
 
     fn ai_workspace_key(&self) -> Option<String> {
@@ -985,6 +987,7 @@ impl DiffViewer {
         if let Some(command_tx) = self.ai_command_tx.take() {
             let _ = command_tx.send(AiWorkerCommand::Shutdown);
         }
+        self.ai_worker_workspace_key = None;
         self.join_ai_worker_thread("dropping DiffViewer");
     }
 
@@ -1008,6 +1011,18 @@ impl DiffViewer {
         if let Err(error) = worker.join() {
             error!("failed to join AI worker thread during {reason}: {error:?}");
         }
+    }
+
+    fn detach_ai_worker_thread_join(&mut self, reason: &'static str) {
+        let Some(worker) = self.ai_worker_thread.take() else {
+            return;
+        };
+
+        std::thread::spawn(move || {
+            if let Err(error) = worker.join() {
+                error!("failed to join AI worker thread during {reason}: {error:?}");
+            }
+        });
     }
 
     fn send_ai_worker_command(&mut self, command: AiWorkerCommand, cx: &mut Context<Self>) -> bool {
@@ -1035,6 +1050,7 @@ impl DiffViewer {
         self.ai_bootstrap_loading = false;
         self.ai_error_message = Some("AI worker channel disconnected.".to_string());
         self.ai_command_tx = None;
+        self.ai_worker_workspace_key = None;
         self.join_ai_worker_thread("worker channel disconnect");
         cx.notify();
         false

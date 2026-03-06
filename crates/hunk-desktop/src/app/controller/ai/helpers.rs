@@ -28,6 +28,24 @@ fn workspace_include_hidden_models(state: &AppState, workspace_key: Option<&str>
         .unwrap_or(true)
 }
 
+fn resolved_ai_workspace_cwd(
+    project_path: Option<&std::path::Path>,
+    repo_root: Option<&std::path::Path>,
+) -> Option<std::path::PathBuf> {
+    match (project_path, repo_root) {
+        (Some(project_path), Some(repo_root)) => {
+            if project_path.starts_with(repo_root) || repo_root.starts_with(project_path) {
+                Some(repo_root.to_path_buf())
+            } else {
+                Some(project_path.to_path_buf())
+            }
+        }
+        (Some(project_path), None) => Some(project_path.to_path_buf()),
+        (None, Some(repo_root)) => Some(repo_root.to_path_buf()),
+        (None, None) => None,
+    }
+}
+
 fn ai_collaboration_mode_matches_kind(mask: &CollaborationModeMask, kind: ModeKind) -> bool {
     mask.mode == Some(kind) || mask.name.eq_ignore_ascii_case(kind.display_name())
 }

@@ -22,6 +22,7 @@ impl DiffViewer {
                                         return;
                                     }
                                     this.ai_command_tx = None;
+                                    this.ai_worker_workspace_key = None;
                                     this.join_ai_worker_thread("event stream disconnect");
                                     this.ai_pending_approvals.clear();
                                     this.ai_pending_user_inputs.clear();
@@ -117,6 +118,7 @@ impl DiffViewer {
                 self.ai_error_message = Some(message.clone());
                 self.ai_status_message = Some("Codex integration failed".to_string());
                 self.ai_command_tx = None;
+                self.ai_worker_workspace_key = None;
                 self.join_ai_worker_thread("fatal worker event");
                 self.ai_pending_approvals.clear();
                 self.ai_pending_user_inputs.clear();
