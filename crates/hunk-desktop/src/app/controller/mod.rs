@@ -2,7 +2,7 @@ use anyhow::Context as _;
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 use notify::Watcher;
-use tracing::{error, info, warn};
+use tracing::{debug, error, warn};
 
 use super::data::{
     DiffSegmentQuality, DiffStream, DiffStreamRowKind, RepoTreeNodeKind,

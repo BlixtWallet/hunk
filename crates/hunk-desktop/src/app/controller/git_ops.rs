@@ -163,7 +163,7 @@ impl DiffViewer {
                     this.finish_git_action();
                     match result {
                         Ok(message) => {
-                            info!(
+                            debug!(
                                 "git action complete: epoch={} action={} exec_elapsed_ms={} total_elapsed_ms={}",
                                 epoch,
                                 action_name,
@@ -712,7 +712,7 @@ impl DiffViewer {
                     this.finish_git_action();
                     match result {
                         Ok(Some(url)) => {
-                            info!(
+                            debug!(
                                 "git action complete: epoch={} action={} lookup_elapsed_ms={} total_elapsed_ms={}",
                                 epoch,
                                 match action {
@@ -753,7 +753,7 @@ impl DiffViewer {
                                 "No review URL found for {}. Add review_provider_mappings in ~/.hunkdiff/config.toml for self-hosted remotes.",
                                 bookmark_name
                             );
-                            info!(
+                            debug!(
                                 "git action complete: epoch={} action={} lookup_elapsed_ms={} total_elapsed_ms={} result=missing_url",
                                 epoch,
                                 match action {
@@ -865,7 +865,7 @@ impl DiffViewer {
                     this.finish_git_action();
                     match result {
                         Ok(subject) => {
-                            info!(
+                            debug!(
                                 "git action complete: epoch={} action=Create revision exec_elapsed_ms={} total_elapsed_ms={} partial_commit={}",
                                 epoch,
                                 execution_elapsed.as_millis(),

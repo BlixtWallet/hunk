@@ -192,7 +192,7 @@ impl DiffViewer {
             .and_then(|selected| self.status_for_path(selected));
         self.repo_discovery_failed = false;
         self.error_message = None;
-        info!(
+        debug!(
             "hydrated git workflow cache for {} (files={} branches={} revisions={})",
             root.display(),
             self.files.len(),
@@ -618,7 +618,7 @@ impl DiffViewer {
         let debounce = (request.priority == SnapshotRefreshPriority::Background)
             .then_some(Self::LINE_STATS_BACKGROUND_DEBOUNCE);
         self.line_stats_loading = true;
-        info!(
+        debug!(
             "git workspace line stats refresh start: epoch={} snapshot_epoch={} force={} priority={} scope={} path_count={} cold_start={} root={}",
             epoch,
             snapshot_epoch,
@@ -654,7 +654,7 @@ impl DiffViewer {
             match &result {
                 Ok(file_line_stats) => {
                     let line_stats = Self::sum_line_stats(file_line_stats.values().copied());
-                    info!(
+                    debug!(
                         "git workspace line stats ready: epoch={} snapshot_epoch={} force={} priority={} scope={} path_count={} elapsed_ms={} files={} added={} removed={} changed={} cold_start={}",
                         epoch,
                         snapshot_epoch,
@@ -777,7 +777,7 @@ impl DiffViewer {
         let Some(request) = self.pending_snapshot_refresh.take() else {
             return;
         };
-        info!(
+        debug!(
             "git workspace running queued refresh: force={} priority={}",
             request.force,
             request.priority.as_str()
@@ -806,7 +806,7 @@ impl DiffViewer {
         if self.snapshot_loading {
             if self.should_preempt_active_snapshot_refresh(request) {
                 let active = self.active_snapshot_refresh_request();
-                info!(
+                debug!(
                     "git workspace refresh preempted: epoch={} active_priority={} next_priority={} force={}",
                     self.snapshot_epoch,
                     active.priority.as_str(),
@@ -860,7 +860,7 @@ impl DiffViewer {
             .clone()
             .or_else(|| self.repo_root.clone())
             .unwrap_or_else(|| PathBuf::from("."));
-        info!(
+        debug!(
             "git workspace refresh start: epoch={} force={} priority={} cold_start={} root={}",
             epoch,
             request.force,
@@ -971,7 +971,7 @@ impl DiffViewer {
                             this.finish_snapshot_refresh_loading();
                             this.workflow_loading = false;
                             let elapsed = started_at.elapsed();
-                            info!(
+                            debug!(
                                 "git workspace refresh skipped: epoch={} force={} priority={} cold_start={} elapsed_ms={} (no repo changes)",
                                 epoch,
                                 request.force,
@@ -1019,7 +1019,7 @@ impl DiffViewer {
             let workflow_revision_count = workflow_snapshot.bookmark_revisions.len();
             let workflow_ready_elapsed = started_at.elapsed();
             let should_run_cold_start_reconcile = cold_start && loaded_without_refresh;
-            info!(
+            debug!(
                 "git workspace workflow ready: epoch={} force={} priority={} elapsed_ms={} files={} branches={} bookmark_revisions={} cold_start={}",
                 epoch,
                 request.force,
@@ -1068,7 +1068,7 @@ impl DiffViewer {
 
                     this.finish_snapshot_refresh_loading();
                     let elapsed = started_at.elapsed();
-                    info!(
+                    debug!(
                         "git workspace refresh complete: epoch={} force={} priority={} total_elapsed_ms={} cold_start={} line_stats_pending={}",
                         epoch,
                         request.force,
@@ -1097,7 +1097,7 @@ impl DiffViewer {
 
             match &reconcile_result {
                 Ok(_) => {
-                    info!(
+                    debug!(
                         "git workspace cold-start reconcile probe complete: epoch={} force={} priority={} elapsed_ms={} cold_start={}",
                         epoch,
                         request.force,
@@ -1131,7 +1131,7 @@ impl DiffViewer {
                         return;
                     }
 
-                    info!(
+                    debug!(
                         "git workspace cold-start reconcile detected drift: epoch={} force={} priority={} cold_start={} -> scheduling foreground refresh",
                         epoch,
                         request.force,
@@ -1219,7 +1219,7 @@ impl DiffViewer {
             last_commit_subject,
         } = snapshot;
 
-        info!("loaded workflow snapshot from {}", root.display());
+        debug!("loaded workflow snapshot from {}", root.display());
         let root_changed = self.repo_root.as_ref() != Some(&root);
         let previous_selected_path = self.selected_path.clone();
         let previous_selected_status = self.selected_status;
@@ -1711,7 +1711,7 @@ impl DiffViewer {
                         } => {
                             match batch_ix {
                                 Some(batch_ix) => {
-                                    info!(
+                                    debug!(
                                         "progressive diff batch {}/{} loaded in {:?} (rows={}, pending_files={})",
                                         batch_ix.saturating_add(1),
                                         total_batches,
@@ -1721,7 +1721,7 @@ impl DiffViewer {
                                     );
                                 }
                                 None => {
-                                    info!(
+                                    debug!(
                                         "initial diff stream loaded in {:?} (rows={}, files={})",
                                         elapsed,
                                         stream.rows.len(),

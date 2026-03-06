@@ -33,7 +33,7 @@ pub(super) fn commit_working_copy_changes(context: &mut RepoContext, message: &s
     let tx_commit_elapsed = tx_commit_started_at.elapsed();
     let persist_started_at = Instant::now();
     persist_working_copy_state(context, repo, "after commit")?;
-    info!(
+    debug!(
         "jj commit working-copy changes complete: rewrite_ms={} new_wc_ms={} tx_commit_ms={} persist_ms={} total_ms={}",
         rewrite_elapsed.as_millis(),
         new_wc_elapsed.as_millis(),
@@ -125,7 +125,7 @@ pub(super) fn commit_working_copy_selected_paths(
     let tx_commit_elapsed = tx_commit_started_at.elapsed();
     let persist_started_at = Instant::now();
     persist_working_copy_state(context, repo, "after partial commit")?;
-    info!(
+    debug!(
         "jj commit selected paths complete: selected_paths={} select_tree_ms={} rewrite_ms={} new_wc_ms={} tx_commit_ms={} persist_ms={} total_ms={}",
         repo_paths.len(),
         select_tree_elapsed.as_millis(),
@@ -345,7 +345,7 @@ pub(super) fn move_bookmark_to_parent_of_working_copy(
     let tx_commit_elapsed = tx_commit_started_at.elapsed();
     let persist_started_at = Instant::now();
     persist_working_copy_state(context, repo, "after moving bookmark")?;
-    info!(
+    debug!(
         "jj move bookmark to parent complete: branch={} tx_commit_ms={} persist_ms={} total_ms={}",
         branch_name,
         tx_commit_elapsed.as_millis(),
@@ -412,7 +412,7 @@ pub(super) fn checkout_existing_bookmark(
     let finish_elapsed = finish_started_at.elapsed();
 
     context.repo = repo;
-    info!(
+    debug!(
         "jj checkout bookmark complete: branch={} create_wc_ms={} tx_commit_ms={} checkout_ms={} finish_ms={} total_ms={}",
         branch_name,
         create_wc_elapsed.as_millis(),
@@ -1014,7 +1014,7 @@ pub(super) fn sync_bookmark_from_remote(
     checkout_existing_bookmark(context, branch_name)
         .with_context(|| format!("failed to refresh working copy for '{branch_name}'"))?;
     let checkout_elapsed = checkout_started_at.elapsed();
-    info!(
+    debug!(
         "jj sync bookmark complete: branch={} fetch_ms={} tx_commit_ms={} persist_ms={} tracking_ms={} checkout_ms={} total_ms={}",
         branch_name,
         fetch_elapsed.as_millis(),

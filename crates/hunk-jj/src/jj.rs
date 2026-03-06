@@ -8,7 +8,7 @@ use anyhow::{Result, anyhow};
 use jj_lib::object_id::ObjectId;
 use jj_lib::ref_name::RefName;
 use jj_lib::repo::Repo as _;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 use crate::config::ReviewProviderMapping;
 
@@ -209,7 +209,7 @@ fn load_workflow_snapshot_seed_from_context(
         select_snapshot_branch_name(&current_bookmarks, active_bookmark, git_head_branch);
     let branch_selection_elapsed = branch_selection_started_at.elapsed();
 
-    info!(
+    debug!(
         "jj workflow snapshot seed complete: root={} changed_files_ms={} commit_id_ms={} current_bookmarks_ms={} branch_select_ms={} total_ms={} changed_files={}",
         context.root.display(),
         files_elapsed.as_millis(),
@@ -273,7 +273,7 @@ fn build_workflow_snapshot_from_seed(
     let last_commit_subject = last_commit_subject_from_context(context)?;
     let last_commit_elapsed = last_commit_started_at.elapsed();
 
-    info!(
+    debug!(
         "jj workflow snapshot details complete: root={} branches_ms={} revisions_ms={} remote_sync_ms={} undo_ms={} redo_ms={} last_commit_ms={} total_ms={} branches={} bookmark_revisions={}",
         context.root.display(),
         branches_elapsed.as_millis(),

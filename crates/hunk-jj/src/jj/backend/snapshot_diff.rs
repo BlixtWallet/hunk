@@ -68,7 +68,7 @@ fn refresh_working_copy_snapshot(context: &mut RepoContext) -> Result<()> {
     let import_refs_started_at = Instant::now();
     import_git_refs_for_snapshot(context)?;
     let import_refs_elapsed = import_refs_started_at.elapsed();
-    info!(
+    debug!(
         "jj refresh working-copy snapshot complete: root={} import_head_ms={} ensure_bookmark_ms={} snapshot_ms={} tree_changed={} snapshot_commit_ms={} finish_ms={} import_refs_ms={} total_ms={}",
         context.root.display(),
         import_head_elapsed.as_millis(),

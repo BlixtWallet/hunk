@@ -43,7 +43,7 @@ use jj_lib::signing::SignBehavior;
 use jj_lib::str_util::StringExpression;
 use jj_lib::working_copy::SnapshotOptions;
 use jj_lib::workspace::{Workspace, default_working_copy_factories};
-use tracing::info;
+use tracing::debug;
 
 use super::*;
 
@@ -123,7 +123,7 @@ pub(super) fn load_repo_context_at_root(
     } else {
         None
     };
-    info!(
+    debug!(
         "jj load repo context complete: refresh_snapshot={} root={} workspace_load_ms={} repo_load_ms={} refresh_ms={} total_ms={}",
         refresh_snapshot,
         context.root.display(),
