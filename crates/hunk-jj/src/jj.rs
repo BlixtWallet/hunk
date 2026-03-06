@@ -27,8 +27,9 @@ use backend::{
     move_bookmark_to_parent_of_working_copy, normalize_path, push_bookmark,
     redo_last_operation as redo_last_operation_in_context,
     rename_bookmark as rename_local_bookmark, render_patch_for_entry,
-    reorder_bookmark_tip_older as reorder_local_bookmark_tip_older, repo_line_stats_from_context,
-    restore_all_working_copy_changes as restore_all_wc_changes,
+    reorder_bookmark_tip_older as reorder_local_bookmark_tip_older,
+    repo_file_line_stats_for_paths_from_context, repo_file_line_stats_from_context,
+    repo_line_stats_from_context, restore_all_working_copy_changes as restore_all_wc_changes,
     restore_working_copy_from_revision as restore_wc_from_revision,
     restore_working_copy_selected_paths as restore_wc_selected_paths,
     squash_bookmark_head_into_parent as squash_local_bookmark_head_into_parent,
@@ -160,6 +161,10 @@ pub struct JjRepo {
     root: PathBuf,
 }
 
+pub struct JjPatchSession {
+    context: backend::RepoContext,
+}
+
 pub(super) const MAX_REPO_TREE_ENTRIES: usize = 60_000;
 const JJ_STAGE_UNSUPPORTED: &str =
     "JJ does not use a staging index. Stage/unstage actions are unavailable.";
@@ -251,6 +256,19 @@ pub fn load_repo_line_stats_without_refresh(cwd: &Path) -> Result<LineStats> {
     load_repo_line_stats_with_refresh(cwd, false)
 }
 
+pub fn load_repo_file_line_stats_without_refresh(
+    cwd: &Path,
+) -> Result<std::collections::BTreeMap<String, LineStats>> {
+    load_repo_file_line_stats_with_refresh(cwd, false)
+}
+
+pub fn load_repo_file_line_stats_for_paths_without_refresh(
+    cwd: &Path,
+    paths: &BTreeSet<String>,
+) -> Result<std::collections::BTreeMap<String, LineStats>> {
+    load_repo_file_line_stats_for_paths_with_refresh(cwd, paths, false)
+}
+
 fn load_snapshot_with_refresh(cwd: &Path, refresh_snapshot: bool) -> Result<RepoSnapshot> {
     let context = load_repo_context(cwd, refresh_snapshot)?;
     load_snapshot_from_context(&context)
@@ -293,6 +311,23 @@ fn load_snapshot_from_context(context: &backend::RepoContext) -> Result<RepoSnap
 fn load_repo_line_stats_with_refresh(cwd: &Path, refresh_snapshot: bool) -> Result<LineStats> {
     let context = load_repo_context(cwd, refresh_snapshot)?;
     repo_line_stats_from_context(&context)
+}
+
+fn load_repo_file_line_stats_with_refresh(
+    cwd: &Path,
+    refresh_snapshot: bool,
+) -> Result<std::collections::BTreeMap<String, LineStats>> {
+    let context = load_repo_context(cwd, refresh_snapshot)?;
+    repo_file_line_stats_from_context(&context)
+}
+
+fn load_repo_file_line_stats_for_paths_with_refresh(
+    cwd: &Path,
+    paths: &BTreeSet<String>,
+    refresh_snapshot: bool,
+) -> Result<std::collections::BTreeMap<String, LineStats>> {
+    let context = load_repo_context(cwd, refresh_snapshot)?;
+    repo_file_line_stats_for_paths_from_context(&context, paths)
 }
 
 fn load_snapshot_fingerprint_with_refresh(
@@ -347,8 +382,27 @@ pub fn load_patches_for_files(
     repo_root: &Path,
     files: &[ChangedFile],
 ) -> Result<std::collections::BTreeMap<String, String>> {
+    let session = open_patch_session(repo_root)?;
+    load_patches_for_files_from_session(&session, files)
+}
+
+pub fn open_patch_session(repo_root: &Path) -> Result<JjPatchSession> {
     let context = load_repo_context_at_root(repo_root, true)?;
-    let materialize_options = conflict_materialize_options(&context);
+    Ok(JjPatchSession { context })
+}
+
+pub fn load_patches_for_files_from_session(
+    session: &JjPatchSession,
+    files: &[ChangedFile],
+) -> Result<std::collections::BTreeMap<String, String>> {
+    load_patches_for_files_from_context(&session.context, files)
+}
+
+fn load_patches_for_files_from_context(
+    context: &backend::RepoContext,
+    files: &[ChangedFile],
+) -> Result<std::collections::BTreeMap<String, String>> {
+    let materialize_options = conflict_materialize_options(context);
     let requested_paths = files
         .iter()
         .map(|file| normalize_path(file.path.as_str()))
@@ -360,7 +414,7 @@ pub fn load_patches_for_files(
     }
 
     let mut patch_map = std::collections::BTreeMap::new();
-    for entry in collect_materialized_diff_entries_for_paths(&context, &requested_paths)? {
+    for entry in collect_materialized_diff_entries_for_paths(context, &requested_paths)? {
         let source_path = normalize_path(entry.path.source().as_internal_file_string());
         let target_path = normalize_path(entry.path.target().as_internal_file_string());
         let source_matches =
@@ -667,6 +721,33 @@ pub fn checkout_or_create_bookmark_with_change_transfer(
     bookmark_name: &str,
     move_changes_to_bookmark: bool,
 ) -> Result<()> {
+    checkout_or_create_bookmark_with_change_transfer_with_refresh(
+        repo_root,
+        bookmark_name,
+        move_changes_to_bookmark,
+        true,
+    )
+}
+
+pub fn checkout_or_create_bookmark_with_change_transfer_without_refresh(
+    repo_root: &Path,
+    bookmark_name: &str,
+    move_changes_to_bookmark: bool,
+) -> Result<()> {
+    checkout_or_create_bookmark_with_change_transfer_with_refresh(
+        repo_root,
+        bookmark_name,
+        move_changes_to_bookmark,
+        false,
+    )
+}
+
+fn checkout_or_create_bookmark_with_change_transfer_with_refresh(
+    repo_root: &Path,
+    bookmark_name: &str,
+    move_changes_to_bookmark: bool,
+    refresh_snapshot: bool,
+) -> Result<()> {
     let bookmark_name = bookmark_name.trim();
     if bookmark_name.is_empty() {
         return Err(anyhow!("bookmark name cannot be empty"));
@@ -675,7 +756,7 @@ pub fn checkout_or_create_bookmark_with_change_transfer(
         return Err(anyhow!("invalid bookmark name: {bookmark_name}"));
     }
 
-    let mut context = load_repo_context_at_root(repo_root, true)?;
+    let mut context = load_repo_context_at_root(repo_root, refresh_snapshot)?;
     let ref_name = RefName::new(bookmark_name);
     let bookmark_target = context.repo.view().get_local_bookmark(ref_name);
     if bookmark_target.is_present() {
@@ -723,12 +804,24 @@ pub fn push_current_bookmark(repo_root: &Path, bookmark_name: &str, _: bool) -> 
 }
 
 pub fn sync_current_bookmark(repo_root: &Path, bookmark_name: &str) -> Result<()> {
+    sync_current_bookmark_with_refresh(repo_root, bookmark_name, true)
+}
+
+pub fn sync_current_bookmark_without_refresh(repo_root: &Path, bookmark_name: &str) -> Result<()> {
+    sync_current_bookmark_with_refresh(repo_root, bookmark_name, false)
+}
+
+fn sync_current_bookmark_with_refresh(
+    repo_root: &Path,
+    bookmark_name: &str,
+    refresh_snapshot: bool,
+) -> Result<()> {
     let bookmark_name = bookmark_name.trim();
     if bookmark_name.is_empty() || bookmark_name == "detached" {
         return Err(anyhow!("cannot sync without a bookmark name"));
     }
 
-    let mut context = load_repo_context_at_root(repo_root, true)?;
+    let mut context = load_repo_context_at_root(repo_root, refresh_snapshot)?;
     sync_bookmark_from_remote(&mut context, bookmark_name)
 }
 

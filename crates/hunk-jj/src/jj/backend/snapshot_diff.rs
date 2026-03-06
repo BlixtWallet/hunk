@@ -504,6 +504,80 @@ pub(super) fn repo_line_stats_from_context(context: &RepoContext) -> Result<Line
     Ok(stats)
 }
 
+pub(super) fn repo_file_line_stats_from_context(
+    context: &RepoContext,
+) -> Result<BTreeMap<String, LineStats>> {
+    let materialize_options = conflict_materialize_options(context);
+    let nested_repo_roots = nested_repo_roots_for_context(context)?;
+    let mut stats_by_path = BTreeMap::new();
+    let wc_commit = current_wc_commit(context)?;
+    let base_tree = wc_commit.parent_tree(context.repo.as_ref())?;
+    let current_tree = wc_commit.tree();
+    let copy_records = CopyRecords::default();
+    let stream = materialized_diff_stream(
+        context.repo.store().as_ref(),
+        base_tree.diff_stream_with_copies(&current_tree, &EverythingMatcher, &copy_records),
+        Diff::new(base_tree.labels(), current_tree.labels()),
+    );
+
+    for entry in block_on_stream(stream) {
+        if materialized_entry_within_nested_repo(&entry, nested_repo_roots) {
+            continue;
+        }
+
+        let path = materialized_entry_display_path(&entry);
+        if path.is_empty() {
+            continue;
+        }
+
+        let entry_stats = line_stats_for_entry(entry, &materialize_options)?;
+        stats_by_path
+            .entry(path)
+            .and_modify(|stats: &mut LineStats| {
+                stats.added = stats.added.saturating_add(entry_stats.added);
+                stats.removed = stats.removed.saturating_add(entry_stats.removed);
+            })
+            .or_insert(entry_stats);
+    }
+
+    Ok(stats_by_path)
+}
+
+pub(super) fn repo_file_line_stats_for_paths_from_context(
+    context: &RepoContext,
+    paths: &BTreeSet<String>,
+) -> Result<BTreeMap<String, LineStats>> {
+    if paths.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let materialize_options = conflict_materialize_options(context);
+    let nested_repo_roots = nested_repo_roots_for_context(context)?;
+    let mut stats_by_path = BTreeMap::new();
+
+    for entry in collect_materialized_diff_entries_for_paths(context, paths)? {
+        if materialized_entry_within_nested_repo(&entry, nested_repo_roots) {
+            continue;
+        }
+
+        let path = materialized_entry_display_path(&entry);
+        if path.is_empty() || !paths.contains(path.as_str()) {
+            continue;
+        }
+
+        let entry_stats = line_stats_for_entry(entry, &materialize_options)?;
+        stats_by_path
+            .entry(path)
+            .and_modify(|stats: &mut LineStats| {
+                stats.added = stats.added.saturating_add(entry_stats.added);
+                stats.removed = stats.removed.saturating_add(entry_stats.removed);
+            })
+            .or_insert(entry_stats);
+    }
+
+    Ok(stats_by_path)
+}
+
 fn nested_repo_roots_for_context(context: &RepoContext) -> Result<&BTreeSet<String>> {
     if let Some(cached) = context.nested_repo_roots_cache.get() {
         return Ok(cached);
@@ -750,6 +824,15 @@ fn path_is_within_nested_repo(path: &str, nested_repo_roots: &BTreeSet<String>) 
         path.strip_prefix(nested_root.as_str())
             .is_some_and(|suffix| suffix.starts_with('/'))
     })
+}
+
+fn materialized_entry_display_path(entry: &MaterializedTreeDiffEntry) -> String {
+    let target = normalize_path(entry.path.target().as_internal_file_string());
+    if !target.is_empty() {
+        return target;
+    }
+
+    normalize_path(entry.path.source().as_internal_file_string())
 }
 
 fn line_stats_from_hunks(hunks: &[UnifiedDiffHunk<'_>]) -> LineStats {

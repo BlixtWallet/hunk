@@ -69,6 +69,17 @@ impl DiffViewer {
         self.snapshot_epoch
     }
 
+    fn next_line_stats_epoch(&mut self) -> usize {
+        self.line_stats_epoch = self.line_stats_epoch.saturating_add(1);
+        self.line_stats_epoch
+    }
+
+    fn cancel_line_stats_refresh(&mut self) {
+        self.next_line_stats_epoch();
+        self.line_stats_task = Task::ready(());
+        self.line_stats_loading = false;
+    }
+
     fn auto_refresh_interval(&self) -> Duration {
         if self.config.auto_refresh_interval_ms == 0 {
             return Duration::ZERO;
@@ -103,6 +114,30 @@ impl DiffViewer {
                 .to_str()
                 .is_some_and(Self::is_hunk_temp_save_component)
         })
+    }
+
+    fn repo_watch_dirty_path(
+        path: &std::path::Path,
+        repo_root: &std::path::Path,
+    ) -> Option<String> {
+        let Ok(relative_path) = path.strip_prefix(repo_root) else {
+            return None;
+        };
+        if relative_path.as_os_str().is_empty() {
+            return None;
+        }
+        if Self::should_ignore_repo_watch_path(path, repo_root) {
+            return None;
+        }
+
+        Some(relative_path.to_string_lossy().replace('\\', "/"))
+    }
+
+    fn queue_dirty_paths<I>(&mut self, paths: I)
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.pending_dirty_paths.extend(paths);
     }
 
     fn is_hunk_temp_save_component(name: &str) -> bool {
@@ -168,8 +203,18 @@ impl DiffViewer {
                     continue;
                 }
 
+                let dirty_paths = event
+                    .paths
+                    .iter()
+                    .filter_map(|path| Self::repo_watch_dirty_path(path, &repo_root_path))
+                    .collect::<BTreeSet<_>>();
+                if dirty_paths.is_empty() {
+                    continue;
+                }
+
                 if let Some(this) = this.upgrade() {
-                    this.update(cx, |this, cx| {
+                    this.update(cx, move |this, cx| {
+                        this.queue_dirty_paths(dirty_paths);
                         this.schedule_repo_watch_refresh(cx);
                     });
                 }

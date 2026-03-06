@@ -123,6 +123,81 @@ struct PendingBookmarkSwitch {
     unix_time: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum SnapshotRefreshPriority {
+    Background,
+    UserInitiated,
+}
+
+impl SnapshotRefreshPriority {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Background => "background",
+            Self::UserInitiated => "user",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SnapshotRefreshRequest {
+    force: bool,
+    priority: SnapshotRefreshPriority,
+}
+
+impl SnapshotRefreshRequest {
+    const fn user(force: bool) -> Self {
+        Self {
+            force,
+            priority: SnapshotRefreshPriority::UserInitiated,
+        }
+    }
+
+    const fn background() -> Self {
+        Self {
+            force: false,
+            priority: SnapshotRefreshPriority::Background,
+        }
+    }
+
+    fn merge(self, other: Self) -> Self {
+        Self {
+            force: self.force || other.force,
+            priority: if self.priority >= other.priority {
+                self.priority
+            } else {
+                other.priority
+            },
+        }
+    }
+
+    fn is_more_urgent_than(self, other: Self) -> bool {
+        self.priority > other.priority
+            || (self.priority == other.priority && self.force && !other.force)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LineStatsRefreshScope {
+    Full,
+    Paths(BTreeSet<String>),
+}
+
+impl LineStatsRefreshScope {
+    const fn label(&self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Paths(_) => "paths",
+        }
+    }
+
+    fn path_count(&self) -> usize {
+        match self {
+            Self::Full => 0,
+            Self::Paths(paths) => paths.len(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AiTimelineRowSource {
     Item { item_key: String },
@@ -991,9 +1066,13 @@ struct DiffViewer {
     snapshot_epoch: usize,
     snapshot_task: Task<()>,
     snapshot_loading: bool,
+    snapshot_active_request: Option<SnapshotRefreshRequest>,
     workflow_loading: bool,
+    line_stats_epoch: usize,
+    line_stats_task: Task<()>,
     line_stats_loading: bool,
-    snapshot_refresh_pending_force: bool,
+    pending_snapshot_refresh: Option<SnapshotRefreshRequest>,
+    pending_dirty_paths: BTreeSet<String>,
     last_snapshot_fingerprint: Option<RepoSnapshotFingerprint>,
     open_project_task: Task<()>,
     patch_epoch: usize,
