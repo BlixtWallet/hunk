@@ -588,7 +588,19 @@ impl DiffViewer {
     fn request_snapshot_refresh_with_scope(&mut self, force: bool, cx: &mut Context<Self>) {
         if self.snapshot_loading {
             if force {
+                let already_pending = self.snapshot_refresh_pending_force;
                 self.snapshot_refresh_pending_force = true;
+                if !already_pending {
+                    tracing::debug!(
+                        "git workspace refresh deferred: queued forced refresh while epoch={} is still loading",
+                        self.snapshot_epoch
+                    );
+                }
+            } else {
+                tracing::debug!(
+                    "git workspace refresh skipped: non-forced refresh requested while epoch={} is still loading",
+                    self.snapshot_epoch
+                );
             }
             return;
         }
