@@ -230,12 +230,8 @@ fn ai_tool_meta_chip(
         .py_0p5()
         .rounded(px(6.0))
         .border_1()
-        .border_color(cx.theme().border.opacity(if is_dark { 0.84 } else { 0.68 }))
-        .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-            0.10
-        } else {
-            0.16
-        })))
+        .border_color(hunk_opacity(cx.theme().border, is_dark, 0.84, 0.68))
+        .bg(hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.10, 0.16))
         .child(
             div()
                 .text_xs()
@@ -276,12 +272,8 @@ fn ai_tool_detail_section(
         .min_w_0()
         .rounded(px(8.0))
         .border_1()
-        .border_color(cx.theme().border.opacity(if is_dark { 0.85 } else { 0.68 }))
-        .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-            0.10
-        } else {
-            0.14
-        })))
+        .border_color(hunk_opacity(cx.theme().border, is_dark, 0.85, 0.68))
+        .bg(hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.10, 0.14))
         .overflow_hidden()
         .px_2()
         .py_1p5();
@@ -574,8 +566,8 @@ fn ai_render_chat_markdown_block(
                         .min_w_0()
                         .rounded(px(6.0))
                         .border_1()
-                        .border_color(cx.theme().border.opacity(if is_dark { 0.88 } else { 0.74 }))
-                        .bg(cx.theme().secondary.opacity(if is_dark { 0.30 } else { 0.44 }))
+                        .border_color(hunk_opacity(cx.theme().border, is_dark, 0.88, 0.74))
+                        .bg(hunk_opacity(cx.theme().secondary, is_dark, 0.30, 0.44))
                         .p_2()
                         .child(v_flex().min_w_0().children(code_rows)),
                 )
@@ -584,7 +576,7 @@ fn ai_render_chat_markdown_block(
         MarkdownPreviewBlock::ThematicBreak => div()
             .h(px(1.0))
             .w_full()
-            .bg(cx.theme().border.opacity(if is_dark { 0.8 } else { 0.95 }))
+            .bg(hunk_opacity(cx.theme().border, is_dark, 0.8, 0.95))
             .into_any_element(),
     }
 }
@@ -598,7 +590,7 @@ fn ai_chat_markdown_text_and_highlights(
     let text = ai_chat_markdown_text(spans);
     let mut highlights = Vec::new();
     let link_color = cx.theme().primary;
-    let code_background = cx.theme().secondary.opacity(if is_dark { 0.30 } else { 0.42 });
+    let code_background = hunk_opacity(cx.theme().secondary, is_dark, 0.30, 0.42);
     let mut cursor = 0;
 
     for span in spans {
@@ -834,12 +826,8 @@ fn render_ai_chat_timeline_row_for_view(
                         .overflow_hidden()
                         .rounded(px(10.0))
                         .border_1()
-                        .border_color(cx.theme().border.opacity(if is_dark { 0.9 } else { 0.74 }))
-                        .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                            0.16
-                        } else {
-                            0.22
-                        })))
+                        .border_color(hunk_opacity(cx.theme().border, is_dark, 0.9, 0.74))
+                        .bg(hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.16, 0.22))
                         .child(
                             h_flex()
                                 .w_full()

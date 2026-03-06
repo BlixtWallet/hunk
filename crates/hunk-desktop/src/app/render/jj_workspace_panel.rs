@@ -112,11 +112,13 @@ impl DiffViewer {
             .px_3()
             .pt_2()
             .pb_2()
-            .bg(cx.theme().sidebar.blend(cx.theme().muted.opacity(if is_dark {
-                0.16
-            } else {
-                0.24
-            })))
+            .bg(hunk_blend(
+                cx.theme().sidebar,
+                cx.theme().muted,
+                is_dark,
+                0.16,
+                0.24,
+            ))
             .child(self.render_git_action_status_banner(cx))
             .when_some(pending_switch, |this, pending| {
                 this.child(
@@ -127,8 +129,8 @@ impl DiffViewer {
                         .py_1()
                         .rounded(px(8.0))
                         .border_1()
-                        .border_color(cx.theme().warning.opacity(if is_dark { 0.90 } else { 0.72 }))
-                        .bg(cx.theme().warning.opacity(if is_dark { 0.16 } else { 0.10 }))
+                        .border_color(hunk_opacity(cx.theme().warning, is_dark, 0.90, 0.72))
+                        .bg(hunk_opacity(cx.theme().warning, is_dark, 0.16, 0.10))
                         .child(
                             div()
                                 .text_xs()
@@ -216,12 +218,14 @@ impl DiffViewer {
                     .p_2()
                     .rounded(px(8.0))
                     .border_1()
-                    .border_color(cx.theme().border.opacity(if is_dark { 0.90 } else { 0.74 }))
-                    .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                        0.20
-                    } else {
-                        0.26
-                    })))
+                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.90, 0.74))
+                    .bg(hunk_blend(
+                        cx.theme().background,
+                        cx.theme().muted,
+                        is_dark,
+                        0.20,
+                        0.26,
+                    ))
                     .child(
                         div()
                             .text_xs()
@@ -243,10 +247,13 @@ impl DiffViewer {
                                     .rounded(px(7.0))
                                     .loading(activate_bookmark_loading)
                                     .min_w(px(150.0))
-                                    .bg(cx.theme().secondary.opacity(if is_dark { 0.50 } else { 0.70 }))
-                                    .border_color(
-                                        cx.theme().border.opacity(if is_dark { 0.90 } else { 0.74 }),
-                                    )
+                                    .bg(hunk_opacity(cx.theme().secondary, is_dark, 0.50, 0.70))
+                                    .border_color(hunk_opacity(
+                                        cx.theme().border,
+                                        is_dark,
+                                        0.90,
+                                        0.74,
+                                    ))
                                     .label(active_bookmark_chip_label)
                                     .dropdown_caret(true)
                                     .tooltip("Select a bookmark to activate it.")
@@ -332,12 +339,14 @@ impl DiffViewer {
                         Input::new(&self.branch_input_state)
                             .rounded(px(8.0))
                             .border_1()
-                            .border_color(cx.theme().border.opacity(if is_dark { 0.92 } else { 0.76 }))
-                            .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                                0.22
-                            } else {
-                                0.14
-                            })))
+                            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.92, 0.76))
+                            .bg(hunk_blend(
+                                cx.theme().background,
+                                cx.theme().muted,
+                                is_dark,
+                                0.22,
+                                0.14,
+                            ))
                             .disabled(self.git_action_loading),
                     )
                     .child(
@@ -431,12 +440,14 @@ impl DiffViewer {
                         .py_1()
                         .rounded(px(8.0))
                         .border_1()
-                        .border_color(cx.theme().border.opacity(if is_dark { 0.90 } else { 0.74 }))
-                        .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                            0.18
-                        } else {
-                            0.24
-                        })))
+                        .border_color(hunk_opacity(cx.theme().border, is_dark, 0.90, 0.74))
+                        .bg(hunk_blend(
+                            cx.theme().background,
+                            cx.theme().muted,
+                            is_dark,
+                            0.18,
+                            0.24,
+                        ))
                         .child(
                             div()
                                 .w_full()
@@ -499,12 +510,14 @@ impl DiffViewer {
                     .p_2()
                     .rounded(px(8.0))
                     .border_1()
-                    .border_color(cx.theme().border.opacity(if is_dark { 0.90 } else { 0.74 }))
-                    .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                        0.24
-                    } else {
-                        0.26
-                    })))
+                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.90, 0.74))
+                    .bg(hunk_blend(
+                        cx.theme().background,
+                        cx.theme().muted,
+                        is_dark,
+                        0.24,
+                        0.26,
+                    ))
                     .child(
                         h_flex()
                             .w_full()
@@ -540,12 +553,14 @@ impl DiffViewer {
                             .h(px(82.0))
                             .rounded(px(8.0))
                             .border_1()
-                            .border_color(cx.theme().border.opacity(if is_dark { 0.92 } else { 0.78 }))
-                            .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                                0.24
-                            } else {
-                                0.12
-                            })))
+                            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.92, 0.78))
+                            .bg(hunk_blend(
+                                cx.theme().background,
+                                cx.theme().muted,
+                                is_dark,
+                                0.24,
+                                0.12,
+                            ))
                             .disabled(self.git_action_loading),
                     )
                     .child(
@@ -616,8 +631,8 @@ impl DiffViewer {
                             .py_1()
                             .rounded(px(8.0))
                             .border_1()
-                            .border_color(cx.theme().border.opacity(if is_dark { 0.92 } else { 0.76 }))
-                            .bg(cx.theme().secondary.opacity(if is_dark { 0.42 } else { 0.56 }))
+                            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.92, 0.76))
+                            .bg(hunk_opacity(cx.theme().secondary, is_dark, 0.42, 0.56))
                             .text_xs()
                             .font_medium()
                             .text_color(cx.theme().foreground.opacity(0.90))

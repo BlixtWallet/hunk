@@ -90,12 +90,8 @@ impl DiffViewer {
                         h_flex()
                             .w_full()
                             .border_b_1()
-                            .border_color(cx.theme().border.opacity(if is_dark { 0.90 } else { 0.78 }))
-                            .bg(cx.theme().title_bar.blend(
-                                cx.theme()
-                                    .muted
-                                    .opacity(if is_dark { 0.18 } else { 0.30 }),
-                            ))
+                            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.90, 0.78))
+                            .bg(hunk_blend(cx.theme().title_bar, cx.theme().muted, is_dark, 0.18, 0.30))
                             .child(
                                 h_flex()
                                     .flex_1()
@@ -105,11 +101,7 @@ impl DiffViewer {
                                     .px_3()
                                     .py_1()
                                     .border_r_1()
-                                    .border_color(cx.theme().border.opacity(if is_dark {
-                                        0.82
-                                    } else {
-                                        0.72
-                                    }))
+                                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.82, 0.72))
                                     .child(
                                         div()
                                             .px_1p5()
@@ -118,11 +110,7 @@ impl DiffViewer {
                                             .text_xs()
                                             .font_semibold()
                                             .font_family(cx.theme().mono_font_family.clone())
-                                            .bg(cx.theme().muted.opacity(if is_dark {
-                                                0.44
-                                            } else {
-                                                0.58
-                                            }))
+                                            .bg(hunk_opacity(cx.theme().muted, is_dark, 0.44, 0.58))
                                             .text_color(cx.theme().muted_foreground)
                                             .child("OLD"),
                                     )
@@ -150,11 +138,7 @@ impl DiffViewer {
                                             .text_xs()
                                             .font_semibold()
                                             .font_family(cx.theme().mono_font_family.clone())
-                                            .bg(cx.theme().muted.opacity(if is_dark {
-                                                0.44
-                                            } else {
-                                                0.58
-                                            }))
+                                            .bg(hunk_opacity(cx.theme().muted, is_dark, 0.44, 0.58))
                                             .text_color(cx.theme().muted_foreground)
                                             .child("NEW"),
                                     )
@@ -214,12 +198,8 @@ impl DiffViewer {
                     .py_6()
                     .rounded_lg()
                     .border_1()
-                    .border_color(cx.theme().border.opacity(if is_dark { 0.92 } else { 0.74 }))
-                    .bg(cx.theme().sidebar.blend(cx.theme().muted.opacity(if is_dark {
-                        0.22
-                    } else {
-                        0.34
-                    })))
+                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.92, 0.74))
+                    .bg(hunk_blend(cx.theme().sidebar, cx.theme().muted, is_dark, 0.22, 0.34))
                     .child(
                         div()
                             .text_lg()
@@ -287,15 +267,8 @@ impl DiffViewer {
             .px_3()
             .py_0p5()
             .border_b_1()
-            .border_color(cx.theme().border.opacity(if is_dark { 0.88 } else { 0.72 }))
-            .bg(cx
-                .theme()
-                .title_bar
-                .blend(
-                    cx.theme()
-                        .primary
-                        .opacity(if is_dark { 0.20 } else { 0.09 }),
-                ))
+            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.88, 0.72))
+            .bg(hunk_blend(cx.theme().title_bar, cx.theme().primary, is_dark, 0.20, 0.09))
             .child(
                 div()
                     .px_1p5()
@@ -304,10 +277,7 @@ impl DiffViewer {
                     .font_semibold()
                     .font_family(cx.theme().mono_font_family.clone())
                     .rounded_sm()
-                    .bg(cx
-                        .theme()
-                        .primary
-                        .opacity(if is_dark { 0.38 } else { 0.22 }))
+                    .bg(hunk_opacity(cx.theme().primary, is_dark, 0.38, 0.22))
                     .text_color(cx.theme().primary_foreground)
                     .child("HUNK"),
             )
@@ -322,11 +292,7 @@ impl DiffViewer {
                 div()
                     .text_xs()
                     .font_family(cx.theme().mono_font_family.clone())
-                    .text_color(if is_dark {
-                        cx.theme().primary.lighten(0.42)
-                    } else {
-                        cx.theme().primary.darken(0.12)
-                    })
+                    .text_color(hunk_tone(cx.theme().primary, is_dark, 0.42, 0.12))
                     .child(header),
             )
             .into_any_element()
@@ -429,17 +395,15 @@ impl DiffViewer {
         if row.kind == DiffRowKind::HunkHeader {
             let is_dark = cx.theme().mode.is_dark();
             let divider_bg = if is_selected {
-                cx.theme()
-                    .primary
-                    .opacity(if is_dark { 0.34 } else { 0.18 })
+                hunk_opacity(cx.theme().primary, is_dark, 0.34, 0.18)
             } else {
-                cx.theme().muted.opacity(if is_dark { 0.26 } else { 0.40 })
+                hunk_opacity(cx.theme().muted, is_dark, 0.26, 0.40)
             };
             return div()
                 .id(("diff-hunk-divider-row", stable_row_id))
                 .h(px(6.0))
                 .border_b_1()
-                .border_color(cx.theme().border.opacity(if is_dark { 0.92 } else { 0.70 }))
+                .border_color(hunk_opacity(cx.theme().border, is_dark, 0.92, 0.70))
                 .bg(divider_bg)
                 .w_full()
                 .into_any_element();
@@ -457,37 +421,19 @@ impl DiffViewer {
                 let line = row.text.as_str();
                 if line.starts_with("new file mode") || line.starts_with("+++ b/") {
                     (
-                        cx.theme()
-                            .background
-                            .blend(
-                                cx.theme()
-                                    .success
-                                    .opacity(if is_dark { 0.22 } else { 0.12 }),
-                            ),
-                        if is_dark {
-                            cx.theme().success.lighten(0.45)
-                        } else {
-                            cx.theme().success.darken(0.10)
-                        },
+                        hunk_blend(cx.theme().background, cx.theme().success, is_dark, 0.22, 0.12),
+                        hunk_tone(cx.theme().success, is_dark, 0.45, 0.10),
                         cx.theme().success,
                     )
                 } else if line.starts_with("deleted file mode") || line.starts_with("--- a/") {
                     (
-                        cx.theme()
-                            .background
-                            .blend(cx.theme().danger.opacity(if is_dark { 0.22 } else { 0.12 })),
-                        if is_dark {
-                            cx.theme().danger.lighten(0.45)
-                        } else {
-                            cx.theme().danger.darken(0.10)
-                        },
+                        hunk_blend(cx.theme().background, cx.theme().danger, is_dark, 0.22, 0.12),
+                        hunk_tone(cx.theme().danger, is_dark, 0.45, 0.10),
                         cx.theme().danger,
                     )
                 } else if line.starts_with("diff --git") {
                     (
-                        cx.theme()
-                            .background
-                            .blend(cx.theme().accent.opacity(if is_dark { 0.18 } else { 0.10 })),
+                        hunk_blend(cx.theme().background, cx.theme().accent, is_dark, 0.18, 0.10),
                         cx.theme().foreground,
                         cx.theme().accent,
                     )
@@ -540,13 +486,9 @@ impl DiffViewer {
             .px_3()
             .py_0p5()
             .border_b_1()
-            .border_color(cx.theme().border.opacity(if is_dark { 0.82 } else { 0.70 }))
+            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.82, 0.70))
             .bg(if is_selected {
-                background.blend(
-                    cx.theme()
-                        .primary
-                        .opacity(if is_dark { 0.24 } else { 0.14 }),
-                )
+                hunk_blend(background, cx.theme().primary, is_dark, 0.24, 0.14)
             } else {
                 background
             })
@@ -616,11 +558,12 @@ impl DiffViewer {
             .on_mouse_up(MouseButton::Middle, cx.listener(Self::on_diff_row_mouse_up))
             .on_mouse_up_out(MouseButton::Middle, cx.listener(Self::on_diff_row_mouse_up))
             .border_b_1()
-            .border_color(cx.theme().border.opacity(if cx.theme().mode.is_dark() {
-                0.78
-            } else {
-                0.64
-            }))
+            .border_color(hunk_opacity(
+                cx.theme().border,
+                cx.theme().mode.is_dark(),
+                0.78,
+                0.64,
+            ))
             .w_full()
             .child(self.render_diff_cell(
                 stable_row_id,
@@ -677,8 +620,6 @@ impl DiffViewer {
         };
 
         let is_dark = cx.theme().mode.is_dark();
-        let add_alpha = if is_dark { 0.24 } else { 0.11 };
-        let remove_alpha = if is_dark { 0.24 } else { 0.11 };
         let dark_add_tint: gpui::Hsla = gpui::rgb(0x2e4736).into();
         let dark_remove_tint: gpui::Hsla = gpui::rgb(0x4a3038).into();
         let dark_add_accent: gpui::Hsla = gpui::rgb(0x8fcea0).into();
@@ -687,94 +628,59 @@ impl DiffViewer {
         let (mut background, marker_color, line_color, text_color, marker) =
             match (cell.kind, peer_kind) {
                 (DiffCellKind::Added, _) => (
-                    if is_dark {
+                    hunk_pick(
+                        is_dark,
                         cx.theme().background.blend(dark_add_tint.opacity(0.62))
-                    } else {
-                        cx.theme()
-                            .background
-                            .blend(cx.theme().success.opacity(add_alpha))
-                    },
-                    if is_dark {
-                        dark_add_accent
-                    } else {
-                        cx.theme().success.darken(0.18)
-                    },
-                    if is_dark {
-                        dark_add_accent.lighten(0.08)
-                    } else {
-                        cx.theme().success.darken(0.16)
-                    },
+                        ,
+                        hunk_blend(cx.theme().background, cx.theme().success, is_dark, 0.24, 0.11),
+                    ),
+                    hunk_pick(is_dark, dark_add_accent, cx.theme().success.darken(0.18)),
+                    hunk_pick(
+                        is_dark,
+                        dark_add_accent.lighten(0.08),
+                        cx.theme().success.darken(0.16),
+                    ),
                     cx.theme().foreground,
                     "+",
                 ),
                 (DiffCellKind::Removed, _) => (
-                    if is_dark {
+                    hunk_pick(
+                        is_dark,
                         cx.theme().background.blend(dark_remove_tint.opacity(0.62))
-                    } else {
-                        cx.theme()
-                            .background
-                            .blend(cx.theme().danger.opacity(remove_alpha))
-                    },
-                    if is_dark {
-                        dark_remove_accent
-                    } else {
-                        cx.theme().danger.darken(0.18)
-                    },
-                    if is_dark {
-                        dark_remove_accent.lighten(0.06)
-                    } else {
-                        cx.theme().danger.darken(0.16)
-                    },
+                        ,
+                        hunk_blend(cx.theme().background, cx.theme().danger, is_dark, 0.24, 0.11),
+                    ),
+                    hunk_pick(is_dark, dark_remove_accent, cx.theme().danger.darken(0.18)),
+                    hunk_pick(
+                        is_dark,
+                        dark_remove_accent.lighten(0.06),
+                        cx.theme().danger.darken(0.16),
+                    ),
                     cx.theme().foreground,
                     "-",
                 ),
                 (DiffCellKind::Context, _) => (
                     cx.theme().background,
-                    if is_dark {
-                        cx.theme().muted_foreground.lighten(0.14)
-                    } else {
-                        cx.theme().muted_foreground.darken(0.10)
-                    },
-                    if is_dark {
-                        cx.theme().muted_foreground.lighten(0.18)
-                    } else {
-                        cx.theme().muted_foreground.darken(0.12)
-                    },
+                    hunk_tone(cx.theme().muted_foreground, is_dark, 0.14, 0.10),
+                    hunk_tone(cx.theme().muted_foreground, is_dark, 0.18, 0.12),
                     cx.theme().foreground,
                     "·",
                 ),
                 (DiffCellKind::None, _) => (
                     cx.theme().background,
-                    if is_dark {
-                        cx.theme().muted_foreground.lighten(0.14)
-                    } else {
-                        cx.theme().muted_foreground.darken(0.10)
-                    },
-                    if is_dark {
-                        cx.theme().muted_foreground.lighten(0.18)
-                    } else {
-                        cx.theme().muted_foreground.darken(0.12)
-                    },
-                    if is_dark {
-                        cx.theme().muted_foreground.lighten(0.08)
-                    } else {
-                        cx.theme().muted_foreground.darken(0.06)
-                    },
+                    hunk_tone(cx.theme().muted_foreground, is_dark, 0.14, 0.10),
+                    hunk_tone(cx.theme().muted_foreground, is_dark, 0.18, 0.12),
+                    hunk_tone(cx.theme().muted_foreground, is_dark, 0.08, 0.06),
                     "",
                 ),
             };
         if matches!(cell.kind, DiffCellKind::Context | DiffCellKind::None)
             && row_stable_id.is_multiple_of(2)
         {
-            background = background.blend(cx.theme().muted.opacity(if is_dark { 0.12 } else { 0.20 }));
+            background = hunk_blend(background, cx.theme().muted, is_dark, 0.12, 0.20);
         }
         if row_is_selected {
-            background =
-                background.blend(
-                    cx.theme()
-                        .primary
-                        .opacity(if is_dark { 0.22 } else { 0.13 }),
-                );
+            background = hunk_blend(background, cx.theme().primary, is_dark, 0.22, 0.13);
         }
 
         let line_number = cell.line.map(|line| line.to_string()).unwrap_or_default();
@@ -805,7 +711,7 @@ impl DiffViewer {
         let gutter_background = cx
             .theme()
             .background
-            .blend(cx.theme().muted.opacity(if is_dark { 0.28 } else { 0.46 }));
+            .blend(hunk_opacity(cx.theme().muted, is_dark, 0.28, 0.46));
         let gutter_width = line_number_width + DIFF_MARKER_GUTTER_WIDTH + 10.0;
 
         h_flex()
@@ -818,7 +724,7 @@ impl DiffViewer {
             .bg(background)
             .when(should_draw_right_divider, |this| {
                 this.border_r_1()
-                    .border_color(cx.theme().border.opacity(if is_dark { 0.86 } else { 0.72 }))
+                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.86, 0.72))
             })
             .child(
                 h_flex()
@@ -831,7 +737,7 @@ impl DiffViewer {
                     .rounded_sm()
                     .bg(gutter_background)
                     .border_1()
-                    .border_color(cx.theme().border.opacity(if is_dark { 0.68 } else { 0.54 }))
+                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.68, 0.54))
                     .child(
                         div()
                             .w(px(line_number_width))
@@ -875,7 +781,7 @@ impl DiffViewer {
                             .whitespace_nowrap()
                             .text_color(segment_color)
                             .when(segment.changed, |this| {
-                                this.bg(marker_color.opacity(if is_dark { 0.20 } else { 0.11 }))
+                                this.bg(hunk_opacity(marker_color, is_dark, 0.20, 0.11))
                             })
                             .child(segment_text)
                     }))
@@ -887,9 +793,12 @@ impl DiffViewer {
                                     .flex_none()
                                     .whitespace_nowrap()
                                     .text_color(
-                                        cx.theme()
-                                            .muted_foreground
-                                            .opacity(if is_dark { 0.90 } else { 0.95 }),
+                                        hunk_opacity(
+                                            cx.theme().muted_foreground,
+                                            is_dark,
+                                            0.90,
+                                            0.95,
+                                        ),
                                     )
                                     .child("↵"),
                             )
@@ -908,13 +817,8 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) -> gpui::Hsla {
         let is_dark = cx.theme().mode.is_dark();
-        let github = |dark: u32, light: u32| -> gpui::Hsla {
-            if is_dark {
-                gpui::rgb(dark).into()
-            } else {
-                gpui::rgb(light).into()
-            }
-        };
+        let github =
+            |dark: u32, light: u32| -> gpui::Hsla { gpui::rgb(hunk_pick(is_dark, dark, light)).into() };
         match token {
             SyntaxTokenKind::Plain => default_color,
             SyntaxTokenKind::Keyword => github(0xff7b72, 0xcf222e),

@@ -9,7 +9,7 @@ fn ai_loading_skeleton_block(
         .max_w(px(width_px))
         .h(px(height_px))
         .rounded(px(8.0))
-        .bg(cx.theme().muted.opacity(if is_dark { 0.22 } else { 0.44 }))
+        .bg(hunk_opacity(cx.theme().muted, is_dark, 0.22, 0.44))
         .into_any_element()
 }
 
@@ -32,12 +32,8 @@ fn render_ai_global_loading_overlay(
                         .gap_3()
                         .rounded_full()
                         .border_1()
-                        .border_color(cx.theme().warning.opacity(if is_dark { 0.96 } else { 0.82 }))
-                        .bg(cx.theme().background.blend(cx.theme().warning.opacity(if is_dark {
-                            0.30
-                        } else {
-                            0.18
-                        })))
+                        .border_color(hunk_opacity(cx.theme().warning, is_dark, 0.96, 0.82))
+                        .bg(hunk_blend(cx.theme().background, cx.theme().warning, is_dark, 0.30, 0.18))
                         .px_4()
                         .py_2()
                         .child(
@@ -113,11 +109,7 @@ fn render_ai_timeline_loading_skeleton(
                 .rounded_md()
                 .border_1()
                 .border_color(cx.theme().border)
-                .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                    0.16
-                } else {
-                    0.24
-                })))
+                .bg(hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.16, 0.24))
                 .p_3()
                 .child(ai_loading_skeleton_block(
                     104.0,

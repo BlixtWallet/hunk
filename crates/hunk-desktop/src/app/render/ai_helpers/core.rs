@@ -78,22 +78,22 @@ fn render_ai_thread_sidebar_row(
     let title_color = if selected {
         cx.theme().foreground
     } else {
-        cx.theme().foreground.opacity(if is_dark { 0.94 } else { 0.92 })
+        hunk_opacity(cx.theme().foreground, is_dark, 0.94, 0.92)
     };
     let metadata_color = if selected {
-        cx.theme().muted_foreground.opacity(if is_dark { 0.94 } else { 0.98 })
+        hunk_opacity(cx.theme().muted_foreground, is_dark, 0.94, 0.98)
     } else {
-        cx.theme().muted_foreground.opacity(if is_dark { 0.82 } else { 0.92 })
+        hunk_opacity(cx.theme().muted_foreground, is_dark, 0.82, 0.92)
     };
     let time_color = if selected {
-        cx.theme().foreground.opacity(if is_dark { 0.56 } else { 0.66 })
+        hunk_opacity(cx.theme().foreground, is_dark, 0.56, 0.66)
     } else {
-        cx.theme().muted_foreground.opacity(if is_dark { 0.72 } else { 0.82 })
+        hunk_opacity(cx.theme().muted_foreground, is_dark, 0.72, 0.82)
     };
     let (status_label, status_color) = ai_thread_status_label(thread.status, cx);
     let status_color = match thread.status {
-        ThreadLifecycleStatus::Active => status_color.opacity(if is_dark { 0.82 } else { 0.72 }),
-        ThreadLifecycleStatus::Archived => status_color.opacity(if is_dark { 0.88 } else { 0.78 }),
+        ThreadLifecycleStatus::Active => hunk_opacity(status_color, is_dark, 0.82, 0.72),
+        ThreadLifecycleStatus::Archived => hunk_opacity(status_color, is_dark, 0.88, 0.78),
         _ => metadata_color,
     };
     let status_indicator = match thread.status {
@@ -117,9 +117,9 @@ fn render_ai_thread_sidebar_row(
     };
     let activity_label = ai_thread_activity_label(thread.updated_at);
     let archive_button_color = if selected {
-        cx.theme().foreground.opacity(if is_dark { 0.70 } else { 0.78 })
+        hunk_opacity(cx.theme().foreground, is_dark, 0.70, 0.78)
     } else {
-        cx.theme().muted_foreground.opacity(if is_dark { 0.60 } else { 0.72 })
+        hunk_opacity(cx.theme().muted_foreground, is_dark, 0.60, 0.72)
     };
     let select_view = view.clone();
     let archive_view = view.clone();

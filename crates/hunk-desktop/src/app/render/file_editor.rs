@@ -111,12 +111,13 @@ impl DiffViewer {
                                     .outline()
                                     .compact()
                                     .rounded(px(7.0))
-                                    .bg(
-                                        cx.theme().secondary.opacity(if is_dark { 0.46 } else { 0.68 }),
-                                    )
-                                    .border_color(
-                                        cx.theme().border.opacity(if is_dark { 0.86 } else { 0.70 }),
-                                    )
+                                    .bg(hunk_opacity(cx.theme().secondary, is_dark, 0.46, 0.68))
+                                    .border_color(hunk_opacity(
+                                        cx.theme().border,
+                                        is_dark,
+                                        0.86,
+                                        0.70,
+                                    ))
                                     .label("Reload")
                                     .disabled(reload_disabled)
                                     .on_click(move |_, _, cx| {
@@ -146,12 +147,18 @@ impl DiffViewer {
                                     } else {
                                         preview_button = preview_button
                                             .outline()
-                                            .bg(
-                                                cx.theme().secondary.opacity(if is_dark { 0.46 } else { 0.68 }),
-                                            )
-                                            .border_color(
-                                                cx.theme().border.opacity(if is_dark { 0.86 } else { 0.70 }),
-                                            );
+                                            .bg(hunk_opacity(
+                                                cx.theme().secondary,
+                                                is_dark,
+                                                0.46,
+                                                0.68,
+                                            ))
+                                            .border_color(hunk_opacity(
+                                                cx.theme().border,
+                                                is_dark,
+                                                0.86,
+                                                0.70,
+                                            ));
                                     }
                                     preview_button.into_any_element()
                                 } else {
@@ -188,9 +195,7 @@ impl DiffViewer {
                             .disabled(self.editor_loading || self.editor_save_loading)
                             .rounded(px(8.0))
                             .border_1()
-                            .border_color(
-                                cx.theme().border.opacity(if is_dark { 0.92 } else { 0.78 }),
-                            ),
+                            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.92, 0.78)),
                     )
                     .into_any_element()
             })
@@ -405,8 +410,8 @@ impl DiffViewer {
                             .w_full()
                             .rounded(px(6.0))
                             .border_1()
-                            .border_color(cx.theme().border.opacity(if is_dark { 0.88 } else { 0.74 }))
-                            .bg(cx.theme().secondary.opacity(if is_dark { 0.34 } else { 0.48 }))
+                            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.88, 0.74))
+                            .bg(hunk_opacity(cx.theme().secondary, is_dark, 0.34, 0.48))
                             .p_2()
                             .child(v_flex().w_full().children(code_rows)),
                     )
@@ -415,7 +420,7 @@ impl DiffViewer {
             MarkdownPreviewBlock::ThematicBreak => div()
                 .h(px(1.0))
                 .w_full()
-                .bg(cx.theme().border.opacity(if is_dark { 0.8 } else { 0.95 }))
+                .bg(hunk_opacity(cx.theme().border, is_dark, 0.8, 0.95))
                 .into_any_element(),
         }
     }
@@ -488,9 +493,9 @@ impl DiffViewer {
         if span.style.code {
             element = element
                 .font_family(cx.theme().mono_font_family.clone())
-                .bg(cx.theme().secondary.opacity(if is_dark { 0.34 } else { 0.48 }))
+                .bg(hunk_opacity(cx.theme().secondary, is_dark, 0.34, 0.48))
                 .border_1()
-                .border_color(cx.theme().border.opacity(if is_dark { 0.88 } else { 0.74 }))
+                .border_color(hunk_opacity(cx.theme().border, is_dark, 0.88, 0.74))
                 .rounded(px(4.0))
                 .px_1();
         }
@@ -509,11 +514,7 @@ impl DiffViewer {
     ) -> Hsla {
         let is_dark = cx.theme().mode.is_dark();
         let github = |dark: u32, light: u32| {
-            let hex = if is_dark {
-                format!("#{dark:06x}")
-            } else {
-                format!("#{light:06x}")
-            };
+            let hex = format!("#{:06x}", hunk_pick(is_dark, dark, light));
             Hsla::parse_hex(hex.as_str()).unwrap_or(default_color)
         };
 

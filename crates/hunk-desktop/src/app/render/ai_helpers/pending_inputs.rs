@@ -28,8 +28,8 @@ fn render_ai_pending_user_inputs_panel(
         .gap_1()
         .rounded_md()
         .border_1()
-        .border_color(cx.theme().accent.opacity(if is_dark { 0.84 } else { 0.66 }))
-        .bg(cx.theme().accent.opacity(if is_dark { 0.14 } else { 0.08 }))
+        .border_color(hunk_opacity(cx.theme().accent, is_dark, 0.84, 0.66))
+        .bg(hunk_opacity(cx.theme().accent, is_dark, 0.14, 0.08))
         .p_2()
         .child(
             div()
@@ -86,10 +86,8 @@ fn render_ai_pending_user_inputs_panel(
                         .gap_1()
                         .rounded(px(6.0))
                         .border_1()
-                        .border_color(cx.theme().border.opacity(if is_dark { 0.92 } else { 0.74 }))
-                        .bg(cx.theme().background.blend(
-                            cx.theme().muted.opacity(if is_dark { 0.12 } else { 0.20 }),
-                        ))
+                        .border_color(hunk_opacity(cx.theme().border, is_dark, 0.92, 0.74))
+                        .bg(hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.12, 0.20))
                         .p_2()
                         .child(div().text_xs().font_semibold().child(question.header.clone()))
                         .child(
@@ -206,4 +204,3 @@ fn render_ai_pending_user_inputs_panel(
         }))
         .into_any_element()
 }
-

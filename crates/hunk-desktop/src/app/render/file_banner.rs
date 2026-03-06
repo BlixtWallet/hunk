@@ -44,7 +44,7 @@ impl DiffViewer {
             .px_3()
             .py_0p5()
             .border_1()
-            .border_color(colors.border.opacity(if is_dark { 0.92 } else { 0.82 }))
+            .border_color(hunk_opacity(colors.border, is_dark, 0.92, 0.82))
             .bg(colors.row_background)
             .w_full()
             .child({

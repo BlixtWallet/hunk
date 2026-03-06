@@ -14,9 +14,9 @@ impl DiffViewer {
         let is_tracked = file.is_tracked();
         let tracking_label = if is_tracked { "tracked" } else { "untracked" };
         let tracking_color = if is_tracked {
-            cx.theme().secondary.opacity(if is_dark { 0.36 } else { 0.56 })
+            hunk_opacity(cx.theme().secondary, is_dark, 0.36, 0.56)
         } else {
-            cx.theme().warning.opacity(if is_dark { 0.30 } else { 0.20 })
+            hunk_opacity(cx.theme().warning, is_dark, 0.30, 0.20)
         };
         let undo_tooltip = if is_tracked {
             "Restore this file to the parent revision."
@@ -24,7 +24,7 @@ impl DiffViewer {
             "Delete this untracked file from the working copy."
         };
         let row_bg = if is_selected {
-            cx.theme().accent.opacity(if is_dark { 0.22 } else { 0.14 })
+            hunk_opacity(cx.theme().accent, is_dark, 0.22, 0.14)
         } else {
             cx.theme().background.opacity(0.0)
         };
@@ -69,7 +69,7 @@ impl DiffViewer {
                     .rounded(px(4.0))
                     .text_xs()
                     .font_semibold()
-                    .bg(status_color.opacity(if is_dark { 0.24 } else { 0.16 }))
+                    .bg(hunk_opacity(status_color, is_dark, 0.24, 0.16))
                     .text_color(cx.theme().foreground)
                     .child(status_label),
             )

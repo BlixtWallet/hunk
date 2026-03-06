@@ -11,11 +11,7 @@ impl DiffViewer {
             .px_2()
             .border_b_1()
             .border_color(cx.theme().border)
-            .bg(cx.theme().title_bar.blend(
-                cx.theme()
-                    .muted
-                    .opacity(if is_dark { 0.16 } else { 0.24 }),
-            ))
+            .bg(hunk_blend(cx.theme().title_bar, cx.theme().muted, is_dark, 0.16, 0.24))
             .child(div().flex_1().min_w_0().h_full().child(menu_bar))
             .into_any_element()
     }
@@ -144,12 +140,8 @@ impl DiffViewer {
             .gap_2()
             .px_2()
             .border_t_1()
-            .border_color(cx.theme().border.opacity(if is_dark { 0.88 } else { 0.68 }))
-            .bg(cx.theme().sidebar.blend(cx.theme().muted.opacity(if is_dark {
-                0.18
-            } else {
-                0.22
-            })))
+            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.88, 0.68))
+            .bg(hunk_blend(cx.theme().sidebar, cx.theme().muted, is_dark, 0.18, 0.22))
             .child(
                 h_flex()
                     .items_center()

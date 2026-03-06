@@ -16,12 +16,8 @@ impl DiffViewer {
             .p_2()
             .rounded(px(8.0))
             .border_1()
-            .border_color(cx.theme().border.opacity(if is_dark { 0.90 } else { 0.74 }))
-            .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                0.16
-            } else {
-                0.24
-            })))
+            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.90, 0.74))
+            .bg(hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.16, 0.24))
             .child(
                 h_flex()
                     .w_full()
@@ -108,12 +104,8 @@ impl DiffViewer {
             .py_1()
             .rounded(px(8.0))
             .border_1()
-            .border_color(cx.theme().border.opacity(if is_dark { 0.90 } else { 0.74 }))
-            .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                0.22
-            } else {
-                0.30
-            })))
+            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.90, 0.74))
+            .bg(hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.22, 0.30))
             .child(
                 div()
                     .text_xs()

@@ -39,18 +39,14 @@ impl DiffViewer {
             .rounded(px(8.0))
             .border_1()
             .border_color(if loading {
-                cx.theme().accent.opacity(if is_dark { 0.90 } else { 0.72 })
+                hunk_opacity(cx.theme().accent, is_dark, 0.90, 0.72)
             } else {
-                cx.theme().border.opacity(if is_dark { 0.90 } else { 0.70 })
+                hunk_opacity(cx.theme().border, is_dark, 0.90, 0.70)
             })
             .bg(if loading {
-                cx.theme().accent.opacity(if is_dark { 0.22 } else { 0.12 })
+                hunk_opacity(cx.theme().accent, is_dark, 0.22, 0.12)
             } else {
-                cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                    0.24
-                } else {
-                    0.32
-                }))
+                hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.24, 0.32)
             })
             .child(
                 div()
@@ -108,12 +104,14 @@ impl DiffViewer {
             .p_2()
             .rounded(px(8.0))
             .border_1()
-            .border_color(cx.theme().border.opacity(if is_dark { 0.90 } else { 0.74 }))
-            .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                0.20
-            } else {
-                0.26
-            })))
+            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.90, 0.74))
+            .bg(hunk_blend(
+                cx.theme().background,
+                cx.theme().muted,
+                is_dark,
+                0.20,
+                0.26,
+            ))
             .child(
                 h_flex()
                     .w_full()
@@ -241,8 +239,13 @@ impl DiffViewer {
                                 .loading(undo_op_loading)
                                 .label("Undo Op")
                                 .tooltip("Undo the latest JJ operation in operation history.")
-                                .bg(cx.theme().warning.opacity(if is_dark { 0.24 } else { 0.14 }))
-                                .border_color(cx.theme().warning.opacity(if is_dark { 0.82 } else { 0.60 }))
+                                .bg(hunk_opacity(cx.theme().warning, is_dark, 0.24, 0.14))
+                                .border_color(hunk_opacity(
+                                    cx.theme().warning,
+                                    is_dark,
+                                    0.82,
+                                    0.60,
+                                ))
                                 .text_color(cx.theme().foreground)
                                 .disabled(!can_undo_operation)
                                 .on_click(move |_, _, cx| {
@@ -261,10 +264,13 @@ impl DiffViewer {
                                 .loading(redo_op_loading)
                                 .label("Redo Op")
                                 .tooltip("Redo the most recently undone JJ operation.")
-                                .bg(cx.theme().accent.opacity(if is_dark { 0.28 } else { 0.16 }))
-                                .border_color(
-                                    cx.theme().accent.opacity(if is_dark { 0.78 } else { 0.58 }),
-                                )
+                                .bg(hunk_opacity(cx.theme().accent, is_dark, 0.28, 0.16))
+                                .border_color(hunk_opacity(
+                                    cx.theme().accent,
+                                    is_dark,
+                                    0.78,
+                                    0.58,
+                                ))
                                 .text_color(cx.theme().foreground)
                                 .disabled(!can_redo_operation)
                                 .on_click(move |_, _, cx| {
@@ -283,8 +289,13 @@ impl DiffViewer {
                                 .loading(undo_all_loading)
                                 .label("Undo All")
                                 .tooltip("Discard all working-copy changes using jj restore.")
-                                .bg(cx.theme().danger.opacity(if is_dark { 0.24 } else { 0.14 }))
-                                .border_color(cx.theme().danger.opacity(if is_dark { 0.82 } else { 0.60 }))
+                                .bg(hunk_opacity(cx.theme().danger, is_dark, 0.24, 0.14))
+                                .border_color(hunk_opacity(
+                                    cx.theme().danger,
+                                    is_dark,
+                                    0.82,
+                                    0.60,
+                                ))
                                 .text_color(cx.theme().foreground)
                                 .disabled(!can_undo_all_working_copy)
                                 .on_click(move |_, _, cx| {
@@ -316,7 +327,7 @@ impl DiffViewer {
                             .children(revisions.iter().enumerate().map(|(ix, revision)| {
                                 let short_id = revision.id.chars().take(12).collect::<String>();
                                 let row_bg = if ix == 0 {
-                                    cx.theme().accent.opacity(if is_dark { 0.18 } else { 0.10 })
+                                    hunk_opacity(cx.theme().accent, is_dark, 0.18, 0.10)
                                 } else {
                                     cx.theme().background.opacity(0.0)
                                 };
@@ -337,7 +348,12 @@ impl DiffViewer {
                                             .text_xs()
                                             .font_family(cx.theme().mono_font_family.clone())
                                             .text_color(cx.theme().muted_foreground)
-                                            .bg(cx.theme().muted.opacity(if is_dark { 0.32 } else { 0.42 }))
+                                            .bg(hunk_opacity(
+                                                cx.theme().muted,
+                                                is_dark,
+                                                0.32,
+                                                0.42,
+                                            ))
                                             .child(short_id),
                                     )
                                     .child(
@@ -377,12 +393,14 @@ impl DiffViewer {
             .p_2()
             .rounded(px(8.0))
             .border_1()
-            .border_color(cx.theme().border.opacity(if is_dark { 0.90 } else { 0.74 }))
-            .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                0.20
-            } else {
-                0.26
-            })))
+            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.90, 0.74))
+            .bg(hunk_blend(
+                cx.theme().background,
+                cx.theme().muted,
+                is_dark,
+                0.20,
+                0.26,
+            ))
             .child(
                 div()
                     .text_xs()
@@ -449,12 +467,14 @@ impl DiffViewer {
                     .p_1()
                     .rounded(px(6.0))
                     .border_1()
-                    .border_color(cx.theme().border.opacity(if is_dark { 0.88 } else { 0.74 }))
-                    .bg(cx.theme().background.blend(cx.theme().muted.opacity(if is_dark {
-                        0.12
-                    } else {
-                        0.18
-                    })))
+                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.88, 0.74))
+                    .bg(hunk_blend(
+                        cx.theme().background,
+                        cx.theme().muted,
+                        is_dark,
+                        0.12,
+                        0.18,
+                    ))
                     .child(list_container)
                     .into_any_element()
             })

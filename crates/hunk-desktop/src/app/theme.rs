@@ -50,47 +50,39 @@ pub(crate) fn install_hunk_themes(cx: &mut App) {
 }
 
 pub(crate) fn hunk_modal_backdrop(theme: &Theme, is_dark: bool) -> Hsla {
-    theme.background.opacity(mode_value(is_dark, 0.24, 0.12))
+    hunk_opacity(theme.background, is_dark, 0.24, 0.12)
 }
 
 pub(crate) fn hunk_modal_surface(theme: &Theme, is_dark: bool) -> HunkSurfaceColors {
     HunkSurfaceColors {
-        background: theme
-            .popover
-            .blend(theme.background.opacity(mode_value(is_dark, 0.16, 0.05))),
-        border: theme.border.opacity(mode_value(is_dark, 0.92, 0.72)),
+        background: hunk_blend(theme.popover, theme.background, is_dark, 0.16, 0.05),
+        border: hunk_opacity(theme.border, is_dark, 0.92, 0.72),
     }
 }
 
 pub(crate) fn hunk_nav_surface(theme: &Theme, is_dark: bool) -> HunkSurfaceColors {
     HunkSurfaceColors {
-        background: theme
-            .sidebar
-            .blend(theme.muted.opacity(mode_value(is_dark, 0.24, 0.16))),
-        border: theme.border.opacity(mode_value(is_dark, 0.90, 0.70)),
+        background: hunk_blend(theme.sidebar, theme.muted, is_dark, 0.24, 0.16),
+        border: hunk_opacity(theme.border, is_dark, 0.90, 0.70),
     }
 }
 
 pub(crate) fn hunk_card_surface(theme: &Theme, is_dark: bool) -> HunkSurfaceColors {
     HunkSurfaceColors {
-        background: theme
-            .background
-            .blend(theme.muted.opacity(mode_value(is_dark, 0.24, 0.12))),
-        border: theme.border.opacity(mode_value(is_dark, 0.90, 0.72)),
+        background: hunk_blend(theme.background, theme.muted, is_dark, 0.24, 0.12),
+        border: hunk_opacity(theme.border, is_dark, 0.90, 0.72),
     }
 }
 
 pub(crate) fn hunk_input_surface(theme: &Theme, is_dark: bool) -> HunkSurfaceColors {
     HunkSurfaceColors {
-        background: theme
-            .background
-            .blend(theme.muted.opacity(mode_value(is_dark, 0.20, 0.09))),
-        border: theme.border.opacity(mode_value(is_dark, 0.90, 0.72)),
+        background: hunk_blend(theme.background, theme.muted, is_dark, 0.20, 0.09),
+        border: hunk_opacity(theme.border, is_dark, 0.90, 0.72),
     }
 }
 
 pub(crate) fn hunk_dropdown_fill(theme: &Theme, is_dark: bool) -> Hsla {
-    theme.secondary.opacity(mode_value(is_dark, 0.52, 0.70))
+    hunk_opacity(theme.secondary, is_dark, 0.52, 0.70)
 }
 
 pub(crate) fn hunk_settings_nav_button(
@@ -101,43 +93,39 @@ pub(crate) fn hunk_settings_nav_button(
     if is_selected {
         HunkButtonColors {
             background: theme.secondary_active,
-            border: theme.accent.opacity(mode_value(is_dark, 0.84, 0.64)),
+            border: hunk_opacity(theme.accent, is_dark, 0.84, 0.64),
             text: theme.foreground,
         }
     } else {
         HunkButtonColors {
             background: theme.background.opacity(0.0),
-            border: theme.border.opacity(mode_value(is_dark, 0.86, 0.68)),
-            text: theme
-                .muted_foreground
-                .opacity(mode_value(is_dark, 0.94, 0.98)),
+            border: hunk_opacity(theme.border, is_dark, 0.86, 0.68),
+            text: hunk_opacity(theme.muted_foreground, is_dark, 0.94, 0.98),
         }
     }
 }
 
 pub(crate) fn hunk_toolbar_chip(theme: &Theme, is_dark: bool) -> HunkSurfaceColors {
     HunkSurfaceColors {
-        background: theme.muted.opacity(mode_value(is_dark, 0.26, 0.52)),
-        border: theme.border.opacity(mode_value(is_dark, 0.88, 0.70)),
+        background: hunk_opacity(theme.muted, is_dark, 0.26, 0.52),
+        border: hunk_opacity(theme.border, is_dark, 0.88, 0.70),
     }
 }
 
 pub(crate) fn hunk_toolbar_brand_chip(theme: &Theme, is_dark: bool) -> HunkSurfaceColors {
     HunkSurfaceColors {
-        background: theme.accent.opacity(mode_value(is_dark, 0.26, 0.14)),
-        border: theme.accent.opacity(mode_value(is_dark, 0.62, 0.42)),
+        background: hunk_opacity(theme.accent, is_dark, 0.26, 0.14),
+        border: hunk_opacity(theme.accent, is_dark, 0.62, 0.42),
     }
 }
 
 pub(crate) fn hunk_disclosure_row(theme: &Theme, is_dark: bool) -> HunkDisclosureColors {
-    let title = theme.foreground.opacity(mode_value(is_dark, 0.78, 0.74));
+    let title = hunk_opacity(theme.foreground, is_dark, 0.78, 0.74);
     HunkDisclosureColors {
         title,
         summary: theme.muted_foreground,
-        hover_background: theme.muted.opacity(mode_value(is_dark, 0.18, 0.24)),
-        chevron: theme
-            .muted_foreground
-            .opacity(mode_value(is_dark, 0.94, 0.88)),
+        hover_background: hunk_opacity(theme.muted, is_dark, 0.18, 0.24),
+        chevron: hunk_opacity(theme.muted_foreground, is_dark, 0.94, 0.88),
     }
 }
 
@@ -156,11 +144,9 @@ pub(crate) fn hunk_file_status_banner(
         FileStatus::Conflicted => ("CONFLICTED", theme.danger),
         FileStatus::Unknown => ("MODIFIED", theme.muted_foreground),
     };
-    let background = theme
-        .background
-        .blend(accent.opacity(mode_value(is_dark, 0.34, 0.16)));
+    let background = hunk_blend(theme.background, accent, is_dark, 0.34, 0.16);
     let row_background = if is_selected {
-        background.blend(theme.primary.opacity(mode_value(is_dark, 0.28, 0.16)))
+        hunk_blend(background, theme.primary, is_dark, 0.28, 0.16)
     } else {
         background
     };
@@ -168,40 +154,40 @@ pub(crate) fn hunk_file_status_banner(
     HunkFileStatusBannerColors {
         label,
         row_background,
-        border: accent.opacity(mode_value(is_dark, 0.78, 0.52)),
-        badge_background: accent.opacity(mode_value(is_dark, 0.50, 0.27)),
-        badge_border: accent.opacity(mode_value(is_dark, 0.88, 0.44)),
-        accent_strip: if is_dark {
-            accent.lighten(0.18)
-        } else {
-            accent.darken(0.06)
-        },
-        arrow: if is_dark {
-            accent.lighten(0.34)
-        } else {
-            accent.darken(0.18)
-        },
+        border: hunk_opacity(accent, is_dark, 0.78, 0.52),
+        badge_background: hunk_opacity(accent, is_dark, 0.50, 0.27),
+        badge_border: hunk_opacity(accent, is_dark, 0.88, 0.44),
+        accent_strip: hunk_tone(accent, is_dark, 0.18, 0.06),
+        arrow: hunk_tone(accent, is_dark, 0.34, 0.18),
     }
 }
 
 pub(crate) fn hunk_line_stats(theme: &Theme, is_dark: bool) -> HunkLineStatsColors {
     HunkLineStatsColors {
-        added: if is_dark {
-            theme.success.lighten(0.42)
-        } else {
-            theme.success.darken(0.05)
-        },
-        removed: if is_dark {
-            theme.danger.lighten(0.42)
-        } else {
-            theme.danger.darken(0.05)
-        },
+        added: hunk_tone(theme.success, is_dark, 0.42, 0.05),
+        removed: hunk_tone(theme.danger, is_dark, 0.42, 0.05),
         changed: theme.muted_foreground,
     }
 }
 
-fn mode_value(is_dark: bool, dark: f32, light: f32) -> f32 {
+pub(crate) fn hunk_pick<T: Copy>(is_dark: bool, dark: T, light: T) -> T {
     if is_dark { dark } else { light }
+}
+
+pub(crate) fn hunk_opacity(color: Hsla, is_dark: bool, dark: f32, light: f32) -> Hsla {
+    color.opacity(hunk_pick(is_dark, dark, light))
+}
+
+pub(crate) fn hunk_blend(base: Hsla, overlay: Hsla, is_dark: bool, dark: f32, light: f32) -> Hsla {
+    base.blend(hunk_opacity(overlay, is_dark, dark, light))
+}
+
+pub(crate) fn hunk_tone(color: Hsla, is_dark: bool, dark_lighten: f32, light_darken: f32) -> Hsla {
+    if is_dark {
+        color.lighten(dark_lighten)
+    } else {
+        color.darken(light_darken)
+    }
 }
 
 fn hsla_hex(hex: &str) -> Option<Hsla> {

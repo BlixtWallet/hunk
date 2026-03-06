@@ -60,11 +60,7 @@ impl DiffViewer {
                     .py_1p5()
                     .border_b_1()
                     .border_color(cx.theme().border)
-                    .bg(cx.theme().sidebar.blend(cx.theme().muted.opacity(if is_dark {
-                        0.18
-                    } else {
-                        0.30
-                    })))
+                    .bg(hunk_blend(cx.theme().sidebar, cx.theme().muted, is_dark, 0.18, 0.30))
                     .child(
                         div()
                             .text_xs()
@@ -196,7 +192,7 @@ impl DiffViewer {
                 .items_center()
                 .gap_1()
                 .rounded_sm()
-                .bg(cx.theme().accent.opacity(if is_dark { 0.14 } else { 0.08 }))
+                .bg(hunk_opacity(cx.theme().accent, is_dark, 0.14, 0.08))
                 .child(div().w(px(depth as f32 * 14.0)))
                 .child(div().w(px(14.0)))
                 .child(
@@ -221,7 +217,7 @@ impl DiffViewer {
                                 .h(px(20.0))
                                 .rounded(px(4.0))
                                 .border_1()
-                                .border_color(cx.theme().border.opacity(if is_dark { 0.90 } else { 0.72 }))
+                                .border_color(hunk_opacity(cx.theme().border, is_dark, 0.90, 0.72))
                                 .bg(cx.theme().background),
                         ),
                 )
@@ -270,7 +266,7 @@ impl DiffViewer {
                             .gap_0p5()
                             .rounded(px(8.0))
                             .border_1()
-                            .border_color(cx.theme().border.opacity(if is_dark { 0.92 } else { 0.74 }))
+                            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.92, 0.74))
                             .bg(cx.theme().popover)
                             .shadow_none()
                             .on_mouse_down_out({
@@ -550,14 +546,14 @@ impl DiffViewer {
         let is_selected =
             row.kind == RepoTreeNodeKind::File && self.selected_path.as_deref() == Some(row.path.as_str());
         let row_bg = if is_selected {
-            cx.theme().accent.opacity(if is_dark { 0.30 } else { 0.14 })
+            hunk_opacity(cx.theme().accent, is_dark, 0.30, 0.14)
         } else if row.ignored {
-            cx.theme().muted.opacity(if is_dark { 0.16 } else { 0.22 })
+            hunk_opacity(cx.theme().muted, is_dark, 0.16, 0.22)
         } else {
             cx.theme().background.opacity(0.0)
         };
         let text_color = if row.ignored {
-            cx.theme().muted_foreground.opacity(if is_dark { 0.88 } else { 0.95 })
+            hunk_opacity(cx.theme().muted_foreground, is_dark, 0.88, 0.95)
         } else {
             cx.theme().foreground
         };
@@ -629,7 +625,7 @@ impl DiffViewer {
                             .rounded(px(4.0))
                             .text_xs()
                             .font_semibold()
-                            .bg(status_color.opacity(if is_dark { 0.24 } else { 0.16 }))
+                            .bg(hunk_opacity(status_color, is_dark, 0.24, 0.16))
                             .text_color(cx.theme().foreground)
                             .child(status_label),
                     )
@@ -651,7 +647,7 @@ impl DiffViewer {
                                 .h(px(20.0))
                                 .rounded(px(4.0))
                                 .border_1()
-                                .border_color(cx.theme().accent.opacity(if is_dark { 0.74 } else { 0.58 }))
+                                .border_color(hunk_opacity(cx.theme().accent, is_dark, 0.74, 0.58))
                                 .bg(cx.theme().background),
                         )
                     })

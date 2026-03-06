@@ -68,9 +68,7 @@ impl DiffViewer {
                                     .px_4()
                                     .py_3()
                                     .border_b_1()
-                                    .border_color(
-                                        cx.theme().border.opacity(if is_dark { 0.92 } else { 0.74 }),
-                                    )
+                                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.92, 0.74))
                                     .child(
                                         v_flex()
                                             .gap_0p5()
@@ -189,9 +187,7 @@ impl DiffViewer {
                                     .px_4()
                                     .py_3()
                                     .border_t_1()
-                                    .border_color(
-                                        cx.theme().border.opacity(if is_dark { 0.92 } else { 0.74 }),
-                                    )
+                                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.92, 0.74))
                                     .child(
                                         div()
                                             .text_sm()
@@ -636,7 +632,7 @@ impl DiffViewer {
             .child(
                 div()
                     .text_xs()
-                    .text_color(cx.theme().muted_foreground.opacity(if is_dark { 0.94 } else { 1.0 }))
+                    .text_color(hunk_opacity(cx.theme().muted_foreground, is_dark, 0.94, 1.0))
                     .child(
                         "Use commas to add alternatives. For comma key, use cmd-, literally.",
                     ),

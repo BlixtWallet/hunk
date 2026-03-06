@@ -16,12 +16,8 @@ impl DiffViewer {
             .rounded(px(10.0))
             .border_1()
             .overflow_hidden()
-            .border_color(cx.theme().border.opacity(if is_dark { 0.92 } else { 0.72 }))
-            .bg(cx.theme().popover.blend(
-                cx.theme()
-                    .background
-                    .opacity(if is_dark { 0.20 } else { 0.08 }),
-            ))
+            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.92, 0.72))
+            .bg(hunk_blend(cx.theme().popover, cx.theme().background, is_dark, 0.20, 0.08))
             .child(
                 h_flex()
                     .items_center()
@@ -30,7 +26,7 @@ impl DiffViewer {
                     .px_3()
                     .py_2()
                     .border_b_1()
-                    .border_color(cx.theme().border.opacity(if is_dark { 0.88 } else { 0.70 }))
+                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.88, 0.70))
                     .child(
                         v_flex()
                             .gap_0p5()
@@ -87,7 +83,7 @@ impl DiffViewer {
                     .px_3()
                     .py_2()
                     .border_b_1()
-                    .border_color(cx.theme().border.opacity(if is_dark { 0.82 } else { 0.66 }))
+                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.82, 0.66))
                     .child(
                         div()
                             .text_xs()
@@ -115,7 +111,7 @@ impl DiffViewer {
                     .px_3()
                     .py_2()
                     .border_b_1()
-                    .border_color(cx.theme().border.opacity(if is_dark { 0.82 } else { 0.66 }))
+                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.82, 0.66))
                     .child(
                         div()
                             .text_xs()
@@ -212,7 +208,7 @@ impl DiffViewer {
                             .px_3()
                             .py_2()
                             .border_b_1()
-                            .border_color(cx.theme().border.opacity(if is_dark { 0.74 } else { 0.58 }))
+                            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.74, 0.58))
                             .child(
                                 v_flex()
                                     .gap_1()
@@ -337,7 +333,7 @@ impl DiffViewer {
                         .px_3()
                         .py_2()
                         .border_t_1()
-                        .border_color(cx.theme().border.opacity(if is_dark { 0.82 } else { 0.66 }))
+                        .border_color(hunk_opacity(cx.theme().border, is_dark, 0.82, 0.66))
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
                         .child(message.clone()),
@@ -359,6 +355,7 @@ impl DiffViewer {
         }
 
         let view = cx.entity();
+        let is_dark = cx.theme().mode.is_dark();
         let stable_row_id = self.diff_row_stable_id(row_ix);
         h_flex()
             .absolute()
@@ -373,11 +370,7 @@ impl DiffViewer {
                     .rounded_sm()
                     .text_xs()
                     .font_semibold()
-                    .bg(cx.theme().primary.opacity(if cx.theme().mode.is_dark() {
-                        0.34
-                    } else {
-                        0.18
-                    }))
+                    .bg(hunk_opacity(cx.theme().primary, is_dark, 0.34, 0.18))
                     .text_color(cx.theme().primary_foreground)
                     .child(open_count.to_string())
                     .into_any_element()
@@ -436,15 +429,8 @@ impl DiffViewer {
             .py_2()
             .rounded(px(9.0))
             .border_1()
-            .border_color(cx.theme().border.opacity(if is_dark { 0.90 } else { 0.74 }))
-            .bg(cx
-                .theme()
-                .popover
-                .blend(
-                    cx.theme()
-                        .muted
-                        .opacity(if is_dark { 0.16 } else { 0.10 }),
-                ))
+            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.90, 0.74))
+            .bg(hunk_blend(cx.theme().popover, cx.theme().muted, is_dark, 0.16, 0.10))
             .child(
                 v_flex()
                     .gap_0p5()
@@ -467,12 +453,8 @@ impl DiffViewer {
                     .rounded(px(8.0))
                     .h(px(64.0))
                     .border_1()
-                    .border_color(cx.theme().border.opacity(if is_dark { 0.88 } else { 0.72 }))
-                    .bg(cx.theme().background.blend(
-                        cx.theme()
-                            .muted
-                            .opacity(if is_dark { 0.20 } else { 0.08 }),
-                    )),
+                    .border_color(hunk_opacity(cx.theme().border, is_dark, 0.88, 0.72))
+                    .bg(hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.20, 0.08)),
             )
             .child(
                 h_flex()
