@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use crate::app::ai_paths::resolve_codex_home_path;
 use hunk_domain::state::AiCollaborationModeSelection;
 use hunk_domain::state::AiServiceTierSelection;
 use hunk_domain::state::AiThreadSessionState;
@@ -30,10 +31,10 @@ impl DiffViewer {
         };
         let worker_workspace_key = cwd.to_string_lossy().to_string();
 
-        let Some(codex_home) = Self::resolve_codex_home_path() else {
+        let Some(codex_home) = resolve_codex_home_path() else {
             self.ai_connection_state = AiConnectionState::Failed;
             self.ai_bootstrap_loading = false;
-            self.ai_error_message = Some("Unable to resolve ~/.codex home directory.".to_string());
+            self.ai_error_message = Some("Unable to resolve the Codex home directory.".to_string());
             cx.notify();
             return;
         };
@@ -936,16 +937,35 @@ impl DiffViewer {
     fn resolve_codex_executable_path() -> std::path::PathBuf {
         std::env::var_os("HUNK_CODEX_EXECUTABLE")
             .map(std::path::PathBuf::from)
+            .map(Self::resolve_windows_codex_command_path)
             .or_else(|| {
                 std::env::current_exe()
                     .ok()
                     .and_then(|path| resolve_bundled_codex_executable_from_exe(path.as_path()))
+            })
+            .or_else(|| {
+                #[cfg(target_os = "windows")]
+                {
+                    resolve_windows_command_path(std::path::Path::new("codex"))
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    None
+                }
             })
             .unwrap_or_else(|| std::path::PathBuf::from("codex"))
     }
 
     fn validate_codex_executable_path(path: &std::path::Path) -> Result<(), String> {
         if is_command_name_without_path(path) {
+            #[cfg(target_os = "windows")]
+            {
+                return Err(format!(
+                    "Unable to find a spawnable Codex executable for '{}'. Install Codex so that 'codex.cmd' or 'codex.exe' is on PATH, or set HUNK_CODEX_EXECUTABLE to the full launcher path.",
+                    path.display()
+                ));
+            }
+            #[cfg(not(target_os = "windows"))]
             return Ok(());
         }
         if !path.exists() {
@@ -959,6 +979,15 @@ impl DiffViewer {
                 "Bundled Codex executable path is not a file: {}",
                 path.display()
             ));
+        }
+        #[cfg(target_os = "windows")]
+        {
+            if !windows_path_is_spawnable(path) {
+                return Err(format!(
+                    "Codex executable is not spawnable on Windows: {}. Point HUNK_CODEX_EXECUTABLE at a real '.cmd' or '.exe' launcher, not the Unix shim.",
+                    path.display()
+                ));
+            }
         }
         #[cfg(unix)]
         {
@@ -975,12 +1004,15 @@ impl DiffViewer {
         Ok(())
     }
 
-    fn resolve_codex_home_path() -> Option<std::path::PathBuf> {
-        if let Some(path) = std::env::var_os("CODEX_HOME") {
-            return Some(std::path::PathBuf::from(path));
+    fn resolve_windows_codex_command_path(path: std::path::PathBuf) -> std::path::PathBuf {
+        #[cfg(target_os = "windows")]
+        {
+            resolve_windows_command_path(path.as_path()).unwrap_or(path)
         }
-
-        std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".codex"))
+        #[cfg(not(target_os = "windows"))]
+        {
+            path
+        }
     }
 
     pub(super) fn shutdown_ai_worker_blocking(&mut self) {

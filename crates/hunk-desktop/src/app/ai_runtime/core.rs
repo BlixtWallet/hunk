@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -64,6 +65,7 @@ use hunk_codex::tools::DynamicToolRegistry;
 use hunk_codex::ws_client::JsonRpcSession;
 use hunk_codex::ws_client::WebSocketEndpoint;
 
+use crate::app::ai_paths::default_codex_home_path;
 use crate::app::ai_rollout_fallback::find_rollout_path_for_thread;
 use crate::app::ai_rollout_fallback::parse_rollout_fallback;
 
@@ -253,10 +255,39 @@ pub fn spawn_ai_worker(
     event_tx: Sender<AiWorkerEvent>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        if let Err(error) = run_ai_worker(config, command_rx, &event_tx) {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_ai_worker(config, command_rx, &event_tx)
+        }));
+        dispatch_ai_worker_result(result, &event_tx);
+    })
+}
+
+fn dispatch_ai_worker_result(
+    result: std::thread::Result<Result<(), CodexIntegrationError>>,
+    event_tx: &Sender<AiWorkerEvent>,
+) {
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
             let _ = event_tx.send(AiWorkerEvent::Fatal(error.to_string()));
         }
-    })
+        Err(payload) => {
+            let _ = event_tx.send(AiWorkerEvent::Fatal(format!(
+                "AI worker panicked: {}",
+                panic_payload_message(payload)
+            )));
+        }
+    }
+}
+
+fn panic_payload_message(payload: Box<dyn Any + Send>) -> String {
+    match payload.downcast::<String>() {
+        Ok(message) => *message,
+        Err(payload) => match payload.downcast::<&'static str>() {
+            Ok(message) => (*message).to_string(),
+            Err(_) => "unknown panic payload".to_string(),
+        },
+    }
 }
 
 struct AiWorkerRuntime {
@@ -711,16 +742,14 @@ impl AiWorkerRuntime {
                 Err(_) => None,
             };
         if rollout_path.is_none()
-            && let Some(home) = std::env::var_os("HOME")
+            && let Some(home_codex) = default_codex_home_path()
+            && home_codex != self.codex_home
         {
-            let home_codex = PathBuf::from(home).join(".codex");
-            if home_codex != self.codex_home {
-                rollout_path = match find_rollout_path_for_thread(home_codex.as_path(), thread_id) {
-                    Ok(Some(path)) => Some(path),
-                    Ok(None) => None,
-                    Err(_) => None,
-                };
-            }
+            rollout_path = match find_rollout_path_for_thread(home_codex.as_path(), thread_id) {
+                Ok(Some(path)) => Some(path),
+                Ok(None) => None,
+                Err(_) => None,
+            };
         }
         let Some(rollout_path) = rollout_path else {
             return;
