@@ -1,7 +1,7 @@
 impl DiffViewer {
     fn render_workspace_change_row(
         &self,
-        row_id: usize,
+        row_ix: usize,
         file: &ChangedFile,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -19,9 +19,9 @@ impl DiffViewer {
             hunk_opacity(cx.theme().warning, is_dark, 0.30, 0.20)
         };
         let undo_tooltip = if is_tracked {
-            "Restore this file to the parent revision."
+            "Restore this file to HEAD."
         } else {
-            "Delete this untracked file from the working copy."
+            "Delete this untracked file from the working tree."
         };
         let row_bg = if is_selected {
             hunk_opacity(cx.theme().accent, is_dark, 0.22, 0.14)
@@ -31,7 +31,7 @@ impl DiffViewer {
         let path = file.path.clone();
 
         h_flex()
-            .id(("workspace-change-row", row_id))
+            .id(("workspace-change-row", row_ix))
             .w_full()
             .items_center()
             .gap_1()
@@ -43,7 +43,7 @@ impl DiffViewer {
                 let view = view.clone();
                 let path = path.clone();
                 let include = included_in_commit;
-                Button::new(("workspace-commit-include-toggle", row_id))
+                Button::new(("workspace-commit-include-toggle", row_ix))
                     .outline()
                     .compact()
                     .rounded(px(5.0))
@@ -51,9 +51,9 @@ impl DiffViewer {
                     .h(px(20.0))
                     .label(if include { "x" } else { "" })
                     .tooltip(if include {
-                        "Included in next revision"
+                        "Included in next commit"
                     } else {
-                        "Excluded from next revision"
+                        "Excluded from next commit"
                     })
                     .on_click(move |_, _, cx| {
                         cx.stop_propagation();
@@ -96,7 +96,7 @@ impl DiffViewer {
             .child({
                 let view = view.clone();
                 let path = path.clone();
-                Button::new(("workspace-change-undo", row_id))
+                Button::new(("workspace-change-undo", row_ix))
                     .outline()
                     .compact()
                     .rounded(px(5.0))

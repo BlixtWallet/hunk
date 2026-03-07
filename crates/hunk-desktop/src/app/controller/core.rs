@@ -147,8 +147,6 @@ impl DiffViewer {
         };
         self.branch_has_upstream = cache.branch_has_upstream;
         self.branch_ahead_count = cache.branch_ahead_count;
-        self.can_undo_operation = cache.can_undo_operation;
-        self.can_redo_operation = cache.can_redo_operation;
         self.branches = cache
             .branches
             .into_iter()
@@ -156,15 +154,6 @@ impl DiffViewer {
                 name: branch.name,
                 is_current: branch.is_current,
                 tip_unix_time: branch.tip_unix_time,
-            })
-            .collect();
-        self.bookmark_revisions = cache
-            .bookmark_revisions
-            .into_iter()
-            .map(|revision| BookmarkRevision {
-                id: revision.id,
-                subject: revision.subject,
-                unix_time: revision.unix_time,
             })
             .collect();
         self.files = cache
@@ -195,11 +184,10 @@ impl DiffViewer {
         self.repo_discovery_failed = false;
         self.error_message = None;
         debug!(
-            "hydrated git workflow cache for {} (files={} branches={} revisions={})",
+            "hydrated git workflow cache for {} (files={} branches={})",
             root.display(),
             self.files.len(),
             self.branches.len(),
-            self.bookmark_revisions.len()
         );
         cx.notify();
     }
@@ -214,8 +202,6 @@ impl DiffViewer {
             branch_name: self.branch_name.clone(),
             branch_has_upstream: self.branch_has_upstream,
             branch_ahead_count: self.branch_ahead_count,
-            can_undo_operation: self.can_undo_operation,
-            can_redo_operation: self.can_redo_operation,
             branches: self
                 .branches
                 .iter()
@@ -223,15 +209,6 @@ impl DiffViewer {
                     name: branch.name.clone(),
                     is_current: branch.is_current,
                     tip_unix_time: branch.tip_unix_time,
-                })
-                .collect(),
-            bookmark_revisions: self
-                .bookmark_revisions
-                .iter()
-                .map(|revision| CachedBookmarkRevisionState {
-                    id: revision.id.clone(),
-                    subject: revision.subject.clone(),
-                    unix_time: revision.unix_time,
                 })
                 .collect(),
             files: self
@@ -319,7 +296,7 @@ impl DiffViewer {
         let diff_show_whitespace = config.show_whitespace;
         let diff_show_eol_markers = config.show_eol_markers;
         let branch_input_state = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Select or create bookmark")
+            InputState::new(window, cx).placeholder("Select or create branch")
         });
         let commit_input_state = cx
             .new(|cx| InputState::new(window, cx).multi_line(true).rows(4).placeholder("Commit message"));
@@ -367,14 +344,9 @@ impl DiffViewer {
             branch_has_upstream: false,
             branch_ahead_count: 0,
             working_copy_commit_id: None,
-            can_undo_operation: false,
-            can_redo_operation: false,
             branches: Vec::new(),
-            bookmark_revisions: Vec::new(),
-            jj_workspace_scroll_handle: ScrollHandle::default(),
-            pending_bookmark_switch: None,
-            show_jj_terms_glossary: false,
-            workspace_view_mode: WorkspaceViewMode::JjWorkspace,
+            git_workspace_scroll_handle: ScrollHandle::default(),
+            workspace_view_mode: WorkspaceViewMode::GitWorkspace,
             ai_connection_state: AiConnectionState::Disconnected,
             ai_bootstrap_loading: false,
             ai_status_message: None,
@@ -426,7 +398,6 @@ impl DiffViewer {
             ai_composer_drafts: BTreeMap::new(),
             files: Vec::new(),
             file_status_by_path: BTreeMap::new(),
-            revision_stack_collapsed: true,
             branch_input_state,
             commit_input_state,
             commit_excluded_files: BTreeSet::new(),
@@ -436,7 +407,6 @@ impl DiffViewer {
             git_action_loading: false,
             git_action_label: None,
             git_status_message: None,
-            working_copy_recovery_candidates: Vec::new(),
             collapsed_files: BTreeSet::new(),
             selected_path: None,
             selected_status: None,
@@ -782,6 +752,7 @@ impl DiffViewer {
     fn take_line_stats_refresh_scope(
         &mut self,
         request: SnapshotRefreshRequest,
+        diff_changed: bool,
     ) -> Option<LineStatsRefreshScope> {
         if self.files.is_empty() {
             self.pending_dirty_paths.clear();
@@ -795,27 +766,21 @@ impl DiffViewer {
             return None;
         }
 
+        if !diff_changed {
+            self.pending_dirty_paths.clear();
+            let missing_paths = missing_line_stat_paths(&self.files, &self.file_line_stats);
+            return (!missing_paths.is_empty()).then_some(LineStatsRefreshScope::Paths(missing_paths));
+        }
+
         if request.priority == SnapshotRefreshPriority::Background {
             let pending_dirty_paths = std::mem::take(&mut self.pending_dirty_paths);
             if !pending_dirty_paths.is_empty() {
-                let dirty_paths = self
-                    .files
-                    .iter()
-                    .filter(|file| {
-                        pending_dirty_paths.iter().any(|dirty_path| {
-                            file.path == *dirty_path
-                                || file
-                                    .path
-                                    .strip_prefix(dirty_path.as_str())
-                                    .is_some_and(|suffix| suffix.starts_with('/'))
-                        })
-                    })
-                    .map(|file| file.path.clone())
-                    .collect::<BTreeSet<_>>();
+                let dirty_paths =
+                    line_stats_paths_from_dirty_paths(&self.files, &pending_dirty_paths);
                 if !dirty_paths.is_empty() {
                     return Some(LineStatsRefreshScope::Paths(dirty_paths));
                 }
-                return None;
+                return Some(LineStatsRefreshScope::Full);
             }
         } else {
             self.pending_dirty_paths.clear();
@@ -1129,7 +1094,6 @@ impl DiffViewer {
 
             let workflow_file_count = workflow_snapshot.files.len();
             let workflow_branch_count = workflow_snapshot.branches.len();
-            let workflow_revision_count = workflow_snapshot.bookmark_revisions.len();
             let workflow_ready_elapsed = started_at.elapsed();
             let should_run_cold_start_reconcile = should_run_cold_start_reconcile(
                 cold_start,
@@ -1137,7 +1101,7 @@ impl DiffViewer {
                 request.behavior,
             );
             debug!(
-                "git workspace workflow ready: epoch={} force={} priority={} behavior={} elapsed_ms={} files={} branches={} bookmark_revisions={} cold_start={}",
+                "git workspace workflow ready: epoch={} force={} priority={} behavior={} elapsed_ms={} files={} branches={} cold_start={}",
                 epoch,
                 request.force,
                 request.priority.as_str(),
@@ -1145,7 +1109,6 @@ impl DiffViewer {
                 workflow_ready_elapsed.as_millis(),
                 workflow_file_count,
                 workflow_branch_count,
-                workflow_revision_count,
                 cold_start
             );
 
@@ -1160,9 +1123,8 @@ impl DiffViewer {
                     this.last_snapshot_fingerprint = Some(fingerprint);
                     this.workflow_loading = false;
                     let diff_changed = this.apply_workflow_snapshot(*workflow_snapshot, true, cx);
-                    if (diff_changed
-                        || matches!(request.behavior, SnapshotRefreshBehavior::RefreshWorkingCopy))
-                        && let Some(line_stats_scope) = this.take_line_stats_refresh_scope(request)
+                    if let Some(line_stats_scope) =
+                        this.take_line_stats_refresh_scope(request, diff_changed)
                     {
                         this.schedule_line_stats_refresh(
                             line_stats_repo_root.clone(),
@@ -1172,9 +1134,7 @@ impl DiffViewer {
                             cold_start,
                             cx,
                         );
-                    } else if diff_changed
-                        || matches!(request.behavior, SnapshotRefreshBehavior::RefreshWorkingCopy)
-                    {
+                    } else if should_refresh_line_stats_after_snapshot(request, diff_changed) {
                         this.cancel_line_stats_refresh();
                     } else {
                         this.pending_dirty_paths.clear();
@@ -1342,10 +1302,8 @@ impl DiffViewer {
             branch_name,
             branch_has_upstream,
             branch_ahead_count,
-            can_undo_operation,
-            can_redo_operation,
+            branch_behind_count: _,
             branches,
-            bookmark_revisions,
             files,
             last_commit_subject,
         } = snapshot;
@@ -1367,11 +1325,7 @@ impl DiffViewer {
         self.branch_name = branch_name;
         self.branch_has_upstream = branch_has_upstream;
         self.branch_ahead_count = branch_ahead_count;
-        self.can_undo_operation = can_undo_operation;
-        self.can_redo_operation = can_redo_operation;
         self.branches = branches;
-        self.bookmark_revisions = bookmark_revisions;
-        self.pending_bookmark_switch = None;
         self.files = files;
         self.file_status_by_path = self
             .files
@@ -1391,7 +1345,6 @@ impl DiffViewer {
         }
         if root_changed {
             self.start_repo_watch(cx);
-            self.working_copy_recovery_candidates.clear();
             self.commit_excluded_files.clear();
             if full_refresh {
                 self.repo_tree.nodes.clear();
@@ -1492,16 +1445,10 @@ impl DiffViewer {
         self.branch_has_upstream = false;
         self.branch_ahead_count = 0;
         self.working_copy_commit_id = None;
-        self.can_undo_operation = false;
-        self.can_redo_operation = false;
         self.branches.clear();
-        self.bookmark_revisions.clear();
-        self.pending_bookmark_switch = None;
-        self.show_jj_terms_glossary = false;
         self.git_action_label = None;
         self.files.clear();
         self.file_status_by_path.clear();
-        self.working_copy_recovery_candidates.clear();
         self.last_commit_subject = None;
         self.commit_excluded_files.clear();
         self.selected_path = None;
@@ -1523,7 +1470,7 @@ impl DiffViewer {
         self.drag_selecting_rows = false;
         self.diff_rows = vec![message_row(
             DiffRowKind::Empty,
-            "Use File > Open Project... (Cmd/Ctrl+Shift+O) to load a JJ repository.",
+            "Use File > Open Project... (Cmd/Ctrl+Shift+O) to load a Git repository.",
         )];
         self.sync_diff_list_state();
         self.recompute_diff_layout();
@@ -1567,9 +1514,7 @@ impl DiffViewer {
     fn is_missing_repository_error(err: &anyhow::Error) -> bool {
         err.chain().any(|cause| {
             let message = cause.to_string();
-            message.contains("failed to discover jj repository")
-                || message.contains("there is no jj repo")
-                || message.contains("failed to discover git repository")
+            message.contains("failed to discover git repository")
                 || message.contains("could not find repository")
         })
     }

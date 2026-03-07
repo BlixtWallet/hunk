@@ -28,8 +28,8 @@ impl DiffViewer {
         let threads = self.ai_visible_threads();
         let show_global_loading_overlay = self.ai_bootstrap_loading;
         let threads_loading = show_global_loading_overlay && threads.is_empty();
-        let active_bookmark = self
-            .checked_out_bookmark_name()
+        let active_branch = self
+            .checked_out_branch_name()
             .map_or_else(|| "detached".to_string(), ToOwned::to_owned);
         let pending_approvals = self.ai_visible_pending_approvals();
         let pending_approvals_for_timeline = pending_approvals.clone();
@@ -357,7 +357,7 @@ impl DiffViewer {
                                         div()
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child(format!("Active bookmark: {active_bookmark}")),
+                                            .child(format!("Active branch: {active_branch}")),
                                     )
                                     .child(
                                         div()

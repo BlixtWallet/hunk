@@ -36,12 +36,9 @@ use hunk_domain::diff::{DiffCell, DiffCellKind, DiffRowKind, SideBySideRow};
 use hunk_domain::markdown_preview::MarkdownPreviewBlock;
 use hunk_domain::state::{
     AiCollaborationModeSelection, AiServiceTierSelection, AppState, AppStateStore,
-    CachedBookmarkRevisionState, CachedChangedFileState, CachedLocalBranchState,
-    CachedWorkflowState,
+    CachedChangedFileState, CachedLocalBranchState, CachedWorkflowState,
 };
-use hunk_jj::jj::{
-    BookmarkRevision, ChangedFile, FileStatus, LineStats, LocalBranch, RepoSnapshotFingerprint,
-};
+use hunk_git::git::{ChangedFile, FileStatus, LineStats, LocalBranch, RepoSnapshotFingerprint};
 
 use ai_runtime::AiApprovalDecision;
 use ai_runtime::AiApprovalKind;
@@ -61,7 +58,8 @@ use data::{
 };
 use refresh_policy::{
     SnapshotRefreshBehavior, SnapshotRefreshPriority, SnapshotRefreshRequest, diff_state_changed,
-    repo_watch_refresh_request, should_reload_diff_after_snapshot,
+    line_stats_paths_from_dirty_paths, missing_line_stat_paths, repo_watch_refresh_request,
+    should_refresh_line_stats_after_snapshot, should_reload_diff_after_snapshot,
     should_reload_repo_tree_after_snapshot, should_run_cold_start_reconcile,
     should_scroll_selected_after_reload,
 };
@@ -113,23 +111,6 @@ struct RepoTreeContextMenuState {
     target_path: Option<String>,
     target_kind: RepoTreeNodeKind,
     position: Point<gpui::Pixels>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct WorkingCopyRecoveryCandidate {
-    source_revision_id: String,
-    source_bookmark: String,
-    switched_to_bookmark: String,
-    changed_file_count: usize,
-    unix_time: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PendingBookmarkSwitch {
-    source_bookmark: String,
-    target_bookmark: String,
-    changed_file_count: usize,
-    unix_time: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1010,13 +991,8 @@ struct DiffViewer {
     branch_has_upstream: bool,
     branch_ahead_count: usize,
     working_copy_commit_id: Option<String>,
-    can_undo_operation: bool,
-    can_redo_operation: bool,
     branches: Vec<LocalBranch>,
-    bookmark_revisions: Vec<BookmarkRevision>,
-    jj_workspace_scroll_handle: ScrollHandle,
-    pending_bookmark_switch: Option<PendingBookmarkSwitch>,
-    show_jj_terms_glossary: bool,
+    git_workspace_scroll_handle: ScrollHandle,
     workspace_view_mode: WorkspaceViewMode,
     ai_connection_state: AiConnectionState,
     ai_bootstrap_loading: bool,
@@ -1069,7 +1045,6 @@ struct DiffViewer {
     ai_composer_drafts: BTreeMap<AiComposerDraftKey, AiComposerDraft>,
     files: Vec<ChangedFile>,
     file_status_by_path: BTreeMap<String, FileStatus>,
-    revision_stack_collapsed: bool,
     branch_input_state: Entity<InputState>,
     commit_input_state: Entity<InputState>,
     commit_excluded_files: BTreeSet<String>,
@@ -1079,7 +1054,6 @@ struct DiffViewer {
     git_action_loading: bool,
     git_action_label: Option<String>,
     git_status_message: Option<String>,
-    working_copy_recovery_candidates: Vec<WorkingCopyRecoveryCandidate>,
     collapsed_files: BTreeSet<String>,
     selected_path: Option<String>,
     selected_status: Option<FileStatus>,

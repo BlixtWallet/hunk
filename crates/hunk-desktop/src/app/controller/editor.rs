@@ -98,7 +98,7 @@ impl DiffViewer {
         }
 
         let Some(repo_root) = self.repo_root.clone() else {
-            self.git_status_message = Some("No JJ repository available.".to_string());
+            self.git_status_message = Some("No Git repository available.".to_string());
             cx.notify();
             return;
         };
