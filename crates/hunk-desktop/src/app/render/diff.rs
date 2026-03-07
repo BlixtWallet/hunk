@@ -211,9 +211,7 @@ impl DiffViewer {
                         div()
                             .text_sm()
                             .text_color(cx.theme().muted_foreground)
-                            .child(
-                                "Choose a folder that contains a JJ repository (or a Git repo to auto-init JJ).",
-                            ),
+                            .child("Choose a folder that contains a Git repository."),
                     )
                     .child(
                         Button::new("open-project-empty-state")

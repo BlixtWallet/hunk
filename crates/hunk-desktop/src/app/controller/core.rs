@@ -319,7 +319,7 @@ impl DiffViewer {
         let diff_show_whitespace = config.show_whitespace;
         let diff_show_eol_markers = config.show_eol_markers;
         let branch_input_state = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Select or create bookmark")
+            InputState::new(window, cx).placeholder("Select or create branch")
         });
         let commit_input_state = cx
             .new(|cx| InputState::new(window, cx).multi_line(true).rows(4).placeholder("Commit message"));
@@ -372,9 +372,7 @@ impl DiffViewer {
             branches: Vec::new(),
             bookmark_revisions: Vec::new(),
             jj_workspace_scroll_handle: ScrollHandle::default(),
-            pending_bookmark_switch: None,
-            show_jj_terms_glossary: false,
-            workspace_view_mode: WorkspaceViewMode::JjWorkspace,
+            workspace_view_mode: WorkspaceViewMode::GitWorkspace,
             ai_connection_state: AiConnectionState::Disconnected,
             ai_bootstrap_loading: false,
             ai_status_message: None,
@@ -426,7 +424,6 @@ impl DiffViewer {
             ai_composer_drafts: BTreeMap::new(),
             files: Vec::new(),
             file_status_by_path: BTreeMap::new(),
-            revision_stack_collapsed: true,
             branch_input_state,
             commit_input_state,
             commit_excluded_files: BTreeSet::new(),
@@ -436,7 +433,6 @@ impl DiffViewer {
             git_action_loading: false,
             git_action_label: None,
             git_status_message: None,
-            working_copy_recovery_candidates: Vec::new(),
             collapsed_files: BTreeSet::new(),
             selected_path: None,
             selected_status: None,
@@ -1372,7 +1368,6 @@ impl DiffViewer {
         self.can_redo_operation = can_redo_operation;
         self.branches = branches;
         self.bookmark_revisions = bookmark_revisions;
-        self.pending_bookmark_switch = None;
         self.files = files;
         self.file_status_by_path = self
             .files
@@ -1392,7 +1387,6 @@ impl DiffViewer {
         }
         if root_changed {
             self.start_repo_watch(cx);
-            self.working_copy_recovery_candidates.clear();
             self.commit_excluded_files.clear();
             if full_refresh {
                 self.repo_tree.nodes.clear();
@@ -1497,12 +1491,9 @@ impl DiffViewer {
         self.can_redo_operation = false;
         self.branches.clear();
         self.bookmark_revisions.clear();
-        self.pending_bookmark_switch = None;
-        self.show_jj_terms_glossary = false;
         self.git_action_label = None;
         self.files.clear();
         self.file_status_by_path.clear();
-        self.working_copy_recovery_candidates.clear();
         self.last_commit_subject = None;
         self.commit_excluded_files.clear();
         self.selected_path = None;
@@ -1524,7 +1515,7 @@ impl DiffViewer {
         self.drag_selecting_rows = false;
         self.diff_rows = vec![message_row(
             DiffRowKind::Empty,
-            "Use File > Open Project... (Cmd/Ctrl+Shift+O) to load a JJ repository.",
+            "Use File > Open Project... (Cmd/Ctrl+Shift+O) to load a Git repository.",
         )];
         self.sync_diff_list_state();
         self.recompute_diff_layout();

@@ -22,7 +22,6 @@ impl DiffViewer {
                 h_flex()
                     .w_full()
                     .items_center()
-                    .justify_between()
                     .gap_2()
                     .child(
                         v_flex()
@@ -38,34 +37,10 @@ impl DiffViewer {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(
-                                        "Bookmarks, working-copy changes, revisions, and review actions.",
-                                    ),
+                                    .child("Branches, working tree changes, commits, and review actions."),
                             ),
-                    )
-                    .child({
-                        let view = cx.entity();
-                        let mut button = Button::new("jj-workspace-terms-toggle")
-                            .outline()
-                            .compact()
-                            .with_size(gpui_component::Size::Small)
-                            .rounded(px(7.0))
-                            .label("JJ Terms")
-                            .tooltip("Show a quick glossary of JJ terms used in this workspace.")
-                            .on_click(move |_, _, cx| {
-                                view.update(cx, |this, cx| {
-                                    this.toggle_jj_terms_glossary(cx);
-                                });
-                            });
-                        if self.show_jj_terms_glossary {
-                            button = button.primary();
-                        }
-                        button
-                    }),
+                    ),
             )
-            .when(self.show_jj_terms_glossary, |this| {
-                this.child(self.render_jj_terms_glossary_card(cx))
-            })
             .child(
                 div()
                     .flex_1()
@@ -91,62 +66,6 @@ impl DiffViewer {
                                     .scrollbar_show(ScrollbarShow::Always),
                             ),
                     ),
-            )
-            .into_any_element()
-    }
-
-    fn render_jj_terms_glossary_card(&self, cx: &mut Context<Self>) -> AnyElement {
-        let is_dark = cx.theme().mode.is_dark();
-        v_flex()
-            .w_full()
-            .gap_0p5()
-            .px_2()
-            .py_1()
-            .rounded(px(8.0))
-            .border_1()
-            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.90, 0.74))
-            .bg(hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.22, 0.30))
-            .child(
-                div()
-                    .text_xs()
-                    .font_semibold()
-                    .text_color(cx.theme().foreground)
-                    .child("JJ Terms"),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .whitespace_normal()
-                    .child("Working copy (`@`): your mutable local changes."),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .whitespace_normal()
-                    .child("Revision: an immutable committed change."),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .whitespace_normal()
-                    .child("Bookmark: a movable pointer to a revision."),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .whitespace_normal()
-                    .child("Publish: create remote tracking for a local bookmark."),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .whitespace_normal()
-                    .child("Sync: fetch remote bookmark updates into local history."),
             )
             .into_any_element()
     }

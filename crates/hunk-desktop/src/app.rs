@@ -115,23 +115,6 @@ struct RepoTreeContextMenuState {
     position: Point<gpui::Pixels>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct WorkingCopyRecoveryCandidate {
-    source_revision_id: String,
-    source_bookmark: String,
-    switched_to_bookmark: String,
-    changed_file_count: usize,
-    unix_time: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PendingBookmarkSwitch {
-    source_bookmark: String,
-    target_bookmark: String,
-    changed_file_count: usize,
-    unix_time: i64,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum AiComposerDraftKey {
     Thread(String),
@@ -1015,8 +998,6 @@ struct DiffViewer {
     branches: Vec<LocalBranch>,
     bookmark_revisions: Vec<BookmarkRevision>,
     jj_workspace_scroll_handle: ScrollHandle,
-    pending_bookmark_switch: Option<PendingBookmarkSwitch>,
-    show_jj_terms_glossary: bool,
     workspace_view_mode: WorkspaceViewMode,
     ai_connection_state: AiConnectionState,
     ai_bootstrap_loading: bool,
@@ -1069,7 +1050,6 @@ struct DiffViewer {
     ai_composer_drafts: BTreeMap<AiComposerDraftKey, AiComposerDraft>,
     files: Vec<ChangedFile>,
     file_status_by_path: BTreeMap<String, FileStatus>,
-    revision_stack_collapsed: bool,
     branch_input_state: Entity<InputState>,
     commit_input_state: Entity<InputState>,
     commit_excluded_files: BTreeSet<String>,
@@ -1079,7 +1059,6 @@ struct DiffViewer {
     git_action_loading: bool,
     git_action_label: Option<String>,
     git_status_message: Option<String>,
-    working_copy_recovery_candidates: Vec<WorkingCopyRecoveryCandidate>,
     collapsed_files: BTreeSet<String>,
     selected_path: Option<String>,
     selected_status: Option<FileStatus>,

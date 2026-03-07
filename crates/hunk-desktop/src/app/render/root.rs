@@ -77,7 +77,7 @@ impl DiffViewer {
             .into_any_element()
     }
 
-    fn render_jj_workspace_screen(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_git_workspace_screen(&mut self, cx: &mut Context<Self>) -> AnyElement {
         if self.repo_discovery_failed {
             return self.render_open_project_empty_state(cx);
         }
@@ -117,18 +117,18 @@ impl DiffViewer {
         let is_dark = cx.theme().mode.is_dark();
         let files_selected = self.workspace_view_mode == WorkspaceViewMode::Files;
         let diff_selected = self.workspace_view_mode == WorkspaceViewMode::Diff;
-        let jj_selected = self.workspace_view_mode == WorkspaceViewMode::JjWorkspace;
+        let git_selected = self.workspace_view_mode == WorkspaceViewMode::GitWorkspace;
         let ai_selected = self.workspace_view_mode == WorkspaceViewMode::Ai;
         let workspace_label = if ai_selected {
             "Codex AI Workspace"
-        } else if jj_selected {
+        } else if git_selected {
             "Git Workspace"
         } else if files_selected {
             "Files Workspace"
         } else {
             "Review Workspace"
         };
-        let active_bookmark = self
+        let active_branch = self
             .checked_out_bookmark_name()
             .map_or_else(|| "detached".to_string(), ToOwned::to_owned);
 
@@ -227,23 +227,23 @@ impl DiffViewer {
                     })
                     .child({
                         let view = view.clone();
-                        let mut button = Button::new("footer-workspace-jj")
+                        let mut button = Button::new("footer-workspace-git")
                             .compact()
                             .rounded(px(7.0))
-                            .label("Git (JJ)")
+                            .label("Git")
                             .min_w(px(52.0))
                             .h(px(28.0))
                             .tooltip("Switch to Git workspace (Cmd/Ctrl+3)")
                             .on_click(move |_, window, cx| {
                                 view.update(cx, |this, cx| {
                                     this.set_workspace_view_mode(
-                                        WorkspaceViewMode::JjWorkspace,
+                                        WorkspaceViewMode::GitWorkspace,
                                         cx,
                                     );
                                     this.focus_handle.focus(window, cx);
                                 });
                             });
-                        if jj_selected {
+                        if git_selected {
                             button = button.primary();
                         } else {
                             button = button.outline();
@@ -282,7 +282,7 @@ impl DiffViewer {
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child(format!("Active bookmark: {active_bookmark}")),
+                            .child(format!("Active branch: {active_branch}")),
                     ),
             )
             .child(
@@ -290,9 +290,9 @@ impl DiffViewer {
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .child(format!(
-                        "{} changed files • active bookmark: {}",
+                        "{} changed files • active branch: {}",
                         self.files.len(),
-                        active_bookmark
+                        active_branch
                     )),
             )
             .into_any_element()
@@ -346,7 +346,7 @@ impl Render for DiffViewer {
                     .child(match self.workspace_view_mode {
                         WorkspaceViewMode::Files => self.render_file_workspace_screen(window, cx),
                         WorkspaceViewMode::Diff => self.render_diff_workspace_screen(cx),
-                        WorkspaceViewMode::JjWorkspace => self.render_jj_workspace_screen(cx),
+                        WorkspaceViewMode::GitWorkspace => self.render_git_workspace_screen(cx),
                         WorkspaceViewMode::Ai => self.render_ai_workspace_screen(cx),
                     }),
             )

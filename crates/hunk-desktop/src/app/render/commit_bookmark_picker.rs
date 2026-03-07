@@ -19,9 +19,9 @@ impl DiffViewer {
             hunk_opacity(cx.theme().warning, is_dark, 0.30, 0.20)
         };
         let undo_tooltip = if is_tracked {
-            "Restore this file to the parent revision."
+            "Restore this file to HEAD."
         } else {
-            "Delete this untracked file from the working copy."
+            "Delete this untracked file from the working tree."
         };
         let row_bg = if is_selected {
             hunk_opacity(cx.theme().accent, is_dark, 0.22, 0.14)
@@ -51,9 +51,9 @@ impl DiffViewer {
                     .h(px(20.0))
                     .label(if include { "x" } else { "" })
                     .tooltip(if include {
-                        "Included in next revision"
+                        "Included in next commit"
                     } else {
-                        "Excluded from next revision"
+                        "Excluded from next commit"
                     })
                     .on_click(move |_, _, cx| {
                         cx.stop_propagation();

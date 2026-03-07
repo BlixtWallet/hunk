@@ -2,56 +2,49 @@ impl DiffViewer {
     fn render_jj_workspace_operations_panel_v2(&self, cx: &mut Context<Self>) -> AnyElement {
         let view = cx.entity();
         let is_dark = cx.theme().mode.is_dark();
-        let activate_bookmark_loading = self.git_action_loading_named("Activate bookmark");
-        let sync_loading = self.git_action_loading_named("Sync bookmark");
-        let publish_loading = self.git_action_loading_named("Publish bookmark");
-        let rename_loading = self.git_action_loading_named("Rename bookmark");
+        let activate_bookmark_loading = self.git_action_loading_named("Activate branch");
+        let sync_loading = self.git_action_loading_named("Sync branch");
+        let publish_loading = self.git_action_loading_named("Publish branch");
+        let rename_loading = self.git_action_loading_named("Rename branch");
         let open_review_loading = self.git_action_loading_named("Open PR/MR");
         let copy_review_loading = self.git_action_loading_named("Copy PR/MR URL");
-        let recover_loading = self.git_action_loading_named("Recover working copy");
-        let create_revision_loading = self.git_action_loading_named("Create revision");
-        let push_revisions_loading = self.git_action_loading_named("Push revisions");
-        let edit_description_loading = self.git_action_loading_named("Edit revision description");
+        let create_commit_loading = self.git_action_loading_named("Create commit");
+        let push_loading = self.git_action_loading_named("Push branch");
         let branch_syncable = self.can_run_active_bookmark_actions();
         let sync_disabled = !self.can_sync_current_bookmark();
         let publish_disabled = !self.can_publish_current_bookmark();
-        let push_revisions_available =
-            self.can_push_current_bookmark_revisions() || push_revisions_loading;
-        let push_revisions_disabled =
-            !push_revisions_available || (self.git_action_loading && !push_revisions_loading);
+        let push_available = self.can_push_current_bookmark_revisions() || push_loading;
+        let push_disabled = !push_available || (self.git_action_loading && !push_loading);
         let sync_tooltip = if !branch_syncable {
-            "Activate a bookmark before syncing."
+            "Activate a branch before syncing."
         } else if !self.branch_has_upstream {
-            "Publish this bookmark before syncing."
+            "Publish this branch before syncing."
         } else if !self.files.is_empty() {
-            "Commit or discard working-copy changes before syncing."
+            "Commit or discard working tree changes before syncing."
         } else {
-            "Fetch and update this bookmark from its upstream remote."
+            "Fetch and fast-forward this branch from its upstream remote."
         };
         let publish_state_tooltip = if self.branch_has_upstream {
-            "This bookmark already tracks upstream. Use Push Revisions below."
+            "This branch already tracks upstream. Use Push below."
         } else if !branch_syncable {
-            "Activate a bookmark before publishing."
+            "Activate a branch before publishing."
         } else if !self.files.is_empty() {
-            "Commit or discard working-copy changes before publishing."
+            "Commit or discard working tree changes before publishing."
         } else {
-            "Publish this bookmark to upstream and start tracking it."
+            "Publish this branch to upstream and start tracking it."
         };
         let active_review_blocker = self.active_review_action_blocker();
         let review_url_disabled = active_review_blocker.is_some();
-        let recovery_candidate = self.latest_working_copy_recovery_candidate_for_active_bookmark();
-        let pending_switch = self.pending_bookmark_switch();
-        let push_revisions_label = "Push Revisions";
-        let push_revisions_tooltip = if !branch_syncable {
-            "Activate a bookmark before pushing revisions."
+        let push_tooltip = if !branch_syncable {
+            "Activate a branch before pushing."
         } else if !self.branch_has_upstream {
-            "Publish this bookmark first, then push grouped revisions."
+            "Publish this branch before pushing."
         } else if self.branch_ahead_count == 0 {
-            "No local revisions to push."
+            "No local commits to push."
         } else if !self.files.is_empty() {
-            "Commit or discard working-copy changes before pushing revisions."
+            "Commit or discard working tree changes before pushing."
         } else {
-            "Push all unpushed revisions on this bookmark."
+            "Push all local commits on this branch."
         };
 
         let active_bookmark_label = self
@@ -95,11 +88,7 @@ impl DiffViewer {
         let commit_message_present = !self.commit_input_state.read(cx).value().trim().is_empty();
         let commit_disabled = !commit_message_present
             || included_count == 0
-            || (self.git_action_loading && !create_revision_loading);
-        let describe_tip_disabled = self.git_action_loading
-            || !commit_message_present
-            || !branch_syncable
-            || self.bookmark_revisions.is_empty();
+            || (self.git_action_loading && !create_commit_loading);
 
         let bookmark_input_empty = self.branch_input_state.read(cx).value().trim().is_empty();
         let rename_disabled =
@@ -120,96 +109,6 @@ impl DiffViewer {
                 0.24,
             ))
             .child(self.render_git_action_status_banner(cx))
-            .when_some(pending_switch, |this, pending| {
-                this.child(
-                    v_flex()
-                        .w_full()
-                        .gap_1()
-                        .px_2()
-                        .py_1()
-                        .rounded(px(8.0))
-                        .border_1()
-                        .border_color(hunk_opacity(cx.theme().warning, is_dark, 0.90, 0.72))
-                        .bg(hunk_opacity(cx.theme().warning, is_dark, 0.16, 0.10))
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_semibold()
-                                .text_color(cx.theme().foreground)
-                                .child("Switch Bookmark With Local Changes"),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().foreground)
-                                .whitespace_normal()
-                                .child(format!(
-                                    "{} files in working copy while switching {} -> {} at {}.",
-                                    pending.changed_file_count,
-                                    pending.source_bookmark,
-                                    pending.target_bookmark,
-                                    relative_time_label(Some(pending.unix_time))
-                                )),
-                        )
-                        .child(
-                            h_flex()
-                                .w_full()
-                                .items_center()
-                                .gap_1()
-                                .flex_wrap()
-                                .child({
-                                    let view = view.clone();
-                                    Button::new("confirm-switch-move-v2")
-                                        .primary()
-                                        .compact()
-                                        .with_size(gpui_component::Size::Small)
-                                        .rounded(px(7.0))
-                                        .loading(activate_bookmark_loading)
-                                        .label("Move Changes to Target")
-                                        .tooltip("Switch and carry current working-copy changes into the target bookmark.")
-                                        .disabled(self.git_action_loading)
-                                        .on_click(move |_, _, cx| {
-                                            view.update(cx, |this, cx| {
-                                                this.confirm_pending_bookmark_switch_move_changes(cx);
-                                            });
-                                        })
-                                })
-                                .child({
-                                    let view = view.clone();
-                                    Button::new("confirm-switch-snapshot-v2")
-                                        .outline()
-                                        .compact()
-                                        .with_size(gpui_component::Size::Small)
-                                        .rounded(px(7.0))
-                                        .loading(activate_bookmark_loading)
-                                        .label("Snapshot Here, Then Switch")
-                                        .tooltip("Keep current changes captured on the source bookmark, then switch to the target bookmark.")
-                                        .disabled(self.git_action_loading)
-                                        .on_click(move |_, _, cx| {
-                                            view.update(cx, |this, cx| {
-                                                this.confirm_pending_bookmark_switch_snapshot(cx);
-                                            });
-                                        })
-                                })
-                                .child({
-                                    let view = view.clone();
-                                    Button::new("cancel-pending-switch-v2")
-                                        .outline()
-                                        .compact()
-                                        .with_size(gpui_component::Size::Small)
-                                        .rounded(px(7.0))
-                                        .label("Cancel")
-                                        .tooltip("Cancel this bookmark switch and keep the current active bookmark.")
-                                        .disabled(self.git_action_loading)
-                                        .on_click(move |_, _, cx| {
-                                            view.update(cx, |this, cx| {
-                                                this.cancel_pending_bookmark_switch(cx);
-                                            });
-                                        })
-                                }),
-                        ),
-                )
-            })
             .child(self.render_workspace_changes_panel(cx))
             .child(
                 v_flex()
@@ -226,13 +125,13 @@ impl DiffViewer {
                         0.20,
                         0.26,
                     ))
-                    .child(
-                        div()
-                            .text_xs()
-                            .font_semibold()
-                            .text_color(cx.theme().muted_foreground)
-                            .child("Bookmarks"),
-                    )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .font_semibold()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child("Branches"),
+                            )
                     .child(
                         h_flex()
                             .w_full()
@@ -256,7 +155,7 @@ impl DiffViewer {
                                     ))
                                     .label(active_bookmark_chip_label)
                                     .dropdown_caret(true)
-                                    .tooltip("Select a bookmark to activate it.")
+                                    .tooltip("Select a branch to activate it.")
                                     .disabled(self.git_action_loading)
                                     .dropdown_menu({
                                         let view = view.clone();
@@ -364,7 +263,7 @@ impl DiffViewer {
                                     .rounded(px(7.0))
                                     .loading(activate_bookmark_loading)
                                     .label("Create / Activate")
-                                    .tooltip("Create a bookmark from the entered name or activate it if it already exists.")
+                                    .tooltip("Create a branch from the entered name or activate it if it already exists.")
                                     .disabled(create_or_activate_disabled)
                                     .on_click(move |_, window, cx| {
                                         view.update(cx, |this, cx| {
@@ -381,7 +280,7 @@ impl DiffViewer {
                                     .rounded(px(7.0))
                                     .loading(rename_loading)
                                     .label("Rename Active")
-                                    .tooltip("Rename the currently active bookmark to the entered name.")
+                                    .tooltip("Rename the currently active branch to the entered name.")
                                     .disabled(rename_disabled)
                                     .on_click(move |_, window, cx| {
                                         view.update(cx, |this, cx| {
@@ -400,7 +299,7 @@ impl DiffViewer {
                                     .loading(open_review_loading)
                                     .label("Open PR/MR")
                                     .tooltip(blocker.clone().unwrap_or_else(|| {
-                                        "Open a prefilled pull/merge request page for the active bookmark.".to_string()
+                                        "Open a prefilled pull/merge request page for the active branch.".to_string()
                                     }))
                                     .disabled(review_url_disabled)
                                     .on_click(move |_, _, cx| {
@@ -420,7 +319,7 @@ impl DiffViewer {
                                     .loading(copy_review_loading)
                                     .label("Copy Review URL")
                                     .tooltip(blocker.unwrap_or_else(|| {
-                                        "Copy a prefilled pull/merge request URL for the active bookmark.".to_string()
+                                        "Copy a prefilled pull/merge request URL for the active branch.".to_string()
                                     }))
                                     .disabled(review_url_disabled)
                                     .on_click(move |_, _, cx| {
@@ -431,78 +330,6 @@ impl DiffViewer {
                             }),
                     ),
             )
-            .when_some(recovery_candidate.as_ref(), |this, candidate| {
-                this.child(
-                    v_flex()
-                        .w_full()
-                        .gap_1()
-                        .px_2()
-                        .py_1()
-                        .rounded(px(8.0))
-                        .border_1()
-                        .border_color(hunk_opacity(cx.theme().border, is_dark, 0.90, 0.74))
-                        .bg(hunk_blend(
-                            cx.theme().background,
-                            cx.theme().muted,
-                            is_dark,
-                            0.18,
-                            0.24,
-                        ))
-                        .child(
-                            div()
-                                .w_full()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .whitespace_normal()
-                                .child(format!(
-                                    "{} files captured from {} -> {} at {}",
-                                    candidate.changed_file_count,
-                                    candidate.source_bookmark,
-                                    candidate.switched_to_bookmark,
-                                    relative_time_label(Some(candidate.unix_time))
-                                )),
-                        )
-                        .child(
-                            h_flex()
-                                .w_full()
-                                .items_center()
-                                .gap_1()
-                                .child({
-                                    let view = view.clone();
-                                    Button::new("recover-working-copy-v2")
-                                        .outline()
-                                        .compact()
-                                        .with_size(gpui_component::Size::Small)
-                                        .rounded(px(7.0))
-                                        .loading(recover_loading)
-                                        .label("Restore Captured Changes")
-                                        .tooltip("Restore files from the captured pre-switch working-copy revision.")
-                                        .disabled(self.git_action_loading)
-                                        .on_click(move |_, _, cx| {
-                                            view.update(cx, |this, cx| {
-                                                this.recover_latest_working_copy_for_active_bookmark(cx);
-                                            });
-                                        })
-                                })
-                                .child({
-                                    let view = view.clone();
-                                    Button::new("discard-working-copy-recovery-v2")
-                                        .outline()
-                                        .compact()
-                                        .with_size(gpui_component::Size::Small)
-                                        .rounded(px(7.0))
-                                        .label("Discard Record")
-                                        .tooltip("Discard this captured recovery record without restoring files.")
-                                        .disabled(self.git_action_loading)
-                                        .on_click(move |_, _, cx| {
-                                            view.update(cx, |this, cx| {
-                                                this.discard_latest_working_copy_recovery_candidate_for_active_bookmark(cx);
-                                            });
-                                        })
-                                }),
-                        ),
-                )
-            })
             .child(
                 v_flex()
                     .w_full()
@@ -538,7 +365,7 @@ impl DiffViewer {
                                         .compact()
                                         .rounded(px(7.0))
                                         .label("Include All")
-                                        .tooltip("Include every changed file in the next revision.")
+                                        .tooltip("Include every changed file in the next commit.")
                                         .disabled(self.git_action_loading)
                                         .on_click(move |_, _, cx| {
                                             view.update(cx, |this, cx| {
@@ -574,13 +401,13 @@ impl DiffViewer {
                                 Button::new("commit-staged-v2")
                                     .primary()
                                     .rounded(px(7.0))
-                                    .loading(create_revision_loading)
-                                    .label(if create_revision_loading {
-                                        "Creating Revision..."
+                                    .loading(create_commit_loading)
+                                    .label(if create_commit_loading {
+                                        "Creating Commit..."
                                     } else {
-                                        "Create Revision"
+                                        "Create Commit"
                                     })
-                                    .tooltip("Create a new revision from included files using the message above.")
+                                    .tooltip("Create a new commit from included files using the message above.")
                                     .disabled(commit_disabled)
                                     .on_click(move |_, window, cx| {
                                         view.update(cx, |this, cx| {
@@ -593,32 +420,17 @@ impl DiffViewer {
                                 Button::new("push-bookmark-revisions-v2")
                                     .outline()
                                     .rounded(px(7.0))
-                                    .loading(push_revisions_loading)
-                                    .label(if push_revisions_loading {
-                                        "Pushing Revisions..."
+                                    .loading(push_loading)
+                                    .label(if push_loading {
+                                        "Pushing..."
                                     } else {
-                                        push_revisions_label
+                                        "Push"
                                     })
-                                    .tooltip(push_revisions_tooltip)
-                                    .disabled(push_revisions_disabled)
+                                    .tooltip(push_tooltip)
+                                    .disabled(push_disabled)
                                     .on_click(move |_, _, cx| {
                                         view.update(cx, |this, cx| {
                                             this.push_current_bookmark_revisions(cx);
-                                        });
-                                    })
-                            })
-                            .child({
-                                let view = view.clone();
-                                Button::new("describe-tip-revision-v2")
-                                    .outline()
-                                    .rounded(px(7.0))
-                                    .loading(edit_description_loading)
-                                    .label("Edit Working Revision")
-                                    .tooltip("Rewrite the tip revision description for the active bookmark.")
-                                    .disabled(describe_tip_disabled)
-                                    .on_click(move |_, _, cx| {
-                                        view.update(cx, |this, cx| {
-                                            this.describe_current_bookmark_from_input(cx);
                                         });
                                     })
                             }),
@@ -640,7 +452,6 @@ impl DiffViewer {
                             .child(last_commit_text),
                     ),
             )
-            .child(self.render_revision_stack_panel(cx))
             .into_any_element()
     }
 }
