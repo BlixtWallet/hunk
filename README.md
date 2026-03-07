@@ -7,10 +7,11 @@ A cross-platform Git diff viewer and Codex orchestrator built with `gpui` + `gpu
 Nobody writes code anymore, people just review code. So we need the best diff viewer possible so that vibe engineers can review code and tell AI what to fix.
 Hunk is also has full codex integration so you can use Codex inside of Hunk instead of codex-cli or any other desktop app.
 
-<img width="3320" height="2032" alt="Hunk (Window) 2026-03-03 09:27 AM" src="https://github.com/user-attachments/assets/8c67f351-dde7-4d44-83ea-0c232a62a147" />
-<img width="3320" height="2032" alt="Hunk (Window) 2026-03-03 09:42 AM" src="https://github.com/user-attachments/assets/5de96595-aa50-4f4c-b62e-170454126f3b" />
-<img width="3320" height="2032" alt="Hunk (Window) 2026-03-03 09:44 AM" src="https://github.com/user-attachments/assets/313b421d-f53d-4b2e-8288-30dcc735e75c" />
-<img width="3320" height="2032" alt="Hunk (Window) 2026-03-04 10:13 AM" src="https://github.com/user-attachments/assets/47d8d7ac-e5aa-4113-9485-362f281dd07e" />
+<img width="3320" height="2032" alt="Hunk (Window) 2026-03-07 04:15 PM" src="https://github.com/user-attachments/assets/7d7284e1-3f2f-4bae-ae6b-bb51eea9e06b" />
+<img width="3320" height="2032" alt="Hunk (Window) 2026-03-07 04:16 PM" src="https://github.com/user-attachments/assets/ff696ad9-a0ef-4023-ae1d-3d2c6b5036de" />
+<img width="3320" height="2032" alt="Hunk (Window) 2026-03-07 04:36 PM" src="https://github.com/user-attachments/assets/2ae2fd5f-13b1-4270-b11f-d6d6c0dffe35" />
+<img width="3320" height="2032" alt="Hunk (Window) 2026-03-07 04:53 PM" src="https://github.com/user-attachments/assets/7270c825-61cb-4c64-b63a-17d038808269" />
+
 
 
 ## What it includes
