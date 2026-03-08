@@ -827,6 +827,182 @@ fn rollout_fallback_history_is_ingested_into_turn_items() {
 }
 
 #[test]
+fn resume_thread_reconciles_rollout_fallback_items_with_real_snapshot_items() {
+    let server = TestServer::spawn(Scenario::ResumeExternalThread);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service.ingest_rollout_fallback_history(
+        "external-thread".to_string(),
+        &[RolloutFallbackTurn {
+            turn_id: "resume-turn-1".to_string(),
+            completed: true,
+            items: vec![RolloutFallbackItem {
+                kind: "userMessage".to_string(),
+                content: "resume prompt\n[image] resume-screenshot.png".to_string(),
+            }],
+        }],
+    );
+
+    service
+        .resume_thread(
+            &mut session,
+            ThreadResumeParams {
+                thread_id: "external-thread".to_string(),
+                ..ThreadResumeParams::default()
+            },
+            TIMEOUT,
+        )
+        .expect("thread/resume should succeed");
+
+    let turn_items = service
+        .state()
+        .items
+        .values()
+        .filter(|item| item.thread_id == "external-thread" && item.turn_id == "resume-turn-1")
+        .collect::<Vec<_>>();
+    assert_eq!(turn_items.len(), 1);
+    assert_eq!(turn_items[0].id, "resume-item-1");
+    assert_eq!(
+        turn_items[0].content,
+        "resume prompt\n[image] resume-screenshot.png"
+    );
+    assert!(!turn_items[0].id.starts_with("rollout:"));
+
+    server.join();
+}
+
+#[test]
+fn streamed_item_deltas_replace_only_matching_rollout_fallback_items() {
+    let server = TestServer::spawn(Scenario::TurnStartStreaming);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service
+        .start_thread(&mut session, ThreadStartParams::default(), TIMEOUT)
+        .expect("thread/start should succeed");
+
+    service.ingest_rollout_fallback_history(
+        "thread-turn-stream".to_string(),
+        &[RolloutFallbackTurn {
+            turn_id: "turn-stream".to_string(),
+            completed: false,
+            items: vec![
+                RolloutFallbackItem {
+                    kind: "userMessage".to_string(),
+                    content: "prompt from rollout".to_string(),
+                },
+                RolloutFallbackItem {
+                    kind: "agentMessage".to_string(),
+                    content: "hello".to_string(),
+                },
+            ],
+        }],
+    );
+
+    service
+        .start_turn(
+            &mut session,
+            TurnStartParams {
+                thread_id: "thread-turn-stream".to_string(),
+                input: vec![UserInput::Text {
+                    text: "hello".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                ..TurnStartParams::default()
+            },
+            TIMEOUT,
+        )
+        .expect("turn/start should succeed");
+
+    let turn_items = service
+        .state()
+        .items
+        .values()
+        .filter(|item| item.thread_id == "thread-turn-stream" && item.turn_id == "turn-stream")
+        .collect::<Vec<_>>();
+    assert_eq!(turn_items.len(), 2);
+    assert!(turn_items.iter().any(|item| {
+        item.id == "item-stream" && item.kind == "agentMessage" && item.content == "hello"
+    }));
+    assert!(turn_items.iter().any(|item| {
+        item.id.starts_with("rollout:")
+            && item.kind == "userMessage"
+            && item.content == "prompt from rollout"
+    }));
+    assert!(!turn_items.iter().any(|item| {
+        item.id.starts_with("rollout:") && item.kind == "agentMessage" && item.content == "hello"
+    }));
+
+    server.join();
+}
+
+#[test]
+fn streamed_item_deltas_preserve_unmatched_rollout_fallback_items() {
+    let server = TestServer::spawn(Scenario::TurnStartStreaming);
+    let mut session = connect_initialized_session(server.port);
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+
+    service
+        .start_thread(&mut session, ThreadStartParams::default(), TIMEOUT)
+        .expect("thread/start should succeed");
+
+    service.ingest_rollout_fallback_history(
+        "thread-turn-stream".to_string(),
+        &[RolloutFallbackTurn {
+            turn_id: "turn-stream".to_string(),
+            completed: false,
+            items: vec![
+                RolloutFallbackItem {
+                    kind: "userMessage".to_string(),
+                    content: "keep fallback prompt".to_string(),
+                },
+                RolloutFallbackItem {
+                    kind: "agentMessage".to_string(),
+                    content: "hello".to_string(),
+                },
+            ],
+        }],
+    );
+
+    service
+        .start_turn(
+            &mut session,
+            TurnStartParams {
+                thread_id: "thread-turn-stream".to_string(),
+                input: vec![UserInput::Text {
+                    text: "keep fallback prompt".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                ..TurnStartParams::default()
+            },
+            TIMEOUT,
+        )
+        .expect("turn/start should succeed");
+
+    let turn_items = service
+        .state()
+        .items
+        .values()
+        .filter(|item| item.thread_id == "thread-turn-stream" && item.turn_id == "turn-stream")
+        .collect::<Vec<_>>();
+    assert_eq!(turn_items.len(), 2);
+    assert!(turn_items.iter().any(|item| {
+        item.id.starts_with("rollout:")
+            && item.kind == "userMessage"
+            && item.content == "keep fallback prompt"
+    }));
+    assert!(turn_items.iter().any(|item| {
+        item.id == "item-stream" && item.kind == "agentMessage" && item.content == "hello"
+    }));
+    assert!(!turn_items.iter().any(|item| {
+        item.id.starts_with("rollout:") && item.kind == "agentMessage" && item.content == "hello"
+    }));
+
+    server.join();
+}
+
+#[test]
 fn server_request_resolved_notification_is_recorded_for_known_thread() {
     let mut service = ThreadService::new(WORKSPACE_CWD.into());
     let _ = service.state_mut().apply_stream_event(StreamEvent {

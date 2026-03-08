@@ -407,6 +407,7 @@ impl ThreadService {
     fn apply_item_snapshot(&mut self, thread_id: &str, turn_id: &str, item: &ThreadItem) {
         let item_id = item.id().to_string();
         let item_key = item_storage_key(thread_id, turn_id, item_id.as_str());
+        let kind = thread_item_kind(item).to_string();
         let should_seed_content = self
             .state
             .items
@@ -420,7 +421,7 @@ impl ThreadService {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
             item_id: item_id.clone(),
-            kind: thread_item_kind(item).to_string(),
+            kind: kind.clone(),
         });
         if let Some(display_metadata) = thread_item_display_metadata(item) {
             self.apply_event(ReducerEvent::ItemDisplayMetadataUpdated {
@@ -439,6 +440,19 @@ impl ThreadService {
                 delta: seed_content,
             });
         }
+
+        let content = self
+            .state
+            .items
+            .get(item_key.as_str())
+            .map(|item| item.content.clone())
+            .unwrap_or_default();
+        self.reconcile_rollout_fallback_item(
+            thread_id,
+            turn_id,
+            kind.as_str(),
+            content.as_str(),
+        );
 
         if thread_item_is_complete(item) {
             self.apply_event(ReducerEvent::ItemCompleted {
@@ -477,6 +491,14 @@ impl ThreadService {
             item_id: item_id.to_string(),
             delta: delta.to_string(),
         });
+        let item_key = item_storage_key(thread_id, turn_id, item_id);
+        let content = self
+            .state
+            .items
+            .get(item_key.as_str())
+            .map(|item| item.content.clone())
+            .unwrap_or_default();
+        self.reconcile_rollout_fallback_item(thread_id, turn_id, kind, content.as_str());
     }
 
     fn ingest_thread_snapshot(&mut self, thread: &Thread) {
@@ -536,6 +558,35 @@ impl ThreadService {
         self.state
             .turn_diffs
             .retain(|turn_key, _| !removed_turn_keys.contains(turn_key));
+    }
+
+    fn reconcile_rollout_fallback_item(
+        &mut self,
+        thread_id: &str,
+        turn_id: &str,
+        kind: &str,
+        content: &str,
+    ) {
+        if content.is_empty() {
+            return;
+        }
+
+        let turn_item_key_prefix = item_storage_key(thread_id, turn_id, "");
+        let item_keys_to_remove = self
+            .state
+            .items
+            .range(turn_item_key_prefix.clone()..)
+            .take_while(|(item_key, _)| item_key.starts_with(turn_item_key_prefix.as_str()))
+            .filter(|(_, item)| {
+                is_rollout_fallback_item_id(item.id.as_str())
+                    && item.kind == kind
+                    && item.content == content
+            })
+            .map(|(item_key, _)| item_key.clone())
+            .collect::<Vec<_>>();
+        for item_key in item_keys_to_remove {
+            self.state.items.remove(item_key.as_str());
+        }
     }
 
     fn ensure_thread_in_workspace(&self, thread: &Thread) -> Result<()> {
@@ -606,4 +657,8 @@ impl ThreadService {
     fn cwd_key(&self) -> String {
         self.cwd.to_string_lossy().to_string()
     }
+}
+
+fn is_rollout_fallback_item_id(item_id: &str) -> bool {
+    item_id.starts_with("rollout:")
 }
