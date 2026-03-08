@@ -178,6 +178,9 @@ pub enum AiWorkerEvent {
 #[derive(Debug, Clone)]
 pub enum AiWorkerCommand {
     RefreshThreads,
+    RefreshThreadMetadata {
+        thread_id: String,
+    },
     RefreshAccount,
     RefreshRateLimits,
     RefreshSessionMetadata,
@@ -406,6 +409,11 @@ impl AiWorkerRuntime {
         match command {
             AiWorkerCommand::RefreshThreads => {
                 self.refresh_thread_list()?;
+                self.emit_snapshot_after_sync(event_tx)?;
+            }
+            AiWorkerCommand::RefreshThreadMetadata { thread_id } => {
+                self.service
+                    .read_thread(&mut self.session, thread_id, false, self.request_timeout)?;
                 self.emit_snapshot_after_sync(event_tx)?;
             }
             AiWorkerCommand::RefreshAccount => {

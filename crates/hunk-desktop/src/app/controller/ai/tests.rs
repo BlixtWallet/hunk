@@ -29,6 +29,7 @@ mod ai_tests {
     #[cfg(target_os = "windows")]
     use super::resolve_windows_command_path_from_env;
     use super::should_follow_timeline_output;
+    use super::thread_metadata_refresh_key_after_turn_completion;
     use super::should_reset_ai_timeline_measurements;
     use super::should_scroll_timeline_to_bottom_on_new_activity;
     use super::sorted_threads;
@@ -1307,6 +1308,78 @@ mod ai_tests {
 
         assert_eq!(thread_latest_timeline_sequence(&state, "thread-a"), 11);
         assert_eq!(thread_latest_timeline_sequence(&state, "missing"), 0);
+    }
+
+    #[test]
+    fn completed_untitled_thread_produces_refresh_key() {
+        let mut state = AiState::default();
+        state.threads.insert(
+            "thread-a".to_string(),
+            ThreadSummary {
+                id: "thread-a".to_string(),
+                cwd: "/repo".to_string(),
+                title: None,
+                status: ThreadLifecycleStatus::Idle,
+                created_at: 1,
+                updated_at: 1,
+                last_sequence: 1,
+            },
+        );
+        state.turns.insert(
+            "turn-a".to_string(),
+            hunk_codex::state::TurnSummary {
+                id: "turn-a".to_string(),
+                thread_id: "thread-a".to_string(),
+                status: hunk_codex::state::TurnStatus::Completed,
+                last_sequence: 7,
+            },
+        );
+
+        assert_eq!(
+            thread_metadata_refresh_key_after_turn_completion(&state, "thread-a").as_deref(),
+            Some("turn-a:completed")
+        );
+    }
+
+    #[test]
+    fn in_progress_or_titled_thread_has_no_refresh_key() {
+        let mut state = AiState::default();
+        state.threads.insert(
+            "thread-a".to_string(),
+            ThreadSummary {
+                id: "thread-a".to_string(),
+                cwd: "/repo".to_string(),
+                title: Some("Named".to_string()),
+                status: ThreadLifecycleStatus::Active,
+                created_at: 1,
+                updated_at: 1,
+                last_sequence: 1,
+            },
+        );
+        state.turns.insert(
+            "turn-a".to_string(),
+            hunk_codex::state::TurnSummary {
+                id: "turn-a".to_string(),
+                thread_id: "thread-a".to_string(),
+                status: hunk_codex::state::TurnStatus::InProgress,
+                last_sequence: 7,
+            },
+        );
+
+        assert_eq!(
+            thread_metadata_refresh_key_after_turn_completion(&state, "thread-a"),
+            None
+        );
+
+        state
+            .threads
+            .get_mut("thread-a")
+            .expect("thread should exist")
+            .title = None;
+        assert_eq!(
+            thread_metadata_refresh_key_after_turn_completion(&state, "thread-a"),
+            None
+        );
     }
 
     #[test]

@@ -1071,6 +1071,7 @@ struct DiffViewer {
     ai_thread_inline_toast: Option<String>,
     ai_thread_inline_toast_epoch: usize,
     ai_thread_inline_toast_task: Task<()>,
+    ai_thread_title_refresh_key_by_thread: BTreeMap<String, String>,
     ai_timeline_list_state: ListState,
     ai_timeline_list_row_count: usize,
     ai_timeline_visible_turn_limit_by_thread: BTreeMap<String, usize>,

@@ -87,6 +87,11 @@ pub enum ReducerEvent {
         created_at: Option<i64>,
         updated_at: Option<i64>,
     },
+    ThreadMetadataUpdated {
+        thread_id: String,
+        title: Option<String>,
+        updated_at: Option<i64>,
+    },
     ThreadStatusChanged {
         thread_id: String,
         status: ThreadLifecycleStatus,
@@ -285,6 +290,11 @@ impl AiState {
                 thread.last_sequence = sequence;
                 ApplyOutcome::Applied
             }
+            ReducerEvent::ThreadMetadataUpdated {
+                thread_id,
+                title,
+                updated_at,
+            } => self.apply_thread_metadata(sequence, thread_id, title, updated_at),
             ReducerEvent::ThreadStatusChanged { thread_id, status } => {
                 self.apply_thread_status(sequence, thread_id, status)
             }
@@ -523,6 +533,38 @@ impl AiState {
         }
 
         thread.status = status;
+        thread.last_sequence = sequence;
+        ApplyOutcome::Applied
+    }
+
+    fn apply_thread_metadata(
+        &mut self,
+        sequence: u64,
+        thread_id: String,
+        title: Option<String>,
+        updated_at: Option<i64>,
+    ) -> ApplyOutcome {
+        let thread = self
+            .threads
+            .entry(thread_id.clone())
+            .or_insert_with(|| ThreadSummary {
+                id: thread_id,
+                cwd: String::new(),
+                title: None,
+                status: ThreadLifecycleStatus::Idle,
+                created_at: 0,
+                updated_at: 0,
+                last_sequence: 0,
+            });
+
+        if sequence < thread.last_sequence {
+            return ApplyOutcome::Stale;
+        }
+
+        thread.title = title;
+        if let Some(updated_at) = updated_at {
+            thread.updated_at = updated_at;
+        }
         thread.last_sequence = sequence;
         ApplyOutcome::Applied
     }

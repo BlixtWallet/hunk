@@ -136,8 +136,12 @@ impl ThreadService {
                 }
             }
             ServerNotification::ThreadNameUpdated(notification) => {
-                if let Some(thread) = self.state.threads.get_mut(&notification.thread_id) {
-                    thread.title = notification.thread_name;
+                if self.is_known_thread(&notification.thread_id) {
+                    self.apply_event(ReducerEvent::ThreadMetadataUpdated {
+                        thread_id: notification.thread_id,
+                        title: notification.thread_name,
+                        updated_at: None,
+                    });
                 }
             }
             ServerNotification::TurnStarted(notification) => {

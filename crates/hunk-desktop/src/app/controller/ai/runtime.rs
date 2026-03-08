@@ -58,6 +58,7 @@ impl DiffViewer {
         self.ai_command_tx = None;
         self.ai_worker_workspace_key = None;
         self.join_ai_worker_thread("event stream disconnect");
+        self.ai_thread_title_refresh_key_by_thread.clear();
         self.ai_pending_approvals.clear();
         self.ai_pending_user_inputs.clear();
         self.ai_pending_user_input_answers.clear();
@@ -111,6 +112,7 @@ impl DiffViewer {
                 self.ai_command_tx = None;
                 self.ai_worker_workspace_key = None;
                 self.join_ai_worker_thread("fatal worker event");
+                self.ai_thread_title_refresh_key_by_thread.clear();
                 self.ai_pending_approvals.clear();
                 self.ai_pending_user_inputs.clear();
                 self.ai_pending_user_input_answers.clear();
@@ -188,6 +190,8 @@ impl DiffViewer {
         self.ai_collaboration_modes = collaboration_modes;
         self.ai_include_hidden_models = include_hidden_models;
         self.ai_mad_max_mode = mad_max_mode;
+        self.ai_thread_title_refresh_key_by_thread
+            .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
         self.ai_timeline_visible_turn_limit_by_thread
             .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
 
@@ -274,7 +278,48 @@ impl DiffViewer {
         if previous_draft_key != self.current_ai_composer_draft_key() {
             self.restore_ai_visible_composer_from_current_draft(cx);
         }
+        self.maybe_refresh_selected_thread_metadata(cx);
         self.sync_ai_session_selection_from_state();
+    }
+
+    fn maybe_refresh_selected_thread_metadata(&mut self, cx: &mut Context<Self>) {
+        let Some(thread_id) = self.ai_selected_thread_id.clone() else {
+            return;
+        };
+
+        let Some(refresh_key) = thread_metadata_refresh_key_after_turn_completion(
+            &self.ai_state_snapshot,
+            thread_id.as_str(),
+        ) else {
+            if self
+                .ai_state_snapshot
+                .threads
+                .get(thread_id.as_str())
+                .and_then(|thread| thread.title.as_deref())
+                .is_some_and(|title| !title.trim().is_empty())
+            {
+                self.ai_thread_title_refresh_key_by_thread
+                    .remove(thread_id.as_str());
+            }
+            return;
+        };
+        if self
+            .ai_thread_title_refresh_key_by_thread
+            .get(thread_id.as_str())
+            .is_some_and(|attempted_key| attempted_key == &refresh_key)
+        {
+            return;
+        }
+
+        if self.send_ai_worker_command_if_running(
+            AiWorkerCommand::RefreshThreadMetadata {
+                thread_id: thread_id.clone(),
+            },
+            cx,
+        ) {
+            self.ai_thread_title_refresh_key_by_thread
+                .insert(thread_id, refresh_key);
+        }
     }
 
     fn sync_ai_in_progress_turn_started_at(&mut self) {

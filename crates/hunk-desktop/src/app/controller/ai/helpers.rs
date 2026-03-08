@@ -384,6 +384,42 @@ fn should_sync_selected_thread_from_active_thread(
     selection_missing_or_invalid || previous_active_thread_id != Some(active_thread_id)
 }
 
+fn thread_metadata_refresh_key_after_turn_completion(
+    state: &hunk_codex::state::AiState,
+    thread_id: &str,
+) -> Option<String> {
+    let thread = state.threads.get(thread_id)?;
+    if thread
+        .title
+        .as_deref()
+        .is_some_and(|title| !title.trim().is_empty())
+    {
+        return None;
+    }
+
+    let mut turn_states = state
+        .turns
+        .values()
+        .filter(|turn| turn.thread_id == thread_id)
+        .map(|turn| {
+            let status = match turn.status {
+                hunk_codex::state::TurnStatus::InProgress => "in-progress",
+                hunk_codex::state::TurnStatus::Completed => "completed",
+            };
+            format!("{}:{status}", turn.id)
+        })
+        .collect::<Vec<_>>();
+    if turn_states.is_empty() {
+        return None;
+    }
+    if turn_states.iter().any(|state| state.ends_with(":in-progress")) {
+        return None;
+    }
+
+    turn_states.sort();
+    Some(turn_states.join("|"))
+}
+
 fn thread_latest_timeline_sequence(state: &hunk_codex::state::AiState, thread_id: &str) -> u64 {
     let thread_sequence = state
         .threads

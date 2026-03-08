@@ -37,6 +37,7 @@ use codex_app_server_protocol::ThreadForkResponse;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadLoadedListResponse;
+use codex_app_server_protocol::ThreadNameUpdatedNotification;
 use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
@@ -586,6 +587,37 @@ fn known_thread_not_loaded_status_is_preserved() {
             .status,
         ThreadLifecycleStatus::NotLoaded
     );
+}
+
+#[test]
+fn thread_name_updated_notification_updates_known_thread_title() {
+    let mut service = ThreadService::new(WORKSPACE_CWD.into());
+    let _ = service.state_mut().apply_stream_event(StreamEvent {
+        sequence: 1,
+        dedupe_key: None,
+        payload: ReducerEvent::ThreadStarted {
+            thread_id: "thread-known".to_string(),
+            cwd: WORKSPACE_CWD.to_string(),
+            title: None,
+            created_at: Some(21),
+            updated_at: Some(42),
+        },
+    });
+
+    service.apply_server_notification(ServerNotification::ThreadNameUpdated(
+        ThreadNameUpdatedNotification {
+            thread_id: "thread-known".to_string(),
+            thread_name: Some("First prompt summary".to_string()),
+        },
+    ));
+
+    let thread = service
+        .state()
+        .threads
+        .get("thread-known")
+        .expect("thread should exist");
+    assert_eq!(thread.title.as_deref(), Some("First prompt summary"));
+    assert_eq!(thread.updated_at, 42);
 }
 
 #[test]

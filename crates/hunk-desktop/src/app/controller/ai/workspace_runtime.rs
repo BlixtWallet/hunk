@@ -31,6 +31,7 @@ impl DiffViewer {
         self.ai_status_message = None;
         self.ai_state_snapshot = hunk_codex::state::AiState::default();
         self.ai_selected_thread_id = None;
+        self.ai_thread_title_refresh_key_by_thread.clear();
         self.ai_pending_approvals.clear();
         self.ai_pending_user_inputs.clear();
         self.ai_pending_user_input_answers.clear();

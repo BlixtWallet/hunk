@@ -390,6 +390,11 @@ mod ai_tests {
             &AiWorkerCommand::RefreshThreads
         ));
         assert!(command_can_retry_after_reconnect(
+            &AiWorkerCommand::RefreshThreadMetadata {
+                thread_id: "thread-1".to_string(),
+            }
+        ));
+        assert!(command_can_retry_after_reconnect(
             &AiWorkerCommand::SelectThread {
                 thread_id: "thread-1".to_string(),
             }

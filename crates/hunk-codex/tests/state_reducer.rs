@@ -429,6 +429,40 @@ fn item_display_metadata_updates_are_recorded() {
 }
 
 #[test]
+fn thread_metadata_updates_change_title_without_resetting_thread_fields() {
+    let mut state = AiState::default();
+
+    state.apply_stream_events(vec![
+        event(
+            1,
+            Some("thread-start:t1"),
+            ReducerEvent::ThreadStarted {
+                thread_id: "t1".to_string(),
+                cwd: "/repo".to_string(),
+                title: None,
+                created_at: Some(10),
+                updated_at: Some(20),
+            },
+        ),
+        event(
+            2,
+            Some("thread-metadata:t1"),
+            ReducerEvent::ThreadMetadataUpdated {
+                thread_id: "t1".to_string(),
+                title: Some("Summarized title".to_string()),
+                updated_at: Some(30),
+            },
+        ),
+    ]);
+
+    let thread = state.threads.get("t1").expect("thread must exist");
+    assert_eq!(thread.cwd, "/repo");
+    assert_eq!(thread.created_at, 10);
+    assert_eq!(thread.updated_at, 30);
+    assert_eq!(thread.title.as_deref(), Some("Summarized title"));
+}
+
+#[test]
 fn stale_item_display_metadata_update_is_ignored() {
     let mut state = AiState::default();
 
