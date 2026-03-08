@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result};
@@ -26,7 +25,8 @@ pub struct RecentCommitsSnapshot {
 pub struct RecentCommitsFingerprint {
     root: PathBuf,
     author_key: Option<String>,
-    local_branch_tip_ids: Vec<String>,
+    head_ref_name: Option<String>,
+    head_commit_id: Option<String>,
     limit: usize,
 }
 
@@ -150,11 +150,22 @@ fn recent_commits_context(
 )> {
     let repo = open_repo(path)?;
     let author = RecentCommitAuthorMatcher::from_repo(repo.repository())?;
-    let (tip_ids, tip_id_strings) = local_branch_tip_ids(repo.repository())?;
+    let head_ref_name = repo
+        .repository()
+        .head_name()
+        .context("failed to resolve Git HEAD name for recent commits")?
+        .map(|name| name.to_string());
+    let head_commit_id = repo.repository().head_id().ok().map(|id| id.detach());
+    let tip_ids = head_commit_id
+        .as_ref()
+        .cloned()
+        .into_iter()
+        .collect::<Vec<_>>();
     let fingerprint = RecentCommitsFingerprint {
         root: repo.root().to_path_buf(),
         author_key: author.key.clone(),
-        local_branch_tip_ids: tip_id_strings,
+        head_ref_name,
+        head_commit_id: head_commit_id.map(|id| id.to_string()),
         limit,
     };
     Ok((repo, author, tip_ids, fingerprint))
@@ -210,33 +221,6 @@ fn collect_recent_authored_commits(
     }
 
     Ok(commits)
-}
-
-fn local_branch_tip_ids(repo: &gix::Repository) -> Result<(Vec<gix::ObjectId>, Vec<String>)> {
-    let refs_platform = repo
-        .references()
-        .context("failed to access Git references for recent commits")?;
-    let refs = refs_platform
-        .local_branches()
-        .context("failed to iterate local Git branches for recent commits")?
-        .peeled()
-        .context("failed to enable peeled Git branch iteration for recent commits")?;
-    let mut tip_ids_by_hex = BTreeMap::<String, gix::ObjectId>::new();
-
-    for reference in refs {
-        let mut reference = reference
-            .map_err(|err| anyhow::anyhow!("failed to read Git branch reference: {err}"))?;
-        let Ok(tip_id) = reference.peel_to_id() else {
-            continue;
-        };
-        tip_ids_by_hex
-            .entry(tip_id.to_string())
-            .or_insert_with(|| tip_id.detach());
-    }
-
-    let tip_ids = tip_ids_by_hex.values().cloned().collect::<Vec<_>>();
-    let tip_id_strings = tip_ids_by_hex.into_keys().collect::<Vec<_>>();
-    Ok((tip_ids, tip_id_strings))
 }
 
 fn normalize_identity_value(value: &gix::bstr::BStr) -> Option<String> {

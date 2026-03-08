@@ -180,6 +180,7 @@ impl DiffViewer {
         let epoch = self.next_recent_commits_epoch();
         self.recent_commits_loading = true;
         self.recent_commits_active_request = Some(request);
+        let show_loading_state = self.recent_commits.is_empty();
         let refresh_root = self
             .project_path
             .clone()
@@ -192,7 +193,9 @@ impl DiffViewer {
             request.priority.as_str(),
             refresh_root.display()
         );
-        cx.notify();
+        if show_loading_state {
+            cx.notify();
+        }
 
         self.recent_commits_task = cx.spawn(async move |this, cx| {
             let started_at = Instant::now();
