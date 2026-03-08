@@ -4,6 +4,8 @@
 
 This document breaks the Git worktrees feature into implementation phases for Hunk.
 
+Performance is a hard requirement for this entire feature. Regressions in Git tab and Review tab responsiveness are not acceptable. The app should continue to feel extremely fast, and any design that adds noticeable latency, jank, or unnecessary refresh churn should be treated as incorrect until fixed.
+
 V1 decisions:
 
 - Keep core worktree logic inside `crates/hunk-git`.
@@ -20,6 +22,15 @@ V1 decisions:
 - Keep all Git behavior path-driven so existing snapshot, tree, history, and publish flows can work against either the primary checkout or a linked worktree.
 - Replace the Review tab's implicit `HEAD vs working copy` model with a real compare-source abstraction.
 - Keep AI workspace semantics aligned with the current cwd-based runtime by binding drafts and threads to exact target paths.
+- Preserve Hunk's current performance bar in the Git and Review tabs; performance regressions are release blockers for this feature.
+
+## Performance Requirements
+
+- Git tab and Review tab performance are critical and must not regress as part of worktree support.
+- Snapshot loading, changed-file loading, compare-source switching, repo tree refresh, and diff loading must remain incremental and avoid unnecessary full reloads.
+- Worktree support must not introduce extra filesystem churn, nested-repo scanning overhead, or redundant background work for inactive targets.
+- UI interactions such as switching targets, switching compare sources, opening the Git tab, and opening the Review tab should remain immediate and feel lightweight.
+- Any implementation choice that harms responsiveness in the hot path should be rejected in favor of a faster design, even if it is more convenient to implement.
 
 ## Phase 1: Workspace Target Foundation
 
@@ -28,8 +39,9 @@ V1 decisions:
 - [ ] Add repo-local managed-worktree path helpers for `.hunkdiff/worktrees`.
 - [ ] Make `.hunkdiff/worktrees` an explicit ignored subtree for repo tree rendering, status scans, and filesystem watch filtering.
 - [ ] Extend persisted app state for per-primary-repo selected target and Review compare defaults.
+- [ ] Review the target model and path rules specifically for hot-path cost so inactive worktrees do not add scan, watch, or refresh overhead to the active workspace.
 - [ ] Add targeted tests for state serialization, target id stability, canonical-path handling, and ignore-path behavior.
-- [ ] Deep code review of all Phase 1 code to check for path identity bugs, stale-state risks, bad abstractions, and refactor opportunities.
+- [ ] Deep code review of all Phase 1 code to check for path identity bugs, stale-state risks, bad abstractions, performance hazards, and refactor opportunities.
 
 ## Phase 2: Git Backend Worktree Catalog and Creation
 
@@ -39,8 +51,9 @@ V1 decisions:
 - [ ] Validate worktree names, branch names, path collisions, and branch collisions during creation.
 - [ ] Keep the read path `gix`-first and use narrow `git2` fallback only if required for worktree creation.
 - [ ] Ensure primary checkout scans do not surface managed worktrees as ordinary nested repos.
+- [ ] Measure and review backend hot paths so worktree discovery and target catalog refresh do not slow down normal Git tab refreshes.
 - [ ] Add targeted tests for worktree listing, managed-worktree creation, canonical-root resolution, collision handling, and externally-created linked worktrees.
-- [ ] Deep code review of all Phase 2 code to check for Git correctness bugs, backend coupling, unsafe filesystem behavior, and code that should be simplified.
+- [ ] Deep code review of all Phase 2 code to check for Git correctness bugs, backend coupling, unsafe filesystem behavior, performance regressions, and code that should be simplified.
 
 ## Phase 3: Git Tab Worktree UX and Active Target Switching
 
@@ -50,8 +63,9 @@ V1 decisions:
 - [ ] Persist and restore the last selected target for each primary repository.
 - [ ] Keep existing branch controls operating on the active target root so branch activation, publish, push, sync, and PR/MR flows remain target-specific.
 - [ ] Ensure switching targets updates the Files tab and any selected/open file state safely.
+- [ ] Profile target switching and Git tab refresh behavior to ensure the tab still feels instant and does not accumulate extra work across multiple linked worktrees.
 - [ ] Add targeted desktop tests for target switching, cache hydration, watcher rebinding, file tree refresh, and editor refresh after target changes.
-- [ ] Deep code review of all Phase 3 code to check for refresh ordering bugs, cache invalidation mistakes, UI state drift, and duplicated logic that should be consolidated.
+- [ ] Deep code review of all Phase 3 code to check for refresh ordering bugs, cache invalidation mistakes, UI state drift, duplicated logic, and any Git tab performance regressions.
 
 ## Phase 4: Review Compare Model
 
@@ -62,8 +76,9 @@ V1 decisions:
 - [ ] Allow manual Review comparisons for branch vs active checkout, branch vs worktree, and worktree vs worktree.
 - [ ] Make diff headers, labels, changed-file lists, and refresh fingerprints compare-aware instead of active-root-only.
 - [ ] Keep comment authoring enabled only for the default `active target vs base branch` comparison and make custom compare pairs read-only for comments in v1.
+- [ ] Validate that compare-source switching, diff rendering, and changed-file tree updates remain fast enough that the Review tab still feels immediate under large diffs and large repositories.
 - [ ] Add targeted tests for compare-source resolution, diff loading, base-branch fallback behavior, worktree-to-worktree diffs, and comment disabling on custom compare pairs.
-- [ ] Deep code review of all Phase 4 code to check for compare-semantics bugs, stale diff state, poor source-identity modeling, and refactors needed in the Review pipeline.
+- [ ] Deep code review of all Phase 4 code to check for compare-semantics bugs, stale diff state, poor source-identity modeling, Review tab performance regressions, and refactors needed in the Review pipeline.
 
 ## Phase 5: AI Target Binding
 
@@ -75,7 +90,7 @@ V1 decisions:
 - [ ] Keep existing threads immutable after start so later workspace switching does not retarget an already-started thread.
 - [ ] Persist AI draft and session preferences per exact target path.
 - [ ] Add targeted tests for draft target selection, thread immutability, worker rebinding by path, and shortcut behavior.
-- [ ] Deep code review of all Phase 5 code to check for workspace/thread isolation bugs, lifecycle races, incorrect rebinding, and code that should be cleaned up before rollout.
+- [ ] Deep code review of all Phase 5 code to check for workspace/thread isolation bugs, lifecycle races, incorrect rebinding, performance side effects from target rebinding, and code that should be cleaned up before rollout.
 
 ## Phase 6: Polish, Documentation, and Final Validation
 
@@ -83,11 +98,12 @@ V1 decisions:
 - [ ] Clean up temporary or transitional code introduced during earlier phases.
 - [ ] Polish labels, loading states, disabled states, and error messaging so worktree context is always visible and unambiguous.
 - [ ] Update user-facing docs as needed to describe managed worktree behavior, Review compare behavior, and AI target semantics.
+- [ ] Run performance validation focused on Git tab refresh, Review tab compare switching, large-diff rendering, and multi-worktree repos; treat regressions as release blockers.
 - [ ] Run final workspace verification once at the end:
 - [ ] `cargo build --workspace`
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings`
 - [ ] `cargo test --workspace`
-- [ ] Deep code review of the full feature set to check for cross-phase regressions, hidden bugs, bad code, stale state, and refactor opportunities before considering the feature complete.
+- [ ] Deep code review of the full feature set to check for cross-phase regressions, hidden bugs, bad code, stale state, performance regressions, and refactor opportunities before considering the feature complete.
 
 ## Expected Public Interface Changes
 
