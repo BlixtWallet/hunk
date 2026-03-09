@@ -130,6 +130,15 @@ impl SharedHostLease {
             .unwrap_or(self.fallback_port)
     }
 
+    pub fn pid(&self) -> Option<u32> {
+        let mut guard = shared_hosts()
+            .lock()
+            .expect("shared host registry mutex poisoned");
+        guard
+            .get_mut(&self.key)
+            .and_then(|entry| entry.runtime.pid())
+    }
+
     pub fn ensure_running(&self, timeout: Duration) -> Result<()> {
         let mut guard = shared_hosts()
             .lock()
