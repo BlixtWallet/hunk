@@ -106,11 +106,17 @@ impl DiffViewer {
     }
 
     fn refresh_after_git_action(&mut self, action_name: &'static str, cx: &mut Context<Self>) {
-        if self.selected_git_workspace_root() == self.repo_root {
+        let plan = crate::app::refresh_policy::post_git_action_refresh_plan(
+            action_name,
+            self.selected_git_workspace_root() == self.repo_root,
+        );
+        if plan.refresh_primary_snapshot {
             self.request_snapshot_refresh_workflow_only(true, cx);
         }
-        self.request_git_workspace_refresh(true, cx);
-        if matches!(action_name, "Activate branch" | "Sync branch") {
+        if plan.refresh_git_workspace {
+            self.request_git_workspace_refresh(false, cx);
+        }
+        if plan.refresh_recent_commits {
             self.request_recent_commits_refresh(true, cx);
         }
     }
@@ -127,21 +133,27 @@ impl DiffViewer {
 
         self.staged_commit_files.clear();
         self.last_commit_subject = Some(subject.to_string());
+        self.remove_paths_from_git_workspace(&committed_paths);
+
+        if self.git_workspace.branch_has_upstream {
+            self.git_workspace.branch_ahead_count =
+                self.git_workspace.branch_ahead_count.saturating_add(1);
+        }
+    }
+
+    fn remove_paths_from_git_workspace(&mut self, removed_paths: &BTreeSet<&str>) {
         self.git_workspace
             .files
-            .retain(|file| !committed_paths.contains(file.path.as_str()));
+            .retain(|file| !removed_paths.contains(file.path.as_str()));
         self.git_workspace.file_status_by_path = self
             .git_workspace
             .files
             .iter()
             .map(|file| (file.path.clone(), file.status))
             .collect();
-        self.git_workspace.file_line_stats.retain(|path, _| {
-            self.git_workspace
-                .files
-                .iter()
-                .any(|file| file.path == *path)
-        });
+        self.git_workspace
+            .file_line_stats
+            .retain(|path, _| !removed_paths.contains(path.as_str()));
         self.git_workspace.overall_line_stats = Self::sum_line_stats(
             self.git_workspace
                 .files
@@ -153,10 +165,38 @@ impl DiffViewer {
                         .copied()
                 }),
         );
+        self.staged_commit_files
+            .retain(|path| !removed_paths.contains(path.as_str()));
+    }
 
-        if self.git_workspace.branch_has_upstream {
-            self.git_workspace.branch_ahead_count =
-                self.git_workspace.branch_ahead_count.saturating_add(1);
+    fn apply_optimistic_restore_success(&mut self, file_path: &str) {
+        let removed_paths = [file_path].into_iter().collect::<BTreeSet<_>>();
+        self.remove_paths_from_git_workspace(&removed_paths);
+    }
+
+    fn apply_optimistic_publish_success(&mut self) {
+        self.git_workspace.branch_has_upstream = true;
+        self.git_workspace.branch_ahead_count = 0;
+        self.git_workspace.branch_behind_count = 0;
+        if self.selected_git_workspace_root() == self.repo_root {
+            self.branch_has_upstream = true;
+            self.branch_ahead_count = 0;
+            self.branch_behind_count = 0;
+        }
+    }
+
+    fn apply_optimistic_push_success(&mut self) {
+        self.git_workspace.branch_ahead_count = 0;
+        if self.selected_git_workspace_root() == self.repo_root {
+            self.branch_ahead_count = 0;
+        }
+    }
+
+    fn apply_optimistic_git_action_success(&mut self, action_name: &'static str) {
+        match action_name {
+            "Publish branch" => self.apply_optimistic_publish_success(),
+            "Push branch" => self.apply_optimistic_push_success(),
+            _ => {}
         }
     }
 
@@ -226,6 +266,7 @@ impl DiffViewer {
                             } else {
                                 Some(message)
                             };
+                            this.apply_optimistic_git_action_success(action_name);
                             this.refresh_after_git_action(action_name, cx);
                         }
                         Err(err) => {
@@ -830,7 +871,6 @@ impl DiffViewer {
                                 error!("failed to clear commit input after commit: {err:#}");
                             }
 
-                            this.request_recent_commits_refresh(true, cx);
                             this.refresh_after_git_action("Create commit", cx);
                         }
                         Err(err) => {
@@ -874,19 +914,80 @@ impl DiffViewer {
             return;
         }
 
-        self.run_git_action_with_refresh(
-            "Undo file changes",
-            cx,
-            move |repo_root| {
-                restore_working_copy_paths(&repo_root, std::slice::from_ref(&file_path))?;
-                let message = if is_tracked {
-                    format!("Restored {}", file_path)
-                } else {
-                    format!("Removed untracked {}", file_path)
-                };
-                Ok(message)
-            },
-        );
+        if self.git_controls_busy() {
+            return;
+        }
+
+        let Some(repo_root) = self.selected_git_workspace_root() else {
+            self.git_status_message = Some("No Git repository available.".to_string());
+            cx.notify();
+            return;
+        };
+
+        let epoch = self.begin_git_action("Undo file changes", cx);
+        let started_at = Instant::now();
+
+        self.git_action_task = cx.spawn(async move |this, cx| {
+            let file_path_for_action = file_path.clone();
+            let (execution_elapsed, result) = cx
+                .background_executor()
+                .spawn(async move {
+                    let execution_started_at = Instant::now();
+                    let result = restore_working_copy_paths(
+                        &repo_root,
+                        std::slice::from_ref(&file_path_for_action),
+                    )
+                    .map(|_| {
+                        if is_tracked {
+                            format!("Restored {}", file_path_for_action)
+                        } else {
+                            format!("Removed untracked {}", file_path_for_action)
+                        }
+                    });
+                    (execution_started_at.elapsed(), result)
+                })
+                .await;
+
+            if let Some(this) = this.upgrade() {
+                let restored_file_path = file_path.clone();
+                this.update(cx, move |this, cx| {
+                    if epoch != this.git_action_epoch {
+                        return;
+                    }
+
+                    let total_elapsed = started_at.elapsed();
+                    this.finish_git_action();
+                    match result {
+                        Ok(message) => {
+                            debug!(
+                                "git action complete: epoch={} action=Undo file changes exec_elapsed_ms={} total_elapsed_ms={}",
+                                epoch,
+                                execution_elapsed.as_millis(),
+                                total_elapsed.as_millis()
+                            );
+                            this.git_status_message = Some(message);
+                            this.apply_optimistic_restore_success(restored_file_path.as_str());
+                            this.refresh_after_git_action("Undo file changes", cx);
+                        }
+                        Err(err) => {
+                            error!(
+                                "git action failed: epoch={} action=Undo file changes exec_elapsed_ms={} total_elapsed_ms={} err={err:#}",
+                                epoch,
+                                execution_elapsed.as_millis(),
+                                total_elapsed.as_millis()
+                            );
+                            this.git_status_message = Some(format!("Git error: {err:#}"));
+                            Self::push_error_notification(
+                                format!("Undo file changes failed: {}", err),
+                                cx,
+                            );
+                        }
+                    }
+
+                    cx.notify();
+                });
+            }
+        });
     }
 
 }

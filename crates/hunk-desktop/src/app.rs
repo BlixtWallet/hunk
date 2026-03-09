@@ -67,11 +67,11 @@ use data::{
     RepoTreeRow, WorkspaceSwitchAction, WorkspaceViewMode,
 };
 use refresh_policy::{
-    SnapshotRefreshBehavior, SnapshotRefreshPriority, SnapshotRefreshRequest, diff_state_changed,
-    line_stats_paths_from_dirty_paths, missing_line_stat_paths, repo_watch_refresh_request,
-    should_refresh_line_stats_after_snapshot, should_reload_diff_after_snapshot,
-    should_reload_repo_tree_after_snapshot, should_run_cold_start_reconcile,
-    should_scroll_selected_after_reload,
+    GitWorkspaceRefreshRequest, SnapshotRefreshBehavior, SnapshotRefreshPriority,
+    SnapshotRefreshRequest, diff_state_changed, line_stats_paths_from_dirty_paths,
+    missing_line_stat_paths, repo_watch_refresh_request, should_refresh_line_stats_after_snapshot,
+    should_reload_diff_after_snapshot, should_reload_repo_tree_after_snapshot,
+    should_run_cold_start_reconcile, should_scroll_selected_after_reload,
 };
 use review_compare_picker::{
     ReviewComparePickerDelegate, ReviewCompareSourceOption, build_review_compare_picker_delegate,
@@ -1302,7 +1302,10 @@ struct DiffViewer {
     git_status_message: Option<String>,
     git_workspace_refresh_epoch: usize,
     git_workspace_refresh_task: Task<()>,
+    git_workspace_active_root: Option<PathBuf>,
     git_workspace_loading: bool,
+    pending_git_workspace_refresh: Option<GitWorkspaceRefreshRequest>,
+    last_git_workspace_fingerprint: Option<RepoSnapshotFingerprint>,
     staged_commit_files: BTreeSet<String>,
     last_commit_subject: Option<String>,
     recent_commits: Vec<RecentCommitSummary>,

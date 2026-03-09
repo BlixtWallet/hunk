@@ -471,7 +471,10 @@ impl DiffViewer {
             git_status_message: None,
             git_workspace_refresh_epoch: 0,
             git_workspace_refresh_task: Task::ready(()),
+            git_workspace_active_root: None,
             git_workspace_loading: false,
+            pending_git_workspace_refresh: None,
+            last_git_workspace_fingerprint: None,
             staged_commit_files: BTreeSet::new(),
             last_commit_subject: None,
             recent_commits: Vec::new(),
@@ -1287,6 +1290,21 @@ impl DiffViewer {
         self.git_workspace_refresh_epoch
     }
 
+    fn maybe_run_pending_git_workspace_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.git_workspace_loading {
+            return;
+        }
+        let Some(request) = self.pending_git_workspace_refresh.take() else {
+            return;
+        };
+        debug!(
+            "git workspace refresh running queued refresh: recent_commits={} root={}",
+            request.refresh_recent_commits,
+            request.root.display()
+        );
+        self.request_git_workspace_refresh(request.refresh_recent_commits, cx);
+    }
+
     fn clear_git_workspace_state(&mut self) {
         self.git_workspace = GitWorkspaceState::default();
         self.staged_commit_files.clear();
@@ -1294,7 +1312,10 @@ impl DiffViewer {
         self.recent_commits.clear();
         self.recent_commits_error = None;
         self.last_recent_commits_fingerprint = None;
+        self.git_workspace_active_root = None;
         self.git_workspace_loading = false;
+        self.pending_git_workspace_refresh = None;
+        self.last_git_workspace_fingerprint = None;
         self.workspace_target_switch_loading = false;
     }
 
@@ -1351,25 +1372,76 @@ impl DiffViewer {
         self.last_commit_subject = last_commit_subject;
     }
 
-    pub(super) fn request_git_workspace_refresh(&mut self, force_recent_commits: bool, cx: &mut Context<Self>) {
+    pub(super) fn request_git_workspace_refresh(&mut self, refresh_recent_commits: bool, cx: &mut Context<Self>) {
         let Some(root) = self.selected_git_workspace_root() else {
             self.clear_git_workspace_state();
             cx.notify();
             return;
         };
 
+        let request = GitWorkspaceRefreshRequest::new(root.clone(), refresh_recent_commits);
+        if self.git_workspace_loading {
+            if self.git_workspace_active_root.as_ref() == Some(&root) {
+                let queued_request = match self.pending_git_workspace_refresh.take() {
+                    Some(pending) => pending.merge(request),
+                    None => request,
+                };
+                debug!(
+                    "git workspace refresh deferred: epoch={} recent_commits={} root={}",
+                    self.git_workspace_refresh_epoch,
+                    queued_request.refresh_recent_commits,
+                    queued_request.root.display()
+                );
+                self.pending_git_workspace_refresh = Some(queued_request);
+                return;
+            }
+
+            debug!(
+                "git workspace refresh preempted: epoch={} active_root={} next_root={}",
+                self.git_workspace_refresh_epoch,
+                self.git_workspace_active_root
+                    .as_deref()
+                    .map_or_else(|| "<unknown>".to_string(), |path| path.display().to_string()),
+                root.display()
+            );
+            self.next_git_workspace_refresh_epoch();
+            self.git_workspace_refresh_task = Task::ready(());
+            self.git_workspace_loading = false;
+            self.pending_git_workspace_refresh = None;
+        }
+
+        let previous_fingerprint = (self.git_workspace.root.as_ref() == Some(&root))
+            .then(|| self.last_git_workspace_fingerprint.clone())
+            .flatten();
         let epoch = self.next_git_workspace_refresh_epoch();
         self.git_workspace_loading = true;
-        self.workspace_target_switch_loading = true;
+        self.git_workspace_active_root = Some(root.clone());
         let refresh_root = root.clone();
+        debug!(
+            "git workspace state refresh start: epoch={} recent_commits={} root={} cached_fingerprint={}",
+            epoch,
+            refresh_recent_commits,
+            refresh_root.display(),
+            previous_fingerprint.is_some()
+        );
 
         self.git_workspace_refresh_task = cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async move {
-                let (_, workflow_snapshot) =
-                    load_workflow_snapshot_with_fingerprint_without_refresh(refresh_root.as_path())?;
-                let file_line_stats =
-                    load_repo_file_line_stats_without_refresh(refresh_root.as_path())?;
-                Ok::<_, anyhow::Error>((workflow_snapshot, file_line_stats))
+                let (fingerprint, workflow_snapshot) =
+                    load_workflow_snapshot_if_changed_without_refresh(
+                        refresh_root.as_path(),
+                        previous_fingerprint.as_ref(),
+                    )?;
+                let file_line_stats = if let Some(workflow_snapshot) = workflow_snapshot.as_ref() {
+                    if workflow_snapshot.files.is_empty() {
+                        BTreeMap::new()
+                    } else {
+                        load_repo_file_line_stats_without_refresh(refresh_root.as_path())?
+                    }
+                } else {
+                    BTreeMap::new()
+                };
+                Ok::<_, anyhow::Error>((fingerprint, workflow_snapshot, file_line_stats))
             });
             let result = result.await;
 
@@ -1380,25 +1452,46 @@ impl DiffViewer {
                     }
 
                     this.git_workspace_loading = false;
+                    this.git_workspace_active_root = None;
                     this.workspace_target_switch_loading = false;
                     match result {
-                        Ok((workflow_snapshot, file_line_stats)) => {
+                        Ok((fingerprint, Some(workflow_snapshot), file_line_stats)) => {
+                            debug!(
+                                "git workspace state refresh complete: epoch={} recent_commits={} root={} files={}",
+                                epoch,
+                                refresh_recent_commits,
+                                root.display(),
+                                workflow_snapshot.files.len()
+                            );
+                            this.last_git_workspace_fingerprint = Some(fingerprint);
                             this.apply_git_workspace_snapshot(root.clone(), workflow_snapshot, file_line_stats);
-                            if force_recent_commits {
+                            if refresh_recent_commits {
                                 this.request_recent_commits_refresh(true, cx);
-                            } else {
-                                this.request_recent_commits_refresh(false, cx);
+                            }
+                        }
+                        Ok((fingerprint, None, _)) => {
+                            debug!(
+                                "git workspace state refresh skipped: epoch={} recent_commits={} root={} (no repo changes)",
+                                epoch,
+                                refresh_recent_commits,
+                                root.display()
+                            );
+                            this.last_git_workspace_fingerprint = Some(fingerprint);
+                            if refresh_recent_commits {
+                                this.request_recent_commits_refresh(true, cx);
                             }
                         }
                         Err(err) => {
                             this.git_status_message =
                                 Some(format!("Failed to load Git workspace: {err:#}"));
+                            this.last_git_workspace_fingerprint = None;
                             if this.git_workspace.root.as_ref() != Some(&root) {
                                 this.clear_git_workspace_state();
                             }
                         }
                     }
                     cx.notify();
+                    this.maybe_run_pending_git_workspace_refresh(cx);
                 });
             }
         });

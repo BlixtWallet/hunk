@@ -2,11 +2,13 @@
 mod refresh_policy;
 
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 
 use hunk_git::git::{ChangedFile, FileStatus, LineStats};
 use refresh_policy::{
-    SnapshotRefreshBehavior, SnapshotRefreshPriority, SnapshotRefreshRequest, diff_state_changed,
-    line_stats_paths_from_dirty_paths, missing_line_stat_paths, repo_watch_refresh_request,
+    GitWorkspaceRefreshRequest, SnapshotRefreshBehavior, SnapshotRefreshPriority,
+    SnapshotRefreshRequest, diff_state_changed, line_stats_paths_from_dirty_paths,
+    missing_line_stat_paths, post_git_action_refresh_plan, repo_watch_refresh_request,
     should_refresh_line_stats_after_snapshot, should_reload_diff_after_snapshot,
     should_reload_repo_tree_after_snapshot, should_run_cold_start_reconcile,
     should_scroll_selected_after_reload,
@@ -186,4 +188,54 @@ fn missing_line_stats_only_returns_changed_files_without_cached_stats() {
     let missing = missing_line_stat_paths(&files, &file_line_stats);
 
     assert_eq!(missing, BTreeSet::from([String::from("README.md")]));
+}
+
+#[test]
+fn create_commit_actions_reuse_optimistic_recent_commit_state() {
+    let primary_plan = post_git_action_refresh_plan("Create commit", true);
+    assert!(primary_plan.refresh_primary_snapshot);
+    assert!(!primary_plan.refresh_git_workspace);
+    assert!(!primary_plan.refresh_recent_commits);
+
+    let worktree_plan = post_git_action_refresh_plan("Create commit", false);
+    assert!(!worktree_plan.refresh_primary_snapshot);
+    assert!(worktree_plan.refresh_git_workspace);
+    assert!(!worktree_plan.refresh_recent_commits);
+}
+
+#[test]
+fn primary_git_actions_refresh_only_the_primary_snapshot() {
+    let plan = post_git_action_refresh_plan("Undo file changes", true);
+
+    assert!(plan.refresh_primary_snapshot);
+    assert!(!plan.refresh_git_workspace);
+    assert!(!plan.refresh_recent_commits);
+}
+
+#[test]
+fn worktree_branch_switches_refresh_workspace_and_recent_commits() {
+    let plan = post_git_action_refresh_plan("Activate branch", false);
+
+    assert!(!plan.refresh_primary_snapshot);
+    assert!(plan.refresh_git_workspace);
+    assert!(plan.refresh_recent_commits);
+}
+
+#[test]
+fn git_workspace_refresh_requests_merge_same_root_metadata() {
+    let repo_root = PathBuf::from("/tmp/repo");
+    let merged = GitWorkspaceRefreshRequest::new(repo_root.clone(), false)
+        .merge(GitWorkspaceRefreshRequest::new(repo_root, true));
+
+    assert!(merged.refresh_recent_commits);
+}
+
+#[test]
+fn git_workspace_refresh_requests_replace_old_root_when_target_changes() {
+    let merged = GitWorkspaceRefreshRequest::new(PathBuf::from("/tmp/repo"), true).merge(
+        GitWorkspaceRefreshRequest::new(PathBuf::from("/tmp/repo-worktree"), false),
+    );
+
+    assert_eq!(merged.root, PathBuf::from("/tmp/repo-worktree"));
+    assert!(!merged.refresh_recent_commits);
 }

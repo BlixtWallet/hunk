@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 
 use hunk_git::git::{ChangedFile, LineStats};
 
@@ -156,6 +157,60 @@ pub(super) const fn should_run_cold_start_reconcile(
     cold_start
         && loaded_without_refresh
         && matches!(behavior, SnapshotRefreshBehavior::RefreshWorkingCopy)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct GitActionRefreshPlan {
+    pub(super) refresh_primary_snapshot: bool,
+    pub(super) refresh_git_workspace: bool,
+    pub(super) refresh_recent_commits: bool,
+}
+
+pub(super) const fn git_action_refresh_plan(
+    selected_root_is_primary: bool,
+    refresh_recent_commits: bool,
+) -> GitActionRefreshPlan {
+    GitActionRefreshPlan {
+        refresh_primary_snapshot: selected_root_is_primary,
+        refresh_git_workspace: !selected_root_is_primary,
+        refresh_recent_commits,
+    }
+}
+
+pub(super) fn post_git_action_refresh_plan(
+    action_name: &str,
+    selected_root_is_primary: bool,
+) -> GitActionRefreshPlan {
+    git_action_refresh_plan(
+        selected_root_is_primary,
+        matches!(action_name, "Activate branch" | "Sync branch"),
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct GitWorkspaceRefreshRequest {
+    pub(super) root: PathBuf,
+    pub(super) refresh_recent_commits: bool,
+}
+
+impl GitWorkspaceRefreshRequest {
+    pub(super) fn new(root: PathBuf, refresh_recent_commits: bool) -> Self {
+        Self {
+            root,
+            refresh_recent_commits,
+        }
+    }
+
+    pub(super) fn merge(self, newer: Self) -> Self {
+        if self.root == newer.root {
+            Self {
+                root: newer.root,
+                refresh_recent_commits: self.refresh_recent_commits || newer.refresh_recent_commits,
+            }
+        } else {
+            newer
+        }
+    }
 }
 
 pub(super) fn missing_line_stat_paths(
