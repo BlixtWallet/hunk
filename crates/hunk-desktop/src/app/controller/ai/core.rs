@@ -15,13 +15,6 @@ impl DiffViewer {
     const AI_THREAD_INLINE_TOAST_DURATION: Duration = Duration::from_millis(2200);
 
     pub(super) fn ensure_ai_runtime_started(&mut self, cx: &mut Context<Self>) {
-        if self.ai_command_tx.is_some() {
-            return;
-        }
-        self.join_ai_worker_thread_if_finished("starting AI runtime");
-
-        self.sync_ai_workspace_preferences_from_state();
-
         let Some(cwd) = self.ai_workspace_cwd() else {
             self.ai_connection_state = AiConnectionState::Failed;
             self.ai_bootstrap_loading = false;
@@ -30,6 +23,20 @@ impl DiffViewer {
             return;
         };
         let worker_workspace_key = cwd.to_string_lossy().to_string();
+        if self.ai_command_tx.is_some()
+            && self.ai_worker_workspace_key.as_deref() == Some(worker_workspace_key.as_str())
+        {
+            return;
+        }
+        if self.ai_command_tx.is_some() {
+            let visible_workspace_key = self.ai_worker_workspace_key.clone();
+            self.store_current_ai_workspace_state(visible_workspace_key.as_deref());
+            self.park_visible_ai_runtime();
+        }
+        self.join_ai_worker_thread_if_finished("starting AI runtime");
+
+        self.sync_ai_workspace_preferences_from_state();
+
         if self.promote_hidden_ai_runtime(worker_workspace_key.as_str()) {
             cx.notify();
             return;

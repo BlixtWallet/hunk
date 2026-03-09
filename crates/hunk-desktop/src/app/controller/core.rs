@@ -137,7 +137,10 @@ impl DiffViewer {
             return;
         }
 
-        let previous_ai_workspace_key = self.ai_workspace_key();
+        let previous_ai_workspace_key = self
+            .ai_worker_workspace_key
+            .clone()
+            .or_else(|| self.ai_workspace_key());
         self.sync_ai_visible_composer_prompt_to_draft(cx);
         self.project_path = Some(cached_project_root);
         self.repo_root = Some(root.clone());
