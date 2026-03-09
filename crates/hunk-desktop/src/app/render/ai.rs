@@ -1456,14 +1456,14 @@ fn ai_render_thread_start_mode_chip(
 ) -> AnyElement {
     let (border_color, background_color, text_color) = match start_mode {
         AiNewThreadStartMode::Local => (
-            hunk_opacity(cx.theme().border, is_dark, 0.78, 0.64),
-            hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.14, 0.18),
-            cx.theme().muted_foreground,
+            hunk_opacity(cx.theme().success, is_dark, 0.78, 0.64),
+            hunk_opacity(cx.theme().success, is_dark, 0.18, 0.12),
+            cx.theme().success,
         ),
         AiNewThreadStartMode::Worktree => (
-            hunk_opacity(cx.theme().accent, is_dark, 0.76, 0.60),
-            hunk_opacity(cx.theme().accent, is_dark, 0.18, 0.12),
-            cx.theme().accent,
+            hunk_opacity(cx.theme().warning, is_dark, 0.82, 0.68),
+            hunk_opacity(cx.theme().warning, is_dark, 0.18, 0.12),
+            cx.theme().warning,
         ),
     };
 
