@@ -86,11 +86,19 @@ impl DiffViewer {
                 return;
             }
         };
-        let preferred_commit_subject = ai_commit_subject_for_thread(
+        let fallback_commit_message = ai_commit_message_for_thread(
             &self.ai_state_snapshot,
             context.thread_id.as_str(),
             context.branch_name.as_str(),
         );
+        let prompt_seed =
+            ai_first_prompt_seed_for_thread(&self.ai_state_snapshot, context.thread_id.as_str());
+        let latest_agent_message =
+            ai_latest_agent_message_for_thread(&self.ai_state_snapshot, context.thread_id.as_str());
+        let session_overrides = self.current_ai_turn_session_overrides();
+        let selected_model = session_overrides.model.clone();
+        let selected_effort = session_overrides.effort.clone();
+        let codex_executable = Self::resolve_codex_executable_path();
         let branch_name = context.branch_name.clone();
         let repo_root = context.repo_root.clone();
         let epoch = self.begin_git_action("Commit and Push", cx);
@@ -102,9 +110,23 @@ impl DiffViewer {
                 .spawn(async move {
                     let execution_started_at = Instant::now();
                     let result = (|| -> anyhow::Result<(Option<String>, String)> {
+                        let commit_message = resolve_ai_commit_message_for_working_copy(
+                            AiCodexGenerationConfig {
+                                codex_executable: codex_executable.as_path(),
+                                repo_root: repo_root.as_path(),
+                                model: selected_model.as_deref(),
+                                reasoning_effort: selected_effort.as_deref(),
+                            },
+                            repo_root.as_path(),
+                            branch_name.as_str(),
+                            prompt_seed.as_deref(),
+                            latest_agent_message.as_deref(),
+                            &fallback_commit_message,
+                        );
+                        let commit_message_text = commit_message.as_git_message();
                         let committed_subject = match commit_staged_with_details(
                             repo_root.as_path(),
-                            preferred_commit_subject.as_str(),
+                            commit_message_text.as_str(),
                         ) {
                             Ok(created) => Some(created.subject),
                             Err(err) if err.to_string().contains("no changes to commit") => None,
@@ -210,12 +232,20 @@ impl DiffViewer {
                 return;
             }
         };
-        let preferred_commit_subject = ai_commit_subject_for_thread(
+        let fallback_commit_message = ai_commit_message_for_thread(
             &self.ai_state_snapshot,
             context.thread_id.as_str(),
             context.branch_name.as_str(),
         );
-        let review_title = preferred_commit_subject.clone();
+        let fallback_review_title = fallback_commit_message.subject.clone();
+        let prompt_seed =
+            ai_first_prompt_seed_for_thread(&self.ai_state_snapshot, context.thread_id.as_str());
+        let latest_agent_message =
+            ai_latest_agent_message_for_thread(&self.ai_state_snapshot, context.thread_id.as_str());
+        let session_overrides = self.current_ai_turn_session_overrides();
+        let selected_model = session_overrides.model.clone();
+        let selected_effort = session_overrides.effort.clone();
+        let codex_executable = Self::resolve_codex_executable_path();
         let provider_mappings = self.config.review_provider_mappings.clone();
         let requested_branch_name = if context.start_mode == AiNewThreadStartMode::Local {
             Some(ai_branch_name_for_thread(
@@ -250,9 +280,23 @@ impl DiffViewer {
                             branch_name.clone()
                         };
 
+                        let commit_message = resolve_ai_commit_message_for_working_copy(
+                            AiCodexGenerationConfig {
+                                codex_executable: codex_executable.as_path(),
+                                repo_root: repo_root.as_path(),
+                                model: selected_model.as_deref(),
+                                reasoning_effort: selected_effort.as_deref(),
+                            },
+                            repo_root.as_path(),
+                            review_branch_name.as_str(),
+                            prompt_seed.as_deref(),
+                            latest_agent_message.as_deref(),
+                            &fallback_commit_message,
+                        );
+                        let commit_message_text = commit_message.as_git_message();
                         let committed_subject = match commit_staged_with_details(
                             repo_root.as_path(),
-                            preferred_commit_subject.as_str(),
+                            commit_message_text.as_str(),
                         ) {
                             Ok(created) => Some(created.subject),
                             Err(err) if err.to_string().contains("no changes to commit") => None,
@@ -297,6 +341,9 @@ impl DiffViewer {
                                 "no review URL found for {review_branch_name}; configure review_provider_mappings for self-hosted remotes"
                             )
                         })?;
+                        let review_title = committed_subject
+                            .clone()
+                            .unwrap_or_else(|| fallback_review_title.clone());
                         let review_url = with_review_title_prefill(review_url, review_title.as_str());
 
                         Ok((committed_subject, review_url, review_branch_name))
@@ -365,6 +412,33 @@ impl DiffViewer {
             }
         });
     }
+}
+
+fn resolve_ai_commit_message_for_working_copy(
+    generation_config: AiCodexGenerationConfig<'_>,
+    repo_root: &std::path::Path,
+    branch_name: &str,
+    prompt_seed: Option<&str>,
+    latest_agent_message: Option<&str>,
+    fallback_commit_message: &AiCommitMessage,
+) -> AiCommitMessage {
+    let working_copy_context =
+        working_copy_context_for_ai(repo_root, 200, 40_000).ok().flatten();
+    let Some(working_copy_context) = working_copy_context else {
+        return fallback_commit_message.clone();
+    };
+
+    try_ai_commit_message(
+        generation_config,
+        AiCommitGenerationContext {
+            branch_name,
+            prompt_seed,
+            latest_agent_message,
+            changed_files_summary: working_copy_context.changed_files_summary.as_str(),
+            diff_patch: working_copy_context.diff_patch.as_str(),
+        },
+    )
+    .unwrap_or_else(|| fallback_commit_message.clone())
 }
 
 fn activate_new_ai_review_branch(
