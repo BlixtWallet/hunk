@@ -159,6 +159,39 @@ mod ai_helper_tests {
     }
 
     #[test]
+    fn thread_display_title_collapses_multiline_whitespace() {
+        let thread = ThreadSummary {
+            id: "thread-1".to_string(),
+            cwd: "/repo".to_string(),
+            title: Some("  crates/hunk-desktop\n\nok please\tthink carefully  ".to_string()),
+            status: ThreadLifecycleStatus::Idle,
+            created_at: 0,
+            updated_at: 0,
+            last_sequence: 0,
+        };
+
+        assert_eq!(
+            ai_thread_display_title(&thread),
+            "crates/hunk-desktop ok please think carefully"
+        );
+    }
+
+    #[test]
+    fn thread_display_title_uses_fallback_when_title_is_only_whitespace() {
+        let thread = ThreadSummary {
+            id: "thread-1".to_string(),
+            cwd: "/repo".to_string(),
+            title: Some(" \n\t ".to_string()),
+            status: ThreadLifecycleStatus::Idle,
+            created_at: 0,
+            updated_at: 0,
+            last_sequence: 0,
+        };
+
+        assert_eq!(ai_thread_display_title(&thread), "Untitled thread");
+    }
+
+    #[test]
     fn timeline_item_renderability_hides_empty_reasoning_without_metadata() {
         let reasoning = ItemSummary {
             id: "item-1".to_string(),

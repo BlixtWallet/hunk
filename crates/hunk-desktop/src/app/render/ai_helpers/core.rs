@@ -56,13 +56,22 @@ fn ai_thread_activity_label(unix_time: i64) -> Option<String> {
     })
 }
 
+fn ai_normalized_thread_title(title: &str) -> Option<String> {
+    let mut words = title.split_whitespace();
+    let first = words.next()?;
+    let mut normalized = String::from(first);
+    for word in words {
+        normalized.push(' ');
+        normalized.push_str(word);
+    }
+    Some(normalized)
+}
+
 fn ai_thread_display_title(thread: &hunk_codex::state::ThreadSummary) -> String {
     thread
         .title
-        .as_ref()
-        .map(|title| title.trim())
-        .filter(|title| !title.is_empty())
-        .map(ToOwned::to_owned)
+        .as_deref()
+        .and_then(ai_normalized_thread_title)
         .unwrap_or_else(|| "Untitled thread".to_string())
 }
 
@@ -161,6 +170,7 @@ fn render_ai_thread_sidebar_row(
                         .text_sm()
                         .font_medium()
                         .text_color(title_color)
+                        .whitespace_nowrap()
                         .truncate()
                         .child(title),
                 )
