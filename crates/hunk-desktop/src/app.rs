@@ -1274,6 +1274,8 @@ struct DiffViewer {
     ai_mad_max_mode: bool,
     ai_event_epoch: usize,
     ai_event_task: Task<()>,
+    ai_thread_catalog_refresh_epoch: usize,
+    ai_thread_catalog_task: Task<()>,
     ai_attachment_picker_task: Task<()>,
     ai_workspace_states: BTreeMap<String, AiWorkspaceState>,
     ai_hidden_runtimes: BTreeMap<String, AiHiddenRuntimeHandle>,

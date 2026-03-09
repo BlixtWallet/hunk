@@ -81,6 +81,7 @@ impl DiffViewer {
     }
 
     pub(super) fn ai_refresh_threads(&mut self, cx: &mut Context<Self>) {
+        self.refresh_ai_repo_thread_catalog(cx);
         self.send_ai_worker_command(AiWorkerCommand::RefreshThreads, cx);
     }
 

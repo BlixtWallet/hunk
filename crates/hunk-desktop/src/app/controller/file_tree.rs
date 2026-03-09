@@ -158,6 +158,7 @@ impl DiffViewer {
             self.scroll_selected_after_reload = true;
             self.request_selected_diff_reload(cx);
         } else if mode == WorkspaceViewMode::Ai {
+            self.refresh_ai_repo_thread_catalog(cx);
             self.ensure_ai_runtime_started(cx);
         }
         cx.notify();

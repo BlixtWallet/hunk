@@ -15,7 +15,9 @@ mod ai_tests {
     use super::resolved_ai_thread_mode_picker_state;
     use super::ai_attachment_status_message;
     use super::ai_branch_name_for_thread;
+    use super::ai_thread_catalog_workspace_roots;
     use super::ai_thread_start_mode_for_workspace;
+    use super::apply_ai_thread_catalog_to_workspace_state;
     use super::bundled_codex_executable_candidates;
     use super::codex_runtime_binary_name;
     use super::codex_runtime_platform_dir;
@@ -59,6 +61,7 @@ mod ai_tests {
     use crate::app::AiTimelineRowSource;
     use crate::app::AiWorkspaceState;
     use crate::app::DiffViewer;
+    use crate::app::ai_runtime::AiWorkspaceThreadCatalog;
     use crate::app::ai_runtime::AiPendingUserInputQuestion;
     use crate::app::ai_runtime::AiPendingUserInputQuestionOption;
     use crate::app::ai_runtime::AiPendingUserInputRequest;
@@ -599,6 +602,115 @@ mod ai_tests {
             ),
             Some(AiNewThreadStartMode::Worktree),
         );
+    }
+
+    #[test]
+    fn thread_catalog_workspace_roots_skip_visible_workspace_and_dedupe() {
+        let workspace_targets = vec![
+            workspace_target(
+                "primary",
+                WorkspaceTargetKind::PrimaryCheckout,
+                "/repo",
+                "Primary Checkout",
+            ),
+            workspace_target(
+                "worktree:task-1",
+                WorkspaceTargetKind::LinkedWorktree,
+                "/repo/worktrees/task-1",
+                "task-1",
+            ),
+            workspace_target(
+                "worktree:task-1-duplicate",
+                WorkspaceTargetKind::LinkedWorktree,
+                "/repo/worktrees/task-1",
+                "task-1",
+            ),
+            workspace_target(
+                "worktree:task-2",
+                WorkspaceTargetKind::LinkedWorktree,
+                "/repo/worktrees/task-2",
+                "task-2",
+            ),
+        ];
+
+        let roots = ai_thread_catalog_workspace_roots(workspace_targets.as_slice(), Some("/repo"));
+        assert_eq!(
+            roots,
+            vec![
+                PathBuf::from("/repo/worktrees/task-1"),
+                PathBuf::from("/repo/worktrees/task-2"),
+            ]
+        );
+    }
+
+    #[test]
+    fn thread_catalog_state_replaces_snapshot_and_selects_active_thread() {
+        let mut workspace_state = AiWorkspaceState {
+            connection_state: AiConnectionState::Failed,
+            error_message: Some("boom".to_string()),
+            selected_thread_id: Some("missing-thread".to_string()),
+            pending_approvals: vec![crate::app::ai_runtime::AiPendingApproval {
+                request_id: "request-1".to_string(),
+                thread_id: "missing-thread".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "item-1".to_string(),
+                kind: crate::app::ai_runtime::AiApprovalKind::CommandExecution,
+                reason: None,
+                command: None,
+                cwd: None,
+                grant_root: None,
+            }],
+            pending_user_inputs: vec![AiPendingUserInputRequest {
+                request_id: "request-2".to_string(),
+                thread_id: "missing-thread".to_string(),
+                turn_id: "turn-2".to_string(),
+                item_id: "item-2".to_string(),
+                questions: Vec::new(),
+            }],
+            ..AiWorkspaceState::default()
+        };
+        let mut state_snapshot = AiState::default();
+        state_snapshot.threads.insert(
+            "thread-a".to_string(),
+            ThreadSummary {
+                id: "thread-a".to_string(),
+                cwd: "/repo/worktrees/task-1".to_string(),
+                title: Some("Task 1".to_string()),
+                status: ThreadLifecycleStatus::Active,
+                created_at: 10,
+                updated_at: 10,
+                last_sequence: 1,
+            },
+        );
+        state_snapshot.threads.insert(
+            "thread-b".to_string(),
+            ThreadSummary {
+                id: "thread-b".to_string(),
+                cwd: "/repo/worktrees/task-1".to_string(),
+                title: Some("Task 2".to_string()),
+                status: ThreadLifecycleStatus::Idle,
+                created_at: 20,
+                updated_at: 20,
+                last_sequence: 2,
+            },
+        );
+
+        apply_ai_thread_catalog_to_workspace_state(
+            &mut workspace_state,
+            AiWorkspaceThreadCatalog {
+                workspace_key: "/repo/worktrees/task-1".to_string(),
+                state_snapshot,
+                active_thread_id: Some("thread-a".to_string()),
+            },
+        );
+
+        assert_eq!(workspace_state.connection_state, AiConnectionState::Disconnected);
+        assert!(workspace_state.error_message.is_none());
+        assert!(workspace_state.pending_approvals.is_empty());
+        assert!(workspace_state.pending_user_inputs.is_empty());
+        assert_eq!(workspace_state.selected_thread_id.as_deref(), Some("thread-a"));
+        assert!(workspace_state.state_snapshot.threads.contains_key("thread-a"));
+        assert!(workspace_state.state_snapshot.threads.contains_key("thread-b"));
     }
 
     #[test]

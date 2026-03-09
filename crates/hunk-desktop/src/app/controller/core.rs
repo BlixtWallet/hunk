@@ -443,6 +443,8 @@ impl DiffViewer {
             ai_mad_max_mode: initial_ai_mad_max_mode,
             ai_event_epoch: 0,
             ai_event_task: Task::ready(()),
+            ai_thread_catalog_refresh_epoch: 0,
+            ai_thread_catalog_task: Task::ready(()),
             ai_attachment_picker_task: Task::ready(()),
             ai_workspace_states: BTreeMap::new(),
             ai_hidden_runtimes: BTreeMap::new(),
@@ -901,6 +903,9 @@ impl DiffViewer {
                 self.sync_workspace_target_picker_state(cx);
                 self.sync_ai_workspace_target_from_catalog(cx);
                 self.refresh_review_compare_sources_from_git_state(cx);
+                if self.workspace_view_mode == WorkspaceViewMode::Ai {
+                    self.refresh_ai_repo_thread_catalog(cx);
+                }
             }
             Err(err) => {
                 debug!(
@@ -912,6 +917,9 @@ impl DiffViewer {
                 self.sync_workspace_target_picker_state(cx);
                 self.sync_ai_workspace_target_from_catalog(cx);
                 self.refresh_review_compare_sources_from_git_state(cx);
+                if self.workspace_view_mode == WorkspaceViewMode::Ai {
+                    self.refresh_ai_repo_thread_catalog(cx);
+                }
             }
         }
     }
@@ -949,6 +957,9 @@ impl DiffViewer {
         self.sync_workspace_target_picker_state(cx);
         self.sync_ai_workspace_target_from_catalog(cx);
         self.refresh_review_compare_sources_from_git_state(cx);
+        if self.workspace_view_mode == WorkspaceViewMode::Ai {
+            self.refresh_ai_repo_thread_catalog(cx);
+        }
         self.request_git_workspace_refresh(true, cx);
     }
 

@@ -26,6 +26,7 @@ impl DiffViewer {
         self.sync_ai_worktree_base_branch_picker_state(cx);
         self.restore_ai_visible_composer_from_current_draft(cx);
         if self.workspace_view_mode == WorkspaceViewMode::Ai {
+            self.refresh_ai_repo_thread_catalog(cx);
             self.ensure_ai_runtime_started(cx);
         }
         self.ai_sync_workspace_preferences(cx);

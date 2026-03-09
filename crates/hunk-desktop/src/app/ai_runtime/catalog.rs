@@ -1,0 +1,112 @@
+#[derive(Debug, Clone)]
+pub struct AiWorkspaceThreadCatalog {
+    pub workspace_key: String,
+    pub state_snapshot: AiState,
+    pub active_thread_id: Option<String>,
+}
+
+pub fn load_ai_workspace_thread_catalogs(
+    workspace_roots: Vec<PathBuf>,
+    codex_executable: PathBuf,
+    codex_home: PathBuf,
+) -> Result<Vec<AiWorkspaceThreadCatalog>, CodexIntegrationError> {
+    if workspace_roots.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    std::fs::create_dir_all(&codex_home).map_err(CodexIntegrationError::HostProcessIo)?;
+
+    let mut last_retryable_error = None;
+    for _attempt in 0..HOST_BOOTSTRAP_MAX_ATTEMPTS {
+        let port = allocate_loopback_port();
+        match load_ai_workspace_thread_catalogs_on_port(
+            workspace_roots.as_slice(),
+            codex_executable.as_path(),
+            codex_home.as_path(),
+            port,
+        ) {
+            Ok(catalogs) => return Ok(catalogs),
+            Err(error) if should_retry_bootstrap_with_new_port(&error) => {
+                last_retryable_error = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(last_retryable_error.unwrap_or(CodexIntegrationError::HostStartupTimedOut {
+        port: 0,
+        timeout_ms: HOST_START_TIMEOUT
+            .as_millis()
+            .min(u128::from(u64::MAX)) as u64,
+    }))
+}
+
+fn load_ai_workspace_thread_catalogs_on_port(
+    workspace_roots: &[PathBuf],
+    codex_executable: &std::path::Path,
+    codex_home: &std::path::Path,
+    port: u16,
+) -> Result<Vec<AiWorkspaceThreadCatalog>, CodexIntegrationError> {
+    let host_working_directory = workspace_roots
+        .first()
+        .cloned()
+        .expect("workspace roots should be present");
+    let host_config = HostConfig::codex_app_server(
+        codex_executable.to_path_buf(),
+        host_working_directory,
+        codex_home.to_path_buf(),
+        port,
+    );
+    let mut host = HostRuntime::new(host_config);
+    host.start(HOST_START_TIMEOUT)?;
+
+    let result = (|| {
+        let endpoint = WebSocketEndpoint::loopback(port);
+        let mut session = JsonRpcSession::connect(&endpoint)?;
+        session.initialize(InitializeOptions::default(), DEFAULT_REQUEST_TIMEOUT)?;
+
+        let mut catalogs = Vec::with_capacity(workspace_roots.len());
+        for workspace_root in workspace_roots {
+            let mut service = ThreadService::new(workspace_root.clone());
+            let response = match service.list_threads(
+                &mut session,
+                None,
+                Some(200),
+                DEFAULT_REQUEST_TIMEOUT,
+            ) {
+                Ok(response) => response,
+                Err(error) => {
+                    tracing::debug!(
+                        "skipping AI thread catalog refresh for {}: {error:#}",
+                        workspace_root.display()
+                    );
+                    continue;
+                }
+            };
+            let workspace_key = workspace_root.to_string_lossy().to_string();
+
+            if service.active_thread_for_workspace().is_none()
+                && let Some(first_thread) = response.data.first()
+            {
+                service
+                    .state_mut()
+                    .set_active_thread_for_cwd(workspace_key.clone(), first_thread.id.clone());
+            }
+
+            catalogs.push(AiWorkspaceThreadCatalog {
+                workspace_key,
+                state_snapshot: service.state().clone(),
+                active_thread_id: service.active_thread_for_workspace().map(ToOwned::to_owned),
+            });
+        }
+
+        Ok(catalogs)
+    })();
+
+    let stop_result = host.stop();
+    match (result, stop_result) {
+        (Ok(catalogs), Ok(())) => Ok(catalogs),
+        (Err(error), _) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+    }
+}
