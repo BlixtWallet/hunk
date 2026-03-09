@@ -1,3 +1,84 @@
+fn review_compare_branch_source_id(
+    sources: &[ReviewCompareSourceOption],
+    branch_name: &str,
+    excluded_source_id: Option<&str>,
+) -> Option<String> {
+    sources
+        .iter()
+        .find(|source| {
+            source.kind == crate::app::review_compare_picker::ReviewCompareSourceKind::Branch
+                && source.branch_name.as_deref() == Some(branch_name)
+                && Some(source.id.as_str()) != excluded_source_id
+        })
+        .map(|source| source.id.clone())
+}
+
+fn review_compare_selection_ids_for_workspace_root(
+    sources: &[ReviewCompareSourceOption],
+    workspace_targets: &[hunk_git::worktree::WorkspaceTargetSummary],
+    workspace_root: &std::path::Path,
+    preferred_base_branch_name: Option<&str>,
+    default_base_branch_name: Option<&str>,
+) -> Option<(Option<String>, Option<String>)> {
+    let target = workspace_targets
+        .iter()
+        .find(|target| target.root.as_path() == workspace_root)?;
+    let right_source_id = sources
+        .iter()
+        .find(|source| source.workspace_target_id.as_deref() == Some(target.id.as_str()))
+        .map(|source| source.id.clone())?;
+
+    let preferred_base_branch_name = preferred_base_branch_name
+        .map(str::trim)
+        .filter(|branch_name| !branch_name.is_empty());
+    let default_base_branch_name = default_base_branch_name
+        .map(str::trim)
+        .filter(|branch_name| !branch_name.is_empty());
+
+    let left_source_id = preferred_base_branch_name
+        .and_then(|branch_name| {
+            review_compare_branch_source_id(sources, branch_name, Some(right_source_id.as_str()))
+        })
+        .or_else(|| {
+            default_base_branch_name.and_then(|branch_name| {
+                review_compare_branch_source_id(sources, branch_name, Some(right_source_id.as_str()))
+            })
+        })
+        .or_else(|| {
+            if matches!(target.branch_name.as_str(), "detached" | "unborn") {
+                None
+            } else {
+                review_compare_branch_source_id(
+                    sources,
+                    target.branch_name.as_str(),
+                    Some(right_source_id.as_str()),
+                )
+            }
+        })
+        .or_else(|| {
+            sources
+                .iter()
+                .find(|source| {
+                    source.workspace_target_id.as_deref()
+                        == Some(hunk_git::worktree::PRIMARY_WORKSPACE_TARGET_ID)
+                        && source.id != right_source_id
+                })
+                .map(|source| source.id.clone())
+        })
+        .or_else(|| {
+            sources
+                .iter()
+                .find(|source| source.id != right_source_id)
+                .map(|source| source.id.clone())
+        });
+
+    Some(DiffViewer::normalize_review_compare_selection_ids(
+        sources,
+        left_source_id,
+        Some(right_source_id),
+    ))
+}
+
 impl DiffViewer {
     fn subscribe_review_compare_picker_states(&self, cx: &mut Context<Self>) {
         let review_left_picker_state = self.review_left_picker_state.clone();

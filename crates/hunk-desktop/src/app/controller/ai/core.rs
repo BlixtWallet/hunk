@@ -587,7 +587,52 @@ impl DiffViewer {
         cx.notify();
     }
 
+    fn ai_review_compare_base_branch_name_for_workspace(
+        &self,
+        workspace_key: &str,
+    ) -> Option<String> {
+        if self.ai_workspace_key().as_deref() == Some(workspace_key) {
+            return self.ai_selected_worktree_base_branch_name().map(str::to_string);
+        }
+
+        self.ai_workspace_states
+            .get(workspace_key)
+            .and_then(|state| state.worktree_base_branch_name.clone())
+    }
+
+    fn ai_selected_thread_review_compare_selection(
+        &self,
+    ) -> Option<(Option<String>, Option<String>)> {
+        let selected_thread_id = self.ai_selected_thread_id.as_deref()?;
+        let workspace_root = self.ai_thread_workspace_root(selected_thread_id)?;
+        let workspace_key = workspace_root.to_string_lossy().to_string();
+        let preferred_base_branch_name = if self.ai_thread_start_mode(selected_thread_id)
+            == Some(AiNewThreadStartMode::Worktree)
+        {
+            self.ai_review_compare_base_branch_name_for_workspace(workspace_key.as_str())
+        } else {
+            None
+        };
+        let default_base_branch_name = self
+            .project_path
+            .as_deref()
+            .and_then(|path| resolve_default_base_branch_name(path).ok().flatten());
+
+        review_compare_selection_ids_for_workspace_root(
+            &self.review_compare_sources,
+            &self.workspace_targets,
+            workspace_root.as_path(),
+            preferred_base_branch_name.as_deref(),
+            default_base_branch_name.as_deref(),
+        )
+    }
+
     pub(super) fn ai_open_review_tab(&mut self, cx: &mut Context<Self>) {
+        if let Some((left_source_id, right_source_id)) =
+            self.ai_selected_thread_review_compare_selection()
+        {
+            self.update_review_compare_selection(left_source_id, right_source_id, cx);
+        }
         self.set_workspace_view_mode(WorkspaceViewMode::Diff, cx);
     }
 
