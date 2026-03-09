@@ -4,7 +4,9 @@ use futures::channel::{mpsc, oneshot};
 use notify::Watcher;
 use tracing::{debug, error, warn};
 
-use crate::app::ai_thread_flow::{ai_branch_name_for_prompt, ai_commit_subject_for_thread};
+use crate::app::ai_thread_flow::{
+    ai_branch_name_for_prompt, ai_branch_name_for_thread, ai_commit_subject_for_thread,
+};
 
 use super::data::{
     DiffSegmentQuality, DiffStream, DiffStreamRowKind, RepoTreeNodeKind,
@@ -23,8 +25,8 @@ use hunk_git::git::{
     WorkflowSnapshot, count_non_ignored_repo_tree_entries, invalidate_repo_metadata_caches,
     load_patches_for_files_from_session, load_repo_file_line_stats_for_paths_without_refresh,
     load_repo_file_line_stats_without_refresh, load_repo_tree, load_snapshot_fingerprint,
-    load_workflow_snapshot_if_changed, load_workflow_snapshot_if_changed_without_refresh,
-    load_workflow_snapshot_with_fingerprint,
+    load_workflow_snapshot, load_workflow_snapshot_if_changed,
+    load_workflow_snapshot_if_changed_without_refresh, load_workflow_snapshot_with_fingerprint,
     load_workflow_snapshot_with_fingerprint_without_refresh, open_patch_session,
 };
 use hunk_git::history::{
@@ -47,6 +49,7 @@ include!("recent_commits.rs");
 include!("review_compare.rs");
 include!("workspace_mode.rs");
 include!("ai.rs");
+include!("ai_git_ops.rs");
 include!("file_tree.rs");
 include!("editor.rs");
 include!("comments.rs");

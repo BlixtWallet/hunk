@@ -103,6 +103,9 @@ impl DiffViewer {
             .is_some();
         let model_supports_image_inputs = self.current_ai_model_supports_image_inputs();
         let review_action_enabled = selected_thread_id.is_some();
+        let ai_publish_blocker = self.ai_publish_blocker();
+        let ai_publish_disabled = ai_publish_blocker.is_some();
+        let ai_commit_and_push_loading = self.git_action_loading_named("Commit and Push");
         let ai_open_pr_blocker = self.ai_open_pr_blocker();
         let ai_open_pr_disabled = ai_open_pr_blocker.is_some();
         let ai_open_pr_loading = self.git_action_loading_named("Open PR");
@@ -776,28 +779,96 @@ impl DiffViewer {
                                                                 )
                                                                 .child({
                                                                     let view = view.clone();
-                                                                    Button::new("ai-open-pr")
-                                                                        .compact()
-                                                                        .outline()
-                                                                        .with_size(
-                                                                            gpui_component::Size::Small,
-                                                                        )
-                                                                        .rounded(px(8.0))
-                                                                        .loading(ai_open_pr_loading)
-                                                                        .label("Open PR")
-                                                                        .tooltip(
-                                                                            ai_open_pr_blocker
-                                                                                .clone()
-                                                                                .unwrap_or_else(
-                                                                                    || "Commit, push, and open PR/MR for the current AI thread.".to_string(),
-                                                                                ),
-                                                                        )
-                                                                        .disabled(ai_open_pr_disabled)
-                                                                        .on_click(move |_, _, cx| {
-                                                                            view.update(cx, |this, cx| {
-                                                                                this.ai_open_pr_for_current_thread(cx);
-                                                                            });
-                                                                        })
+                                                                    if selected_thread_start_mode
+                                                                        == Some(AiNewThreadStartMode::Local)
+                                                                    {
+                                                                        let push_label = format!(
+                                                                            "Commit and Push to {}",
+                                                                            active_branch
+                                                                        );
+                                                                        Button::new("ai-publish-local-thread")
+                                                                            .compact()
+                                                                            .outline()
+                                                                            .with_size(
+                                                                                gpui_component::Size::Small,
+                                                                            )
+                                                                            .rounded(px(8.0))
+                                                                            .loading(
+                                                                                ai_commit_and_push_loading
+                                                                                    || ai_open_pr_loading,
+                                                                            )
+                                                                            .dropdown_caret(true)
+                                                                            .label("Publish")
+                                                                            .tooltip(
+                                                                                ai_publish_blocker
+                                                                                    .clone()
+                                                                                    .unwrap_or_else(
+                                                                                        || "Commit and push this branch directly, or create a review branch and open PR/MR."
+                                                                                            .to_string(),
+                                                                                    ),
+                                                                            )
+                                                                            .disabled(
+                                                                                ai_publish_disabled,
+                                                                            )
+                                                                            .dropdown_menu(
+                                                                                move |menu, _, _| {
+                                                                                    menu.item(
+                                                                                        PopupMenuItem::new(
+                                                                                            push_label.clone(),
+                                                                                        )
+                                                                                        .on_click({
+                                                                                            let view = view
+                                                                                                .clone();
+                                                                                            move |_, _, cx| {
+                                                                                                view.update(cx, |this, cx| {
+                                                                                                    this.ai_commit_and_push_for_current_thread(cx);
+                                                                                                });
+                                                                                            }
+                                                                                        }),
+                                                                                    )
+                                                                                    .item(
+                                                                                        PopupMenuItem::separator(),
+                                                                                    )
+                                                                                    .item(
+                                                                                        PopupMenuItem::new("Open PR")
+                                                                                            .on_click({
+                                                                                                let view = view
+                                                                                                    .clone();
+                                                                                                move |_, _, cx| {
+                                                                                                    view.update(cx, |this, cx| {
+                                                                                                        this.ai_open_pr_for_current_thread(cx);
+                                                                                                    });
+                                                                                                }
+                                                                                            }),
+                                                                                    )
+                                                                                },
+                                                                            )
+                                                                            .into_any_element()
+                                                                    } else {
+                                                                        Button::new("ai-open-pr")
+                                                                            .compact()
+                                                                            .outline()
+                                                                            .with_size(
+                                                                                gpui_component::Size::Small,
+                                                                            )
+                                                                            .rounded(px(8.0))
+                                                                            .loading(ai_open_pr_loading)
+                                                                            .label("Open PR")
+                                                                            .tooltip(
+                                                                                ai_open_pr_blocker
+                                                                                    .clone()
+                                                                                    .unwrap_or_else(
+                                                                                        || "Commit, push, and open PR/MR for the current AI thread.".to_string(),
+                                                                                    ),
+                                                                            )
+                                                                            .disabled(ai_open_pr_disabled)
+                                                                            .on_click(move |_, _, cx| {
+                                                                                view.update(cx, |this, cx| {
+                                                                                    this.ai_open_pr_for_current_thread(cx);
+                                                                                });
+                                                                            })
+                                                                            .into_any_element()
+                                                                    }
                                                                 })
                                                                 .when(self.ai_mad_max_mode, |this| {
                                                                     this.child(

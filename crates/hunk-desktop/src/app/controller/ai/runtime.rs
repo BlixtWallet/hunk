@@ -964,11 +964,12 @@ fn prepare_ai_thread_workspace(
 ) -> anyhow::Result<AiPreparedThreadWorkspace> {
     match start_mode {
         AiNewThreadStartMode::Local => {
-            checkout_or_create_branch_with_change_transfer(repo_root, requested_branch_name, false)?;
+            let snapshot = load_workflow_snapshot(repo_root)?;
+            let branch_name = snapshot.branch_name;
             Ok(AiPreparedThreadWorkspace {
-                branch_name: requested_branch_name.to_string(),
+                branch_name: branch_name.clone(),
                 workspace_target_id: None,
-                status_message: format!("Prepared local thread on branch {requested_branch_name}"),
+                status_message: format!("Prepared local thread on branch {branch_name}"),
             })
         }
         AiNewThreadStartMode::Worktree => {

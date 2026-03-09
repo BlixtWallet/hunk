@@ -14,6 +14,7 @@ mod ai_tests {
     use super::ai_prompt_send_waiting_on_connection;
     use super::resolved_ai_thread_mode_picker_state;
     use super::ai_attachment_status_message;
+    use super::ai_branch_name_for_thread;
     use super::ai_thread_start_mode_for_workspace;
     use super::bundled_codex_executable_candidates;
     use super::codex_runtime_binary_name;
@@ -237,6 +238,76 @@ mod ai_tests {
         let sorted = sorted_threads(&state);
         assert_eq!(sorted[0].id, "thread-z");
         assert_eq!(sorted[1].id, "thread-a");
+    }
+
+    #[test]
+    fn ai_branch_name_for_thread_prefers_first_user_message() {
+        let mut state = AiState::default();
+        state.threads.insert(
+            "thread-1".to_string(),
+            ThreadSummary {
+                id: "thread-1".to_string(),
+                cwd: "/repo".to_string(),
+                title: Some("Thread title".to_string()),
+                status: ThreadLifecycleStatus::Active,
+                created_at: 1,
+                updated_at: 2,
+                last_sequence: 2,
+            },
+        );
+        state.items.insert(
+            "thread-1::turn-1::item-1".to_string(),
+            timeline_tool_item(
+                "item-1",
+                "thread-1",
+                "turn-1",
+                "userMessage",
+                ItemStatus::Completed,
+                "Fix the login spinner overflow issue",
+                "{}",
+                1,
+            ),
+        );
+        state.items.insert(
+            "thread-1::turn-2::item-2".to_string(),
+            timeline_tool_item(
+                "item-2",
+                "thread-1",
+                "turn-2",
+                "userMessage",
+                ItemStatus::Completed,
+                "This later prompt should not rename the branch",
+                "{}",
+                2,
+            ),
+        );
+
+        assert_eq!(
+            ai_branch_name_for_thread(&state, "thread-1", "main", false),
+            "ai/local/fix-login-spinner-overflow-issue"
+        );
+    }
+
+    #[test]
+    fn ai_branch_name_for_thread_falls_back_to_thread_title() {
+        let mut state = AiState::default();
+        state.threads.insert(
+            "thread-1".to_string(),
+            ThreadSummary {
+                id: "thread-1".to_string(),
+                cwd: "/repo".to_string(),
+                title: Some("Improve PR dropdown behavior".to_string()),
+                status: ThreadLifecycleStatus::Active,
+                created_at: 1,
+                updated_at: 1,
+                last_sequence: 1,
+            },
+        );
+
+        assert_eq!(
+            ai_branch_name_for_thread(&state, "thread-1", "main", false),
+            "ai/local/improve-pr-dropdown-behavior"
+        );
     }
 
     #[test]

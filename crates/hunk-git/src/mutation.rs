@@ -25,12 +25,6 @@ pub fn activate_or_create_branch(
     branch_name: &str,
     move_changes_to_branch: bool,
 ) -> Result<()> {
-    if move_changes_to_branch {
-        return Err(anyhow!(
-            "moving changes during branch switch is not supported"
-        ));
-    }
-
     let branch_name = branch_name.trim();
     if branch_name.is_empty() {
         return Err(anyhow!("branch name cannot be empty"));
@@ -42,8 +36,30 @@ pub fn activate_or_create_branch(
     let repo = open_repo(repo_root)?;
     ensure_no_hidden_index_changes(
         &repo,
-        "switching branches with staged index changes is not supported",
+        if move_changes_to_branch {
+            "moving changes to a review branch with staged index changes is not supported"
+        } else {
+            "switching branches with staged index changes is not supported"
+        },
     )?;
+    if move_changes_to_branch {
+        if repo
+            .find_branch(branch_name, git2::BranchType::Local)
+            .is_ok()
+        {
+            return Err(anyhow!("branch '{branch_name}' already exists"));
+        }
+
+        let head_commit = current_head_commit(&repo)?.ok_or_else(|| {
+            anyhow!("cannot create branch '{branch_name}' without an existing HEAD commit")
+        })?;
+        repo.branch(branch_name, &head_commit, false)
+            .with_context(|| format!("failed to create branch '{branch_name}'"))?;
+        repo.set_head(format!("refs/heads/{branch_name}").as_str())
+            .with_context(|| format!("failed to activate branch '{branch_name}'"))?;
+        return Ok(());
+    }
+
     if has_any_worktree_changes(&repo)? {
         return Err(anyhow!(
             "commit or discard working tree changes before switching branches"

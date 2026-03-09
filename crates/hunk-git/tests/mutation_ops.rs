@@ -69,6 +69,30 @@ fn activating_branch_rejects_dirty_worktree() -> Result<()> {
 }
 
 #[test]
+fn creating_new_branch_can_keep_dirty_changes_on_review_branch() -> Result<()> {
+    let fixture = TempGitRepo::new()?;
+    fixture.write_file("tracked.txt", "base\n")?;
+    fixture.commit_all_git2("initial")?;
+    fixture.write_file("tracked.txt", "base\npending review\n")?;
+
+    activate_or_create_branch(fixture.root(), "ai/local/review-branch", true)?;
+
+    let snapshot = load_workflow_snapshot(fixture.root())?;
+    assert_eq!(snapshot.branch_name, "ai/local/review-branch");
+    assert_eq!(
+        fs::read_to_string(fixture.root().join("tracked.txt"))?,
+        "base\npending review\n"
+    );
+    assert!(
+        snapshot
+            .branches
+            .iter()
+            .any(|branch| branch.name == "ai/local/review-branch" && branch.is_current)
+    );
+    Ok(())
+}
+
+#[test]
 fn activating_branch_rejects_hidden_index_changes() -> Result<()> {
     let fixture = TempGitRepo::new()?;
     fixture.write_file("tracked.txt", "base\n")?;

@@ -19,6 +19,29 @@ pub(super) fn ai_branch_name_for_prompt(prompt: &str, worktree_mode: bool) -> St
     sanitize_branch_name(format!("{prefix}/{slug}").as_str())
 }
 
+pub(super) fn ai_branch_name_for_thread(
+    state: &AiState,
+    thread_id: &str,
+    fallback_branch_name: &str,
+    worktree_mode: bool,
+) -> String {
+    let prompt = state
+        .items
+        .values()
+        .filter(|item| item.thread_id == thread_id && item.kind == "userMessage")
+        .min_by_key(|item| item.last_sequence)
+        .map(|item| item.content.as_str())
+        .or_else(|| {
+            state
+                .threads
+                .get(thread_id)
+                .and_then(|thread| thread.title.as_deref())
+        })
+        .unwrap_or(fallback_branch_name);
+
+    ai_branch_name_for_prompt(prompt, worktree_mode)
+}
+
 pub(super) fn ai_commit_subject_for_thread(
     state: &AiState,
     thread_id: &str,
