@@ -676,10 +676,13 @@ impl DiffViewer {
         let delegate = build_branch_picker_delegate(&self.git_workspace.branches);
         let selected_index =
             branch_picker_selected_index(&self.git_workspace.branches, self.checked_out_branch_name());
-        self.branch_picker_state.update(cx, |state, cx| {
-            state.set_items(delegate, window, cx);
-            state.set_selected_index(selected_index, window, cx);
-        });
+        Self::set_index_picker_state(
+            &self.branch_picker_state,
+            delegate,
+            selected_index,
+            window,
+            cx,
+        );
         cx.notify();
     }
 
@@ -693,11 +696,13 @@ impl DiffViewer {
             &self.branches,
             self.ai_selected_worktree_base_branch_name(),
         );
-        self.ai_worktree_base_branch_picker_state
-            .update(cx, |state, cx| {
-                state.set_items(delegate, window, cx);
-                state.set_selected_index(selected_index, window, cx);
-            });
+        Self::set_index_picker_state(
+            &self.ai_worktree_base_branch_picker_state,
+            delegate,
+            selected_index,
+            window,
+            cx,
+        );
         cx.notify();
     }
 
@@ -707,15 +712,13 @@ impl DiffViewer {
         let selected_index =
             branch_picker_selected_index(&self.git_workspace.branches, self.checked_out_branch_name());
 
-        if let Err(err) = Self::update_any_window(cx, move |window, cx| {
-            let delegate = delegate.clone();
-            branch_picker_state.update(cx, |state, cx| {
-                state.set_items(delegate, window, cx);
-                state.set_selected_index(selected_index, window, cx);
-            });
-        }) {
-            error!("failed to sync branch picker state: {err:#}");
-        }
+        Self::sync_index_picker_state(
+            branch_picker_state,
+            delegate,
+            selected_index,
+            "failed to sync branch picker state",
+            cx,
+        );
     }
 
     fn sync_ai_worktree_base_branch_picker_state(&mut self, cx: &mut Context<Self>) {
@@ -726,15 +729,13 @@ impl DiffViewer {
             self.ai_selected_worktree_base_branch_name(),
         );
 
-        if let Err(err) = Self::update_any_window(cx, move |window, cx| {
-            let delegate = delegate.clone();
-            ai_worktree_base_branch_picker_state.update(cx, |state, cx| {
-                state.set_items(delegate, window, cx);
-                state.set_selected_index(selected_index, window, cx);
-            });
-        }) {
-            error!("failed to sync AI worktree base branch picker state: {err:#}");
-        }
+        Self::sync_index_picker_state(
+            ai_worktree_base_branch_picker_state,
+            delegate,
+            selected_index,
+            "failed to sync AI worktree base branch picker state",
+            cx,
+        );
     }
 
     fn update_workspace_target_picker_state(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -743,10 +744,13 @@ impl DiffViewer {
             &self.workspace_targets,
             self.active_workspace_target_id.as_deref(),
         );
-        self.workspace_target_picker_state.update(cx, |state, cx| {
-            state.set_items(delegate, window, cx);
-            state.set_selected_index(selected_index, window, cx);
-        });
+        Self::set_index_picker_state(
+            &self.workspace_target_picker_state,
+            delegate,
+            selected_index,
+            window,
+            cx,
+        );
         cx.notify();
     }
 
@@ -758,14 +762,49 @@ impl DiffViewer {
             self.active_workspace_target_id.as_deref(),
         );
 
+        Self::sync_index_picker_state(
+            workspace_target_picker_state,
+            delegate,
+            selected_index,
+            "failed to sync workspace target picker state",
+            cx,
+        );
+    }
+
+    fn set_index_picker_state<D>(
+        picker_state: &Entity<SelectState<D>>,
+        delegate: D,
+        selected_index: Option<gpui_component::IndexPath>,
+        window: &mut Window,
+        cx: &mut App,
+    ) where
+        D: gpui_component::select::SelectDelegate + Clone + 'static,
+    {
+        picker_state.update(cx, |state, cx| {
+            state.set_items(delegate, window, cx);
+            state.set_selected_index(selected_index, window, cx);
+        });
+    }
+
+    fn sync_index_picker_state<D>(
+        picker_state: Entity<SelectState<D>>,
+        delegate: D,
+        selected_index: Option<gpui_component::IndexPath>,
+        error_context: &'static str,
+        cx: &mut Context<Self>,
+    ) where
+        D: gpui_component::select::SelectDelegate + Clone + 'static,
+    {
         if let Err(err) = Self::update_any_window(cx, move |window, cx| {
-            let delegate = delegate.clone();
-            workspace_target_picker_state.update(cx, |state, cx| {
-                state.set_items(delegate, window, cx);
-                state.set_selected_index(selected_index, window, cx);
-            });
+            Self::set_index_picker_state(
+                &picker_state,
+                delegate.clone(),
+                selected_index,
+                window,
+                cx,
+            );
         }) {
-            error!("failed to sync workspace target picker state: {err:#}");
+            error!("{error_context}: {err:#}");
         }
     }
 
@@ -1580,15 +1619,6 @@ impl DiffViewer {
         }
         let cold_start = self.last_snapshot_fingerprint.is_none();
 
-        enum SnapshotRefreshStageA {
-            Unchanged(RepoSnapshotFingerprint),
-            Loaded {
-                fingerprint: RepoSnapshotFingerprint,
-                workflow: Box<WorkflowSnapshot>,
-                loaded_without_refresh: bool,
-            },
-        }
-
         let source_dir_result = self
             .repo_root
             .clone()
@@ -1629,62 +1659,14 @@ impl DiffViewer {
                     cx.background_executor()
                         .spawn(async move {
                             let load_once = || -> Result<SnapshotRefreshStageA> {
-                                match request.behavior {
-                                    SnapshotRefreshBehavior::ReadOnly => {
-                                        if prefer_stale_first {
-                                            let (fingerprint, workflow) =
-                                                load_workflow_snapshot_with_fingerprint_without_refresh(
-                                                    &source_dir,
-                                                )?;
-                                            return Ok(SnapshotRefreshStageA::Loaded {
-                                                fingerprint,
-                                                workflow: Box::new(workflow),
-                                                loaded_without_refresh: true,
-                                            });
-                                        }
-
-                                        let (fingerprint, workflow) =
-                                            load_workflow_snapshot_if_changed_without_refresh(
-                                                &source_dir,
-                                                previous_fingerprint.as_ref(),
-                                            )?;
-                                        match workflow {
-                                            Some(workflow) => Ok(SnapshotRefreshStageA::Loaded {
-                                                fingerprint,
-                                                workflow: Box::new(workflow),
-                                                loaded_without_refresh: true,
-                                            }),
-                                            None => Ok(SnapshotRefreshStageA::Unchanged(fingerprint)),
-                                        }
-                                    }
-                                    SnapshotRefreshBehavior::RefreshWorkingCopy => {
-                                        if prefer_stale_first {
-                                            let (fingerprint, workflow) =
-                                                load_workflow_snapshot_with_fingerprint_without_refresh(
-                                                    &source_dir,
-                                                )?;
-                                            return Ok(SnapshotRefreshStageA::Loaded {
-                                                fingerprint,
-                                                workflow: Box::new(workflow),
-                                                loaded_without_refresh: true,
-                                            });
-                                        }
-
-                                        let (fingerprint, workflow) =
-                                            load_workflow_snapshot_if_changed(
-                                                &source_dir,
-                                                previous_fingerprint.as_ref(),
-                                            )?;
-                                        match workflow {
-                                            Some(workflow) => Ok(SnapshotRefreshStageA::Loaded {
-                                                fingerprint,
-                                                workflow: Box::new(workflow),
-                                                loaded_without_refresh: false,
-                                            }),
-                                            None => Ok(SnapshotRefreshStageA::Unchanged(fingerprint)),
-                                        }
-                                    }
-                                }
+                                load_snapshot_stage_a_for_path(
+                                    snapshot_stage_a_load_path(
+                                        request.behavior,
+                                        prefer_stale_first,
+                                    ),
+                                    &source_dir,
+                                    previous_fingerprint.as_ref(),
+                                )
                             };
 
                             match load_once() {
@@ -1699,33 +1681,13 @@ impl DiffViewer {
                                     );
 
                                     let fallback = || -> Result<SnapshotRefreshStageA> {
-                                        if prefer_stale_first {
-                                            let (fingerprint, workflow) =
-                                                load_workflow_snapshot_with_fingerprint(
-                                                    &source_dir,
-                                                )?;
-                                            return Ok(SnapshotRefreshStageA::Loaded {
-                                                fingerprint,
-                                                workflow: Box::new(workflow),
-                                                loaded_without_refresh: false,
-                                            });
-                                        }
-
-                                        let (fingerprint, workflow) =
-                                            load_workflow_snapshot_if_changed_without_refresh(
-                                                &source_dir,
-                                                previous_fingerprint.as_ref(),
-                                            )?;
-                                        match workflow {
-                                            Some(workflow) => Ok(SnapshotRefreshStageA::Loaded {
-                                                fingerprint,
-                                                workflow: Box::new(workflow),
-                                                loaded_without_refresh: true,
-                                            }),
-                                            None => {
-                                                Ok(SnapshotRefreshStageA::Unchanged(fingerprint))
-                                            }
-                                        }
+                                        load_snapshot_stage_a_for_path(
+                                            snapshot_stage_a_fallback_load_path(
+                                                prefer_stale_first,
+                                            ),
+                                            &source_dir,
+                                            previous_fingerprint.as_ref(),
+                                        )
                                     };
 
                                     match fallback() {
@@ -2691,13 +2653,115 @@ impl DiffViewer {
 
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SnapshotStageALoadPath {
+    WithFingerprintWithoutRefresh,
+    IfChangedWithoutRefresh,
+    WithFingerprintRefreshWorkingCopy,
+    IfChangedRefreshWorkingCopy,
+}
+
+enum SnapshotRefreshStageA {
+    Unchanged(RepoSnapshotFingerprint),
+    Loaded {
+        fingerprint: RepoSnapshotFingerprint,
+        workflow: Box<WorkflowSnapshot>,
+        loaded_without_refresh: bool,
+    },
+}
+
+fn snapshot_stage_a_load_path(
+    behavior: SnapshotRefreshBehavior,
+    prefer_stale_first: bool,
+) -> SnapshotStageALoadPath {
+    match (behavior, prefer_stale_first) {
+        (SnapshotRefreshBehavior::ReadOnly, true) => {
+            SnapshotStageALoadPath::WithFingerprintWithoutRefresh
+        }
+        (SnapshotRefreshBehavior::ReadOnly, false) => {
+            SnapshotStageALoadPath::IfChangedWithoutRefresh
+        }
+        (SnapshotRefreshBehavior::RefreshWorkingCopy, true) => {
+            SnapshotStageALoadPath::WithFingerprintWithoutRefresh
+        }
+        (SnapshotRefreshBehavior::RefreshWorkingCopy, false) => {
+            SnapshotStageALoadPath::IfChangedRefreshWorkingCopy
+        }
+    }
+}
+
+fn snapshot_stage_a_fallback_load_path(
+    prefer_stale_first: bool,
+) -> SnapshotStageALoadPath {
+    if prefer_stale_first {
+        SnapshotStageALoadPath::WithFingerprintRefreshWorkingCopy
+    } else {
+        SnapshotStageALoadPath::IfChangedRefreshWorkingCopy
+    }
+}
+
+fn load_snapshot_stage_a_for_path(
+    load_path: SnapshotStageALoadPath,
+    source_dir: &std::path::Path,
+    previous_fingerprint: Option<&RepoSnapshotFingerprint>,
+) -> Result<SnapshotRefreshStageA> {
+    match load_path {
+        SnapshotStageALoadPath::WithFingerprintWithoutRefresh => {
+            let (fingerprint, workflow) =
+                load_workflow_snapshot_with_fingerprint_without_refresh(source_dir)?;
+            Ok(SnapshotRefreshStageA::Loaded {
+                fingerprint,
+                workflow: Box::new(workflow),
+                loaded_without_refresh: true,
+            })
+        }
+        SnapshotStageALoadPath::IfChangedWithoutRefresh => {
+            let (fingerprint, workflow) = load_workflow_snapshot_if_changed_without_refresh(
+                source_dir,
+                previous_fingerprint,
+            )?;
+            match workflow {
+                Some(workflow) => Ok(SnapshotRefreshStageA::Loaded {
+                    fingerprint,
+                    workflow: Box::new(workflow),
+                    loaded_without_refresh: true,
+                }),
+                None => Ok(SnapshotRefreshStageA::Unchanged(fingerprint)),
+            }
+        }
+        SnapshotStageALoadPath::WithFingerprintRefreshWorkingCopy => {
+            let (fingerprint, workflow) = load_workflow_snapshot_with_fingerprint(source_dir)?;
+            Ok(SnapshotRefreshStageA::Loaded {
+                fingerprint,
+                workflow: Box::new(workflow),
+                loaded_without_refresh: false,
+            })
+        }
+        SnapshotStageALoadPath::IfChangedRefreshWorkingCopy => {
+            let (fingerprint, workflow) =
+                load_workflow_snapshot_if_changed(source_dir, previous_fingerprint)?;
+            match workflow {
+                Some(workflow) => Ok(SnapshotRefreshStageA::Loaded {
+                    fingerprint,
+                    workflow: Box::new(workflow),
+                    loaded_without_refresh: false,
+                }),
+                None => Ok(SnapshotRefreshStageA::Unchanged(fingerprint)),
+            }
+        }
+    }
+}
+
 fn should_send_ai_prompt_from_input_event(event: &InputEvent) -> bool {
     matches!(event, InputEvent::PressEnter { secondary: false })
 }
 
 #[cfg(test)]
 mod ai_input_tests {
-    use super::should_send_ai_prompt_from_input_event;
+    use super::{
+        SnapshotStageALoadPath, SnapshotRefreshBehavior, should_send_ai_prompt_from_input_event,
+        snapshot_stage_a_fallback_load_path, snapshot_stage_a_load_path,
+    };
     use gpui_component::input::InputEvent;
 
     #[test]
@@ -2719,5 +2783,21 @@ mod ai_input_tests {
         assert!(!should_send_ai_prompt_from_input_event(&InputEvent::Change));
         assert!(!should_send_ai_prompt_from_input_event(&InputEvent::Focus));
         assert!(!should_send_ai_prompt_from_input_event(&InputEvent::Blur));
+    }
+
+    #[test]
+    fn refresh_working_copy_uses_full_if_changed_path() {
+        assert_eq!(
+            snapshot_stage_a_load_path(SnapshotRefreshBehavior::RefreshWorkingCopy, false),
+            SnapshotStageALoadPath::IfChangedRefreshWorkingCopy
+        );
+    }
+
+    #[test]
+    fn refresh_working_copy_fallback_keeps_full_refresh_path() {
+        assert_eq!(
+            snapshot_stage_a_fallback_load_path(false),
+            SnapshotStageALoadPath::IfChangedRefreshWorkingCopy
+        );
     }
 }

@@ -1789,6 +1789,41 @@ impl DiffViewer {
         }
     }
 
+    fn reset_background_ai_workspace_after_failure(state: &mut AiWorkspaceState) {
+        state.connection_state = AiConnectionState::Failed;
+        state.bootstrap_loading = false;
+        state.account = None;
+        state.requires_openai_auth = false;
+        state.pending_chatgpt_login_id = None;
+        state.pending_chatgpt_auth_url = None;
+        state.rate_limits = None;
+        state.models.clear();
+        state.experimental_features.clear();
+        state.collaboration_modes.clear();
+        state.pending_approvals.clear();
+        state.pending_user_inputs.clear();
+        state.pending_user_input_answers.clear();
+        Self::restore_ai_workspace_state_after_failure_for_state(state);
+    }
+
+    fn apply_background_ai_workspace_fatal(
+        state: &mut AiWorkspaceState,
+        message: String,
+    ) {
+        Self::reset_background_ai_workspace_after_failure(state);
+        state.status_message = Some("Codex integration failed".to_string());
+        state.error_message = Some(message);
+    }
+
+    fn apply_background_ai_workspace_disconnect(state: &mut AiWorkspaceState) {
+        Self::reset_background_ai_workspace_after_failure(state);
+        if state.error_message.is_none() {
+            let message = "Codex worker disconnected.".to_string();
+            state.error_message = Some(message);
+            state.status_message = Some("Codex integration failed".to_string());
+        }
+    }
+
     fn handle_background_ai_worker_event(
         &mut self,
         workspace_key: &str,
@@ -1819,22 +1854,7 @@ impl DiffViewer {
                 state.status_message = Some(message);
             }
             AiWorkerEventPayload::Fatal(message) => {
-                state.connection_state = AiConnectionState::Failed;
-                state.bootstrap_loading = false;
-                state.status_message = Some("Codex integration failed".to_string());
-                state.error_message = Some(message);
-                state.account = None;
-                state.requires_openai_auth = false;
-                state.pending_chatgpt_login_id = None;
-                state.pending_chatgpt_auth_url = None;
-                state.rate_limits = None;
-                state.models.clear();
-                state.experimental_features.clear();
-                state.collaboration_modes.clear();
-                state.pending_approvals.clear();
-                state.pending_user_inputs.clear();
-                state.pending_user_input_answers.clear();
-                Self::restore_ai_workspace_state_after_failure_for_state(state);
+                Self::apply_background_ai_workspace_fatal(state, message);
             }
         });
     }
@@ -1852,25 +1872,7 @@ impl DiffViewer {
             });
         }
         self.update_background_ai_workspace_state(workspace_key, |state| {
-            state.connection_state = AiConnectionState::Failed;
-            state.bootstrap_loading = false;
-            if state.error_message.is_none() {
-                let message = "Codex worker disconnected.".to_string();
-                state.error_message = Some(message.clone());
-                state.status_message = Some("Codex integration failed".to_string());
-            }
-            state.account = None;
-            state.requires_openai_auth = false;
-            state.pending_chatgpt_login_id = None;
-            state.pending_chatgpt_auth_url = None;
-            state.rate_limits = None;
-            state.models.clear();
-            state.experimental_features.clear();
-            state.collaboration_modes.clear();
-            state.pending_approvals.clear();
-            state.pending_user_inputs.clear();
-            state.pending_user_input_answers.clear();
-            Self::restore_ai_workspace_state_after_failure_for_state(state);
+            Self::apply_background_ai_workspace_disconnect(state);
         });
     }
 

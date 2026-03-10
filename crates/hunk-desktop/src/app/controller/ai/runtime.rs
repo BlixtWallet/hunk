@@ -115,10 +115,14 @@ impl DiffViewer {
         self.ai_worker_workspace_key.as_deref() == Some(workspace_key)
     }
 
-    fn handle_ai_worker_event_stream_disconnect(&mut self, cx: &mut Context<Self>) {
+    fn reset_visible_ai_runtime_after_failure(
+        &mut self,
+        join_reason: &'static str,
+        cx: &mut Context<Self>,
+    ) {
         self.ai_command_tx = None;
         self.ai_worker_workspace_key = None;
-        self.join_ai_worker_thread("event stream disconnect");
+        self.join_ai_worker_thread(join_reason);
         self.ai_thread_title_refresh_state_by_thread.clear();
         self.ai_pending_approvals.clear();
         self.ai_pending_user_inputs.clear();
@@ -136,6 +140,10 @@ impl DiffViewer {
         self.ai_collaboration_modes.clear();
         self.ai_bootstrap_loading = false;
         self.ai_connection_state = AiConnectionState::Failed;
+    }
+
+    fn handle_ai_worker_event_stream_disconnect(&mut self, cx: &mut Context<Self>) {
+        self.reset_visible_ai_runtime_after_failure("event stream disconnect", cx);
         if self.ai_error_message.is_none() {
             let message = "Codex worker disconnected.".to_string();
             self.ai_error_message = Some(message.clone());
@@ -172,28 +180,9 @@ impl DiffViewer {
                 self.ai_status_message = Some(message);
             }
             AiWorkerEventPayload::Fatal(message) => {
-                self.ai_connection_state = AiConnectionState::Failed;
+                self.reset_visible_ai_runtime_after_failure("fatal worker event", cx);
                 self.ai_error_message = Some(message.clone());
                 self.ai_status_message = Some("Codex integration failed".to_string());
-                self.ai_command_tx = None;
-                self.ai_worker_workspace_key = None;
-                self.join_ai_worker_thread("fatal worker event");
-                self.ai_thread_title_refresh_state_by_thread.clear();
-                self.ai_pending_approvals.clear();
-                self.ai_pending_user_inputs.clear();
-                self.ai_pending_user_input_answers.clear();
-                self.ai_in_progress_turn_started_at.clear();
-                self.ai_composer_activity_elapsed_second = None;
-                self.restore_ai_new_thread_draft_after_failure(cx);
-                self.ai_account = None;
-                self.ai_requires_openai_auth = false;
-                self.ai_rate_limits = None;
-                self.ai_pending_chatgpt_login_id = None;
-                self.ai_pending_chatgpt_auth_url = None;
-                self.ai_models.clear();
-                self.ai_experimental_features.clear();
-                self.ai_collaboration_modes.clear();
-                self.ai_bootstrap_loading = false;
                 Self::push_error_notification(format!("Codex AI failed: {message}"), cx);
             }
         }

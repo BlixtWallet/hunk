@@ -138,6 +138,10 @@ fn render_ai_thread_sidebar_row(
     } else {
         hunk_opacity(cx.theme().muted_foreground, is_dark, 0.60, 0.72)
     };
+    let archive_action_available = !matches!(
+        thread.status,
+        ThreadLifecycleStatus::Archived | ThreadLifecycleStatus::Closed
+    );
     let select_view = view.clone();
     let archive_view = view.clone();
     let archive_thread_id = thread.id.clone();
@@ -205,32 +209,34 @@ fn render_ai_thread_sidebar_row(
                         .items_center()
                         .gap_1()
                         .when_some(status_indicator, |this, indicator| this.child(indicator))
-                        .child(
-                            div()
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                                    cx.stop_propagation();
-                                })
-                                .child({
-                                    let view = archive_view.clone();
-                                    Button::new(archive_button_id)
-                                        .ghost()
-                                        .compact()
-                                        .rounded(px(7.0))
-                                        .icon(Icon::new(IconName::Inbox).size(px(12.0)))
-                                        .text_color(archive_button_color)
-                                        .min_w(px(22.0))
-                                        .h(px(20.0))
-                                        .tooltip("Archive thread")
-                                        .on_click(move |_, _, cx| {
-                                            view.update(cx, |this, cx| {
-                                                this.ai_archive_thread_action(
-                                                    archive_thread_id.clone(),
-                                                    cx,
-                                                );
-                                            });
-                                        })
-                                }),
-                        ),
+                        .when(archive_action_available, |this| {
+                            this.child(
+                                div()
+                                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                        cx.stop_propagation();
+                                    })
+                                    .child({
+                                        let view = archive_view.clone();
+                                        Button::new(archive_button_id)
+                                            .ghost()
+                                            .compact()
+                                            .rounded(px(7.0))
+                                            .icon(Icon::new(IconName::Inbox).size(px(12.0)))
+                                            .text_color(archive_button_color)
+                                            .min_w(px(22.0))
+                                            .h(px(20.0))
+                                            .tooltip("Archive thread")
+                                            .on_click(move |_, _, cx| {
+                                                view.update(cx, |this, cx| {
+                                                    this.ai_archive_thread_action(
+                                                        archive_thread_id.clone(),
+                                                        cx,
+                                                    );
+                                                });
+                                            })
+                                    }),
+                            )
+                        }),
                 ),
         )
         .into_any_element()
