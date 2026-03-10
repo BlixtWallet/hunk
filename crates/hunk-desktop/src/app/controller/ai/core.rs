@@ -1743,25 +1743,15 @@ impl DiffViewer {
         state.connection_state = AiConnectionState::Ready;
         state.error_message = None;
 
-        if state.pending_new_thread_selection
-            && let Some(active_thread_id) = active_thread_id.as_deref()
-            && state
-                .state_snapshot
-                .threads
-                .get(active_thread_id)
-                .is_some_and(|thread| thread.status != ThreadLifecycleStatus::Archived)
-        {
+        if let Some(thread_id) = pending_new_thread_selection_ready_thread_id(
+            state.pending_new_thread_selection,
+            state.pending_thread_start.as_ref(),
+            active_thread_id.as_deref(),
+            &state.state_snapshot,
+        ) {
             state.new_thread_draft_active = false;
             state.pending_new_thread_selection = false;
-            state.selected_thread_id = Some(active_thread_id.to_string());
-        }
-
-        if let Some(pending) = state.pending_thread_start.as_mut()
-            && pending.thread_id.is_none()
-        {
-            pending.thread_id = active_thread_id
-                .clone()
-                .or_else(|| state.selected_thread_id.clone());
+            state.selected_thread_id = Some(thread_id);
         }
 
         if state.pending_thread_start.as_ref().is_some_and(|pending| {
@@ -1826,6 +1816,9 @@ impl DiffViewer {
             }
             AiWorkerEventPayload::BootstrapCompleted => {
                 state.bootstrap_loading = false;
+            }
+            AiWorkerEventPayload::ThreadStarted { thread_id } => {
+                set_pending_thread_start_thread_id(&mut state.pending_thread_start, thread_id);
             }
             AiWorkerEventPayload::Reconnecting(message) => {
                 state.connection_state = AiConnectionState::Reconnecting;

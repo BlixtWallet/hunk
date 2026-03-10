@@ -647,7 +647,7 @@ mod ai_tests {
                 local_images: Vec::new(),
                 started_at: Instant::now(),
                 start_mode: AiNewThreadStartMode::Worktree,
-                thread_id: None,
+                thread_id: Some("thread-1".to_string()),
             }),
             ..AiWorkspaceState::default()
         };
@@ -736,6 +736,136 @@ mod ai_tests {
         );
 
         assert!(workspace_state.pending_thread_start.is_none());
+    }
+
+    #[test]
+    fn apply_ai_snapshot_to_workspace_state_waits_for_explicit_pending_thread_id() {
+        let mut workspace_state = AiWorkspaceState {
+            new_thread_draft_active: true,
+            pending_new_thread_selection: true,
+            pending_thread_start: Some(AiPendingThreadStart {
+                workspace_key: "/repo/worktrees/task-1".to_string(),
+                prompt: "Implement timeline update".to_string(),
+                local_images: Vec::new(),
+                started_at: Instant::now(),
+                start_mode: AiNewThreadStartMode::Worktree,
+                thread_id: None,
+            }),
+            ..AiWorkspaceState::default()
+        };
+        let mut snapshot_state = AiState::default();
+        snapshot_state.threads.insert(
+            "thread-old".to_string(),
+            ThreadSummary {
+                id: "thread-old".to_string(),
+                cwd: "/repo/worktrees/task-1".to_string(),
+                title: Some("Existing worktree thread".to_string()),
+                status: ThreadLifecycleStatus::Active,
+                created_at: 10,
+                updated_at: 10,
+                last_sequence: 1,
+            },
+        );
+
+        DiffViewer::apply_ai_snapshot_to_workspace_state(
+            &mut workspace_state,
+            AiSnapshot {
+                state: snapshot_state,
+                active_thread_id: Some("thread-old".to_string()),
+                pending_approvals: Vec::new(),
+                pending_user_inputs: Vec::new(),
+                account: None,
+                requires_openai_auth: false,
+                pending_chatgpt_login_id: None,
+                pending_chatgpt_auth_url: None,
+                rate_limits: None,
+                models: Vec::new(),
+                experimental_features: Vec::new(),
+                collaboration_modes: Vec::new(),
+                include_hidden_models: true,
+                mad_max_mode: false,
+            },
+        );
+
+        assert!(workspace_state.new_thread_draft_active);
+        assert!(workspace_state.pending_new_thread_selection);
+        assert_eq!(workspace_state.selected_thread_id, None);
+        assert_eq!(
+            workspace_state
+                .pending_thread_start
+                .as_ref()
+                .and_then(|pending| pending.thread_id.as_deref()),
+            None
+        );
+    }
+
+    #[test]
+    fn apply_ai_snapshot_to_workspace_state_prefers_explicit_pending_thread_id_over_old_active_thread() {
+        let mut workspace_state = AiWorkspaceState {
+            new_thread_draft_active: true,
+            pending_new_thread_selection: true,
+            pending_thread_start: Some(AiPendingThreadStart {
+                workspace_key: "/repo/worktrees/task-1".to_string(),
+                prompt: "Implement timeline update".to_string(),
+                local_images: Vec::new(),
+                started_at: Instant::now(),
+                start_mode: AiNewThreadStartMode::Worktree,
+                thread_id: Some("thread-new".to_string()),
+            }),
+            ..AiWorkspaceState::default()
+        };
+        let mut snapshot_state = AiState::default();
+        snapshot_state.threads.insert(
+            "thread-old".to_string(),
+            ThreadSummary {
+                id: "thread-old".to_string(),
+                cwd: "/repo/worktrees/task-1".to_string(),
+                title: Some("Existing worktree thread".to_string()),
+                status: ThreadLifecycleStatus::Active,
+                created_at: 10,
+                updated_at: 10,
+                last_sequence: 1,
+            },
+        );
+        snapshot_state.threads.insert(
+            "thread-new".to_string(),
+            ThreadSummary {
+                id: "thread-new".to_string(),
+                cwd: "/repo/worktrees/task-1".to_string(),
+                title: Some("New worktree thread".to_string()),
+                status: ThreadLifecycleStatus::Idle,
+                created_at: 20,
+                updated_at: 20,
+                last_sequence: 2,
+            },
+        );
+
+        DiffViewer::apply_ai_snapshot_to_workspace_state(
+            &mut workspace_state,
+            AiSnapshot {
+                state: snapshot_state,
+                active_thread_id: Some("thread-old".to_string()),
+                pending_approvals: Vec::new(),
+                pending_user_inputs: Vec::new(),
+                account: None,
+                requires_openai_auth: false,
+                pending_chatgpt_login_id: None,
+                pending_chatgpt_auth_url: None,
+                rate_limits: None,
+                models: Vec::new(),
+                experimental_features: Vec::new(),
+                collaboration_modes: Vec::new(),
+                include_hidden_models: true,
+                mad_max_mode: false,
+            },
+        );
+
+        assert!(!workspace_state.new_thread_draft_active);
+        assert!(!workspace_state.pending_new_thread_selection);
+        assert_eq!(
+            workspace_state.selected_thread_id.as_deref(),
+            Some("thread-new")
+        );
     }
 
     #[test]

@@ -154,6 +154,9 @@ impl DiffViewer {
             AiWorkerEventPayload::BootstrapCompleted => {
                 self.ai_bootstrap_loading = false;
             }
+            AiWorkerEventPayload::ThreadStarted { thread_id } => {
+                set_pending_thread_start_thread_id(&mut self.ai_pending_thread_start, thread_id);
+            }
             AiWorkerEventPayload::Reconnecting(message) => {
                 self.ai_connection_state = AiConnectionState::Reconnecting;
                 self.ai_bootstrap_loading = false;
@@ -255,25 +258,15 @@ impl DiffViewer {
             .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
         self.prune_ai_composer_statuses();
 
-        if self.ai_pending_new_thread_selection
-            && let Some(active_thread_id) = active_thread_id.as_deref()
-            && self
-                .ai_state_snapshot
-                .threads
-                .get(active_thread_id)
-                .is_some_and(|thread| thread.status != ThreadLifecycleStatus::Archived)
-        {
+        if let Some(thread_id) = pending_new_thread_selection_ready_thread_id(
+            self.ai_pending_new_thread_selection,
+            self.ai_pending_thread_start.as_ref(),
+            active_thread_id.as_deref(),
+            &self.ai_state_snapshot,
+        ) {
             self.ai_new_thread_draft_active = false;
             self.ai_pending_new_thread_selection = false;
-            self.ai_selected_thread_id = Some(active_thread_id.to_string());
-        }
-
-        if let Some(pending) = self.ai_pending_thread_start.as_mut()
-            && pending.thread_id.is_none()
-        {
-            pending.thread_id = active_thread_id
-                .clone()
-                .or_else(|| self.ai_selected_thread_id.clone());
+            self.ai_selected_thread_id = Some(thread_id);
         }
 
         if should_sync_selected_thread_from_active_thread(

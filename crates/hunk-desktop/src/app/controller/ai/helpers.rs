@@ -535,6 +535,43 @@ fn current_visible_thread_fallback_workspace_key(
         .or_else(|| draft_workspace_key.map(ToOwned::to_owned))
 }
 
+fn pending_new_thread_selection_target_id<'a>(
+    pending_thread_start: Option<&'a AiPendingThreadStart>,
+    active_thread_id: Option<&'a str>,
+) -> Option<&'a str> {
+    pending_thread_start
+        .and_then(|pending| pending.thread_id.as_deref())
+        .or(active_thread_id.filter(|_| pending_thread_start.is_none()))
+}
+
+fn pending_new_thread_selection_ready_thread_id(
+    pending_new_thread_selection: bool,
+    pending_thread_start: Option<&AiPendingThreadStart>,
+    active_thread_id: Option<&str>,
+    state: &hunk_codex::state::AiState,
+) -> Option<String> {
+    if !pending_new_thread_selection {
+        return None;
+    }
+
+    let thread_id =
+        pending_new_thread_selection_target_id(pending_thread_start, active_thread_id)?;
+    state
+        .threads
+        .get(thread_id)
+        .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
+        .map(|_| thread_id.to_string())
+}
+
+fn set_pending_thread_start_thread_id(
+    pending_thread_start: &mut Option<AiPendingThreadStart>,
+    thread_id: String,
+) {
+    if let Some(pending) = pending_thread_start.as_mut() {
+        pending.thread_id = Some(thread_id);
+    }
+}
+
 fn current_visible_thread_id_from_snapshot(
     state: &hunk_codex::state::AiState,
     selected_thread_id: Option<&str>,
