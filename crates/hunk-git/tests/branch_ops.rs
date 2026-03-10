@@ -155,6 +155,55 @@ fn rename_branch_if_current_unpublished_skips_published_branch() -> Result<()> {
 }
 
 #[test]
+fn rename_branch_if_current_unpublished_skips_known_remote_branch_without_upstream() -> Result<()> {
+    let fixture = TempGitRepo::new()?;
+    fixture.write_file("tracked.txt", "line one\n")?;
+    fixture.commit_all("initial")?;
+    fixture.checkout_branch("feature-old")?;
+    fixture.create_bare_remote("origin")?;
+    fixture.push_current_branch("origin", "feature-old")?;
+    fixture.set_remote_tracking_ref("origin", "feature-old")?;
+
+    let outcome =
+        rename_branch_if_current_unpublished(fixture.root(), "feature-old", "feature-new")?;
+
+    assert_eq!(
+        outcome,
+        RenameBranchIfSafeOutcome::Skipped(RenameBranchSkipReason::CurrentBranchPublished)
+    );
+    let snapshot = load_workflow_snapshot(fixture.root())?;
+    assert_eq!(snapshot.branch_name, "feature-old");
+    assert!(!snapshot.branch_has_upstream);
+    Ok(())
+}
+
+#[test]
+fn rename_branch_if_current_unpublished_skips_known_remote_branch_after_local_commit() -> Result<()>
+{
+    let fixture = TempGitRepo::new()?;
+    fixture.write_file("tracked.txt", "line one\n")?;
+    fixture.commit_all("initial")?;
+    fixture.checkout_branch("feature-old")?;
+    fixture.create_bare_remote("origin")?;
+    fixture.push_current_branch("origin", "feature-old")?;
+    fixture.set_remote_tracking_ref("origin", "feature-old")?;
+    fixture.write_file("tracked.txt", "line two\n")?;
+    fixture.commit_all("second")?;
+
+    let outcome =
+        rename_branch_if_current_unpublished(fixture.root(), "feature-old", "feature-new")?;
+
+    assert_eq!(
+        outcome,
+        RenameBranchIfSafeOutcome::Skipped(RenameBranchSkipReason::CurrentBranchPublished)
+    );
+    let snapshot = load_workflow_snapshot(fixture.root())?;
+    assert_eq!(snapshot.branch_name, "feature-old");
+    assert!(!snapshot.branch_has_upstream);
+    Ok(())
+}
+
+#[test]
 fn rename_branch_if_current_unpublished_skips_existing_target() -> Result<()> {
     let fixture = TempGitRepo::new()?;
     fixture.write_file("tracked.txt", "line one\n")?;
@@ -465,6 +514,22 @@ impl TempGitRepo {
         let repo = self.repository()?;
         let mut branch = repo.find_branch(branch_name, BranchType::Local)?;
         branch.set_upstream(Some(upstream))?;
+        Ok(())
+    }
+
+    fn set_remote_tracking_ref(&self, remote_name: &str, branch_name: &str) -> Result<()> {
+        let repo = self.repository()?;
+        let branch = repo.find_branch(branch_name, BranchType::Local)?;
+        let target = branch
+            .get()
+            .target()
+            .ok_or_else(|| anyhow::anyhow!("branch '{branch_name}' has no target"))?;
+        repo.reference(
+            format!("refs/remotes/{remote_name}/{branch_name}").as_str(),
+            target,
+            true,
+            "test remote tracking ref",
+        )?;
         Ok(())
     }
 

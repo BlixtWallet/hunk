@@ -2510,11 +2510,7 @@ mod ai_tests {
     #[test]
     fn requested_branch_name_for_local_thread_skips_generation() {
         let fallback = "ai/local/fallback".to_string();
-        let requested = requested_branch_name_for_new_thread(
-            AiNewThreadStartMode::Local,
-            fallback.clone(),
-            || panic!("local thread starts should not generate branch names"),
-        );
+        let requested = requested_branch_name_for_new_thread(fallback.clone());
 
         assert_eq!(requested, fallback);
     }
@@ -2522,23 +2518,15 @@ mod ai_tests {
     #[test]
     fn requested_branch_name_for_worktree_skips_generation() {
         let fallback = "ai/worktree/fallback".to_string();
-        let requested = requested_branch_name_for_new_thread(
-            AiNewThreadStartMode::Worktree,
-            fallback.clone(),
-            || panic!("worktree startup should not block on branch generation"),
-        );
+        let requested = requested_branch_name_for_new_thread(fallback.clone());
 
         assert_eq!(requested, fallback);
     }
 
     #[test]
-    fn requested_branch_name_for_worktree_falls_back_when_generation_fails() {
+    fn requested_branch_name_for_worktree_returns_fallback_name() {
         let fallback = "ai/worktree/fallback".to_string();
-        let requested = requested_branch_name_for_new_thread(
-            AiNewThreadStartMode::Worktree,
-            fallback.clone(),
-            || None,
-        );
+        let requested = requested_branch_name_for_new_thread(fallback.clone());
 
         assert_eq!(requested, fallback);
     }

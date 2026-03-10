@@ -261,18 +261,36 @@ pub fn rename_branch_if_current_unpublished(
         }
     }
 
-    let branch = repo
+    let mut branch = repo
         .find_branch(expected_current_branch_name, git2::BranchType::Local)
         .with_context(|| format!("branch '{expected_current_branch_name}' does not exist"))?;
-    if branch_has_upstream(&branch).with_context(|| {
+    let branch_is_published = branch_has_upstream(&branch).with_context(|| {
         format!("failed to inspect upstream for branch '{expected_current_branch_name}'")
-    })? {
+    })? || branch_has_known_remote_counterpart(
+        &repo,
+        expected_current_branch_name,
+    )
+    .with_context(|| {
+        format!(
+            "failed to inspect remote tracking state for branch '{expected_current_branch_name}'"
+        )
+    })?;
+    if branch_is_published {
         return Ok(RenameBranchIfSafeOutcome::Skipped(
             RenameBranchSkipReason::CurrentBranchPublished,
         ));
     }
 
-    rename_branch(repo_root, expected_current_branch_name, new_branch_name)?;
+    let mut renamed = branch
+        .rename(new_branch_name, false)
+        .with_context(|| format!("failed to rename branch '{expected_current_branch_name}'"))?;
+    if let Err(err) = renamed.set_upstream(None)
+        && err.code() != git2::ErrorCode::NotFound
+        && err.class() != git2::ErrorClass::Config
+    {
+        return Err(err)
+            .with_context(|| format!("failed to clear upstream for branch '{new_branch_name}'"));
+    }
     Ok(RenameBranchIfSafeOutcome::Renamed)
 }
 
@@ -340,6 +358,31 @@ fn branch_has_upstream(branch: &git2::Branch<'_>) -> Result<bool> {
         }
         Err(err) => Err(err.into()),
     }
+}
+
+fn branch_has_known_remote_counterpart(repo: &git2::Repository, branch_name: &str) -> Result<bool> {
+    let remote_branches = repo
+        .branches(Some(git2::BranchType::Remote))
+        .context("failed to enumerate remote branches")?;
+    for remote_branch in remote_branches {
+        let (remote_branch, _) =
+            remote_branch.context("failed to inspect remote branch reference")?;
+        let Some(remote_branch_name) = remote_branch
+            .name()
+            .context("failed to inspect remote branch name")?
+        else {
+            continue;
+        };
+        let Some((_, remote_branch_suffix)) = remote_branch_name.split_once('/') else {
+            continue;
+        };
+        if remote_branch_suffix != branch_name {
+            continue;
+        }
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 fn resolve_review_remote<'repo>(
