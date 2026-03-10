@@ -253,6 +253,37 @@ fn thread_started_does_not_retarget_existing_thread_cwd() {
 }
 
 #[test]
+fn thread_started_backfills_placeholder_thread_cwd() {
+    let mut state = AiState::default();
+
+    state.apply_stream_event(event(
+        1,
+        Some("turn-start:r1"),
+        ReducerEvent::TurnStarted {
+            thread_id: "t1".to_string(),
+            turn_id: "r1".to_string(),
+        },
+    ));
+    state.apply_stream_event(event(
+        2,
+        Some("thread-start:t1"),
+        ReducerEvent::ThreadStarted {
+            thread_id: "t1".to_string(),
+            cwd: "/repo".to_string(),
+            title: Some("Recovered".to_string()),
+            created_at: Some(10),
+            updated_at: Some(20),
+        },
+    ));
+
+    let thread = state.threads.get("t1").expect("thread must exist");
+    assert_eq!(thread.cwd, "/repo");
+    assert_eq!(thread.title.as_deref(), Some("Recovered"));
+    assert_eq!(thread.created_at, 10);
+    assert_eq!(thread.updated_at, 20);
+}
+
+#[test]
 fn item_start_backfills_turn_association_after_delta_first() {
     let mut state = AiState::default();
 
