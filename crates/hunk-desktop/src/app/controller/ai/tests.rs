@@ -12,6 +12,7 @@ mod ai_tests {
     use super::ai_composer_draft_key;
     use super::ai_composer_prompt_for_target;
     use super::ai_prompt_send_waiting_on_connection;
+    use super::ai_thread_workspace_is_visible_or_known;
     use super::resolved_ai_thread_mode_picker_state;
     use super::ai_attachment_status_message;
     use super::ai_branch_name_for_thread;
@@ -1017,6 +1018,55 @@ mod ai_tests {
                 PathBuf::from("/repo/worktrees/task-2"),
             ]
         );
+    }
+
+    #[test]
+    fn thread_workspace_filter_skips_unknown_deleted_workspaces() {
+        let known_workspace_keys =
+            BTreeSet::from([String::from("/repo"), String::from("/repo/worktrees/task-1")]);
+        let deleted_thread = ThreadSummary {
+            id: "thread-deleted".to_string(),
+            cwd: "/repo/worktrees/deleted-task".to_string(),
+            title: Some("Deleted worktree thread".to_string()),
+            status: ThreadLifecycleStatus::Idle,
+            created_at: 10,
+            updated_at: 10,
+            last_sequence: 1,
+        };
+        let visible_thread = ThreadSummary {
+            id: "thread-visible".to_string(),
+            cwd: "/repo/worktrees/deleted-task".to_string(),
+            title: Some("Visible deleted worktree thread".to_string()),
+            status: ThreadLifecycleStatus::Idle,
+            created_at: 20,
+            updated_at: 20,
+            last_sequence: 2,
+        };
+        let known_thread = ThreadSummary {
+            id: "thread-known".to_string(),
+            cwd: "/repo/worktrees/task-1".to_string(),
+            title: Some("Known worktree thread".to_string()),
+            status: ThreadLifecycleStatus::Idle,
+            created_at: 30,
+            updated_at: 30,
+            last_sequence: 3,
+        };
+
+        assert!(!ai_thread_workspace_is_visible_or_known(
+            &deleted_thread,
+            Some("/repo"),
+            &known_workspace_keys,
+        ));
+        assert!(ai_thread_workspace_is_visible_or_known(
+            &visible_thread,
+            Some("/repo/worktrees/deleted-task"),
+            &known_workspace_keys,
+        ));
+        assert!(ai_thread_workspace_is_visible_or_known(
+            &known_thread,
+            Some("/repo"),
+            &known_workspace_keys,
+        ));
     }
 
     #[test]

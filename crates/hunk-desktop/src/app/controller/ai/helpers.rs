@@ -19,6 +19,15 @@ fn sorted_threads(state: &hunk_codex::state::AiState) -> Vec<ThreadSummary> {
     threads
 }
 
+fn ai_thread_workspace_is_visible_or_known(
+    thread: &ThreadSummary,
+    visible_workspace_key: Option<&str>,
+    known_workspace_keys: &BTreeSet<String>,
+) -> bool {
+    visible_workspace_key == Some(thread.cwd.as_str())
+        || known_workspace_keys.contains(thread.cwd.as_str())
+}
+
 fn workspace_mad_max_mode(state: &AppState, workspace_key: Option<&str>) -> bool {
     workspace_key
         .and_then(|workspace| state.ai_workspace_mad_max.get(workspace))

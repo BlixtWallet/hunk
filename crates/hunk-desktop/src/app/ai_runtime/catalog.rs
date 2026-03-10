@@ -53,7 +53,7 @@ fn load_ai_workspace_thread_catalogs_on_port(
         .expect("workspace roots should be present");
     let host_config = HostConfig::codex_app_server(
         codex_executable.to_path_buf(),
-        host_working_directory,
+        shared_ai_host_working_directory(host_working_directory.as_path()),
         codex_home.to_path_buf(),
         port,
     );

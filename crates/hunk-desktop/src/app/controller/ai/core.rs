@@ -643,15 +643,56 @@ impl DiffViewer {
             .collect()
     }
 
+    fn ai_visible_workspace_key_for_state_filter(&self) -> Option<String> {
+        if self.ai_new_thread_draft_active || self.ai_pending_new_thread_selection {
+            return self.ai_workspace_key_for_draft();
+        }
+
+        self.ai_worker_workspace_key.clone().or_else(|| {
+            self.ai_selected_thread_id
+                .as_deref()
+                .and_then(|thread_id| self.ai_state_snapshot.threads.get(thread_id))
+                .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
+                .map(|thread| thread.cwd.clone())
+                .or_else(|| self.ai_workspace_key_for_draft())
+        })
+    }
+
     fn ai_thread_summary(&self, thread_id: &str) -> Option<ThreadSummary> {
+        let visible_workspace_key = self.ai_visible_workspace_key_for_state_filter();
+        let known_workspace_keys = ai_known_workspace_keys(self.workspace_targets.as_slice());
         self.ai_state_snapshot
             .threads
             .get(thread_id)
             .cloned()
+            .filter(|thread| {
+                ai_thread_workspace_is_visible_or_known(
+                    thread,
+                    visible_workspace_key.as_deref(),
+                    &known_workspace_keys,
+                )
+            })
             .or_else(|| {
                 self.ai_workspace_states
-                    .values()
-                    .find_map(|state| state.state_snapshot.threads.get(thread_id).cloned())
+                    .iter()
+                    .filter(|(workspace_key, _)| {
+                        visible_workspace_key.as_deref() == Some(workspace_key.as_str())
+                            || known_workspace_keys.contains(workspace_key.as_str())
+                    })
+                    .find_map(|(_, state)| {
+                        state
+                            .state_snapshot
+                            .threads
+                            .get(thread_id)
+                            .cloned()
+                            .filter(|thread| {
+                                ai_thread_workspace_is_visible_or_known(
+                                    thread,
+                                    visible_workspace_key.as_deref(),
+                                    &known_workspace_keys,
+                                )
+                            })
+                    })
             })
     }
 
@@ -714,7 +755,8 @@ impl DiffViewer {
     }
 
     pub(super) fn ai_visible_threads(&self) -> Vec<ThreadSummary> {
-        let visible_workspace_key = self.ai_workspace_key();
+        let visible_workspace_key = self.ai_visible_workspace_key_for_state_filter();
+        let known_workspace_keys = ai_known_workspace_keys(self.workspace_targets.as_slice());
         let mut threads_by_id = BTreeMap::<String, ThreadSummary>::new();
 
         for thread in self
@@ -722,6 +764,13 @@ impl DiffViewer {
             .threads
             .values()
             .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
+            .filter(|thread| {
+                ai_thread_workspace_is_visible_or_known(
+                    thread,
+                    visible_workspace_key.as_deref(),
+                    &known_workspace_keys,
+                )
+            })
         {
             threads_by_id.insert(thread.id.clone(), thread.clone());
         }
@@ -730,11 +779,21 @@ impl DiffViewer {
             if visible_workspace_key.as_deref() == Some(workspace_key.as_str()) {
                 continue;
             }
+            if !known_workspace_keys.contains(workspace_key.as_str()) {
+                continue;
+            }
             for thread in state
                 .state_snapshot
                 .threads
                 .values()
                 .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
+                .filter(|thread| {
+                    ai_thread_workspace_is_visible_or_known(
+                        thread,
+                        visible_workspace_key.as_deref(),
+                        &known_workspace_keys,
+                    )
+                })
             {
                 let replace_existing = threads_by_id
                     .get(thread.id.as_str())

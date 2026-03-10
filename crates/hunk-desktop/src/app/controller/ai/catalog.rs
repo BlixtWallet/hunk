@@ -110,11 +110,20 @@ impl DiffViewer {
             .keys()
             .cloned()
             .collect::<std::collections::BTreeSet<_>>();
-        self.ai_workspace_states.retain(|workspace_key, _| {
-            known_workspace_keys.contains(workspace_key)
-                || visible_workspace_key == Some(workspace_key.as_str())
-                || hidden_workspace_keys.contains(workspace_key)
-        });
+        let removable_workspace_keys = self
+            .ai_workspace_states
+            .keys()
+            .filter(|workspace_key| {
+                !known_workspace_keys.contains(workspace_key.as_str())
+                    && visible_workspace_key != Some(workspace_key.as_str())
+                    && !hidden_workspace_keys.contains(workspace_key.as_str())
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for workspace_key in removable_workspace_keys {
+            self.ai_forget_deleted_workspace_state(workspace_key.as_str());
+        }
     }
 }
 
