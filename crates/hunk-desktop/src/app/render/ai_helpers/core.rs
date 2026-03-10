@@ -712,42 +712,23 @@ fn render_ai_session_controls_panel(
                 .dropdown_caret(true)
                 .label(service_tier_label)
                 .dropdown_menu(move |menu, _, _| {
-                    menu.item(
-                        PopupMenuItem::new("Standard")
-                            .checked(matches!(
-                                selected_service_tier,
-                                AiServiceTierSelection::Standard
-                            ))
-                            .on_click({
-                                let view = view.clone();
-                                move |_, _, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.ai_select_service_tier_action(
-                                            AiServiceTierSelection::Standard,
-                                            cx,
-                                        );
-                                    });
-                                }
-                            }),
-                    )
-                    .item(
-                        PopupMenuItem::new("Fast")
-                            .checked(matches!(
-                                selected_service_tier,
-                                AiServiceTierSelection::Fast
-                            ))
-                            .on_click({
-                                let view = view.clone();
-                                move |_, _, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.ai_select_service_tier_action(
-                                            AiServiceTierSelection::Fast,
-                                            cx,
-                                        );
-                                    });
-                                }
-                            }),
-                    )
+                    let mut menu = menu;
+                    for (service_tier, label) in ai_service_tier_options() {
+                        menu = menu.item(
+                            PopupMenuItem::new(*label)
+                                .checked(selected_service_tier == *service_tier)
+                                .on_click({
+                                    let view = view.clone();
+                                    let service_tier = *service_tier;
+                                    move |_, _, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.ai_select_service_tier_action(service_tier, cx);
+                                        });
+                                    }
+                                }),
+                        );
+                    }
+                    menu
                 })
         })
         .child({
@@ -1070,12 +1051,4 @@ fn ai_collaboration_picker_label(
     selected: hunk_domain::state::AiCollaborationModeSelection,
 ) -> String {
     selected.label().to_string()
-}
-
-fn ai_service_tier_picker_label(selected: AiServiceTierSelection) -> String {
-    match selected {
-        AiServiceTierSelection::Standard => "Standard".to_string(),
-        AiServiceTierSelection::Fast => "Fast".to_string(),
-        AiServiceTierSelection::Flex => "Flex".to_string(),
-    }
 }

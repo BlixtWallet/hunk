@@ -521,18 +521,7 @@ impl DiffViewer {
             )
             .child(self.render_row_comment_affordance(ix, cx));
 
-        v_flex()
-            .w_full()
-            .child(meta_row)
-            .child(
-                h_flex()
-                    .w_full()
-                    .justify_end()
-                    .px_3()
-                    .pt_1()
-                    .child(self.render_row_comment_editor(ix, cx)),
-            )
-            .into_any_element()
+        self.render_diff_row_with_comment_editor(ix, meta_row.into_any_element(), cx)
     }
 
     fn render_code_row(
@@ -601,16 +590,25 @@ impl DiffViewer {
             ))
             .child(self.render_row_comment_affordance(ix, cx));
 
+        self.render_diff_row_with_comment_editor(ix, code_row.into_any_element(), cx)
+    }
+
+    fn render_diff_row_with_comment_editor(
+        &self,
+        row_ix: usize,
+        row: AnyElement,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         v_flex()
             .w_full()
-            .child(code_row)
+            .child(row)
             .child(
                 h_flex()
                     .w_full()
                     .justify_end()
                     .px_3()
                     .pt_1()
-                    .child(self.render_row_comment_editor(ix, cx)),
+                    .child(self.render_row_comment_editor(row_ix, cx)),
             )
             .into_any_element()
     }
@@ -786,8 +784,11 @@ impl DiffViewer {
                         } else {
                             segment.plain_text.clone()
                         };
-                        let segment_color =
-                            self.syntax_color_for_segment(text_color, segment.syntax, cx);
+                        let segment_color = diff_syntax_color(
+                            text_color,
+                            segment.syntax,
+                            cx.theme().mode.is_dark(),
+                        );
                         div()
                             .flex_none()
                             .whitespace_nowrap()
@@ -820,29 +821,6 @@ impl DiffViewer {
             .flex_1()
             .min_w_0()
             .into_any_element()
-    }
-
-    fn syntax_color_for_segment(
-        &self,
-        default_color: gpui::Hsla,
-        token: SyntaxTokenKind,
-        cx: &mut Context<Self>,
-    ) -> gpui::Hsla {
-        let is_dark = cx.theme().mode.is_dark();
-        let github =
-            |dark: u32, light: u32| -> gpui::Hsla { gpui::rgb(hunk_pick(is_dark, dark, light)).into() };
-        match token {
-            SyntaxTokenKind::Plain => default_color,
-            SyntaxTokenKind::Keyword => github(0xff7b72, 0xcf222e),
-            SyntaxTokenKind::String => github(0xa5d6ff, 0x0a3069),
-            SyntaxTokenKind::Number => github(0x79c0ff, 0x0550ae),
-            SyntaxTokenKind::Comment => github(0x8b949e, 0x57606a),
-            SyntaxTokenKind::Function => github(0xd2a8ff, 0x8250df),
-            SyntaxTokenKind::TypeName => github(0xffa657, 0x953800),
-            SyntaxTokenKind::Constant => github(0x79c0ff, 0x0550ae),
-            SyntaxTokenKind::Variable => github(0xffa657, 0x953800),
-            SyntaxTokenKind::Operator => github(0xff7b72, 0xcf222e),
-        }
     }
 
     fn diff_row_stable_id(&self, row_ix: usize) -> u64 {

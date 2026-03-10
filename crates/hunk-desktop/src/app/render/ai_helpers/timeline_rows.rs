@@ -483,23 +483,7 @@ fn ai_markdown_code_token_color(
     token: MarkdownCodeTokenKind,
     is_dark: bool,
 ) -> Hsla {
-    let github = |dark: u32, light: u32| {
-        let hex = format!("#{:06x}", hunk_pick(is_dark, dark, light));
-        Hsla::parse_hex(hex.as_str()).unwrap_or(default_color)
-    };
-
-    match token {
-        MarkdownCodeTokenKind::Plain => default_color,
-        MarkdownCodeTokenKind::Keyword => github(0xff7b72, 0xcf222e),
-        MarkdownCodeTokenKind::String => github(0xa5d6ff, 0x0a3069),
-        MarkdownCodeTokenKind::Number => github(0x79c0ff, 0x0550ae),
-        MarkdownCodeTokenKind::Comment => github(0x8b949e, 0x57606a),
-        MarkdownCodeTokenKind::Function => github(0xd2a8ff, 0x8250df),
-        MarkdownCodeTokenKind::TypeName => github(0xffa657, 0x953800),
-        MarkdownCodeTokenKind::Constant => github(0x79c0ff, 0x0550ae),
-        MarkdownCodeTokenKind::Variable => github(0xffa657, 0x953800),
-        MarkdownCodeTokenKind::Operator => github(0xff7b72, 0xcf222e),
-    }
+    markdown_syntax_color(default_color, token, is_dark)
 }
 
 fn ai_chat_markdown_selection_surfaces(

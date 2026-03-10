@@ -1,7 +1,6 @@
 use super::data::{
     DiffStreamRowKind, RepoTreeNodeKind, cached_runtime_fallback_segments, is_markdown_path,
 };
-use super::highlight::SyntaxTokenKind;
 use super::theme::*;
 use super::*;
 use gpui_component::Disableable as _;
@@ -45,6 +44,7 @@ include!("git_workspace.rs");
 include!("file_banner.rs");
 include!("file_status.rs");
 include!("comments.rs");
+include!("syntax_colors.rs");
 include!("diff.rs");
 include!("file_editor.rs");
 include!("ai_loading.rs");

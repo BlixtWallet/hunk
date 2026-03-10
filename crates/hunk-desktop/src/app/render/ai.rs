@@ -85,7 +85,7 @@ impl DiffViewer {
         );
         let ai_timeline_follow_output = self.ai_timeline_follow_output;
         let show_no_turns_empty_state = ai_should_show_no_turns_empty_state(
-            timeline_visible_turn_count,
+            timeline_visible_row_ids.len(),
             pending_thread_start.is_some(),
         );
         let timeline_loading =
@@ -1423,13 +1423,6 @@ fn ai_render_composer_feedback_strip(
 
     ai_current_composer_activity(this)
         .map(|activity| ai_render_composer_activity_strip(this, &activity, is_dark, cx))
-}
-
-fn ai_should_show_no_turns_empty_state(
-    visible_turn_count: usize,
-    has_pending_thread_start: bool,
-) -> bool {
-    visible_turn_count == 0 && !has_pending_thread_start
 }
 
 fn ai_composer_status_tone(status: &str) -> Option<AiComposerStatusTone> {
