@@ -15,35 +15,7 @@ impl DiffViewer {
             self.workspace_targets.as_slice(),
             visible_workspace_key.as_deref(),
         );
-        tracing::debug!(
-            refresh_epoch,
-            visible_workspace_key = ?visible_workspace_key,
-            known_workspace_keys = ?known_workspace_keys,
-            workspace_roots = ?workspace_roots
-                .iter()
-                .map(|root| root.display().to_string())
-                .collect::<Vec<_>>(),
-            workspace_targets = ?self
-                .workspace_targets
-                .iter()
-                .map(|target| format!(
-                    "{} kind={:?} root={} active={}",
-                    target.id,
-                    target.kind,
-                    target.root.display(),
-                    self.active_workspace_target_id.as_deref() == Some(target.id.as_str())
-                ))
-                .collect::<Vec<_>>(),
-            existing_workspace_states = ?self.ai_workspace_states.keys().cloned().collect::<Vec<_>>(),
-            hidden_runtime_keys = ?self.ai_hidden_runtimes.keys().cloned().collect::<Vec<_>>(),
-            "starting repo-wide AI thread catalog refresh"
-        );
         if workspace_roots.is_empty() {
-            tracing::debug!(
-                refresh_epoch,
-                visible_workspace_key = ?visible_workspace_key,
-                "repo-wide AI thread catalog refresh skipped because workspace roots are empty"
-            );
             self.ai_thread_catalog_task = Task::ready(());
             return;
         }
@@ -79,25 +51,10 @@ impl DiffViewer {
 
                     match result {
                         Ok(catalogs) => {
-                            tracing::debug!(
-                                refresh_epoch,
-                                visible_workspace_key = ?visible_workspace_key,
-                                catalogs = ?catalogs
-                                    .iter()
-                                    .map(|catalog| format!(
-                                        "{} threads={} active={:?}",
-                                        catalog.workspace_key,
-                                        catalog.state_snapshot.threads.len(),
-                                        catalog.active_thread_id
-                                    ))
-                                    .collect::<Vec<_>>(),
-                                "repo-wide AI thread catalog refresh completed"
-                            );
                             this.apply_ai_repo_thread_catalogs(
                                 catalogs,
                                 visible_workspace_key.as_deref(),
                             );
-                            this.log_ai_thread_inventory("after_repo_thread_catalog_refresh");
                             cx.notify();
                         }
                         Err(error) => {
@@ -169,16 +126,6 @@ impl DiffViewer {
             })
             .cloned()
             .collect::<Vec<_>>();
-
-        if !removable_workspace_keys.is_empty() {
-            tracing::debug!(
-                removable_workspace_keys = ?removable_workspace_keys,
-                known_workspace_keys = ?known_workspace_keys,
-                visible_workspace_key = ?visible_workspace_key,
-                hidden_workspace_keys = ?hidden_workspace_keys,
-                "pruning AI workspace states before repo thread catalog refresh"
-            );
-        }
 
         for workspace_key in removable_workspace_keys {
             self.ai_forget_deleted_workspace_state(workspace_key.as_str());

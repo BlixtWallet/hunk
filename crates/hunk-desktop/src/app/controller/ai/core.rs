@@ -13,77 +13,6 @@ use hunk_domain::state::AppState;
 impl DiffViewer {
     const AI_EVENT_POLL_INTERVAL: Duration = Duration::from_millis(33);
 
-    fn log_ai_thread_inventory(&self, reason: &str) {
-        let state_snapshot_workspace_key = self.ai_state_snapshot_workspace_key();
-        let workspace_targets = self
-            .workspace_targets
-            .iter()
-            .map(|target| {
-                format!(
-                    "{} kind={:?} root={} branch={} active={}",
-                    target.id,
-                    target.kind,
-                    target.root.display(),
-                    target.branch_name,
-                    self.active_workspace_target_id.as_deref() == Some(target.id.as_str())
-                )
-            })
-            .collect::<Vec<_>>();
-        let visible_snapshot_threads = self
-            .ai_state_snapshot
-            .threads
-            .values()
-            .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
-            .map(|thread| {
-                format!(
-                    "{}@{} status={:?} updated_at={}",
-                    thread.id, thread.cwd, thread.status, thread.updated_at
-                )
-            })
-            .collect::<Vec<_>>();
-        let background_workspace_states = self
-            .ai_workspace_states
-            .iter()
-            .map(|(workspace_key, state)| {
-                let threads = state
-                    .state_snapshot
-                    .threads
-                    .values()
-                    .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
-                    .map(|thread| {
-                        format!(
-                            "{}@{} status={:?} updated_at={}",
-                            thread.id, thread.cwd, thread.status, thread.updated_at
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                format!(
-                    "{} selected={:?} pending_new_thread_selection={} thread_count={} threads={:?}",
-                    workspace_key,
-                    state.selected_thread_id,
-                    state.pending_new_thread_selection,
-                    threads.len(),
-                    threads
-                )
-            })
-            .collect::<Vec<_>>();
-        tracing::debug!(
-            reason,
-            ai_workspace_key = ?self.ai_workspace_key(),
-            draft_workspace_key = ?self.ai_workspace_key_for_draft(),
-            state_snapshot_workspace_key = ?state_snapshot_workspace_key,
-            ai_worker_workspace_key = ?self.ai_worker_workspace_key,
-            selected_thread_id = ?self.ai_selected_thread_id,
-            new_thread_draft_active = self.ai_new_thread_draft_active,
-            pending_new_thread_selection = self.ai_pending_new_thread_selection,
-            workspace_targets = ?workspace_targets,
-            visible_snapshot_threads = ?visible_snapshot_threads,
-            background_workspace_states = ?background_workspace_states,
-            hidden_runtime_keys = ?self.ai_hidden_runtimes.keys().cloned().collect::<Vec<_>>(),
-            "AI thread inventory"
-        );
-    }
-
     pub(super) fn ensure_ai_runtime_started(&mut self, cx: &mut Context<Self>) {
         let Some(cwd) = self.ai_workspace_cwd() else {
             self.ai_connection_state = AiConnectionState::Failed;
@@ -93,16 +22,9 @@ impl DiffViewer {
             return;
         };
         let worker_workspace_key = cwd.to_string_lossy().to_string();
-        tracing::debug!(
-            worker_workspace_key = worker_workspace_key.as_str(),
-            ai_command_tx_present = self.ai_command_tx.is_some(),
-            ai_worker_workspace_key = ?self.ai_worker_workspace_key,
-            "ensuring AI runtime is started"
-        );
         if self.ai_command_tx.is_some()
             && self.ai_worker_workspace_key.as_deref() == Some(worker_workspace_key.as_str())
         {
-            self.log_ai_thread_inventory("ensure_ai_runtime_started_already_visible");
             return;
         }
         if self.ai_command_tx.is_some() {
@@ -115,11 +37,6 @@ impl DiffViewer {
         self.sync_ai_workspace_preferences_from_state();
 
         if self.promote_hidden_ai_runtime(worker_workspace_key.as_str()) {
-            tracing::debug!(
-                worker_workspace_key = worker_workspace_key.as_str(),
-                "promoted hidden AI runtime for visible workspace"
-            );
-            self.log_ai_thread_inventory("after_promote_hidden_ai_runtime");
             cx.notify();
             return;
         }
@@ -145,12 +62,6 @@ impl DiffViewer {
         let mut start_config = AiWorkerStartConfig::new(cwd, codex_executable, codex_home);
         start_config.mad_max_mode = self.ai_mad_max_mode;
         start_config.include_hidden_models = self.ai_include_hidden_models;
-        tracing::debug!(
-            worker_workspace_key = worker_workspace_key.as_str(),
-            worker_cwd = %start_config.cwd.display(),
-            host_working_directory = %start_config.host_working_directory.display(),
-            "spawning AI runtime worker"
-        );
 
         let worker = spawn_ai_worker(start_config, command_rx, event_tx);
 
@@ -598,13 +509,6 @@ impl DiffViewer {
             .ai_thread_workspace_root(thread_id.as_str())
             .map(|root| root.to_string_lossy().to_string())
             .or_else(|| previous_workspace_key.clone());
-        tracing::debug!(
-            thread_id = thread_id.as_str(),
-            previous_workspace_key = ?previous_workspace_key,
-            next_workspace_key = ?next_workspace_key,
-            previous_selected_thread_id = ?self.ai_selected_thread_id,
-            "selecting AI thread"
-        );
         let previous_draft_key = self.current_ai_composer_draft_key();
         self.sync_ai_visible_composer_prompt_to_draft(cx);
         self.ai_handle_workspace_change_to(previous_workspace_key, next_workspace_key, cx);
@@ -622,7 +526,6 @@ impl DiffViewer {
         reset_ai_timeline_list_measurements(self, visible_row_ids.len());
         self.sync_ai_session_selection_from_state();
         self.send_ai_worker_command(AiWorkerCommand::SelectThread { thread_id }, cx);
-        self.log_ai_thread_inventory("after_ai_select_thread");
         cx.notify();
     }
 
@@ -759,14 +662,8 @@ impl DiffViewer {
             .cloned()
             .or_else(|| {
                 self.ai_workspace_states
-                    .iter()
-                    .find_map(|(_, state)| {
-                        state
-                            .state_snapshot
-                            .threads
-                            .get(thread_id)
-                            .cloned()
-                    })
+                    .values()
+                    .find_map(|state| state.state_snapshot.threads.get(thread_id).cloned())
             })
     }
 

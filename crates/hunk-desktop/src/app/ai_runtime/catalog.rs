@@ -51,16 +51,6 @@ fn load_ai_workspace_thread_catalogs_on_port(
         .first()
         .cloned()
         .expect("workspace roots should be present");
-    tracing::debug!(
-        port,
-        host_working_directory = %host_working_directory.display(),
-        shared_host_working_directory = %shared_ai_host_working_directory(host_working_directory.as_path()).display(),
-        workspace_roots = ?workspace_roots
-            .iter()
-            .map(|root| root.display().to_string())
-            .collect::<Vec<_>>(),
-        "loading AI workspace thread catalogs on shared host"
-    );
     let host_config = HostConfig::codex_app_server(
         codex_executable.to_path_buf(),
         shared_ai_host_working_directory(host_working_directory.as_path()),
@@ -71,21 +61,13 @@ fn load_ai_workspace_thread_catalogs_on_port(
 
     (|| {
         let endpoint = WebSocketEndpoint::loopback(host.port());
+        let mut session = JsonRpcSession::connect(&endpoint)?;
+        session.initialize(InitializeOptions::default(), DEFAULT_REQUEST_TIMEOUT)?;
         let mut catalogs = Vec::with_capacity(workspace_roots.len());
         for workspace_root in workspace_roots {
             if !workspace_root_exists_for_catalog(workspace_root.as_path()) {
-                tracing::debug!(
-                    workspace_root = %workspace_root.display(),
-                    "skipping AI thread catalog refresh for missing workspace root"
-                );
                 continue;
             }
-            tracing::debug!(
-                workspace_root = %workspace_root.display(),
-                "refreshing AI thread catalog for workspace root"
-            );
-            let mut session = JsonRpcSession::connect(&endpoint)?;
-            session.initialize(InitializeOptions::default(), DEFAULT_REQUEST_TIMEOUT)?;
             let mut service = ThreadService::new(workspace_root.clone());
             let response = match service.list_threads(
                 &mut session,
@@ -103,26 +85,6 @@ fn load_ai_workspace_thread_catalogs_on_port(
                 }
             };
             let workspace_key = workspace_root.to_string_lossy().to_string();
-            let thread_summaries = response
-                .data
-                .iter()
-                .take(20)
-                .map(|thread| {
-                    format!(
-                        "{}@{} updated_at={}",
-                        thread.id,
-                        thread.cwd.display(),
-                        thread.updated_at
-                    )
-                })
-                .collect::<Vec<_>>();
-            tracing::debug!(
-                workspace_key = workspace_key.as_str(),
-                thread_count = response.data.len(),
-                active_thread_id = ?service.active_thread_for_workspace(),
-                threads = ?thread_summaries,
-                "AI thread catalog workspace refresh result"
-            );
 
             if service.active_thread_for_workspace().is_none()
                 && let Some(first_thread) = response.data.first()
@@ -138,20 +100,6 @@ fn load_ai_workspace_thread_catalogs_on_port(
                 active_thread_id: service.active_thread_for_workspace().map(ToOwned::to_owned),
             });
         }
-
-        tracing::debug!(
-            catalog_count = catalogs.len(),
-            catalogs = ?catalogs
-                .iter()
-                .map(|catalog| format!(
-                    "{} threads={} active={:?}",
-                    catalog.workspace_key,
-                    catalog.state_snapshot.threads.len(),
-                    catalog.active_thread_id
-                ))
-                .collect::<Vec<_>>(),
-            "completed AI workspace thread catalog load"
-        );
 
         Ok(catalogs)
     })()
