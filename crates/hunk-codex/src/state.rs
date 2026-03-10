@@ -179,6 +179,7 @@ pub struct AiState {
     pub server_requests: BTreeMap<String, ServerRequestSummary>,
     pub active_thread_by_cwd: BTreeMap<String, String>,
     seen_dedupe_keys: BTreeSet<String>,
+    turn_diff_sequences: BTreeMap<String, u64>,
 }
 
 const KEY_SEPARATOR: char = '\u{1f}';
@@ -432,7 +433,19 @@ impl AiState {
                 diff,
             } => {
                 let turn_key = turn_storage_key(thread_id.as_str(), turn_id.as_str());
+                if self
+                    .turn_diff_sequences
+                    .get(turn_key.as_str())
+                    .is_some_and(|last_sequence| sequence < *last_sequence)
+                {
+                    return ApplyOutcome::Stale;
+                }
+
                 self.turn_diffs.insert(turn_key, diff);
+                self.turn_diff_sequences.insert(
+                    turn_storage_key(thread_id.as_str(), turn_id.as_str()),
+                    sequence,
+                );
                 ApplyOutcome::Applied
             }
             ReducerEvent::ServerRequestResolved {
@@ -458,6 +471,7 @@ impl AiState {
                 if matches!(decision, ServerRequestDecision::Unknown)
                     && !matches!(request.decision, ServerRequestDecision::Unknown)
                 {
+                    request.sequence = sequence;
                     return ApplyOutcome::Applied;
                 }
                 request.decision = decision;
