@@ -184,10 +184,12 @@ fn shared_host_lease_does_not_reuse_when_environment_changes() {
 
     let mut second_config = setup.host_config();
     second_config.port = free_port();
-    set_helper_port_env(&mut second_config, second_config.port);
-    second_config
-        .environment
-        .push(("HUNK_CODEX_TEST_VARIANT".to_string(), "alternate".to_string()));
+    let second_port = second_config.port;
+    set_helper_port_env(&mut second_config, second_port);
+    second_config.environment.push((
+        "HUNK_CODEX_TEST_VARIANT".to_string(),
+        "alternate".to_string(),
+    ));
     let second_lease =
         SharedHostLease::acquire(second_config, Duration::from_secs(5)).expect("second lease");
 
