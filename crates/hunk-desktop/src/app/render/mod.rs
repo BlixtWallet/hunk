@@ -46,6 +46,7 @@ include!("file_status.rs");
 include!("comments.rs");
 include!("syntax_colors.rs");
 include!("diff.rs");
+include!("diff_rows.rs");
 include!("file_editor.rs");
 include!("ai_loading.rs");
 include!("ai.rs");
