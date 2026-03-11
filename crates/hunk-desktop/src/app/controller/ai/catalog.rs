@@ -101,17 +101,7 @@ impl DiffViewer {
                 .unwrap_or_else(|| {
                     self.default_ai_workspace_state_for_workspace_key(Some(workspace_key.as_str()))
                 });
-            let previous_selected_thread_id = state.selected_thread_id.clone();
             apply_ai_thread_catalog_to_workspace_state(&mut state, catalog);
-            if previous_selected_thread_id != state.selected_thread_id {
-                tracing::debug!(
-                    workspace_key = workspace_key.as_str(),
-                    previous_selected_thread_id = ?previous_selected_thread_id.as_deref(),
-                    next_selected_thread_id = ?state.selected_thread_id.as_deref(),
-                    snapshot_thread_count = state.state_snapshot.threads.len(),
-                    "AI thread catalog changed background workspace selection"
-                );
-            }
             self.ai_workspace_states.insert(workspace_key, state);
         }
     }

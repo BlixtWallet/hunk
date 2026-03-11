@@ -17,44 +17,6 @@ impl DiffViewer {
         )
     }
 
-    fn log_ai_thread_selection_resolution(&self, context: &str) {
-        let raw_selected_thread_id = self.ai_selected_thread_id.clone();
-        let raw_selected_workspace_key = raw_selected_thread_id
-            .as_deref()
-            .and_then(|thread_id| self.ai_thread_workspace_root(thread_id))
-            .map(|path| path.to_string_lossy().to_string());
-        let fallback_workspace_key = current_visible_thread_fallback_workspace_key(
-            self.ai_worker_workspace_key.as_deref(),
-            raw_selected_workspace_key
-                .as_deref()
-                .map(std::path::Path::new),
-            self.ai_workspace_key_for_draft().as_deref(),
-        );
-        let resolved_thread_id = self.current_ai_thread_id();
-        let resolved_workspace_key = resolved_thread_id
-            .as_deref()
-            .and_then(|thread_id| self.ai_thread_workspace_root(thread_id))
-            .map(|path| path.to_string_lossy().to_string());
-
-        if raw_selected_thread_id != resolved_thread_id {
-            tracing::debug!(
-                context,
-                raw_selected_thread_id = ?raw_selected_thread_id.as_deref(),
-                raw_selected_workspace_key = ?raw_selected_workspace_key.as_deref(),
-                resolved_thread_id = ?resolved_thread_id.as_deref(),
-                resolved_workspace_key = ?resolved_workspace_key.as_deref(),
-                visible_worker_workspace_key = ?self.ai_worker_workspace_key.as_deref(),
-                fallback_workspace_key = ?fallback_workspace_key.as_deref(),
-                new_thread_draft_active = self.ai_new_thread_draft_active,
-                pending_new_thread_selection = self.ai_pending_new_thread_selection,
-                visible_snapshot_thread_count = self.ai_state_snapshot.threads.len(),
-                background_workspace_state_count = self.ai_workspace_states.len(),
-                hidden_runtime_count = self.ai_hidden_runtimes.len(),
-                "AI selected thread resolved to a different effective thread"
-            );
-        }
-    }
-
     pub(crate) fn ai_pending_thread_start_for_timeline(&self) -> Option<AiPendingThreadStart> {
         let pending = self.ai_pending_thread_start.clone()?;
         if self.ai_workspace_key().as_deref() != Some(pending.workspace_key.as_str()) {
@@ -462,8 +424,6 @@ impl DiffViewer {
     }
 
     fn apply_ai_workspace_state(&mut self, state: AiWorkspaceState) {
-        let incoming_selected_thread_id = state.selected_thread_id.clone();
-        let incoming_snapshot_thread_count = state.state_snapshot.threads.len();
         self.ai_connection_state = state.connection_state;
         self.ai_bootstrap_loading = state.bootstrap_loading;
         self.ai_status_message = state.status_message;
@@ -540,29 +500,12 @@ impl DiffViewer {
         self.prune_ai_composer_drafts();
         self.prune_ai_composer_statuses();
         reset_ai_timeline_list_measurements(self, 0);
-        tracing::debug!(
-            incoming_selected_thread_id = ?incoming_selected_thread_id.as_deref(),
-            applied_selected_thread_id = ?self.ai_selected_thread_id.as_deref(),
-            visible_worker_workspace_key = ?self.ai_worker_workspace_key.as_deref(),
-            visible_snapshot_thread_count = incoming_snapshot_thread_count,
-            pending_new_thread_selection = self.ai_pending_new_thread_selection,
-            new_thread_draft_active = self.ai_new_thread_draft_active,
-            "Applied AI workspace state"
-        );
-        self.log_ai_thread_selection_resolution("apply_ai_workspace_state");
     }
 
     fn store_current_ai_workspace_state(&mut self, workspace_key: Option<&str>) {
         let Some(workspace_key) = workspace_key else {
             return;
         };
-        tracing::debug!(
-            workspace_key,
-            selected_thread_id = ?self.ai_selected_thread_id.as_deref(),
-            visible_snapshot_thread_count = self.ai_state_snapshot.threads.len(),
-            visible_worker_workspace_key = ?self.ai_worker_workspace_key.as_deref(),
-            "Stored current AI workspace state"
-        );
         self.ai_workspace_states.insert(
             workspace_key.to_string(),
             self.capture_current_ai_workspace_state(),
@@ -573,14 +516,6 @@ impl DiffViewer {
         let state = workspace_key
             .and_then(|key| self.ai_workspace_states.get(key).cloned())
             .unwrap_or_else(|| self.default_ai_workspace_state_for_workspace_key(workspace_key));
-        tracing::debug!(
-            requested_workspace_key = ?workspace_key,
-            restored_selected_thread_id = ?state.selected_thread_id.as_deref(),
-            restored_snapshot_thread_count = state.state_snapshot.threads.len(),
-            restored_pending_new_thread_selection = state.pending_new_thread_selection,
-            restored_new_thread_draft_active = state.new_thread_draft_active,
-            "Restoring AI workspace state"
-        );
         self.apply_ai_workspace_state(state);
     }
 
@@ -596,12 +531,6 @@ impl DiffViewer {
             self.ai_worker_workspace_key = None;
             return;
         };
-        tracing::debug!(
-            workspace_key,
-            generation = self.ai_event_epoch,
-            selected_thread_id = ?self.ai_selected_thread_id.as_deref(),
-            "Parking visible AI runtime"
-        );
         let event_task = std::mem::replace(&mut self.ai_event_task, Task::ready(()));
         self.ai_hidden_runtimes.insert(
             workspace_key,
@@ -627,12 +556,6 @@ impl DiffViewer {
             }
             return false;
         }
-        tracing::debug!(
-            workspace_key,
-            generation = handle.generation,
-            hidden_runtime_count_after_remove = self.ai_hidden_runtimes.len(),
-            "Promoting hidden AI runtime"
-        );
         self.ai_command_tx = Some(handle.command_tx);
         self.ai_worker_thread = Some(handle.worker_thread);
         self.ai_event_task = handle.event_task;
@@ -802,45 +725,32 @@ impl DiffViewer {
         workspace_key: &str,
         event: AiWorkerEventPayload,
     ) {
-        self.update_background_ai_workspace_state(workspace_key, |state| {
-            let previous_selected_thread_id = state.selected_thread_id.clone();
-            match event {
-                AiWorkerEventPayload::Snapshot(snapshot) => {
-                    Self::apply_ai_snapshot_to_workspace_state(state, *snapshot);
-                }
-                AiWorkerEventPayload::BootstrapCompleted => {
-                    state.bootstrap_loading = false;
-                }
-                AiWorkerEventPayload::ThreadStarted { thread_id } => {
-                    set_pending_thread_start_thread_id(&mut state.pending_thread_start, thread_id);
-                }
-                AiWorkerEventPayload::Reconnecting(message) => {
-                    state.connection_state = AiConnectionState::Reconnecting;
-                    state.bootstrap_loading = false;
-                    state.error_message = None;
-                    state.status_message = Some(message);
-                }
-                AiWorkerEventPayload::Status(message) => {
-                    state.status_message = Some(message);
-                }
-                AiWorkerEventPayload::Error(message) => {
-                    Self::restore_ai_workspace_state_after_failure_for_state(state);
-                    state.error_message = Some(message.clone());
-                    state.status_message = Some(message);
-                }
-                AiWorkerEventPayload::Fatal(message) => {
-                    Self::apply_background_ai_workspace_fatal(state, message);
-                }
+        self.update_background_ai_workspace_state(workspace_key, |state| match event {
+            AiWorkerEventPayload::Snapshot(snapshot) => {
+                Self::apply_ai_snapshot_to_workspace_state(state, *snapshot);
             }
-
-            if previous_selected_thread_id != state.selected_thread_id {
-                tracing::debug!(
-                    workspace_key,
-                    previous_selected_thread_id = ?previous_selected_thread_id.as_deref(),
-                    next_selected_thread_id = ?state.selected_thread_id.as_deref(),
-                    snapshot_thread_count = state.state_snapshot.threads.len(),
-                    "Background AI workspace selection changed"
-                );
+            AiWorkerEventPayload::BootstrapCompleted => {
+                state.bootstrap_loading = false;
+            }
+            AiWorkerEventPayload::ThreadStarted { thread_id } => {
+                set_pending_thread_start_thread_id(&mut state.pending_thread_start, thread_id);
+            }
+            AiWorkerEventPayload::Reconnecting(message) => {
+                state.connection_state = AiConnectionState::Reconnecting;
+                state.bootstrap_loading = false;
+                state.error_message = None;
+                state.status_message = Some(message);
+            }
+            AiWorkerEventPayload::Status(message) => {
+                state.status_message = Some(message);
+            }
+            AiWorkerEventPayload::Error(message) => {
+                Self::restore_ai_workspace_state_after_failure_for_state(state);
+                state.error_message = Some(message.clone());
+                state.status_message = Some(message);
+            }
+            AiWorkerEventPayload::Fatal(message) => {
+                Self::apply_background_ai_workspace_fatal(state, message);
             }
         });
     }

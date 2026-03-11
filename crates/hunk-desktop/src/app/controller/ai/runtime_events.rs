@@ -19,14 +19,6 @@ impl DiffViewer {
                             if !this
                                 .ai_runtime_listener_is_current(workspace_key.as_str(), generation)
                             {
-                                tracing::debug!(
-                                    workspace_key = workspace_key.as_str(),
-                                    generation,
-                                    visible_worker_workspace_key = ?this.ai_worker_workspace_key.as_deref(),
-                                    hidden_runtime_generation =
-                                        ?this.ai_runtime_listener_generation(workspace_key.as_str()),
-                                    "Stopping idle AI event listener because it is no longer current"
-                                );
                                 listener_is_current = false;
                                 return;
                             }
@@ -61,15 +53,6 @@ impl DiffViewer {
                         if !this
                             .ai_runtime_listener_is_current(workspace_key.as_str(), generation)
                         {
-                            tracing::debug!(
-                                workspace_key = workspace_key.as_str(),
-                                generation,
-                                visible_worker_workspace_key = ?this.ai_worker_workspace_key.as_deref(),
-                                hidden_runtime_generation =
-                                    ?this.ai_runtime_listener_generation(workspace_key.as_str()),
-                                buffered_event_count = buffered_events.len(),
-                                "Stopping AI event listener because it is no longer current"
-                            );
                             listener_is_current = false;
                             return;
                         }
