@@ -521,6 +521,12 @@ impl AiWorkerRuntime {
                 }
             }
             AiWorkerCommand::SelectThread { thread_id } => {
+                tracing::debug!(
+                    workspace_key = self.workspace_key.as_str(),
+                    thread_id = thread_id.as_str(),
+                    active_thread_id = ?self.service.active_thread_for_workspace(),
+                    "AI worker received SelectThread command"
+                );
                 self.load_thread_snapshot(thread_id)?;
                 self.emit_snapshot_after_sync(event_tx)?;
             }
@@ -766,6 +772,12 @@ impl AiWorkerRuntime {
         thread_id: String,
     ) -> Result<(), CodexIntegrationError> {
         let read_thread_id = thread_id.clone();
+        tracing::debug!(
+            workspace_key = self.workspace_key.as_str(),
+            thread_id = read_thread_id.as_str(),
+            active_thread_id = ?self.service.active_thread_for_workspace(),
+            "Starting AI thread snapshot load"
+        );
         match retry_transient_rollout_load(
             TRANSIENT_ROLLOUT_LOAD_MAX_RETRIES,
             TRANSIENT_ROLLOUT_LOAD_RETRY_DELAY,
@@ -802,6 +814,12 @@ impl AiWorkerRuntime {
             Err(error) => return Err(error),
         }
         self.hydrate_thread_from_rollout_fallback_if_needed(read_thread_id.as_str());
+        tracing::debug!(
+            workspace_key = self.workspace_key.as_str(),
+            thread_id = read_thread_id.as_str(),
+            active_thread_id = ?self.service.active_thread_for_workspace(),
+            "Finished AI thread snapshot load"
+        );
         Ok(())
     }
 

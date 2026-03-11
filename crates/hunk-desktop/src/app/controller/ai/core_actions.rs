@@ -18,6 +18,12 @@ impl DiffViewer {
             return;
         };
         let worker_workspace_key = cwd.to_string_lossy().to_string();
+        tracing::debug!(
+            requested_workspace_key = worker_workspace_key.as_str(),
+            visible_worker_workspace_key = ?self.ai_worker_workspace_key.as_deref(),
+            selected_thread_id = ?self.ai_selected_thread_id.as_deref(),
+            "Ensuring AI runtime is started"
+        );
         if self.ai_command_tx.is_some()
             && self.ai_worker_workspace_key.as_deref() == Some(worker_workspace_key.as_str())
         {
@@ -33,6 +39,12 @@ impl DiffViewer {
         self.sync_ai_workspace_preferences_from_state();
 
         if self.promote_hidden_ai_runtime(worker_workspace_key.as_str()) {
+            tracing::debug!(
+                workspace_key = worker_workspace_key.as_str(),
+                selected_thread_id = ?self.ai_selected_thread_id.as_deref(),
+                "Promoted hidden AI runtime instead of starting a new one"
+            );
+            self.log_ai_thread_selection_resolution("ensure_ai_runtime_started:promote-hidden");
             cx.notify();
             return;
         }
@@ -71,6 +83,11 @@ impl DiffViewer {
         self.ai_worker_workspace_key = Some(worker_workspace_key);
 
         let epoch = self.next_ai_event_epoch();
+        tracing::debug!(
+            workspace_key = listener_workspace_key.as_str(),
+            generation = epoch,
+            "Started new AI runtime and event listener"
+        );
         self.start_ai_event_listener(event_rx, listener_workspace_key, epoch, cx);
         cx.notify();
     }
@@ -505,6 +522,14 @@ impl DiffViewer {
             .ai_thread_workspace_root(thread_id.as_str())
             .map(|root| root.to_string_lossy().to_string())
             .or_else(|| previous_workspace_key.clone());
+        tracing::debug!(
+            thread_id = thread_id.as_str(),
+            previous_workspace_key = ?previous_workspace_key.as_deref(),
+            next_workspace_key = ?next_workspace_key.as_deref(),
+            visible_worker_workspace_key = ?self.ai_worker_workspace_key.as_deref(),
+            previously_selected_thread_id = ?self.ai_selected_thread_id.as_deref(),
+            "Selecting AI thread from sidebar"
+        );
         let previous_draft_key = self.current_ai_composer_draft_key();
         self.sync_ai_visible_composer_prompt_to_draft(cx);
         self.ai_handle_workspace_change_to(previous_workspace_key, next_workspace_key, cx);
@@ -522,6 +547,7 @@ impl DiffViewer {
         reset_ai_timeline_list_measurements(self, visible_row_ids.len());
         self.flush_ai_timeline_scroll_request();
         self.sync_ai_session_selection_from_state();
+        self.log_ai_thread_selection_resolution("ai_select_thread:before-command");
         self.send_ai_worker_command(AiWorkerCommand::SelectThread { thread_id }, cx);
         cx.notify();
     }

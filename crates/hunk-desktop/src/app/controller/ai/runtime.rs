@@ -73,6 +73,12 @@ impl DiffViewer {
             active_thread_id.as_deref(),
             &self.ai_state_snapshot,
         ) {
+            tracing::debug!(
+                thread_id = thread_id.as_str(),
+                active_thread_id = ?active_thread_id.as_deref(),
+                previous_selected_thread_id = ?previous_selected_thread.as_deref(),
+                "Selecting AI thread because pending new thread became ready"
+            );
             self.ai_new_thread_draft_active = false;
             self.ai_pending_new_thread_selection = false;
             self.ai_selected_thread_id = Some(thread_id);
@@ -84,7 +90,12 @@ impl DiffViewer {
             self.ai_new_thread_draft_active || self.ai_pending_new_thread_selection,
             &self.ai_state_snapshot,
         ) {
-            self.ai_selected_thread_id = active_thread_id;
+            tracing::debug!(
+                previous_selected_thread_id = ?self.ai_selected_thread_id.as_deref(),
+                next_selected_thread_id = ?active_thread_id.as_deref(),
+                "Syncing AI selected thread from active thread"
+            );
+            self.ai_selected_thread_id = active_thread_id.clone();
         }
 
         if self.ai_selected_thread_id.as_ref().is_some_and(|selected| {
@@ -93,6 +104,10 @@ impl DiffViewer {
                 .get(selected)
                 .is_none_or(|thread| thread.status == ThreadLifecycleStatus::Archived)
         }) {
+            tracing::debug!(
+                selected_thread_id = ?self.ai_selected_thread_id.as_deref(),
+                "Clearing AI selected thread because it is missing or archived in visible snapshot"
+            );
             self.ai_selected_thread_id = None;
         }
 
@@ -101,6 +116,10 @@ impl DiffViewer {
             && self.ai_selected_thread_id.is_none()
         {
             self.ai_selected_thread_id = self.current_ai_thread_id();
+            tracing::debug!(
+                next_selected_thread_id = ?self.ai_selected_thread_id.as_deref(),
+                "Rehydrated AI selected thread from current visible snapshot state"
+            );
         }
 
         if !self.ai_new_thread_draft_active
@@ -109,6 +128,10 @@ impl DiffViewer {
             && let Some(first_thread) = self.ai_threads_for_current_workspace().first()
         {
             self.ai_selected_thread_id = Some(first_thread.id.clone());
+            tracing::debug!(
+                next_selected_thread_id = first_thread.id.as_str(),
+                "Fell back to first AI thread in current workspace"
+            );
         }
         if self.ai_pending_thread_start.as_ref().is_some_and(|pending| {
             pending.thread_id.as_ref().is_some_and(|thread_id| {
@@ -174,6 +197,17 @@ impl DiffViewer {
         if previous_draft_key != self.current_ai_composer_draft_key() {
             self.restore_ai_visible_composer_from_current_draft(cx);
         }
+        if previous_selected_thread != self.ai_selected_thread_id {
+            tracing::debug!(
+                previous_selected_thread_id = ?previous_selected_thread.as_deref(),
+                next_selected_thread_id = ?self.ai_selected_thread_id.as_deref(),
+                active_thread_id = ?active_thread_id.as_deref(),
+                visible_worker_workspace_key = ?self.ai_worker_workspace_key.as_deref(),
+                visible_snapshot_thread_count = self.ai_state_snapshot.threads.len(),
+                "AI selected thread changed while applying snapshot"
+            );
+        }
+        self.log_ai_thread_selection_resolution("apply_ai_snapshot");
         self.maybe_refresh_selected_thread_metadata(cx);
         self.sync_ai_session_selection_from_state();
     }

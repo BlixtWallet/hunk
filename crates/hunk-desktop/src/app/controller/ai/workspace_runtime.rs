@@ -14,8 +14,16 @@ impl DiffViewer {
         next_workspace_key: Option<String>,
         cx: &mut Context<Self>,
     ) {
+        tracing::debug!(
+            previous_workspace_key = ?previous_workspace_key.as_deref(),
+            next_workspace_key = ?next_workspace_key.as_deref(),
+            selected_thread_id = ?self.ai_selected_thread_id.as_deref(),
+            visible_worker_workspace_key = ?self.ai_worker_workspace_key.as_deref(),
+            "Handling AI workspace change"
+        );
         if previous_workspace_key == next_workspace_key {
             self.ai_sync_workspace_preferences(cx);
+            self.log_ai_thread_selection_resolution("ai_handle_workspace_change_to:no-op");
             return;
         }
 
@@ -30,5 +38,6 @@ impl DiffViewer {
             self.ensure_ai_runtime_started(cx);
         }
         self.ai_sync_workspace_preferences(cx);
+        self.log_ai_thread_selection_resolution("ai_handle_workspace_change_to");
     }
 }
