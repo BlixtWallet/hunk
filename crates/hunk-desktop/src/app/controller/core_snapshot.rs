@@ -443,19 +443,6 @@ impl DiffViewer {
         self.set_last_project_path(self.project_path.clone());
         self.repo_root = Some(primary_root.clone());
         self.branches = branches;
-        self.sync_ai_worktree_base_branch_from_repo();
-        self.sync_branch_picker_state(cx);
-        self.sync_ai_worktree_base_branch_picker_state(cx);
-        self.refresh_workspace_targets_from_git_state(cx);
-        if self.active_workspace_target_id.is_none() {
-            self.active_workspace_target_id = self
-                .workspace_targets
-                .iter()
-                .find(|target| target.is_active)
-                .map(|target| target.id.clone());
-        }
-        self.persist_active_workspace_target_id();
-        self.ai_handle_workspace_change(previous_ai_workspace_key, cx);
         self.working_copy_commit_id = Some(working_copy_commit_id);
         self.branch_name = branch_name;
         self.branch_has_upstream = branch_has_upstream;
@@ -471,7 +458,20 @@ impl DiffViewer {
             .retain(|path, _| self.files.iter().any(|file| file.path == *path));
         self.recompute_overall_line_stats_from_file_stats();
         self.last_commit_subject = last_commit_subject;
+        self.sync_ai_worktree_base_branch_from_repo();
         self.sync_git_workspace_with_primary_state();
+        self.sync_branch_picker_state(cx);
+        self.sync_ai_worktree_base_branch_picker_state(cx);
+        self.refresh_workspace_targets_from_git_state(cx);
+        if self.active_workspace_target_id.is_none() {
+            self.active_workspace_target_id = self
+                .workspace_targets
+                .iter()
+                .find(|target| target.is_active)
+                .map(|target| target.id.clone());
+        }
+        self.persist_active_workspace_target_id();
+        self.ai_handle_workspace_change(previous_ai_workspace_key, cx);
         self.repo_discovery_failed = false;
         self.error_message = None;
         if full_refresh {
