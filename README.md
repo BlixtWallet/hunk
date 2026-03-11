@@ -101,8 +101,10 @@ pwsh ./scripts/package_windows_release.ps1
 These produce:
 
 - macOS ARM64: signed/notarized `Hunk-<version>-macos-arm64.dmg` when Apple secrets are configured
-- Linux x86_64: `Hunk-<version>-linux-x86_64.tar.gz`
+- Linux x86_64: `Hunk-<version>-linux-x86_64.AppImage` plus fallback `Hunk-<version>-linux-x86_64.tar.gz`
 - Windows x86_64: `Hunk-<version>-windows-x86_64.msi`
+
+Linux AppImage packaging requires `mksquashfs` from `squashfs-tools`.
 
 ## Build Codex App-Server Binaries For Embedding
 
@@ -159,7 +161,7 @@ You can also pass an explicit source binary path to the installer:
 ## GitHub Actions Release Flow
 
 - `.github/workflows/pr-build.yml` stays as the main PR CI workflow.
-- `.github/workflows/release-preview.yml` builds DMG/MSI/tarball artifacts on PRs and manual dispatch.
+- `.github/workflows/release-preview.yml` builds DMG/MSI/AppImage artifacts on PRs and manual dispatch.
 - `.github/workflows/release.yml` publishes the same artifacts to a GitHub Release when you push a `v*` tag.
 
 Apple signing/notarization secrets used by the workflows:
