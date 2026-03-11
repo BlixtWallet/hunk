@@ -1,3 +1,4 @@
+use super::theme::hunk_opacity;
 use gpui::{
     App, Context, IntoElement, ParentElement as _, SharedString, Styled as _, Task, Window, div,
     prelude::FluentBuilder as _,
@@ -23,19 +24,9 @@ pub(crate) struct WorkspaceTargetPickerItem {
 
 impl WorkspaceTargetPickerItem {
     fn from_target(target: &WorkspaceTargetSummary) -> Self {
-        let detail = match target.kind {
-            WorkspaceTargetKind::PrimaryCheckout => "Primary checkout".to_string(),
-            WorkspaceTargetKind::LinkedWorktree if target.managed => {
-                format!("Managed worktree • {}", target.name)
-            }
-            WorkspaceTargetKind::LinkedWorktree => format!("Linked worktree • {}", target.name),
-        };
+        let detail = workspace_target_detail_label(target);
         let search_text = workspace_target_search_text(target);
-        let branch_detail = if is_detached_workspace_target_branch(target.branch_name.as_str()) {
-            "Detached HEAD".to_string()
-        } else {
-            format!("Branch {}", target.branch_name)
-        };
+        let branch_detail = workspace_target_branch_label(target);
 
         Self {
             title: SharedString::from(target.display_name.clone()),
@@ -62,44 +53,50 @@ impl SelectItem for WorkspaceTargetPickerItem {
     }
 
     fn render(&self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let detail_color = cx.theme().muted_foreground;
-        let accent_color = cx.theme().accent;
-        let muted_border = cx.theme().border;
+        let is_dark = cx.theme().mode.is_dark();
+        let title_color = hunk_opacity(cx.theme().foreground, is_dark, 0.98, 0.98);
+        let detail_color = hunk_opacity(cx.theme().foreground, is_dark, 0.74, 0.82);
+        let branch_color = hunk_opacity(cx.theme().foreground, is_dark, 0.82, 0.88);
+        let badge_text = hunk_opacity(cx.theme().foreground, is_dark, 0.72, 0.82);
+        let badge_border = hunk_opacity(cx.theme().border, is_dark, 0.92, 0.78);
+        let active_border = hunk_opacity(cx.theme().accent, is_dark, 0.70, 0.56);
+        let active_background = hunk_opacity(cx.theme().accent, is_dark, 0.18, 0.10);
 
         h_flex()
             .w_full()
-            .items_center()
+            .items_start()
             .justify_between()
             .gap_2()
             .child(
                 v_flex()
                     .min_w_0()
                     .gap_0p5()
-                    .child(div().truncate().child(self.title.clone()))
                     .child(
-                        h_flex()
-                            .items_center()
-                            .gap_1()
-                            .flex_wrap()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(detail_color)
-                                    .child(self.detail.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(detail_color)
-                                    .child(self.branch_detail.clone()),
-                            ),
+                        div()
+                            .truncate()
+                            .text_color(title_color)
+                            .child(self.title.clone()),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(detail_color)
+                            .child(self.detail.clone()),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(branch_color)
+                            .child(self.branch_detail.clone()),
                     ),
             )
             .child(
                 h_flex()
-                    .items_center()
+                    .flex_none()
+                    .items_start()
                     .gap_1()
                     .flex_wrap()
+                    .pt_0p5()
                     .when(self.managed, |this| {
                         this.child(
                             div()
@@ -108,7 +105,8 @@ impl SelectItem for WorkspaceTargetPickerItem {
                                 .py_0p5()
                                 .rounded_full()
                                 .border_1()
-                                .border_color(muted_border)
+                                .border_color(badge_border)
+                                .text_color(badge_text)
                                 .child("Managed"),
                         )
                     })
@@ -120,7 +118,8 @@ impl SelectItem for WorkspaceTargetPickerItem {
                                 .py_0p5()
                                 .rounded_full()
                                 .border_1()
-                                .border_color(muted_border)
+                                .border_color(badge_border)
+                                .text_color(badge_text)
                                 .child("Primary"),
                         )
                     })
@@ -129,7 +128,13 @@ impl SelectItem for WorkspaceTargetPickerItem {
                             div()
                                 .text_xs()
                                 .font_semibold()
-                                .text_color(accent_color)
+                                .px_1p5()
+                                .py_0p5()
+                                .rounded_full()
+                                .border_1()
+                                .border_color(active_border)
+                                .bg(active_background)
+                                .text_color(title_color)
                                 .child("Active"),
                         )
                     }),
@@ -250,6 +255,24 @@ fn normalize_workspace_target_key(value: &str) -> String {
     value.trim().to_lowercase()
 }
 
+fn workspace_target_detail_label(target: &WorkspaceTargetSummary) -> String {
+    match target.kind {
+        WorkspaceTargetKind::PrimaryCheckout => "Primary checkout".to_string(),
+        WorkspaceTargetKind::LinkedWorktree if target.managed => {
+            format!("Managed worktree • {}", target.name)
+        }
+        WorkspaceTargetKind::LinkedWorktree => format!("Linked worktree • {}", target.name),
+    }
+}
+
+fn workspace_target_branch_label(target: &WorkspaceTargetSummary) -> String {
+    if is_detached_workspace_target_branch(target.branch_name.as_str()) {
+        "Detached HEAD".to_string()
+    } else {
+        format!("Branch {}", target.branch_name)
+    }
+}
+
 fn workspace_target_search_text(target: &WorkspaceTargetSummary) -> String {
     match target.kind {
         WorkspaceTargetKind::PrimaryCheckout => {
@@ -311,5 +334,36 @@ mod tests {
         let by_name = matched_workspace_target_items(&items, "worktree-4");
 
         assert_eq!(by_name.len(), 1);
+    }
+
+    #[test]
+    fn primary_checkout_uses_separate_detail_and_branch_lines() {
+        let target = WorkspaceTargetSummary {
+            id: "primary".to_string(),
+            kind: WorkspaceTargetKind::PrimaryCheckout,
+            root: std::path::PathBuf::from("/tmp/repo"),
+            name: "repo".to_string(),
+            display_name: "Primary Checkout".to_string(),
+            branch_name: "master".to_string(),
+            managed: false,
+            is_active: true,
+        };
+
+        let item = WorkspaceTargetPickerItem::from_target(&target);
+
+        assert_eq!(item.detail.as_ref(), "Primary checkout");
+        assert_eq!(item.branch_detail.as_ref(), "Branch master");
+    }
+
+    #[test]
+    fn detached_managed_worktree_uses_detached_head_label() {
+        let item = WorkspaceTargetPickerItem::from_target(&managed_target(
+            "worktree-9",
+            "worktree-9",
+            "detached",
+        ));
+
+        assert_eq!(item.detail.as_ref(), "Managed worktree • worktree-9");
+        assert_eq!(item.branch_detail.as_ref(), "Detached HEAD");
     }
 }
