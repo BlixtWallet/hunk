@@ -161,8 +161,7 @@ You can also pass an explicit source binary path to the installer:
 ## GitHub Actions Release Flow
 
 - `.github/workflows/pr-build.yml` stays as the main PR CI workflow.
-- `.github/workflows/release-preview.yml` builds DMG/MSI/AppImage artifacts on PRs and manual dispatch.
-- `.github/workflows/release.yml` publishes the same artifacts to a GitHub Release when you push a `v*` tag.
+- `.github/workflows/release.yml` builds DMG/MSI/AppImage artifacts and publishes them to a GitHub Release when you push a `v*` tag.
 
 Apple signing/notarization secrets used by the workflows:
 
