@@ -267,7 +267,7 @@ impl DiffViewer {
                                         let noun =
                                             if state.queued_message_count == 1 { "message" } else { "messages" };
                                         format!(
-                                            "{} queued {}. Tab queues another follow-up. Ctrl+Up edits the newest queued message.",
+                                            "{} queued {}. Tab queues another follow-up. Ctrl+Shift+Up edits the newest queued message.",
                                             state.queued_message_count, noun
                                         )
                                     } else {

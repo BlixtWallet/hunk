@@ -615,7 +615,7 @@ impl DiffViewer {
             let Some(view) = weak_view.upgrade() else {
                 return;
             };
-            let _ = view.update(cx, |this, cx| {
+            view.update(cx, |this, cx| {
                 this.ai_handle_composer_shortcut_keystroke(shortcut, window, cx);
             });
         })

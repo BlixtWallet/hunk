@@ -437,7 +437,7 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
     ));
     bindings.push(KeyBinding::new("tab", AiQueuePrompt, Some("AiComposer")));
     bindings.push(KeyBinding::new(
-        "ctrl-up",
+        "ctrl-shift-up",
         AiEditLastQueuedPrompt,
         Some("AiComposer"),
     ));

@@ -51,9 +51,9 @@ mod ai_tests {
     use super::should_reset_ai_timeline_measurements;
     use super::should_scroll_timeline_to_bottom_on_new_activity;
     use super::sorted_threads;
+    use super::reconcile_ai_queued_messages_after_snapshot;
     use super::ready_ai_queued_message_thread_ids;
-    use super::take_interrupted_ai_queued_messages;
-    use super::take_last_ai_queued_message_for_thread;
+    use super::take_last_editable_ai_queued_message_for_thread;
     use super::thread_metadata_refresh_key;
     use super::timeline_turn_ids_by_thread;
     use super::timeline_row_ids_with_height_changes;
@@ -70,6 +70,7 @@ mod ai_tests {
     use crate::app::AiComposerDraftKey;
     use crate::app::AiNewThreadStartMode;
     use crate::app::AiQueuedUserMessage;
+    use crate::app::AiQueuedUserMessageStatus;
     use crate::app::AiPendingSteer;
     use crate::app::AiPendingThreadStart;
     use crate::app::AiThreadTitleRefreshState;
@@ -208,10 +209,14 @@ mod ai_tests {
         ));
         assert!(matches!(
             ai_composer_shortcut_for_keystroke(
-                &Keystroke::parse("ctrl-up").expect("valid keystroke")
+                &Keystroke::parse("ctrl-shift-up").expect("valid keystroke")
             ),
             Some(AiComposerShortcut::EditLastQueuedPrompt)
         ));
+        assert!(ai_composer_shortcut_for_keystroke(
+            &Keystroke::parse("ctrl-up").expect("valid keystroke")
+        )
+        .is_none());
         assert!(ai_composer_shortcut_for_keystroke(
             &Keystroke::parse("shift-tab").expect("valid keystroke")
         )

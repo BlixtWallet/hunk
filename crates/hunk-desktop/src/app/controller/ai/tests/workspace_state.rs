@@ -195,6 +195,7 @@
                 prompt: "queue this follow-up".to_string(),
                 local_images: Vec::new(),
                 queued_at: Instant::now(),
+                status: AiQueuedUserMessageStatus::Queued,
             }],
             interrupt_restore_queued_thread_ids: ["thread-1".to_string()]
                 .into_iter()

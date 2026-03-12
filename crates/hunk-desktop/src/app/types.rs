@@ -118,12 +118,20 @@ pub(crate) struct AiPendingSteer {
     started_at: Instant,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum AiQueuedUserMessageStatus {
+    #[default]
+    Queued,
+    PendingConfirmation { accepted_after_sequence: u64 },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AiQueuedUserMessage {
     thread_id: String,
     prompt: String,
     local_images: Vec<PathBuf>,
     queued_at: Instant,
+    status: AiQueuedUserMessageStatus,
 }
 
 #[derive(Debug, Clone)]

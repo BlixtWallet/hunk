@@ -432,7 +432,7 @@ impl DiffViewer {
         reconcile_ai_pending_steers(&mut state.pending_steers, &state.state_snapshot);
         let restored_pending_steers =
             take_restorable_ai_pending_steers(&mut state.pending_steers, &state.state_snapshot);
-        let restored_queued_messages = take_interrupted_ai_queued_messages(
+        let restored_queued_messages = reconcile_ai_queued_messages_after_snapshot(
             &mut state.queued_messages,
             &mut state.interrupt_restore_queued_thread_ids,
             &state.state_snapshot,
@@ -796,7 +796,7 @@ impl DiffViewer {
         if reconcile_queued_after_snapshot {
             let mut ready_thread_ids = Vec::new();
             if let Some(state) = self.ai_workspace_states.get_mut(workspace_key) {
-                restored_queued_messages = take_interrupted_ai_queued_messages(
+                restored_queued_messages = reconcile_ai_queued_messages_after_snapshot(
                     &mut state.queued_messages,
                     &mut state.interrupt_restore_queued_thread_ids,
                     &state.state_snapshot,
@@ -809,22 +809,38 @@ impl DiffViewer {
             }
             let _ = self.restore_ai_queued_messages_to_drafts(restored_queued_messages);
             for thread_id in ready_thread_ids {
-                let Some(state) = self.ai_workspace_states.get(workspace_key) else {
+                let Some((accepted_after_sequence, session_overrides)) = self
+                    .ai_workspace_states
+                    .get(workspace_key)
+                    .map(|state| {
+                        (
+                            thread_latest_timeline_sequence(
+                                &state.state_snapshot,
+                                thread_id.as_str(),
+                            ),
+                            AiTurnSessionOverrides {
+                                model: state.selected_model.clone(),
+                                effort: state.selected_effort.clone(),
+                                collaboration_mode: state.selected_collaboration_mode,
+                                service_tier: state.selected_service_tier,
+                            },
+                        )
+                    })
+                else {
                     break;
                 };
-                let Some(queued_ix) = state
-                    .queued_messages
-                    .iter()
-                    .position(|queued| queued.thread_id == thread_id)
+                let Some((queued_ix, queued)) = self
+                    .ai_workspace_states
+                    .get_mut(workspace_key)
+                    .and_then(|state| {
+                        mark_next_ai_queued_message_pending_confirmation(
+                            state.queued_messages.as_mut_slice(),
+                            thread_id.as_str(),
+                            accepted_after_sequence,
+                        )
+                    })
                 else {
                     continue;
-                };
-                let queued = state.queued_messages[queued_ix].clone();
-                let session_overrides = AiTurnSessionOverrides {
-                    model: state.selected_model.clone(),
-                    effort: state.selected_effort.clone(),
-                    collaboration_mode: state.selected_collaboration_mode,
-                    service_tier: state.selected_service_tier,
                 };
                 let prompt = (!queued.prompt.trim().is_empty()).then_some(queued.prompt.clone());
                 let sent = self.send_ai_worker_command_for_workspace(
@@ -838,14 +854,13 @@ impl DiffViewer {
                     false,
                     cx,
                 );
-                if sent
+                if !sent
                     && let Some(state) = self.ai_workspace_states.get_mut(workspace_key)
-                    && let Some(queued_ix) = state
-                        .queued_messages
-                        .iter()
-                        .position(|queued| queued.thread_id == thread_id)
                 {
-                    state.queued_messages.remove(queued_ix);
+                    reset_ai_queued_message_to_queued(
+                        state.queued_messages.as_mut_slice(),
+                        queued_ix,
+                    );
                 }
             }
             return;

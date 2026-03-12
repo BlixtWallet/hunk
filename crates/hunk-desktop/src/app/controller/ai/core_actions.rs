@@ -246,7 +246,7 @@ impl DiffViewer {
         }
 
         let composer_focus_handle =
-            gpui::Focusable::focus_handle(&*self.ai_composer_input_state.read(cx), cx);
+            gpui::Focusable::focus_handle(self.ai_composer_input_state.read(cx), cx);
         if !composer_focus_handle.is_focused(window) {
             return;
         }
@@ -709,7 +709,7 @@ pub(super) fn ai_composer_shortcut_for_keystroke(
         "up"
             if modifiers.control
                 && !modifiers.alt
-                && !modifiers.shift
+                && modifiers.shift
                 && !modifiers.platform
                 && !modifiers.function =>
         {

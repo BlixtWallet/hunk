@@ -13,23 +13,84 @@ fn ai_thread_has_in_progress_turn(state: &hunk_codex::state::AiState, thread_id:
         .any(|turn| turn.thread_id == thread_id && turn.status == TurnStatus::InProgress)
 }
 
-fn next_ai_queued_message_for_thread(
-    queued_messages: &[AiQueuedUserMessage],
-    thread_id: &str,
-) -> Option<(usize, AiQueuedUserMessage)> {
-    let queued_ix = queued_messages
-        .iter()
-        .position(|queued| queued.thread_id == thread_id)?;
-    Some((queued_ix, queued_messages[queued_ix].clone()))
+fn ai_thread_accepts_queued_messages(status: ThreadLifecycleStatus) -> bool {
+    matches!(
+        status,
+        ThreadLifecycleStatus::Active | ThreadLifecycleStatus::Idle
+    )
 }
 
-fn take_last_ai_queued_message_for_thread(
+fn ai_queued_message_matching_sequence(
+    state: &hunk_codex::state::AiState,
+    queued: &AiQueuedUserMessage,
+    min_sequence: u64,
+) -> Option<u64> {
+    let expected_content =
+        ai_pending_steer_seed_content(queued.prompt.as_str(), queued.local_images.as_slice())?;
+
+    state
+        .items
+        .values()
+        .filter(|item| {
+            item.thread_id == queued.thread_id
+                && item.kind == "userMessage"
+                && item.content == expected_content
+                && item.last_sequence > min_sequence
+        })
+        .map(|item| item.last_sequence)
+        .min()
+}
+
+fn reconcile_ai_queued_messages(
+    queued_messages: &mut Vec<AiQueuedUserMessage>,
+    state: &hunk_codex::state::AiState,
+) {
+    if queued_messages.is_empty() {
+        return;
+    }
+
+    let mut matched_sequence_by_thread = BTreeMap::<String, u64>::new();
+    let mut blocked_threads = BTreeSet::<String>::new();
+    let mut remaining = Vec::with_capacity(queued_messages.len());
+
+    for queued in queued_messages.drain(..) {
+        let AiQueuedUserMessageStatus::PendingConfirmation {
+            accepted_after_sequence,
+        } = queued.status
+        else {
+            remaining.push(queued);
+            continue;
+        };
+
+        if blocked_threads.contains(queued.thread_id.as_str()) {
+            remaining.push(queued);
+            continue;
+        }
+
+        let min_sequence = matched_sequence_by_thread
+            .get(queued.thread_id.as_str())
+            .copied()
+            .unwrap_or(accepted_after_sequence);
+
+        if let Some(sequence) = ai_queued_message_matching_sequence(state, &queued, min_sequence) {
+            matched_sequence_by_thread.insert(queued.thread_id.clone(), sequence);
+        } else {
+            blocked_threads.insert(queued.thread_id.clone());
+            remaining.push(queued);
+        }
+    }
+
+    *queued_messages = remaining;
+}
+
+fn take_last_editable_ai_queued_message_for_thread(
     queued_messages: &mut Vec<AiQueuedUserMessage>,
     thread_id: &str,
 ) -> Option<AiQueuedUserMessage> {
-    let queued_ix = queued_messages
-        .iter()
-        .rposition(|queued| queued.thread_id == thread_id)?;
+    let queued_ix = queued_messages.iter().rposition(|queued| {
+        queued.thread_id == thread_id
+            && matches!(queued.status, AiQueuedUserMessageStatus::Queued)
+    })?;
     Some(queued_messages.remove(queued_ix))
 }
 
@@ -75,32 +136,151 @@ fn take_interrupted_ai_queued_messages(
     restorable
 }
 
+fn take_restorable_ai_queued_messages(
+    queued_messages: &mut Vec<AiQueuedUserMessage>,
+    state: &hunk_codex::state::AiState,
+) -> Vec<AiQueuedUserMessage> {
+    if queued_messages.is_empty() {
+        return Vec::new();
+    }
+
+    let mut restorable = Vec::new();
+    let mut remaining = Vec::with_capacity(queued_messages.len());
+    for queued in queued_messages.drain(..) {
+        if matches!(
+            queued.status,
+            AiQueuedUserMessageStatus::PendingConfirmation { .. }
+        ) && !ai_thread_has_in_progress_turn(state, queued.thread_id.as_str())
+        {
+            restorable.push(queued);
+        } else {
+            remaining.push(queued);
+        }
+    }
+    *queued_messages = remaining;
+    restorable
+}
+
+fn take_unavailable_ai_queued_messages(
+    queued_messages: &mut Vec<AiQueuedUserMessage>,
+    interrupt_restore_thread_ids: &mut BTreeSet<String>,
+    state: &hunk_codex::state::AiState,
+) -> Vec<AiQueuedUserMessage> {
+    if queued_messages.is_empty() {
+        return Vec::new();
+    }
+
+    let unavailable_thread_ids = queued_messages
+        .iter()
+        .filter_map(|queued| {
+            state
+                .threads
+                .get(queued.thread_id.as_str())
+                .filter(|thread| !ai_thread_accepts_queued_messages(thread.status))
+                .map(|_| queued.thread_id.clone())
+        })
+        .collect::<BTreeSet<_>>();
+    if unavailable_thread_ids.is_empty() {
+        return Vec::new();
+    }
+
+    interrupt_restore_thread_ids.retain(|thread_id| !unavailable_thread_ids.contains(thread_id));
+    let mut restorable = Vec::new();
+    let mut remaining = Vec::with_capacity(queued_messages.len());
+    for queued in queued_messages.drain(..) {
+        if unavailable_thread_ids.contains(queued.thread_id.as_str()) {
+            restorable.push(queued);
+        } else {
+            remaining.push(queued);
+        }
+    }
+    *queued_messages = remaining;
+    restorable
+}
+
+fn reconcile_ai_queued_messages_after_snapshot(
+    queued_messages: &mut Vec<AiQueuedUserMessage>,
+    interrupt_restore_thread_ids: &mut BTreeSet<String>,
+    state: &hunk_codex::state::AiState,
+) -> Vec<AiQueuedUserMessage> {
+    reconcile_ai_queued_messages(queued_messages, state);
+
+    let mut restorable = take_restorable_ai_queued_messages(queued_messages, state);
+    restorable.extend(take_interrupted_ai_queued_messages(
+        queued_messages,
+        interrupt_restore_thread_ids,
+        state,
+    ));
+    restorable.extend(take_unavailable_ai_queued_messages(
+        queued_messages,
+        interrupt_restore_thread_ids,
+        state,
+    ));
+    restorable
+}
+
 fn ready_ai_queued_message_thread_ids(
     queued_messages: &[AiQueuedUserMessage],
     interrupt_restore_thread_ids: &BTreeSet<String>,
     state: &hunk_codex::state::AiState,
 ) -> Vec<String> {
     let mut thread_ids = Vec::new();
-    let mut seen = BTreeSet::new();
+    let mut blocked_threads = BTreeSet::new();
 
     for queued in queued_messages {
-        if seen.contains(queued.thread_id.as_str()) {
+        if blocked_threads.contains(queued.thread_id.as_str()) {
             continue;
         }
         if interrupt_restore_thread_ids.contains(queued.thread_id.as_str()) {
+            blocked_threads.insert(queued.thread_id.clone());
             continue;
         }
-        if !state.threads.contains_key(queued.thread_id.as_str()) {
+        let Some(thread) = state.threads.get(queued.thread_id.as_str()) else {
+            blocked_threads.insert(queued.thread_id.clone());
+            continue;
+        };
+        if !ai_thread_accepts_queued_messages(thread.status) {
+            blocked_threads.insert(queued.thread_id.clone());
             continue;
         }
         if ai_thread_has_in_progress_turn(state, queued.thread_id.as_str()) {
+            blocked_threads.insert(queued.thread_id.clone());
             continue;
         }
-        seen.insert(queued.thread_id.clone());
+        if !matches!(queued.status, AiQueuedUserMessageStatus::Queued) {
+            blocked_threads.insert(queued.thread_id.clone());
+            continue;
+        }
+        blocked_threads.insert(queued.thread_id.clone());
         thread_ids.push(queued.thread_id.clone());
     }
 
     thread_ids
+}
+
+fn mark_next_ai_queued_message_pending_confirmation(
+    queued_messages: &mut [AiQueuedUserMessage],
+    thread_id: &str,
+    accepted_after_sequence: u64,
+) -> Option<(usize, AiQueuedUserMessage)> {
+    let queued_ix = queued_messages.iter().position(|queued| {
+        queued.thread_id == thread_id
+            && matches!(queued.status, AiQueuedUserMessageStatus::Queued)
+    })?;
+    queued_messages[queued_ix].status = AiQueuedUserMessageStatus::PendingConfirmation {
+        accepted_after_sequence,
+    };
+    Some((queued_ix, queued_messages[queued_ix].clone()))
+}
+
+fn reset_ai_queued_message_to_queued(
+    queued_messages: &mut [AiQueuedUserMessage],
+    queued_ix: usize,
+) {
+    let Some(queued) = queued_messages.get_mut(queued_ix) else {
+        return;
+    };
+    queued.status = AiQueuedUserMessageStatus::Queued;
 }
 
 impl DiffViewer {
@@ -150,7 +330,7 @@ impl DiffViewer {
     }
 
     fn maybe_restore_interrupted_ai_queued_messages_to_drafts(&mut self) -> BTreeSet<AiComposerDraftKey> {
-        let queued_messages = take_interrupted_ai_queued_messages(
+        let queued_messages = reconcile_ai_queued_messages_after_snapshot(
             &mut self.ai_queued_messages,
             &mut self.ai_interrupt_restore_queued_thread_ids,
             &self.ai_state_snapshot,
@@ -164,12 +344,12 @@ impl DiffViewer {
         prompt: String,
         local_images: Vec<PathBuf>,
     ) {
-        self.ai_interrupt_restore_queued_thread_ids.remove(thread_id.as_str());
         self.ai_queued_messages.push(AiQueuedUserMessage {
             thread_id,
             prompt,
             local_images,
             queued_at: Instant::now(),
+            status: AiQueuedUserMessageStatus::Queued,
         });
     }
 
@@ -177,7 +357,7 @@ impl DiffViewer {
         &mut self,
         thread_id: &str,
     ) -> Option<AiQueuedUserMessage> {
-        take_last_ai_queued_message_for_thread(&mut self.ai_queued_messages, thread_id)
+        take_last_editable_ai_queued_message_for_thread(&mut self.ai_queued_messages, thread_id)
     }
 
     fn maybe_submit_ready_ai_queued_messages(
@@ -191,8 +371,13 @@ impl DiffViewer {
             &self.ai_state_snapshot,
         );
         for thread_id in ready_thread_ids {
-            let Some((queued_ix, queued)) =
-                next_ai_queued_message_for_thread(self.ai_queued_messages.as_slice(), thread_id.as_str())
+            let accepted_after_sequence =
+                thread_latest_timeline_sequence(&self.ai_state_snapshot, thread_id.as_str());
+            let Some((queued_ix, queued)) = mark_next_ai_queued_message_pending_confirmation(
+                self.ai_queued_messages.as_mut_slice(),
+                thread_id.as_str(),
+                accepted_after_sequence,
+            )
             else {
                 continue;
             };
@@ -209,8 +394,11 @@ impl DiffViewer {
                 false,
                 cx,
             );
-            if sent && queued_ix < self.ai_queued_messages.len() {
-                self.ai_queued_messages.remove(queued_ix);
+            if !sent {
+                reset_ai_queued_message_to_queued(
+                    self.ai_queued_messages.as_mut_slice(),
+                    queued_ix,
+                );
             }
         }
     }
