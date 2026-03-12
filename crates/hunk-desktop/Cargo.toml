@@ -11,8 +11,8 @@ path = "src/main.rs"
 [package.metadata.bundle]
 name = "Hunk"
 identifier = "com.prodata.hunk"
-short_description = "Fast Git diff viewer."
-long_description = "A fast, simple Git diff viewer built with GPUI."
+short_description = "Very fast git diff viewer and codex orchestrator."
+long_description = "A super fast, simple Git diff viewer and codex orchestrator built with GPUI."
 category = "public.app-category.developer-tools"
 icon = ["assets/icons/Hunk.icns"]
 resources = ["../../assets/codex-runtime"]

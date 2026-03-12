@@ -104,7 +104,7 @@ These produce:
 - Linux x86_64: `Hunk-<version>-linux-x86_64.AppImage` plus fallback `Hunk-<version>-linux-x86_64.tar.gz`
 - Windows x86_64: `Hunk-<version>-windows-x86_64.msi`
 
-Linux AppImage packaging requires `mksquashfs` from `squashfs-tools`.
+Linux AppImage packaging requires `mksquashfs` from `squashfs-tools` and `patchelf`.
 
 ## Build Codex App-Server Binaries For Embedding
 

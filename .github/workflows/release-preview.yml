@@ -151,6 +151,7 @@ jobs:
             libx11-xcb-dev \
             libxkbcommon-x11-dev \
             libzstd-dev \
+            patchelf \
             pkg-config \
             squashfs-tools
         shell: bash
