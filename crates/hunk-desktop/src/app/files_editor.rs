@@ -21,10 +21,10 @@ use helix_view::handlers::completion::{CompletionEvent, CompletionHandler};
 use helix_view::handlers::lsp::{
     DocumentColorsEvent, PullAllDocumentsDiagnosticsEvent, PullDiagnosticsEvent,
 };
+use helix_view::handlers::word_index;
 use helix_view::handlers::{AutoSaveEvent, Handlers};
 use helix_view::input::{Event as HelixEvent, KeyEvent};
 use helix_view::keyboard::{KeyCode, KeyModifiers};
-use helix_view::handlers::word_index;
 use helix_view::{Document, DocumentId, Editor, Theme, ViewId, theme};
 pub(crate) type SharedHelixFilesEditor = Rc<RefCell<HelixFilesEditor>>;
 
@@ -522,7 +522,9 @@ impl Element for HelixFilesEditorElement {
             ));
 
             let mut origin = point(
-                bounds.origin.x + px(10.0) + (layout.cell_width * (layout.gutter_columns as f32 + 1.0)),
+                bounds.origin.x
+                    + px(10.0)
+                    + (layout.cell_width * (layout.gutter_columns as f32 + 1.0)),
                 bounds.origin.y + px(1.0),
             );
             for line in shaped_lines {
@@ -539,11 +541,10 @@ impl Element for HelixFilesEditorElement {
 
             if self.is_focused {
                 let (_, cursor_kind) = runtime.editor.cursor();
-                let primary_idx = document
-                    .selection(view_id)
-                    .primary()
-                    .cursor(text.slice(..));
-                if let Some(position) = view.screen_coords_at_pos(document, text.slice(..), primary_idx) {
+                let primary_idx = document.selection(view_id).primary().cursor(text.slice(..));
+                if let Some(position) =
+                    view.screen_coords_at_pos(document, text.slice(..), primary_idx)
+                {
                     let cursor_bounds = cursor_bounds(
                         point(
                             bounds.origin.x
@@ -606,7 +607,9 @@ impl<'h, 'r, 't> SyntaxStyleIter<'h, 'r, 't> {
                 } else {
                     let bounded = (next_byte_idx as usize).min(self.text.len_bytes());
                     let mut char_idx = self.text.byte_to_char(bounded);
-                    while char_idx < self.text.len_chars() && self.text.char_to_byte(char_idx) < bounded {
+                    while char_idx < self.text.len_chars()
+                        && self.text.char_to_byte(char_idx) < bounded
+                    {
                         char_idx += 1;
                     }
                     char_idx
@@ -625,7 +628,9 @@ impl<'h, 'r, 't> SyntaxStyleIter<'h, 'r, 't> {
             HighlightEvent::Refresh => self.text_style,
             HighlightEvent::Push => self.style,
         };
-        self.style = highlights.fold(base, |acc, highlight| acc.patch(self.theme.highlight(highlight)));
+        self.style = highlights.fold(base, |acc, highlight| {
+            acc.patch(self.theme.highlight(highlight))
+        });
         self.update_pos();
     }
 }
@@ -760,7 +765,8 @@ fn paint_current_line_background(
     }
 
     let line_y = origin.y + px(1.0) + (layout.line_height * relative_row as f32);
-    let content_x = origin.x + px(10.0) + (layout.cell_width * (layout.gutter_columns as f32 + 1.0));
+    let content_x =
+        origin.x + px(10.0) + (layout.cell_width * (layout.gutter_columns as f32 + 1.0));
     window.paint_quad(fill(
         Bounds {
             origin: point(content_x, line_y),
@@ -894,7 +900,9 @@ fn color_to_hsla(color: Color) -> Option<Hsla> {
         Color::LightCyan => Some(hsla(0.52, 0.82, 0.72, 1.0)),
         Color::LightGray => Some(hsla(0.0, 0.0, 0.78, 1.0)),
         Color::White => Some(white()),
-        Color::Rgb(r, g, b) => Some(rgb(((r as u32) << 16) | ((g as u32) << 8) | (b as u32)).into()),
+        Color::Rgb(r, g, b) => {
+            Some(rgb(((r as u32) << 16) | ((g as u32) << 8) | (b as u32)).into())
+        }
         Color::Indexed(_) => None,
     }
 }
