@@ -98,11 +98,14 @@ echo "Built binary: $BINARY_PATH"
 
 if [[ "$STAGE_RUNTIME" == "1" ]]; then
   SOURCE_RUNTIME_DIR="$ROOT_DIR/assets/codex-runtime/windows"
+  SOURCE_LAUNCHER="$SOURCE_RUNTIME_DIR/codex.cmd"
+  SOURCE_BINARY="$SOURCE_RUNTIME_DIR/codex.exe"
   DEST_RUNTIME_DIR="$TARGET_DIR/$TARGET_TRIPLE/$PROFILE/codex-runtime/windows"
 
-  if [[ ! -d "$SOURCE_RUNTIME_DIR" ]]; then
-    echo "warn: windows runtime asset directory not found at $SOURCE_RUNTIME_DIR; skipping runtime staging" >&2
+  if [[ ! -f "$SOURCE_LAUNCHER" || ! -f "$SOURCE_BINARY" ]]; then
+    echo "warn: windows runtime assets not found at $SOURCE_RUNTIME_DIR; skipping runtime staging" >&2
   else
+    rm -rf "$DEST_RUNTIME_DIR"
     mkdir -p "$DEST_RUNTIME_DIR"
     cp -R "$SOURCE_RUNTIME_DIR"/. "$DEST_RUNTIME_DIR"
     echo "Staged Windows runtime: $DEST_RUNTIME_DIR"
