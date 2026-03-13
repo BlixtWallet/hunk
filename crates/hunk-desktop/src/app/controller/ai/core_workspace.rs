@@ -128,6 +128,12 @@ impl DiffViewer {
 
         if let Some(thread_id) = self.ai_selected_thread_id.as_deref()
             && let Some(thread_root) = self.ai_thread_workspace_root(thread_id)
+            && ai_thread_workspace_matches_current_project(
+                thread_root.as_path(),
+                self.workspace_targets.as_slice(),
+                self.project_path.as_deref(),
+                self.repo_root.as_deref(),
+            )
         {
             return Some(thread_root);
         }

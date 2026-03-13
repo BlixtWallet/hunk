@@ -235,6 +235,41 @@
     }
 
     #[test]
+    fn ai_thread_workspace_matches_current_project_rejects_stale_selected_thread() {
+        assert!(!ai_thread_workspace_matches_current_project(
+            std::path::Path::new("/repo-a"),
+            &[],
+            Some(std::path::Path::new("/repo-b")),
+            None,
+        ));
+    }
+
+    #[test]
+    fn ai_thread_workspace_matches_current_project_accepts_known_worktree_target() {
+        let workspace_targets = vec![
+            workspace_target(
+                "primary",
+                WorkspaceTargetKind::PrimaryCheckout,
+                "/repo",
+                "Primary Checkout",
+            ),
+            workspace_target(
+                "worktree:task-1",
+                WorkspaceTargetKind::LinkedWorktree,
+                "/worktrees/task-1",
+                "task-1",
+            ),
+        ];
+
+        assert!(ai_thread_workspace_matches_current_project(
+            std::path::Path::new("/worktrees/task-1"),
+            workspace_targets.as_slice(),
+            Some(std::path::Path::new("/repo")),
+            Some(std::path::Path::new("/repo")),
+        ));
+    }
+
+    #[test]
     fn ai_completion_reload_workspace_root_targets_destination_workspace() {
         assert_eq!(
             ai_completion_reload_workspace_root(Some("/repo/worktrees/task-1")),

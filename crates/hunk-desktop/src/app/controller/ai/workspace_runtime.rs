@@ -1,4 +1,54 @@
 impl DiffViewer {
+    fn clear_ai_state_outside_current_project(&mut self) {
+        let hidden_workspace_keys = self
+            .ai_hidden_runtimes
+            .keys()
+            .filter(|workspace_key| {
+                !ai_thread_workspace_matches_current_project(
+                    std::path::Path::new(workspace_key.as_str()),
+                    self.workspace_targets.as_slice(),
+                    self.project_path.as_deref(),
+                    self.repo_root.as_deref(),
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for workspace_key in hidden_workspace_keys {
+            self.shutdown_ai_runtime_for_workspace_blocking(workspace_key.as_str());
+        }
+
+        if self.ai_worker_workspace_key.as_ref().is_some_and(|workspace_key| {
+            !ai_thread_workspace_matches_current_project(
+                std::path::Path::new(workspace_key.as_str()),
+                self.workspace_targets.as_slice(),
+                self.project_path.as_deref(),
+                self.repo_root.as_deref(),
+            )
+        }) {
+            let workspace_key = self.ai_worker_workspace_key.clone();
+            if let Some(workspace_key) = workspace_key {
+                self.shutdown_ai_runtime_for_workspace_blocking(workspace_key.as_str());
+            }
+        }
+
+        let removable_workspace_keys = self
+            .ai_workspace_states
+            .keys()
+            .filter(|workspace_key| {
+                !ai_thread_workspace_matches_current_project(
+                    std::path::Path::new(workspace_key.as_str()),
+                    self.workspace_targets.as_slice(),
+                    self.project_path.as_deref(),
+                    self.repo_root.as_deref(),
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for workspace_key in removable_workspace_keys {
+            self.ai_forget_deleted_workspace_state(workspace_key.as_str());
+        }
+    }
+
     pub(super) fn ai_handle_workspace_change(
         &mut self,
         previous_workspace_key: Option<String>,
@@ -20,8 +70,22 @@ impl DiffViewer {
         }
 
         self.sync_ai_visible_composer_prompt_to_draft(cx);
-        self.store_current_ai_workspace_state(previous_workspace_key.as_deref());
-        self.park_visible_ai_runtime();
+        let previous_workspace_is_in_current_project = previous_workspace_key
+            .as_deref()
+            .is_some_and(|workspace_key| {
+                ai_thread_workspace_matches_current_project(
+                    std::path::Path::new(workspace_key),
+                    self.workspace_targets.as_slice(),
+                    self.project_path.as_deref(),
+                    self.repo_root.as_deref(),
+                )
+            });
+        if previous_workspace_is_in_current_project {
+            self.store_current_ai_workspace_state(previous_workspace_key.as_deref());
+            self.park_visible_ai_runtime();
+        } else {
+            self.clear_ai_state_outside_current_project();
+        }
         self.restore_ai_workspace_state_for_key(next_workspace_key.as_deref());
         self.sync_ai_worktree_base_branch_picker_state(cx);
         self.restore_ai_visible_composer_from_current_draft(cx);

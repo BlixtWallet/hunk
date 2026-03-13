@@ -57,26 +57,52 @@ fn merged_ai_visible_threads(
     state_snapshot: &hunk_codex::state::AiState,
     state_snapshot_workspace_key: Option<&str>,
     workspace_states: &std::collections::BTreeMap<String, AiWorkspaceState>,
+    workspace_targets: &[hunk_git::worktree::WorkspaceTargetSummary],
+    project_path: Option<&std::path::Path>,
+    repo_root: Option<&std::path::Path>,
 ) -> Vec<ThreadSummary> {
     let mut threads_by_id = BTreeMap::<String, ThreadSummary>::new();
 
     for thread in state_snapshot
         .threads
         .values()
-        .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
+        .filter(|thread| {
+            thread.status != ThreadLifecycleStatus::Archived
+                && ai_thread_workspace_matches_current_project(
+                    std::path::Path::new(thread.cwd.as_str()),
+                    workspace_targets,
+                    project_path,
+                    repo_root,
+                )
+        })
     {
         threads_by_id.insert(thread.id.clone(), thread.clone());
     }
 
     for (workspace_key, state) in workspace_states {
-        if state_snapshot_workspace_key == Some(workspace_key.as_str()) {
+        if state_snapshot_workspace_key == Some(workspace_key.as_str())
+            || !ai_thread_workspace_matches_current_project(
+                std::path::Path::new(workspace_key.as_str()),
+                workspace_targets,
+                project_path,
+                repo_root,
+            )
+        {
             continue;
         }
         for thread in state
             .state_snapshot
             .threads
             .values()
-            .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
+            .filter(|thread| {
+                thread.status != ThreadLifecycleStatus::Archived
+                    && ai_thread_workspace_matches_current_project(
+                        std::path::Path::new(thread.cwd.as_str()),
+                        workspace_targets,
+                        project_path,
+                        repo_root,
+                    )
+            })
         {
             let replace_existing = threads_by_id
                 .get(thread.id.as_str())
@@ -144,7 +170,6 @@ fn seed_ai_workspace_preferences(
     set_workspace_include_hidden_models(state, workspace_key, include_hidden_models);
 }
 
-#[cfg(test)]
 fn resolved_ai_workspace_cwd(
     project_path: Option<&std::path::Path>,
     repo_root: Option<&std::path::Path>,
@@ -161,6 +186,39 @@ fn resolved_ai_workspace_cwd(
         (None, Some(repo_root)) => Some(repo_root.to_path_buf()),
         (None, None) => None,
     }
+}
+
+fn ai_thread_workspace_matches_current_project(
+    thread_workspace_root: &std::path::Path,
+    workspace_targets: &[hunk_git::worktree::WorkspaceTargetSummary],
+    project_path: Option<&std::path::Path>,
+    repo_root: Option<&std::path::Path>,
+) -> bool {
+    if workspace_targets
+        .iter()
+        .any(|target| target.root.as_path() == thread_workspace_root)
+    {
+        return true;
+    }
+
+    let visible_workspace_root = resolved_ai_workspace_cwd(project_path, repo_root);
+    if visible_workspace_root.as_deref() == Some(thread_workspace_root) {
+        return true;
+    }
+
+    let current_primary_root = repo_root
+        .map(std::path::Path::to_path_buf)
+        .or_else(|| {
+            visible_workspace_root
+                .as_deref()
+                .and_then(|root| hunk_git::worktree::primary_repo_root(root).ok())
+        });
+    let Some(current_primary_root) = current_primary_root else {
+        return false;
+    };
+
+    hunk_git::worktree::primary_repo_root(thread_workspace_root)
+        .is_ok_and(|thread_primary_root| thread_primary_root == current_primary_root)
 }
 
 fn ai_thread_start_mode_for_workspace(

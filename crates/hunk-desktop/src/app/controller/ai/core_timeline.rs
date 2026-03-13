@@ -51,7 +51,15 @@ impl DiffViewer {
     pub(crate) fn ai_threads_for_current_workspace(&self) -> Vec<ThreadSummary> {
         sorted_threads(&self.ai_state_snapshot)
             .into_iter()
-            .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
+            .filter(|thread| {
+                thread.status != ThreadLifecycleStatus::Archived
+                    && ai_thread_workspace_matches_current_project(
+                        std::path::Path::new(thread.cwd.as_str()),
+                        self.workspace_targets.as_slice(),
+                        self.project_path.as_deref(),
+                        self.repo_root.as_deref(),
+                    )
+            })
             .collect()
     }
 
@@ -71,11 +79,27 @@ impl DiffViewer {
         self.ai_state_snapshot
             .threads
             .get(thread_id)
+            .filter(|thread| {
+                ai_thread_workspace_matches_current_project(
+                    std::path::Path::new(thread.cwd.as_str()),
+                    self.workspace_targets.as_slice(),
+                    self.project_path.as_deref(),
+                    self.repo_root.as_deref(),
+                )
+            })
             .cloned()
             .or_else(|| {
                 self.ai_workspace_states
-                    .values()
-                    .find_map(|state| state.state_snapshot.threads.get(thread_id).cloned())
+                    .iter()
+                    .filter(|(workspace_key, _)| {
+                        ai_thread_workspace_matches_current_project(
+                            std::path::Path::new(workspace_key.as_str()),
+                            self.workspace_targets.as_slice(),
+                            self.project_path.as_deref(),
+                            self.repo_root.as_deref(),
+                        )
+                    })
+                    .find_map(|(_, state)| state.state_snapshot.threads.get(thread_id).cloned())
             })
     }
 
@@ -143,6 +167,9 @@ impl DiffViewer {
             &self.ai_state_snapshot,
             state_snapshot_workspace_key.as_deref(),
             &self.ai_workspace_states,
+            self.workspace_targets.as_slice(),
+            self.project_path.as_deref(),
+            self.repo_root.as_deref(),
         )
     }
 
@@ -344,15 +371,21 @@ impl DiffViewer {
     }
 
     pub(super) fn ai_visible_pending_approvals(&self) -> Vec<AiPendingApproval> {
-        let visible_workspace_key = self.ai_workspace_key();
         let mut approvals_by_id = BTreeMap::<String, AiPendingApproval>::new();
 
         for approval in &self.ai_pending_approvals {
-            approvals_by_id.insert(approval.request_id.clone(), approval.clone());
+            if self.ai_thread_workspace_root(approval.thread_id.as_str()).is_some() {
+                approvals_by_id.insert(approval.request_id.clone(), approval.clone());
+            }
         }
 
         for (workspace_key, state) in &self.ai_workspace_states {
-            if visible_workspace_key.as_deref() == Some(workspace_key.as_str()) {
+            if !ai_thread_workspace_matches_current_project(
+                std::path::Path::new(workspace_key.as_str()),
+                self.workspace_targets.as_slice(),
+                self.project_path.as_deref(),
+                self.repo_root.as_deref(),
+            ) {
                 continue;
             }
             for approval in &state.pending_approvals {
@@ -366,15 +399,21 @@ impl DiffViewer {
     }
 
     pub(super) fn ai_visible_pending_user_inputs(&self) -> Vec<AiPendingUserInputRequest> {
-        let visible_workspace_key = self.ai_workspace_key();
         let mut requests_by_id = BTreeMap::<String, AiPendingUserInputRequest>::new();
 
         for request in &self.ai_pending_user_inputs {
-            requests_by_id.insert(request.request_id.clone(), request.clone());
+            if self.ai_thread_workspace_root(request.thread_id.as_str()).is_some() {
+                requests_by_id.insert(request.request_id.clone(), request.clone());
+            }
         }
 
         for (workspace_key, state) in &self.ai_workspace_states {
-            if visible_workspace_key.as_deref() == Some(workspace_key.as_str()) {
+            if !ai_thread_workspace_matches_current_project(
+                std::path::Path::new(workspace_key.as_str()),
+                self.workspace_targets.as_slice(),
+                self.project_path.as_deref(),
+                self.repo_root.as_deref(),
+            ) {
                 continue;
             }
             for request in &state.pending_user_inputs {
