@@ -1,3 +1,5 @@
+const AI_COMPOSER_FILE_COMPLETION_MENU_CLEARANCE_Y: f32 = 80.0;
+
 struct AiComposerPanelState {
     composer_attachment_paths: Vec<PathBuf>,
     composer_attachment_count: usize,
@@ -319,7 +321,10 @@ impl DiffViewer {
             anchored()
                 .position_mode(AnchoredPositionMode::Local)
                 .position(point(px(0.), px(0.)))
-                .offset(point(px(0.), -px(10.0)))
+                .offset(point(
+                    px(0.),
+                    -px(AI_COMPOSER_FILE_COMPLETION_MENU_CLEARANCE_Y),
+                ))
                 .anchor(Corner::BottomLeft)
                 .snap_to_window_with_margin(px(8.0))
                 .child(

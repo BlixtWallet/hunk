@@ -16,7 +16,7 @@ use lsp_types::{
 
 use super::fuzzy_match::{is_match_boundary, segment_prefix_position, subsequence_match_score};
 
-const AI_COMPOSER_FILE_COMPLETION_LIMIT: usize = 20;
+const AI_COMPOSER_FILE_COMPLETION_LIMIT: usize = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ActivePrefixedToken {
