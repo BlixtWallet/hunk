@@ -1,4 +1,4 @@
-const AI_COMPOSER_FILE_COMPLETION_MENU_CLEARANCE_Y: f32 = 80.0;
+const AI_COMPOSER_FILE_COMPLETION_MENU_GAP_Y: f32 = 12.0;
 
 struct AiComposerPanelState {
     composer_attachment_paths: Vec<PathBuf>,
@@ -313,17 +313,27 @@ impl DiffViewer {
         is_dark: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let anchor_range = menu.replace_range.start..menu.replace_range.start.saturating_add(1);
+        let Some(anchor_position) = self
+            .ai_composer_input_state
+            .read(cx)
+            .offset_range_bounds(&anchor_range)
+            .map(|bounds| point(bounds.left(), bounds.top()))
+        else {
+            return div().into_any_element();
+        };
+
         let selected_ix = self
             .ai_composer_file_completion_selected_ix
             .min(menu.items.len().saturating_sub(1));
 
         deferred(
             anchored()
-                .position_mode(AnchoredPositionMode::Local)
-                .position(point(px(0.), px(0.)))
+                .position_mode(AnchoredPositionMode::Window)
+                .position(anchor_position)
                 .offset(point(
                     px(0.),
-                    -px(AI_COMPOSER_FILE_COMPLETION_MENU_CLEARANCE_Y),
+                    -px(AI_COMPOSER_FILE_COMPLETION_MENU_GAP_Y),
                 ))
                 .anchor(Corner::BottomLeft)
                 .snap_to_window_with_margin(px(8.0))
