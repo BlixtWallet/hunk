@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SRC_ICON="$ROOT_DIR/assets/icons/hunk_new.png"
+SRC_ICON="$ROOT_DIR/assets/icons/hunk_new3.png"
 OUT_ICON="$ROOT_DIR/assets/icons/Hunk.ico"
 
 if [[ ! -f "$SRC_ICON" ]]; then
