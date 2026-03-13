@@ -209,7 +209,7 @@ Completed in the first implementation slice:
 - [x] Added editor-local mode/language/position status UI
 - [x] Kept the existing Files header and save/reload UI
 - [x] Preserved markdown preview mode by continuing to use Hunk's existing preview flow
-- [x] Kept the old `InputState` Files editor as a fallback path if Helix fails to open
+- [x] Removed the old `InputState` Files editor fallback from Files mode
 
 Still pending:
 
@@ -218,8 +218,7 @@ Still pending:
 - [ ] real LSP enablement
 - [ ] diagnostics rendering
 - [ ] completion / hover / code actions
-- [ ] removing the old Files-mode `InputState` implementation
-- [ ] final cleanup after the coexistence phase
+- [ ] final cleanup after the initial Helix rollout
 
 ### Phase 0: Spike and dependency validation
 
@@ -327,15 +326,15 @@ Goals:
 
 Tasks:
 
-- [ ] delete Files-mode dependence on `editor_input_state`
-- [ ] remove obsolete Files editor code paths in controller/render modules
+- [x] delete Files-mode dependence on `editor_input_state`
+- [x] remove obsolete Files editor code paths in controller/render modules
 - [ ] keep markdown preview only if it still fits the product direction
 - [ ] document the final Files editor architecture
 
 Exit criteria:
 
-- [ ] there is one editor implementation for Files mode
-- [ ] controller code is simpler than the temporary coexistence phase
+- [x] there is one editor implementation for Files mode
+- [x] controller code is simpler than the temporary coexistence phase
 
 ## Explicit Non-Goals For First Release
 
@@ -418,7 +417,7 @@ Critical manual flows:
 - switch files with dirty buffer
 - switch away and back to Files mode
 - open large text file near the size limit
-- open binary/non-UTF8 file and verify fallback behavior
+- open binary/non-UTF8 file and verify explicit unavailable-state behavior
 
 ## Code Review Gates
 

@@ -338,13 +338,6 @@ impl DiffViewer {
         });
         let commit_input_state = cx
             .new(|cx| InputState::new(window, cx).multi_line(true).rows(4).placeholder("Commit message"));
-        let editor_input_state = cx.new(|cx| {
-            InputState::new(window, cx)
-                .code_editor("text")
-                .line_number(true)
-                .soft_wrap(false)
-                .placeholder("Select a file from Files tree to edit it.")
-        });
         let helix_files_editor = Rc::new(RefCell::new(crate::app::files_editor::HelixFilesEditor::new()));
         let comment_input_state = cx.new(|cx| {
             InputState::new(window, cx)
@@ -570,7 +563,6 @@ impl DiffViewer {
             repo_tree_inline_edit: None,
             repo_tree_context_menu: None,
             helix_files_editor,
-            editor_input_state,
             editor_path: None,
             editor_loading: false,
             editor_error: None,
@@ -587,12 +579,6 @@ impl DiffViewer {
             editor_markdown_preview_revision: 0,
             editor_markdown_preview: false,
         };
-
-        let editor_state = view.editor_input_state.clone();
-        cx.observe(&editor_state, |this, _, cx| {
-            this.sync_editor_dirty_from_input(cx);
-        })
-        .detach();
 
         let branch_input_state = view.branch_input_state.clone();
         cx.subscribe(&branch_input_state, |this, _, event, cx| {

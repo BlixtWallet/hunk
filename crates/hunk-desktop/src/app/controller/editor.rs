@@ -34,7 +34,6 @@ impl DiffViewer {
             self.editor_dirty = false;
             self.editor_markdown_preview = false;
             self.invalidate_editor_markdown_preview();
-            self.reset_editor_input(cx);
             self.helix_files_editor.borrow_mut().clear();
             cx.notify();
             return;
@@ -70,14 +69,19 @@ impl DiffViewer {
                     this.editor_loading = false;
                     match result {
                         Ok(document) => {
-                            let language = document.language;
                             let text = document.text;
                             this.editor_last_saved_text = Some(text.clone());
                             this.editor_dirty = false;
                             this.editor_error = None;
-                            this.apply_editor_document(language, text, cx);
-                            this.open_helix_editor_document(path.as_str(), &repo_root, cx);
-                            if this.editor_markdown_preview {
+                            let open_result =
+                                this.open_helix_editor_document(path.as_str(), &repo_root, cx);
+                            if let Err(err) = open_result {
+                                this.editor_error = Some(format!(
+                                    "Helix editor failed to open {}: {err:#}",
+                                    path
+                                ));
+                                this.helix_files_editor.borrow_mut().clear();
+                            } else if this.editor_markdown_preview {
                                 this.schedule_editor_markdown_preview_parse(cx);
                             }
                         }
@@ -85,7 +89,6 @@ impl DiffViewer {
                             this.editor_last_saved_text = None;
                             this.editor_dirty = false;
                             this.editor_error = Some(format!("Editor unavailable: {err}"));
-                            this.reset_editor_input(cx);
                             this.helix_files_editor.borrow_mut().clear();
                         }
                     }
@@ -123,7 +126,7 @@ impl DiffViewer {
             return;
         }
 
-        let current_text = self.current_editor_text(cx);
+        let current_text = self.current_editor_text();
         let text_to_write = current_text.clone();
         let saved_text = current_text;
         let path_for_write = path.clone();
@@ -193,38 +196,15 @@ impl DiffViewer {
             return;
         }
 
-        let current_text = self.current_editor_text(cx);
+        let current_text = self.current_editor_text();
         let saved_text = self.editor_last_saved_text.as_deref().unwrap_or_default();
-        let dirty = if self.helix_files_editor_ready() {
-            self.helix_files_editor.borrow().is_dirty()
-        } else {
-            current_text.as_str() != saved_text
-        };
+        let dirty =
+            self.helix_files_editor.borrow().is_dirty() || current_text.as_str() != saved_text;
         if self.editor_dirty != dirty {
             self.editor_dirty = dirty;
             cx.notify();
         }
         self.schedule_editor_markdown_preview_parse(cx);
-    }
-
-    fn apply_editor_document(&mut self, language: String, text: String, cx: &mut Context<Self>) {
-        let editor_input_state = self.editor_input_state.clone();
-        match Self::update_any_window(cx, |window, cx| {
-            editor_input_state.update(cx, |input, cx| {
-                input.set_highlighter(language.clone(), cx);
-                input.set_value(text.clone(), window, cx);
-                input.focus(window, cx);
-            });
-        }) {
-            Ok(true) => {}
-            Ok(false) => {
-                self.editor_error = Some("Cannot open editor without an active window.".to_string());
-            }
-            Err(err) => {
-                error!("failed to apply editor document: {err:#}");
-                self.editor_error = Some("Failed to initialize editor view.".to_string());
-            }
-        }
     }
 
     fn invalidate_editor_markdown_preview(&mut self) {
@@ -255,7 +235,7 @@ impl DiffViewer {
 
         self.cancel_editor_markdown_preview_task();
         let revision = self.next_editor_markdown_preview_revision();
-        let markdown_text = self.current_editor_text(cx);
+        let markdown_text = self.current_editor_text();
         self.editor_markdown_preview_loading = true;
         cx.notify();
 
@@ -335,7 +315,7 @@ impl DiffViewer {
         true
     }
 
-    pub(super) fn clear_editor_state(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn clear_editor_state(&mut self, _cx: &mut Context<Self>) {
         self.editor_path = None;
         self.editor_loading = false;
         self.editor_error = None;
@@ -344,36 +324,14 @@ impl DiffViewer {
         self.editor_save_loading = false;
         self.editor_markdown_preview = false;
         self.invalidate_editor_markdown_preview();
-        self.reset_editor_input(cx);
         self.helix_files_editor.borrow_mut().clear();
     }
 
-    fn reset_editor_input(&mut self, cx: &mut Context<Self>) {
-        let editor_input_state = self.editor_input_state.clone();
-        if let Err(err) = Self::update_any_window(cx, |window, cx| {
-            editor_input_state.update(cx, |input, cx| {
-                input.set_highlighter("text", cx);
-                input.set_value("", window, cx);
-            });
-        }) {
-            error!("failed to reset editor input: {err:#}");
-        }
-    }
-
-    pub(crate) fn current_editor_text(&self, cx: &Context<Self>) -> String {
-        if self.helix_files_editor_ready()
-            && let Some(text) = self.helix_files_editor.borrow().current_text()
-        {
-            return text;
-        }
-
-        self.editor_input_state.read(cx).value().to_string()
-    }
-
-    pub(crate) fn helix_files_editor_ready(&self) -> bool {
+    pub(crate) fn current_editor_text(&self) -> String {
         self.helix_files_editor
             .borrow()
-            .is_ready_for_path(self.editor_path.as_deref())
+            .current_text()
+            .unwrap_or_default()
     }
 
     fn open_helix_editor_document(
@@ -381,23 +339,18 @@ impl DiffViewer {
         relative_path: &str,
         repo_root: &std::path::Path,
         cx: &mut Context<Self>,
-    ) {
+    ) -> anyhow::Result<()> {
         let absolute_path = repo_root.join(relative_path);
-        let open_result = self.helix_files_editor.borrow_mut().open_path(&absolute_path);
-        if let Err(err) = open_result {
-            error!(
-                "failed to open file in helix-backed files editor {}: {err:#}",
-                absolute_path.display()
-            );
-            return;
-        }
+        self.helix_files_editor.borrow_mut().open_path(&absolute_path)?;
 
         let focus_handle = self.files_editor_focus_handle.clone();
         if let Err(err) = Self::update_any_window(cx, |window, cx| {
             focus_handle.focus(window, cx);
         }) {
             error!("failed to focus helix-backed files editor: {err:#}");
+            return Err(err);
         }
+        Ok(())
     }
 
     fn update_any_window(

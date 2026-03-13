@@ -38,7 +38,6 @@ pub(crate) type SharedHelixFilesEditor = Rc<RefCell<HelixFilesEditor>>;
 pub(crate) struct HelixFilesEditor {
     runtime: Option<HelixRuntime>,
     active_path: Option<PathBuf>,
-    last_error: Option<String>,
 }
 
 #[derive(Clone)]
@@ -108,35 +107,25 @@ struct SyntaxStyleIter<'h, 'r, 't> {
 }
 
 impl HelixFilesEditor {
-    pub(crate) fn new() -> Self { Self { runtime: None, active_path: None, last_error: None } }
-    pub(crate) fn last_error(&self) -> Option<&str> { self.last_error.as_deref() }
-    pub(crate) fn is_ready_for_path(&self, path: Option<&str>) -> bool {
-        self.runtime.is_some() && self.active_path.as_ref().and_then(|active| active.to_str()) == path
-    }
+    pub(crate) fn new() -> Self { Self { runtime: None, active_path: None } }
     pub(crate) fn open_path(&mut self, path: &Path) -> Result<()> {
         if self.runtime.is_none() {
             match HelixRuntime::new() {
                 Ok(runtime) => self.runtime = Some(runtime),
-                Err(err) => {
-                    self.last_error = Some(err.to_string());
-                    return Err(err);
-                }
+                Err(err) => return Err(err),
             }
         }
         let runtime = self.runtime.as_mut().expect("runtime is initialized before use");
         let open_action = if runtime.current_view_id().is_some() { Action::Replace } else { Action::VerticalSplit };
         let open_result = with_tokio_runtime(|| runtime.editor.open(path, open_action));
         if let Err(err) = open_result.with_context(|| format!("failed to open {} in Helix editor", path.display())) {
-            self.last_error = Some(err.to_string());
             return Err(err);
         }
         self.active_path = Some(path.to_path_buf());
-        self.last_error = None;
         Ok(())
     }
     pub(crate) fn clear(&mut self) {
         self.active_path = None;
-        self.last_error = None;
     }
     pub(crate) fn is_dirty(&self) -> bool {
         if self.active_path.is_none() {

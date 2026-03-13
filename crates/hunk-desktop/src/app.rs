@@ -775,7 +775,6 @@ struct DiffViewer {
     repo_tree_inline_edit: Option<RepoTreeInlineEditState>,
     repo_tree_context_menu: Option<RepoTreeContextMenuState>,
     helix_files_editor: files_editor::SharedHelixFilesEditor,
-    editor_input_state: Entity<InputState>,
     editor_path: Option<String>,
     editor_loading: bool,
     editor_error: Option<String>,
