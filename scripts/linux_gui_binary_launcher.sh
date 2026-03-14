@@ -22,6 +22,7 @@ wayland_launch_failed() {
   grep -Fq "Protocol error 7 on object @0:" "$log_path" \
     || grep -Fq "failed to open window: Surface reports no supported texture formats" "$log_path" \
     || grep -Fq "failed to import supplied dmabufs" "$log_path" \
+    || grep -Fq "Server-side decorations requested, but the Wayland server does not support them. Falling back to client-side decorations." "$log_path" \
     || grep -Fq "ERROR_SURFACE_LOST_KHR" "$log_path"
 }
 
