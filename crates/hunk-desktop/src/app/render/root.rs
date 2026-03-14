@@ -290,8 +290,7 @@ impl DiffViewer {
                             .tooltip("Switch to AI coding workspace (Cmd/Ctrl+4)")
                             .on_click(move |_, window, cx| {
                                 view.update(cx, |this, cx| {
-                                    this.set_workspace_view_mode(WorkspaceViewMode::Ai, cx);
-                                    this.focus_handle.focus(window, cx);
+                                    this.activate_ai_workspace(window, cx);
                                 });
                             });
                         if ai_selected {

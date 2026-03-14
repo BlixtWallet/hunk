@@ -540,6 +540,7 @@ fn open_main_window(cx: &mut App) {
 
     if let Err(err) = cx.open_window(window_options, |window, cx| {
         let view = cx.new(|cx| DiffViewer::new(window, cx));
+        view.update(cx, |this, cx| this.defer_root_focus(cx));
         cx.new(|cx| Root::new(view, window, cx))
     }) {
         error!("failed to open window: {err:#}");

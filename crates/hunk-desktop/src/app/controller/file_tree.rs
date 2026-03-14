@@ -64,8 +64,17 @@ impl DiffViewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.activate_ai_workspace(window, cx);
+    }
+
+    pub(super) fn activate_ai_workspace(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.focus_handle.focus(window, cx);
         self.set_workspace_view_mode(WorkspaceSwitchAction::Ai.target_mode(), cx);
+        self.focus_ai_composer_input(window, cx);
     }
 
     pub(super) fn set_workspace_view_mode(&mut self, mode: WorkspaceViewMode, cx: &mut Context<Self>) {

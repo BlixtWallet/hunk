@@ -304,24 +304,26 @@ impl HelixFilesEditor {
         let Some(key) = translate_key(keystroke) else {
             return false;
         };
-        let event = HelixEvent::Key(key);
-        let mut comp_ctx = CompositorContext {
-            editor: &mut runtime.editor,
-            scroll: None,
-            jobs: &mut runtime.jobs,
-        };
-        if runtime.compositor.handle_event(&event, &mut comp_ctx) {
-            return true;
-        }
-        match runtime.view.handle_event(&event, &mut comp_ctx) {
-            EventResult::Consumed(callback) => {
-                if let Some(callback) = callback {
-                    callback(&mut runtime.compositor, &mut comp_ctx);
-                }
-                true
+        with_tokio_runtime(|| {
+            let event = HelixEvent::Key(key);
+            let mut comp_ctx = CompositorContext {
+                editor: &mut runtime.editor,
+                scroll: None,
+                jobs: &mut runtime.jobs,
+            };
+            if runtime.compositor.handle_event(&event, &mut comp_ctx) {
+                return true;
             }
-            EventResult::Ignored(_) => false,
-        }
+            match runtime.view.handle_event(&event, &mut comp_ctx) {
+                EventResult::Consumed(callback) => {
+                    if let Some(callback) = callback {
+                        callback(&mut runtime.compositor, &mut comp_ctx);
+                    }
+                    true
+                }
+                EventResult::Ignored(_) => false,
+            }
+        })
     }
     pub(crate) fn scroll_lines(
         &mut self,

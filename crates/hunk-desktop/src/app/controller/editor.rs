@@ -464,6 +464,21 @@ impl DiffViewer {
             .any(|cause| cause.to_string().contains("window not found"))
     }
 
+    pub(crate) fn defer_root_focus(&self, cx: &mut Context<Self>) {
+        let window_handle = self.window_handle;
+        let focus_handle = self.focus_handle.clone();
+        cx.defer(move |cx| {
+            let result = cx.update_window(window_handle, |_, window, cx| {
+                focus_handle.focus(window, cx);
+            });
+            if let Err(err) = result
+                && !Self::is_window_not_found_error(&err)
+            {
+                error!("failed to restore root diff viewer focus: {err:#}");
+            }
+        });
+    }
+
     fn next_editor_epoch(&mut self) -> usize {
         self.editor_epoch = self.editor_epoch.saturating_add(1);
         self.editor_epoch
