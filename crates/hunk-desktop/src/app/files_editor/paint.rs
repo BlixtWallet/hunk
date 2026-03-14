@@ -1,9 +1,14 @@
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+
 use gpui::*;
 use helix_core::Position;
 use helix_view::graphics::CursorKind;
 use helix_view::{Document, View};
 
 use super::{DocumentLayout, LineNumberPaintParams};
+
+const INSERT_CURSOR_BLINK_PERIOD: Duration = Duration::from_millis(530);
 
 pub(super) fn paint_current_line_background(
     window: &mut Window,
@@ -240,6 +245,32 @@ pub(super) fn cursor_bounds(
             size: size(Pixels::ZERO, Pixels::ZERO),
         },
     }
+}
+
+pub(super) fn mode_cursor_kind(
+    mode: helix_view::document::Mode,
+    fallback_kind: CursorKind,
+) -> CursorKind {
+    match mode {
+        helix_view::document::Mode::Insert => {
+            if insert_cursor_is_visible() {
+                CursorKind::Bar
+            } else {
+                CursorKind::Hidden
+            }
+        }
+        helix_view::document::Mode::Select => CursorKind::Block,
+        helix_view::document::Mode::Normal => match fallback_kind {
+            CursorKind::Hidden => CursorKind::Block,
+            _ => CursorKind::Block,
+        },
+    }
+}
+
+fn insert_cursor_is_visible() -> bool {
+    static INSERT_CURSOR_EPOCH: OnceLock<Instant> = OnceLock::new();
+    let epoch = INSERT_CURSOR_EPOCH.get_or_init(Instant::now);
+    (epoch.elapsed().as_millis() / INSERT_CURSOR_BLINK_PERIOD.as_millis()).is_multiple_of(2)
 }
 
 pub(super) struct CursorPaintParams<'a> {

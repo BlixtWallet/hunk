@@ -35,9 +35,9 @@ mod theme;
 
 use self::highlight::syntax_runs;
 use self::paint::{
-    CursorPaintParams, clamp_to_bounds, mouse_text_position, paint_current_line_background,
-    paint_cursors, paint_line_numbers, paint_selection_backgrounds, palette_text_width,
-    visible_row_char_range,
+    CursorPaintParams, clamp_to_bounds, mode_cursor_kind, mouse_text_position,
+    paint_current_line_background, paint_cursors, paint_line_numbers, paint_selection_backgrounds,
+    palette_text_width, visible_row_char_range,
 };
 use self::selection::{line_selection_range, word_selection_range};
 use self::theme::load_hunk_helix_theme;
@@ -794,7 +794,12 @@ impl Element for HelixFilesEditorElement {
             }
 
             if self.is_focused {
+                let mode = runtime.editor.mode();
                 let (_, cursor_kind) = runtime.editor.cursor();
+                let cursor_kind = mode_cursor_kind(mode, cursor_kind);
+                if matches!(mode, helix_view::document::Mode::Insert) {
+                    window.request_animation_frame();
+                }
                 paint_cursors(
                     window,
                     CursorPaintParams {
