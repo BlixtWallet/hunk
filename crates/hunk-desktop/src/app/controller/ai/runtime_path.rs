@@ -283,7 +283,7 @@ fn is_command_name_without_path(path: &std::path::Path) -> bool {
 fn running_from_packaged_bundle() -> bool {
     #[cfg(target_os = "linux")]
     {
-        return std::env::var_os("APPDIR").is_some() || std::env::var_os("APPIMAGE").is_some();
+        std::env::var_os("APPDIR").is_some() || std::env::var_os("APPIMAGE").is_some()
     }
 
     #[cfg(target_os = "macos")]
@@ -291,9 +291,9 @@ fn running_from_packaged_bundle() -> bool {
         let Ok(current_exe) = std::env::current_exe() else {
             return false;
         };
-        return current_exe
+        current_exe
             .components()
-            .any(|component| component.as_os_str() == std::ffi::OsStr::new("Contents"));
+            .any(|component| component.as_os_str() == std::ffi::OsStr::new("Contents"))
     }
 
     #[cfg(target_os = "windows")]
