@@ -10,7 +10,10 @@ PACKAGE_DIR="$DIST_DIR/Hunk-$VERSION_LABEL-linux-x86_64"
 ARCHIVE_PATH="$DIST_DIR/Hunk-$VERSION_LABEL-linux-x86_64.tar.gz"
 APPIMAGE_PATH="$DIST_DIR/Hunk-$VERSION_LABEL-linux-x86_64.AppImage"
 BINARY_SOURCE_PATH="$TARGET_DIR/$TARGET_TRIPLE/release/hunk_desktop"
-PACKAGED_BINARY_PATH="$PACKAGE_DIR/hunk-desktop"
+REAL_BINARY_NAME="hunk_desktop_bin"
+LAUNCHER_SOURCE_PATH="$ROOT_DIR/scripts/linux_gui_binary_launcher.sh"
+PACKAGED_BINARY_PATH="$PACKAGE_DIR/$REAL_BINARY_NAME"
+PACKAGED_LAUNCHER_PATH="$PACKAGE_DIR/hunk-desktop"
 PACKAGE_LIB_DIR="$PACKAGE_DIR/lib"
 CODEX_SOURCE_PATH="$TARGET_DIR/$TARGET_TRIPLE/release/codex-runtime/linux/codex"
 PACKAGED_CODEX_PATH="$PACKAGE_DIR/codex-runtime/linux/codex"
@@ -22,6 +25,8 @@ APPIMAGE_TOOL_EXTRACT_DIR="$TARGET_DIR/appimage/tooling"
 APPIMAGE_TOOL_PATH="$APPIMAGE_TOOL_EXTRACT_DIR/squashfs-root/usr/bin/appimagetool"
 APP_DESKTOP_ENTRY_PATH="$APPDIR_PATH/usr/share/applications/hunk_desktop.desktop"
 APP_ICON_PATH="$APPDIR_PATH/usr/share/icons/hicolor/1024x1024/apps/hunk_desktop.png"
+APPDIR_REAL_BINARY_PATH="$APPDIR_PATH/usr/bin/$REAL_BINARY_NAME"
+APPDIR_LAUNCHER_PATH="$APPDIR_PATH/usr/bin/hunk_desktop"
 
 download_cached_appimage_tool() {
   local url="$1"
@@ -72,14 +77,15 @@ create_linux_appdir() {
   mkdir -p "$APPDIR_PATH/usr/lib/hunk_desktop/codex-runtime/linux"
 
   cp "$APPIMAGE_APPRUN_PATH" "$APPDIR_PATH/AppRun"
-  cp "$PACKAGED_BINARY_PATH" "$APPDIR_PATH/usr/bin/hunk_desktop"
+  cp "$PACKAGED_BINARY_PATH" "$APPDIR_REAL_BINARY_PATH"
+  cp "$PACKAGED_LAUNCHER_PATH" "$APPDIR_LAUNCHER_PATH"
   cp -R "$PACKAGE_LIB_DIR/." "$APPDIR_PATH/usr/lib/"
   cp "$PACKAGED_CODEX_PATH" "$APPDIR_PATH/usr/lib/hunk_desktop/codex-runtime/linux/codex"
-  chmod +x "$APPDIR_PATH/AppRun" "$APPDIR_PATH/usr/bin/hunk_desktop" \
+  chmod +x "$APPDIR_PATH/AppRun" "$APPDIR_REAL_BINARY_PATH" "$APPDIR_LAUNCHER_PATH" \
     "$APPDIR_PATH/usr/lib/hunk_desktop/codex-runtime/linux/codex"
 
-  patch_linux_runtime_paths "$APPDIR_PATH/usr/bin/hunk_desktop" "$APPDIR_PATH/usr/lib" '$ORIGIN/../lib'
-  validate_linux_runtime_bundle "$APPDIR_PATH/usr/bin/hunk_desktop" "$APPDIR_PATH/usr/lib"
+  patch_linux_runtime_paths "$APPDIR_REAL_BINARY_PATH" "$APPDIR_PATH/usr/lib" '$ORIGIN/../lib'
+  validate_linux_runtime_bundle "$APPDIR_REAL_BINARY_PATH" "$APPDIR_PATH/usr/lib"
 
   cat >"$APP_DESKTOP_ENTRY_PATH" <<'EOF'
 [Desktop Entry]
@@ -236,8 +242,9 @@ mkdir -p "$PACKAGE_DIR/codex-runtime/linux"
 mkdir -p "$PACKAGE_LIB_DIR"
 
 cp "$BINARY_SOURCE_PATH" "$PACKAGED_BINARY_PATH"
+cp "$LAUNCHER_SOURCE_PATH" "$PACKAGED_LAUNCHER_PATH"
 cp "$CODEX_SOURCE_PATH" "$PACKAGED_CODEX_PATH"
-chmod +x "$PACKAGED_BINARY_PATH" "$PACKAGED_CODEX_PATH"
+chmod +x "$PACKAGED_BINARY_PATH" "$PACKAGED_LAUNCHER_PATH" "$PACKAGED_CODEX_PATH"
 
 echo "Bundling Linux shared libraries into tarball fallback..." >&2
 bundle_linux_runtime_dependencies "$BINARY_SOURCE_PATH"
