@@ -22,6 +22,18 @@ struct AiCommandExecutionDisplayDetails {
     duration_ms: Option<i64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AiTurnDiffPreviewLine {
+    sign: char,
+    content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AiTurnDiffPreview {
+    changed_line_count: usize,
+    lines: Vec<AiTurnDiffPreviewLine>,
+}
+
 fn ai_timeline_item_role(kind: &str) -> AiTimelineItemRole {
     match kind {
         "userMessage" => AiTimelineItemRole::User,
@@ -215,6 +227,59 @@ fn ai_duration_ms_label(duration_ms: Option<i64>) -> Option<String> {
     Some(ai_activity_elapsed_label(std::time::Duration::from_millis(
         millis,
     )))
+}
+
+fn ai_truncate_inline_content(content: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+
+    let mut truncated = String::new();
+    for (index, ch) in content.chars().enumerate() {
+        if index >= max_chars {
+            truncated.push_str("...");
+            return truncated;
+        }
+        truncated.push(ch);
+    }
+    truncated
+}
+
+fn ai_turn_diff_preview_line(line: &str, max_chars: usize) -> Option<AiTurnDiffPreviewLine> {
+    let (sign, content) = if let Some(content) = line.strip_prefix('+') {
+        if line.starts_with("+++") {
+            return None;
+        }
+        ('+', content)
+    } else if let Some(content) = line.strip_prefix('-') {
+        if line.starts_with("---") {
+            return None;
+        }
+        ('-', content)
+    } else {
+        return None;
+    };
+
+    Some(AiTurnDiffPreviewLine {
+        sign,
+        content: ai_truncate_inline_content(content.trim_start(), max_chars),
+    })
+}
+
+fn ai_turn_diff_preview(
+    diff_text: &str,
+    max_lines: usize,
+    max_chars_per_line: usize,
+) -> AiTurnDiffPreview {
+    let changed_lines = diff_text
+        .lines()
+        .filter_map(|line| ai_turn_diff_preview_line(line, max_chars_per_line))
+        .collect::<Vec<_>>();
+
+    AiTurnDiffPreview {
+        changed_line_count: changed_lines.len(),
+        lines: changed_lines.into_iter().take(max_lines).collect(),
+    }
 }
 
 fn ai_tool_meta_chip(
@@ -473,6 +538,160 @@ fn render_ai_command_execution_details(
         .into_any_element()
 }
 
+fn render_ai_turn_diff_row(
+    this: &DiffViewer,
+    view: Entity<DiffViewer>,
+    row: &AiTimelineRow,
+    diff_text: &str,
+    is_dark: bool,
+    cx: &mut Context<DiffViewer>,
+) -> AnyElement {
+    let preview = ai_turn_diff_preview(diff_text, 3, 42);
+    let diff_line_count = diff_text.lines().count();
+    let preview_has_more = preview.changed_line_count > preview.lines.len();
+    let disclosure_colors = hunk_disclosure_row(cx.theme(), is_dark);
+    let line_stats_colors = hunk_line_stats(cx.theme(), is_dark);
+
+    let preview_elements = preview
+        .lines
+        .iter()
+        .enumerate()
+        .flat_map(|(index, line)| {
+            let mut elements = Vec::new();
+            if index > 0 {
+                elements.push(
+                    div()
+                        .flex_none()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("|")
+                        .into_any_element(),
+                );
+            }
+
+            let line_color = if line.sign == '+' {
+                line_stats_colors.added
+            } else {
+                line_stats_colors.removed
+            };
+            let preview_text = if line.content.is_empty() {
+                line.sign.to_string()
+            } else {
+                format!("{}{}", line.sign, line.content)
+            };
+            elements.push(
+                div()
+                    .flex_none()
+                    .text_xs()
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .text_color(line_color)
+                    .whitespace_nowrap()
+                    .child(preview_text)
+                    .into_any_element(),
+            );
+
+            elements
+        })
+        .collect::<Vec<_>>();
+
+    let line_count_label = if diff_line_count == 1 {
+        "1 line".to_string()
+    } else {
+        format!("{diff_line_count} lines")
+    };
+    let row_id = row.id.clone();
+
+    let row_element = h_flex()
+        .w_full()
+        .min_w_0()
+        .justify_start()
+        .child(
+            div()
+                .w_full()
+                .min_w_0()
+                .max_w(px(940.0))
+                .child(
+                    h_flex()
+                        .w_full()
+                        .min_w_0()
+                        .items_center()
+                        .justify_between()
+                        .gap_2()
+                        .px_2()
+                        .py_1p5()
+                        .rounded(px(8.0))
+                        .hover(move |style| {
+                            style
+                                .bg(disclosure_colors.hover_background)
+                                .cursor_pointer()
+                        })
+                        .on_mouse_down(MouseButton::Left, {
+                            let view = view.clone();
+                            move |_, _, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.ai_open_review_tab(cx);
+                                });
+                            }
+                        })
+                        .child(
+                            h_flex()
+                                .flex_1()
+                                .min_w_0()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .text_xs()
+                                        .font_semibold()
+                                        .text_color(disclosure_colors.title)
+                                        .child("Code Diff"),
+                                )
+                                .when(!preview_elements.is_empty(), |this| {
+                                    this.child(
+                                        h_flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .items_center()
+                                            .gap_1()
+                                            .overflow_hidden()
+                                            .children(preview_elements)
+                                            .when(preview_has_more, |this| {
+                                                this.child(
+                                                    div()
+                                                        .flex_none()
+                                                        .text_xs()
+                                                        .text_color(cx.theme().muted_foreground)
+                                                        .child("..."),
+                                                )
+                                            }),
+                                    )
+                                }),
+                        )
+                        .child(
+                            h_flex()
+                                .flex_none()
+                                .items_center()
+                                .gap_1p5()
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(line_count_label),
+                                )
+                                .child(
+                                    Icon::new(IconName::ChevronRight)
+                                        .size(px(12.0))
+                                        .text_color(disclosure_colors.chevron),
+                                ),
+                        ),
+                ),
+        );
+
+    ai_timeline_row_with_animation(this, row_id.as_str(), row_element)
+}
+
 fn render_ai_chat_timeline_row_for_view(
     this: &DiffViewer,
     row_id: &str,
@@ -627,128 +846,7 @@ fn render_ai_chat_timeline_row_for_view(
             if diff_text.is_empty() {
                 return div().w_full().h(px(0.0)).into_any_element();
             }
-            let diff_line_count = diff_text.lines().count();
-            let expanded = this.ai_expanded_timeline_row_ids.contains(row.id.as_str());
-            let (preview, preview_truncated) = if expanded {
-                (diff_text.to_string(), false)
-            } else {
-                ai_truncate_multiline_content(diff_text, 10)
-            };
-            let show_toggle = preview_truncated || expanded;
-            let view_diff_button_id =
-                format!("ai-open-review-tab-{}", row.turn_id.replace('\u{1f}', "--"));
-            let toggle_id = format!("ai-toggle-diff-row-{}", row.id.replace('\u{1f}', "--"));
-
-            let row_element = h_flex()
-                .w_full()
-                .min_w_0()
-                .justify_start()
-                .child(
-                    v_flex()
-                        .max_w(px(920.0))
-                        .w_full()
-                        .min_w_0()
-                        .gap_1()
-                        .px_2p5()
-                        .py_2()
-                        .overflow_hidden()
-                        .rounded(px(10.0))
-                        .border_1()
-                        .border_color(hunk_opacity(cx.theme().border, is_dark, 0.9, 0.74))
-                        .bg(hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.16, 0.22))
-                        .child(
-                            h_flex()
-                                .w_full()
-                                .min_w_0()
-                                .items_start()
-                                .justify_between()
-                                .gap_2()
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .text_xs()
-                                        .font_semibold()
-                                        .whitespace_nowrap()
-                                        .truncate()
-                                        .child(format!("Code Diff ({diff_line_count} lines)")),
-                                )
-                                .child(
-                                    h_flex()
-                                        .items_center()
-                                        .gap_1()
-                                        .when(show_toggle, |this| {
-                                            let row_id = row.id.clone();
-                                            let view = view.clone();
-                                            this.child(
-                                                Button::new(toggle_id)
-                                                    .compact()
-                                                    .outline()
-                                                    .with_size(gpui_component::Size::Small)
-                                                    .icon(
-                                                        Icon::new(if expanded {
-                                                            IconName::ChevronDown
-                                                        } else {
-                                                            IconName::ChevronRight
-                                                        })
-                                                        .size(px(12.0)),
-                                                    )
-                                                    .tooltip(if expanded {
-                                                        "Collapse diff preview"
-                                                    } else {
-                                                        "Expand diff preview"
-                                                    })
-                                                    .on_click(move |_, _, cx| {
-                                                        view.update(cx, |this, cx| {
-                                                            this.ai_toggle_timeline_row_expansion_action(
-                                                                row_id.clone(),
-                                                                cx,
-                                                            );
-                                                        });
-                                                    }),
-                                            )
-                                        })
-                                        .child({
-                                            let view = view.clone();
-                                            Button::new(view_diff_button_id)
-                                                .compact()
-                                                .outline()
-                                                .with_size(gpui_component::Size::Small)
-                                                .label("View Diff")
-                                                .on_click(move |_, _, cx| {
-                                                    view.update(cx, |this, cx| {
-                                                        this.ai_open_review_tab(cx);
-                                                    });
-                                                })
-                                        }),
-                                ),
-                        )
-                        .when(!preview.is_empty(), |container| {
-                            let preview_surface_id =
-                                ai_timeline_text_surface_id(row.id.as_str(), "diff-preview", 0);
-                            let preview_selection_surfaces = ai_text_selection_surfaces(vec![
-                                AiTextSelectionSurfaceSpec::new(
-                                    preview_surface_id.clone(),
-                                    preview.clone(),
-                                ),
-                            ]);
-                            container.child(ai_tool_detail_section(
-                                this,
-                                view.clone(),
-                                row.id.as_str(),
-                                preview_surface_id,
-                                preview_selection_surfaces,
-                                "Preview",
-                                preview.clone(),
-                                true,
-                                expanded.then_some(px(280.0)),
-                                false,
-                                is_dark,
-                                cx,
-                            ))
-                        }),
-                );
-            ai_timeline_row_with_animation(this, row.id.as_str(), row_element)
+            render_ai_turn_diff_row(this, view, row, diff_text, is_dark, cx)
         }
     }
 }
