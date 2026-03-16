@@ -125,12 +125,15 @@ inject_helix_runtime_into_app_bundle() {
 sign_macos_app_bundle() {
   local sign_target
 
-  if [[ -d "$APP_FRAMEWORKS_DIR" ]]; then
-    while IFS= read -r sign_target; do
-      [[ -n "$sign_target" ]] || continue
-      codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$sign_target"
-    done < <(find "$APP_FRAMEWORKS_DIR" -type f \( -name '*.dylib' -o -perm -111 \) | sort)
-  fi
+  while IFS= read -r sign_target; do
+    [[ -n "$sign_target" ]] || continue
+    if [[ "$sign_target" == "$APP_EXECUTABLE_PATH" ]]; then
+      continue
+    fi
+    codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$sign_target"
+  done < <(
+    find "$APP_PATH/Contents" -type f \( -name '*.dylib' -o -perm -111 \) | sort
+  )
 
   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$APP_EXECUTABLE_PATH"
   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$APP_PATH"
