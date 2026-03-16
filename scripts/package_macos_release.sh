@@ -113,8 +113,8 @@ inject_helix_runtime_into_app_bundle() {
   mkdir -p "$(dirname "$runtime_destination")"
   cp -R "$runtime_source_dir" "$runtime_destination"
 
-  if [[ ! -f "$runtime_destination/languages.toml" ]]; then
-    echo "error: bundled Helix runtime is missing languages.toml" >&2
+  if [[ ! -d "$runtime_destination/queries" || ! -d "$runtime_destination/grammars" ]]; then
+    echo "error: bundled Helix runtime is missing queries/ or grammars/" >&2
     exit 1
   fi
 
