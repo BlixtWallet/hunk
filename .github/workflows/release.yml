@@ -130,7 +130,6 @@ jobs:
 
   linux:
     name: Linux x86_64 AppImage
-    if: false # Temporarily disabled while debugging macOS release packaging.
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
@@ -210,7 +209,6 @@ jobs:
 
   windows:
     name: Windows x86_64 MSI
-    if: false # Temporarily disabled while debugging macOS release packaging.
     runs-on: windows-2022
     timeout-minutes: 60
 
@@ -269,8 +267,12 @@ jobs:
     name: Prepare Release Artifacts
     needs:
       - macos
+      - linux
+      - windows
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: write
 
     steps:
       - name: Download release artifacts
@@ -285,6 +287,9 @@ jobs:
         shell: bash
 
       - name: List prepared release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           mapfile -d '' files < <(find dist -type f -print0 | sort -z)
           if [[ ${#files[@]} -eq 0 ]]; then
@@ -292,19 +297,17 @@ jobs:
             exit 1
           fi
 
+          release_args=(--title "$GITHUB_REF_NAME" --verify-tag --generate-notes)
+          if [[ "${GITHUB_REF_NAME,,}" == *alpha* ]]; then
+            release_args+=(--prerelease)
+          fi
+
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" "${release_args[@]}"
+          fi
+
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+
           printf 'Prepared release artifacts:\n'
           printf ' - %s\n' "${files[@]}"
-
-          echo
-          echo "GitHub release publishing is temporarily disabled while release packaging is being debugged."
-          # release_args=(--title "$GITHUB_REF_NAME" --verify-tag --generate-notes)
-          # if [[ "${GITHUB_REF_NAME,,}" == *alpha* ]]; then
-          #   release_args+=(--prerelease)
-          # fi
-          #
-          # if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-          #   gh release create "$GITHUB_REF_NAME" "${release_args[@]}"
-          # fi
-          #
-          # gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
         shell: bash
