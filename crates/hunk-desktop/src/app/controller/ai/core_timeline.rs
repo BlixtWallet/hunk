@@ -349,7 +349,7 @@ impl DiffViewer {
         let max_scroll_offset_y = self
             .ai_timeline_list_state
             .max_offset_for_scrollbar()
-            .height
+            .y
             .as_f32();
         self.ai_timeline_follow_output =
             should_follow_timeline_output(row_count, scroll_offset_y, max_scroll_offset_y);
