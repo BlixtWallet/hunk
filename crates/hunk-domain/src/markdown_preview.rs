@@ -1,12 +1,10 @@
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use markdown::{
-    ParseOptions,
-    mdast::{self, Node},
-};
+use comrak::nodes::{ListType, NodeCodeBlock, NodeLink, NodeList, NodeValue};
 use syntect::easy::ScopeRegionIterator;
 use syntect::parsing::{ParseState, ScopeStack, SyntaxReference, SyntaxSet};
+
+type ComrakNode<'a> = comrak::nodes::Node<'a>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MarkdownPreviewBlock {
@@ -73,119 +71,88 @@ pub struct MarkdownCodeSpan {
     pub token: MarkdownCodeTokenKind,
 }
 
-#[derive(Debug, Default)]
-struct MarkdownReferences {
-    links: HashMap<String, String>,
-}
-
-impl MarkdownReferences {
-    fn from_root(root: &mdast::Root) -> Self {
-        let mut links = HashMap::new();
-        collect_definitions(&root.children, &mut links);
-        Self { links }
-    }
-
-    fn resolve_link(&self, identifier: &str) -> Option<String> {
-        self.links
-            .get(&normalize_reference_identifier(identifier))
-            .cloned()
-    }
-}
-
 pub fn parse_markdown_preview(markdown: &str) -> Vec<MarkdownPreviewBlock> {
     if markdown.trim().is_empty() {
         return Vec::new();
     }
 
-    let root = match markdown::to_mdast(markdown, &ParseOptions::gfm()) {
-        Ok(Node::Root(root)) => root,
-        Ok(other) => mdast::Root {
-            children: vec![other],
-            position: None,
-        },
-        Err(_) => {
-            return vec![MarkdownPreviewBlock::Paragraph(vec![
-                MarkdownInlineSpan::plain(markdown.to_owned()),
-            ])];
-        }
-    };
+    let arena = comrak::Arena::new();
+    let options = markdown_parse_options();
+    let root = comrak::parse_document(&arena, markdown, &options);
 
-    let references = MarkdownReferences::from_root(&root);
     let mut blocks = Vec::new();
-    for node in &root.children {
-        parse_flow_node(node, &references, &mut blocks);
+    for node in root.children() {
+        parse_flow_node(node, &mut blocks);
     }
     blocks
 }
 
-fn parse_flow_node(
-    node: &Node,
-    references: &MarkdownReferences,
-    out: &mut Vec<MarkdownPreviewBlock>,
-) {
-    match node {
-        Node::Heading(heading) => {
-            let spans = parse_inline_nodes(&heading.children, references);
+fn markdown_parse_options() -> comrak::Options<'static> {
+    let mut options = comrak::Options::default();
+    options.extension.strikethrough = true;
+    options.extension.table = true;
+    options.extension.autolink = true;
+    options.extension.tasklist = true;
+    options.extension.footnotes = true;
+    options
+}
+
+fn parse_flow_node(node: ComrakNode<'_>, out: &mut Vec<MarkdownPreviewBlock>) {
+    let data = node.data();
+    match &data.value {
+        NodeValue::Heading(heading) => {
+            let spans = parse_inline_nodes(node);
             if !spans.is_empty() {
                 out.push(MarkdownPreviewBlock::Heading {
-                    level: heading.depth,
+                    level: heading.level,
                     spans,
                 });
             }
         }
-        Node::Paragraph(paragraph) => {
-            let spans = parse_inline_nodes(&paragraph.children, references);
+        NodeValue::Paragraph => {
+            let spans = parse_inline_nodes(node);
             if !spans.is_empty() {
                 out.push(MarkdownPreviewBlock::Paragraph(spans));
             }
         }
-        Node::List(list) => {
-            let mut number = list.start.unwrap_or(1) as usize;
-            for child in &list.children {
-                if let Node::ListItem(item) = child {
-                    let spans = parse_container_nodes_as_inline(&item.children, references);
-                    if spans.is_empty() {
-                        continue;
-                    }
-                    if list.ordered {
-                        out.push(MarkdownPreviewBlock::OrderedListItem { number, spans });
-                        number = number.saturating_add(1);
-                    } else {
-                        out.push(MarkdownPreviewBlock::UnorderedListItem(spans));
-                    }
-                }
-            }
+        NodeValue::List(list) => {
+            let list = *list;
+            drop(data);
+            parse_list_block(node, list, out);
         }
-        Node::Blockquote(blockquote) => {
-            let spans = parse_container_nodes_as_inline(&blockquote.children, references);
+        NodeValue::BlockQuote | NodeValue::MultilineBlockQuote(_) | NodeValue::Alert(_) => {
+            let spans = parse_container_nodes_as_inline(node);
             if !spans.is_empty() {
                 out.push(MarkdownPreviewBlock::BlockQuote(spans));
             }
         }
-        Node::Code(code) => {
+        NodeValue::CodeBlock(code) => {
+            let language = code_block_language_hint(code);
             out.push(MarkdownPreviewBlock::CodeBlock {
-                language: code.lang.clone(),
-                lines: highlight_code_lines(code.lang.as_deref(), code.value.as_str()),
+                language: language.clone(),
+                lines: highlight_code_lines(language.as_deref(), code.literal.as_str()),
             });
         }
-        Node::Math(math) => {
+        NodeValue::Math(math) => {
             out.push(MarkdownPreviewBlock::CodeBlock {
                 language: Some("math".to_string()),
-                lines: highlight_code_lines(None, math.value.as_str()),
+                lines: highlight_code_lines(None, math.literal.as_str()),
             });
         }
-        Node::ThematicBreak(_) => out.push(MarkdownPreviewBlock::ThematicBreak),
-        Node::Html(html) => {
-            if !html.value.trim().is_empty() {
+        NodeValue::ThematicBreak => out.push(MarkdownPreviewBlock::ThematicBreak),
+        NodeValue::HtmlBlock(html) => {
+            if !html.literal.trim().is_empty() {
                 out.push(MarkdownPreviewBlock::Paragraph(vec![
-                    MarkdownInlineSpan::plain(html.value.clone()),
+                    MarkdownInlineSpan::plain(html.literal.clone()),
                 ]));
             }
         }
-        Node::Table(table) => parse_table_as_blocks(table, references, out),
-        Node::Definition(_) => {}
+        NodeValue::Table(..) => {
+            drop(data);
+            parse_table_as_blocks(node, out);
+        }
         _ => {
-            let spans = parse_inline_nodes(std::slice::from_ref(node), references);
+            let spans = parse_container_nodes_as_inline(node);
             if !spans.is_empty() {
                 out.push(MarkdownPreviewBlock::Paragraph(spans));
             }
@@ -193,17 +160,55 @@ fn parse_flow_node(
     }
 }
 
-fn parse_table_as_blocks(
-    table: &mdast::Table,
-    references: &MarkdownReferences,
+fn parse_list_block(
+    list_node: ComrakNode<'_>,
+    list: NodeList,
     out: &mut Vec<MarkdownPreviewBlock>,
 ) {
-    for row in &table.children {
-        let Node::TableRow(row) = row else {
+    let mut number = list.start;
+    for child in list_node.children() {
+        let child_data = child.data();
+        if !matches!(
+            child_data.value,
+            NodeValue::Item(..) | NodeValue::TaskItem(..)
+        ) {
             continue;
-        };
+        }
+        drop(child_data);
+
+        let spans = parse_container_nodes_as_inline(child);
+        if spans.is_empty() {
+            continue;
+        }
+
+        if list.list_type == ListType::Ordered {
+            out.push(MarkdownPreviewBlock::OrderedListItem { number, spans });
+            number = number.saturating_add(1);
+        } else {
+            out.push(MarkdownPreviewBlock::UnorderedListItem(spans));
+        }
+    }
+}
+
+fn code_block_language_hint(code: &NodeCodeBlock) -> Option<String> {
+    code.info
+        .split_whitespace()
+        .next()
+        .map(str::trim)
+        .filter(|hint| !hint.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn parse_table_as_blocks(node: ComrakNode<'_>, out: &mut Vec<MarkdownPreviewBlock>) {
+    for row in node.children() {
+        let row_data = row.data();
+        if !matches!(row_data.value, NodeValue::TableRow(..)) {
+            continue;
+        }
+        drop(row_data);
+
         let mut row_spans = Vec::new();
-        for (cell_ix, cell) in row.children.iter().enumerate() {
+        for (cell_ix, cell) in row.children().enumerate() {
             if cell_ix > 0 {
                 push_inline_span(
                     &mut row_spans,
@@ -214,42 +219,72 @@ fn parse_table_as_blocks(
                     },
                 );
             }
-            let Node::TableCell(cell) = cell else {
+
+            let cell_data = cell.data();
+            if !matches!(cell_data.value, NodeValue::TableCell) {
                 continue;
-            };
-            let cell_spans = parse_container_nodes_as_inline(&cell.children, references);
+            }
+            drop(cell_data);
+
+            let cell_spans = parse_container_nodes_as_inline(cell);
             for span in cell_spans {
                 push_inline_span(&mut row_spans, span.text.as_str(), &span.style);
             }
         }
+
         if !row_spans.is_empty() {
             out.push(MarkdownPreviewBlock::Paragraph(row_spans));
         }
     }
 }
 
-fn parse_container_nodes_as_inline(
-    nodes: &[Node],
-    references: &MarkdownReferences,
-) -> Vec<MarkdownInlineSpan> {
+fn parse_container_nodes_as_inline(node: ComrakNode<'_>) -> Vec<MarkdownInlineSpan> {
     let mut spans = Vec::new();
     let mut has_any = false;
-    for node in nodes {
-        let child_spans = match node {
-            Node::Paragraph(paragraph) => parse_inline_nodes(&paragraph.children, references),
-            Node::Heading(heading) => parse_inline_nodes(&heading.children, references),
-            Node::Blockquote(blockquote) => {
-                parse_container_nodes_as_inline(&blockquote.children, references)
+
+    for child in node.children() {
+        let child_data = child.data();
+        let child_spans = match &child_data.value {
+            NodeValue::Paragraph
+            | NodeValue::Heading(..)
+            | NodeValue::TableCell
+            | NodeValue::DescriptionTerm
+            | NodeValue::Subtext => {
+                drop(child_data);
+                parse_inline_nodes(child)
             }
-            Node::List(list) => list_children_as_inline(list, references),
-            Node::Code(code) => vec![MarkdownInlineSpan {
-                text: code.value.clone(),
-                style: MarkdownInlineStyle {
-                    code: true,
-                    ..MarkdownInlineStyle::default()
-                },
-            }],
-            _ => parse_inline_nodes(std::slice::from_ref(node), references),
+            NodeValue::BlockQuote
+            | NodeValue::MultilineBlockQuote(_)
+            | NodeValue::Alert(_)
+            | NodeValue::DescriptionDetails => {
+                drop(child_data);
+                parse_container_nodes_as_inline(child)
+            }
+            NodeValue::List(list) => {
+                let list = *list;
+                drop(child_data);
+                list_children_as_inline(child, list)
+            }
+            NodeValue::CodeBlock(code) => {
+                let literal = code.literal.clone();
+                drop(child_data);
+                vec![MarkdownInlineSpan {
+                    text: literal,
+                    style: MarkdownInlineStyle {
+                        code: true,
+                        ..MarkdownInlineStyle::default()
+                    },
+                }]
+            }
+            NodeValue::HtmlBlock(html) => {
+                let literal = html.literal.clone();
+                drop(child_data);
+                vec![MarkdownInlineSpan::plain(literal)]
+            }
+            _ => {
+                drop(child_data);
+                parse_inline_nodes(child)
+            }
         };
 
         if child_spans.is_empty() {
@@ -261,23 +296,29 @@ fn parse_container_nodes_as_inline(
         spans.extend(child_spans);
         has_any = true;
     }
+
     compact_inline_spans(spans)
 }
 
-fn list_children_as_inline(
-    list: &mdast::List,
-    references: &MarkdownReferences,
-) -> Vec<MarkdownInlineSpan> {
+fn list_children_as_inline(list_node: ComrakNode<'_>, list: NodeList) -> Vec<MarkdownInlineSpan> {
     let mut spans = Vec::new();
-    let mut number = list.start.unwrap_or(1) as usize;
-    for child in &list.children {
+    let mut number = list.start;
+
+    for child in list_node.children() {
         if !spans.is_empty() {
             spans.push(MarkdownInlineSpan::plain(" "));
         }
-        let Node::ListItem(item) = child else {
+
+        let child_data = child.data();
+        if !matches!(
+            child_data.value,
+            NodeValue::Item(..) | NodeValue::TaskItem(..)
+        ) {
             continue;
-        };
-        let marker = if list.ordered {
+        }
+        drop(child_data);
+
+        let marker = if list.list_type == ListType::Ordered {
             let label = format!("{number}. ");
             number = number.saturating_add(1);
             label
@@ -285,99 +326,80 @@ fn list_children_as_inline(
             "- ".to_string()
         };
         spans.push(MarkdownInlineSpan::plain(marker));
-        spans.extend(parse_container_nodes_as_inline(&item.children, references));
+        spans.extend(parse_container_nodes_as_inline(child));
     }
+
     compact_inline_spans(spans)
 }
 
-fn parse_inline_nodes(nodes: &[Node], references: &MarkdownReferences) -> Vec<MarkdownInlineSpan> {
+fn parse_inline_nodes(node: ComrakNode<'_>) -> Vec<MarkdownInlineSpan> {
     let mut spans = Vec::new();
     let base = MarkdownInlineStyle::default();
-    for node in nodes {
-        parse_inline_node(node, &base, references, &mut spans);
+    for child in node.children() {
+        parse_inline_node(child, &base, &mut spans);
     }
     compact_inline_spans(spans)
 }
 
 fn parse_inline_node(
-    node: &Node,
+    node: ComrakNode<'_>,
     style: &MarkdownInlineStyle,
-    references: &MarkdownReferences,
     out: &mut Vec<MarkdownInlineSpan>,
 ) {
-    match node {
-        Node::Text(text) => push_inline_span(out, text.value.as_str(), style),
-        Node::InlineCode(code) => {
+    let data = node.data();
+    match &data.value {
+        NodeValue::Text(text) => push_inline_span(out, text.as_ref(), style),
+        NodeValue::Code(code) => {
             let next_style = updated_inline_style(style, |next| next.code = true);
-            push_inline_span(out, code.value.as_str(), &next_style);
+            push_inline_span(out, code.literal.as_str(), &next_style);
         }
-        Node::InlineMath(math) => {
+        NodeValue::Math(math) => {
             let next_style = updated_inline_style(style, |next| next.code = true);
-            push_inline_span(out, math.value.as_str(), &next_style);
+            push_inline_span(out, math.literal.as_str(), &next_style);
         }
-        Node::Emphasis(node) => {
+        NodeValue::Emph => {
             let next_style = updated_inline_style(style, |next| next.italic = true);
-            push_inline_children(&node.children, &next_style, references, out);
+            drop(data);
+            push_inline_children(node, &next_style, out);
         }
-        Node::Strong(node) => {
+        NodeValue::Strong => {
             let next_style = updated_inline_style(style, |next| next.bold = true);
-            push_inline_children(&node.children, &next_style, references, out);
+            drop(data);
+            push_inline_children(node, &next_style, out);
         }
-        Node::Delete(node) => {
+        NodeValue::Strikethrough => {
             let next_style = updated_inline_style(style, |next| next.strikethrough = true);
-            push_inline_children(&node.children, &next_style, references, out);
+            drop(data);
+            push_inline_children(node, &next_style, out);
         }
-        Node::Link(link) => {
+        NodeValue::Link(link) => {
             let next_style = updated_inline_style(style, |next| next.link = Some(link.url.clone()));
-            push_inline_children(&link.children, &next_style, references, out);
+            drop(data);
+            push_inline_children(node, &next_style, out);
         }
-        Node::LinkReference(link_reference) => {
-            let next_style = updated_inline_style(style, |next| {
-                next.link = references.resolve_link(link_reference.identifier.as_str())
-            });
-            push_inline_children(&link_reference.children, &next_style, references, out);
+        NodeValue::WikiLink(link) => {
+            let next_style = updated_inline_style(style, |next| next.link = Some(link.url.clone()));
+            drop(data);
+            push_inline_children(node, &next_style, out);
         }
-        Node::Image(image) => {
-            let next_style =
-                updated_inline_style(style, |next| next.link = Some(image.url.clone()));
-            let label = if image.alt.is_empty() {
-                "image"
-            } else {
-                image.alt.as_str()
-            };
-            push_inline_span(out, format!("[{label}]").as_str(), &next_style);
-        }
-        Node::ImageReference(image_reference) => {
-            let next_style = updated_inline_style(style, |next| {
-                next.link = references.resolve_link(image_reference.identifier.as_str())
-            });
-            let label = if image_reference.alt.is_empty() {
-                "image"
-            } else {
-                image_reference.alt.as_str()
-            };
-            push_inline_span(out, format!("[{label}]").as_str(), &next_style);
-        }
-        Node::FootnoteReference(footnote_reference) => {
+        NodeValue::Image(image) => parse_image_inline(node, image.as_ref(), style, out),
+        NodeValue::FootnoteReference(footnote_reference) => {
             push_inline_span(
                 out,
-                format!("[^{}]", footnote_reference.identifier).as_str(),
+                format!("[^{}]", footnote_reference.name).as_str(),
                 style,
             );
         }
-        Node::Break(_) => push_hard_break_span(out, style),
-        Node::Html(html) => push_inline_span(out, html.value.as_str(), style),
-        Node::MdxTextExpression(expr) => push_inline_span(out, expr.value.as_str(), style),
+        NodeValue::LineBreak => push_hard_break_span(out, style),
+        NodeValue::SoftBreak => push_inline_span(out, " ", style),
+        NodeValue::HtmlInline(html) => push_inline_span(out, html.as_str(), style),
+        NodeValue::Raw(raw) => push_inline_span(out, raw.as_str(), style),
+        NodeValue::FrontMatter(front_matter) => push_inline_span(out, front_matter.as_str(), style),
+        NodeValue::EscapedTag(tag) => push_inline_span(out, tag, style),
         _ => {
-            if let Some(children) = node.children() {
-                for child in children {
-                    parse_inline_node(child, style, references, out);
-                }
-            } else {
-                let text = node.to_string();
-                if !text.is_empty() {
-                    push_inline_span(out, text.as_str(), style);
-                }
+            drop(data);
+            for child in node.children() {
+                parse_inline_node(child, style, out);
             }
         }
     }
@@ -392,14 +414,31 @@ fn updated_inline_style(
     next_style
 }
 
-fn push_inline_children(
-    children: &[Node],
+fn parse_image_inline(
+    node: ComrakNode<'_>,
+    image: &NodeLink,
     style: &MarkdownInlineStyle,
-    references: &MarkdownReferences,
     out: &mut Vec<MarkdownInlineSpan>,
 ) {
-    for child in children {
-        parse_inline_node(child, style, references, out);
+    let next_style = updated_inline_style(style, |next| next.link = Some(image.url.clone()));
+    let mut image_spans = Vec::new();
+    for child in node.children() {
+        parse_inline_node(child, &next_style, &mut image_spans);
+    }
+    if image_spans.is_empty() {
+        push_inline_span(out, "[image]", &next_style);
+    } else {
+        out.extend(image_spans);
+    }
+}
+
+fn push_inline_children(
+    node: ComrakNode<'_>,
+    style: &MarkdownInlineStyle,
+    out: &mut Vec<MarkdownInlineSpan>,
+) {
+    for child in node.children() {
+        parse_inline_node(child, style, out);
     }
 }
 
@@ -458,29 +497,6 @@ fn spans_end_with_whitespace(spans: &[MarkdownInlineSpan]) -> bool {
         .last()
         .and_then(|span| span.text.chars().last())
         .is_some_and(char::is_whitespace)
-}
-
-fn collect_definitions(nodes: &[Node], links: &mut HashMap<String, String>) {
-    for node in nodes {
-        if let Node::Definition(definition) = node {
-            links.insert(
-                normalize_reference_identifier(definition.identifier.as_str()),
-                definition.url.clone(),
-            );
-        }
-
-        if let Some(children) = node.children() {
-            collect_definitions(children, links);
-        }
-    }
-}
-
-fn normalize_reference_identifier(identifier: &str) -> String {
-    identifier
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_ascii_lowercase()
 }
 
 fn highlight_code_lines(language: Option<&str>, code: &str) -> Vec<Vec<MarkdownCodeSpan>> {
