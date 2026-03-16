@@ -203,7 +203,6 @@ if [[ -n "${APPLE_NOTARY_KEY_ID:-}" || -n "${APPLE_NOTARY_ISSUER:-}" || -n "${AP
     --issuer "$APPLE_NOTARY_ISSUER" \
     --wait
   echo "Stapling notarization tickets..." >&2
-  xcrun stapler staple "$APP_PATH"
   xcrun stapler staple "$DMG_PATH"
   xcrun stapler validate "$DMG_PATH"
 fi

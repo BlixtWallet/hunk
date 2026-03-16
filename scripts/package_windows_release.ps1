@@ -61,6 +61,29 @@ function Escape-TomlString {
     return ($Value -replace '"', '\"')
 }
 
+function New-StagedHelixRuntimeDir {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$HelixRuntimeSourceDir
+    )
+
+    $stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("hunk-helix-runtime-" + [System.Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $stagingRoot -Force | Out-Null
+    Copy-Item -Path $HelixRuntimeSourceDir -Destination $stagingRoot -Recurse
+
+    $stagedRuntimeDir = Join-Path $stagingRoot (Split-Path $HelixRuntimeSourceDir -Leaf)
+    $grammarSourcesDir = Join-Path $stagedRuntimeDir "grammars/sources"
+    if (Test-Path $grammarSourcesDir) {
+        Remove-Item -Path $grammarSourcesDir -Recurse -Force
+    }
+
+    if (-not (Test-Path (Join-Path $stagedRuntimeDir "queries")) -or -not (Test-Path (Join-Path $stagedRuntimeDir "grammars"))) {
+        throw "Staged Helix runtime is missing queries/ or grammars/: $stagedRuntimeDir"
+    }
+
+    return $stagedRuntimeDir
+}
+
 function Invoke-CargoPackagerWithManifestOverride {
     param(
         [Parameter(Mandatory = $true)]
@@ -151,12 +174,14 @@ $versionLabel = if ($env:HUNK_RELEASE_VERSION) {
 }
 $windowsPackagerVersion = Get-WindowsPackagerVersion -Version $versionLabel
 $helixRuntimeSourceDir = Resolve-HelixRuntimeSourceDir
+$stagedHelixRuntimeDir = $null
 
 Push-Location $rootDir
 $originalCargoTargetDir = $env:CARGO_TARGET_DIR
 try {
     $targetDir = (& $resolveTargetDirScript -RootDir $rootDir).Trim()
     $packagerOutDir = Join-Path $targetDir "packager"
+    $stagedHelixRuntimeDir = New-StagedHelixRuntimeDir -HelixRuntimeSourceDir $helixRuntimeSourceDir
     $env:CARGO_TARGET_DIR = $targetDir
     Write-Host "Downloading bundled Codex runtime for Windows..."
     & ./scripts/download_codex_runtime_windows.ps1 | Out-Null
@@ -172,8 +197,11 @@ try {
         -WindowsPackagerVersion $windowsPackagerVersion `
         -TargetTriple $targetTriple `
         -PackagerOutDir $packagerOutDir `
-        -HelixRuntimeSourceDir $helixRuntimeSourceDir
+        -HelixRuntimeSourceDir $stagedHelixRuntimeDir
 } finally {
+    if ($stagedHelixRuntimeDir) {
+        Remove-Item -Path (Split-Path $stagedHelixRuntimeDir -Parent) -Recurse -Force -ErrorAction SilentlyContinue
+    }
     if ($null -eq $originalCargoTargetDir) {
         Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue
     } else {
