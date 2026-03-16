@@ -108,6 +108,40 @@ fn resolves_reference_links() {
 }
 
 #[test]
+fn parses_gfm_autolinks() {
+    let blocks = parse_markdown_preview("Docs: https://example.com/docs");
+    assert_eq!(blocks.len(), 1);
+
+    let MarkdownPreviewBlock::Paragraph(spans) = &blocks[0] else {
+        panic!("expected paragraph block");
+    };
+    assert!(spans.iter().any(|span| {
+        span.text == "https://example.com/docs"
+            && span.style.link.as_deref() == Some("https://example.com/docs")
+    }));
+}
+
+#[test]
+fn preserves_nested_styles_inside_links() {
+    let blocks = parse_markdown_preview("[**bold** _docs_](https://example.com)");
+    assert_eq!(blocks.len(), 1);
+
+    let MarkdownPreviewBlock::Paragraph(spans) = &blocks[0] else {
+        panic!("expected paragraph block");
+    };
+    assert!(spans.iter().any(|span| {
+        span.text == "bold"
+            && span.style.bold
+            && span.style.link.as_deref() == Some("https://example.com")
+    }));
+    assert!(spans.iter().any(|span| {
+        span.text == "docs"
+            && span.style.italic
+            && span.style.link.as_deref() == Some("https://example.com")
+    }));
+}
+
+#[test]
 fn preserves_hard_line_breaks() {
     let markdown = "first line  \nsecond line";
     let blocks = parse_markdown_preview(markdown);

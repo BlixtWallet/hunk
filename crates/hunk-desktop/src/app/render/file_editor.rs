@@ -5,7 +5,24 @@ use crate::app::theme::{
     hunk_toolbar_chip,
 };
 
+#[derive(Clone, Copy)]
+struct MarkdownInlineRenderStyle {
+    base_color: Hsla,
+    is_dark: bool,
+}
+
 impl DiffViewer {
+    fn markdown_inline_render_style(
+        &self,
+        base_color: Hsla,
+        is_dark: bool,
+    ) -> MarkdownInlineRenderStyle {
+        MarkdownInlineRenderStyle {
+            base_color,
+            is_dark,
+        }
+    }
+
     fn render_file_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if self.editor_loading {
             return v_flex()
@@ -480,10 +497,11 @@ impl DiffViewer {
                 .into_any_element();
         }
 
+        let view = cx.entity();
         let rendered_blocks = self
             .editor_markdown_preview_blocks
             .iter()
-            .map(|block| self.render_markdown_preview_block(block, is_dark, cx))
+            .map(|block| self.render_markdown_preview_block(view.clone(), block, is_dark, cx))
             .collect::<Vec<_>>();
         let mut preview = div().flex_1().size_full().min_h_0().p_2().child(
             div()
@@ -512,6 +530,7 @@ impl DiffViewer {
 
     fn render_markdown_preview_block(
         &self,
+        view: Entity<Self>,
         block: &MarkdownPreviewBlock,
         is_dark: bool,
         cx: &mut Context<Self>,
@@ -520,19 +539,19 @@ impl DiffViewer {
             MarkdownPreviewBlock::Heading { level, spans } => {
                 let heading = match level {
                     1 | 2 => self.render_markdown_inline_spans(
+                        view.clone(),
                         spans,
                         true,
                         true,
-                        cx.theme().foreground,
-                        is_dark,
+                        self.markdown_inline_render_style(cx.theme().foreground, is_dark),
                         cx,
                     ),
                     _ => self.render_markdown_inline_spans(
+                        view.clone(),
                         spans,
                         false,
                         true,
-                        cx.theme().foreground,
-                        is_dark,
+                        self.markdown_inline_render_style(cx.theme().foreground, is_dark),
                         cx,
                     ),
                 };
@@ -540,11 +559,11 @@ impl DiffViewer {
             }
             MarkdownPreviewBlock::Paragraph(spans) => self
                 .render_markdown_inline_spans(
+                    view.clone(),
                     spans,
                     false,
                     false,
-                    cx.theme().foreground,
-                    is_dark,
+                    self.markdown_inline_render_style(cx.theme().foreground, is_dark),
                     cx,
                 )
                 .into_any_element(),
@@ -560,11 +579,11 @@ impl DiffViewer {
                 )
                 .child(
                     self.render_markdown_inline_spans(
+                        view.clone(),
                         spans,
                         false,
                         false,
-                        cx.theme().foreground,
-                        is_dark,
+                        self.markdown_inline_render_style(cx.theme().foreground, is_dark),
                         cx,
                     ),
                 )
@@ -581,11 +600,11 @@ impl DiffViewer {
                 )
                 .child(
                     self.render_markdown_inline_spans(
+                        view.clone(),
                         spans,
                         false,
                         false,
-                        cx.theme().foreground,
-                        is_dark,
+                        self.markdown_inline_render_style(cx.theme().foreground, is_dark),
                         cx,
                     ),
                 )
@@ -602,11 +621,11 @@ impl DiffViewer {
                 )
                 .child(
                     self.render_markdown_inline_spans(
+                        view.clone(),
                         spans,
                         false,
                         false,
-                        cx.theme().muted_foreground,
-                        is_dark,
+                        self.markdown_inline_render_style(cx.theme().muted_foreground, is_dark),
                         cx,
                     ),
                 )
@@ -684,11 +703,11 @@ impl DiffViewer {
 
     fn render_markdown_inline_spans(
         &self,
+        view: Entity<Self>,
         spans: &[MarkdownInlineSpan],
         large: bool,
         emphasized: bool,
-        base_color: Hsla,
-        is_dark: bool,
+        style: MarkdownInlineRenderStyle,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if spans.is_empty() {
@@ -700,13 +719,13 @@ impl DiffViewer {
             .min_w_0()
             .items_start()
             .gap_0()
-            .text_color(base_color)
+            .text_color(style.base_color)
             .flex_wrap()
             .whitespace_normal()
             .children(
                 spans
                     .iter()
-                    .map(|span| self.render_markdown_inline_span(span, base_color, is_dark, cx)),
+                    .map(|span| self.render_markdown_inline_span(view.clone(), span, style, cx)),
             );
 
         if large {
@@ -723,9 +742,9 @@ impl DiffViewer {
 
     fn render_markdown_inline_span(
         &self,
+        view: Entity<Self>,
         span: &MarkdownInlineSpan,
-        base_color: Hsla,
-        is_dark: bool,
+        style: MarkdownInlineRenderStyle,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if span.style.hard_break {
@@ -735,7 +754,7 @@ impl DiffViewer {
         let mut element = div()
             .flex_none()
             .whitespace_nowrap()
-            .text_color(base_color)
+            .text_color(style.base_color)
             .child(span.text.clone());
 
         if span.style.bold {
@@ -750,14 +769,24 @@ impl DiffViewer {
         if span.style.code {
             element = element
                 .font_family(cx.theme().mono_font_family.clone())
-                .bg(hunk_opacity(cx.theme().secondary, is_dark, 0.34, 0.48))
+                .bg(hunk_opacity(cx.theme().secondary, style.is_dark, 0.34, 0.48))
                 .border_1()
-                .border_color(hunk_opacity(cx.theme().border, is_dark, 0.88, 0.74))
+                .border_color(hunk_opacity(cx.theme().border, style.is_dark, 0.88, 0.74))
                 .rounded(px(4.0))
                 .px_1();
         }
-        if span.style.link.is_some() {
-            element = element.underline();
+        if let Some(raw_target) = span.style.link.as_ref().cloned() {
+            let link_color = cx.theme().primary;
+            element = element
+                .underline()
+                .text_color(link_color)
+                .cursor_pointer()
+                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    cx.stop_propagation();
+                    view.update(cx, |this, cx| {
+                        this.activate_markdown_link(raw_target.clone(), Some(window), cx);
+                    });
+                });
         }
 
         element.into_any_element()

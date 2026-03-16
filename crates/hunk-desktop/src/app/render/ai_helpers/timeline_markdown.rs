@@ -74,7 +74,7 @@ fn ai_chat_markdown_selection_surfaces(
         let block_separator = if surfaces.is_empty() { "" } else { "\n\n" };
         match block {
             MarkdownPreviewBlock::Heading { spans, .. } => {
-                let text = ai_chat_markdown_text(spans);
+                let text = markdown_inline_text_and_link_ranges(spans).0;
                 if text.is_empty() {
                     continue;
                 }
@@ -89,7 +89,7 @@ fn ai_chat_markdown_selection_surfaces(
             MarkdownPreviewBlock::Paragraph(spans)
             | MarkdownPreviewBlock::UnorderedListItem(spans)
             | MarkdownPreviewBlock::BlockQuote(spans) => {
-                let text = ai_chat_markdown_text(spans);
+                let text = markdown_inline_text_and_link_ranges(spans).0;
                 if text.is_empty() {
                     continue;
                 }
@@ -108,7 +108,7 @@ fn ai_chat_markdown_selection_surfaces(
                 );
             }
             MarkdownPreviewBlock::OrderedListItem { spans, .. } => {
-                let text = ai_chat_markdown_text(spans);
+                let text = markdown_inline_text_and_link_ranges(spans).0;
                 if text.is_empty() {
                     continue;
                 }
@@ -386,6 +386,7 @@ fn ai_render_chat_markdown_block(
                                                     row_id,
                                                     code_surface_id,
                                                     selection_surfaces.clone(),
+                                                    ai_text_link_ranges(Vec::new()),
                                                     styled_text,
                                                     is_dark,
                                                     cx,
@@ -405,13 +406,21 @@ fn ai_render_chat_markdown_block(
     }
 }
 
+type AiMarkdownHighlights = Vec<(std::ops::Range<usize>, HighlightStyle)>;
+
+struct AiMarkdownInlineRenderData {
+    text: SharedString,
+    highlights: AiMarkdownHighlights,
+    link_ranges: Vec<MarkdownLinkRange>,
+}
+
 fn ai_chat_markdown_text_and_highlights(
     spans: &[MarkdownInlineSpan],
     base_color: Hsla,
     is_dark: bool,
     cx: &mut Context<DiffViewer>,
-) -> (SharedString, Vec<(std::ops::Range<usize>, HighlightStyle)>) {
-    let text = ai_chat_markdown_text(spans);
+) -> AiMarkdownInlineRenderData {
+    let (text, link_ranges) = markdown_inline_text_and_link_ranges(spans);
     let mut highlights = Vec::new();
     let link_color = cx.theme().primary;
     let code_background = hunk_opacity(cx.theme().secondary, is_dark, 0.30, 0.42);
@@ -465,21 +474,11 @@ fn ai_chat_markdown_text_and_highlights(
         }
     }
 
-    (text.into(), highlights)
-}
-
-fn ai_chat_markdown_text(spans: &[MarkdownInlineSpan]) -> String {
-    let mut text = String::new();
-    for span in spans {
-        if span.style.hard_break {
-            if !text.ends_with('\n') {
-                text.push('\n');
-            }
-            continue;
-        }
-        text.push_str(span.text.as_str());
+    AiMarkdownInlineRenderData {
+        text: text.into(),
+        highlights,
+        link_ranges,
     }
-    text
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -496,7 +495,11 @@ fn ai_render_chat_inline_spans(
     is_dark: bool,
     cx: &mut Context<DiffViewer>,
 ) -> AnyElement {
-    let (text, highlights) = ai_chat_markdown_text_and_highlights(spans, base_color, is_dark, cx);
+    let AiMarkdownInlineRenderData {
+        text,
+        highlights,
+        link_ranges,
+    } = ai_chat_markdown_text_and_highlights(spans, base_color, is_dark, cx);
     if text.is_empty() {
         return div().w_full().text_sm().child("").into_any_element();
     }
@@ -517,6 +520,7 @@ fn ai_render_chat_inline_spans(
             row_id,
             surface_id,
             selection_surfaces,
+            ai_text_link_ranges(link_ranges),
             styled_text,
             is_dark,
             cx,
