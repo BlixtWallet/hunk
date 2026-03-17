@@ -218,15 +218,40 @@ fn prune_bookmarked_ai_threads(
     state: &mut AppState,
     state_snapshot: &hunk_codex::state::AiState,
     workspace_states: &std::collections::BTreeMap<String, AiWorkspaceState>,
+    known_workspace_keys: &BTreeSet<String>,
+    visible_workspace_key: Option<&str>,
 ) -> bool {
     let latest_threads = latest_known_ai_threads(state_snapshot, workspace_states);
+    let workspace_coverage_complete =
+        known_ai_workspace_coverage_is_complete(known_workspace_keys, visible_workspace_key, workspace_states);
     let previous_count = state.ai_bookmarked_thread_ids.len();
     state.ai_bookmarked_thread_ids.retain(|thread_id| {
-        latest_threads
-            .get(thread_id)
-            .is_some_and(|thread| thread.status != ThreadLifecycleStatus::Archived)
+        let Some(thread) = latest_threads.get(thread_id) else {
+            return !workspace_coverage_complete;
+        };
+
+        if thread.status == ThreadLifecycleStatus::Archived {
+            return !workspace_coverage_complete;
+        }
+
+        true
     });
     state.ai_bookmarked_thread_ids.len() != previous_count
+}
+
+fn known_ai_workspace_coverage_is_complete(
+    known_workspace_keys: &BTreeSet<String>,
+    visible_workspace_key: Option<&str>,
+    workspace_states: &std::collections::BTreeMap<String, AiWorkspaceState>,
+) -> bool {
+    if known_workspace_keys.is_empty() {
+        return false;
+    }
+
+    known_workspace_keys.iter().all(|workspace_key| {
+        visible_workspace_key == Some(workspace_key.as_str())
+            || workspace_states.contains_key(workspace_key.as_str())
+    })
 }
 
 fn seed_ai_workspace_preferences(

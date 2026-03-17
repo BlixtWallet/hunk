@@ -250,6 +250,8 @@
             &mut state,
             &snapshot,
             &BTreeMap::new(),
+            &["/repo".to_string()].into_iter().collect(),
+            Some("/repo"),
         ));
         assert_eq!(
             state.ai_bookmarked_thread_ids,
@@ -281,6 +283,10 @@
             &mut state,
             &AiState::default(),
             &BTreeMap::from([("/repo/worktrees/task-1".to_string(), workspace_state)]),
+            &["/repo".to_string(), "/repo/worktrees/task-1".to_string()]
+                .into_iter()
+                .collect(),
+            Some("/repo"),
         ));
         assert_eq!(
             state.ai_bookmarked_thread_ids,
@@ -318,11 +324,50 @@
             &mut state,
             &snapshot,
             &BTreeMap::from([("/repo/worktrees/task-1".to_string(), workspace_state)]),
+            &["/repo".to_string(), "/repo/worktrees/task-1".to_string()]
+                .into_iter()
+                .collect(),
+            Some("/repo"),
         ));
         assert_eq!(
             state.ai_bookmarked_thread_ids,
             ["thread-1".to_string()].into_iter().collect()
         );
+    }
+
+    #[test]
+    fn prune_bookmarked_ai_threads_waits_for_all_known_workspaces_before_pruning_missing_ids() {
+        let mut state = AppState {
+            ai_bookmarked_thread_ids: ["thread-other-worktree".to_string()].into_iter().collect(),
+            ..AppState::default()
+        };
+        let known_workspace_keys = ["/repo".to_string(), "/repo/worktrees/task-1".to_string()]
+            .into_iter()
+            .collect();
+
+        assert!(!prune_bookmarked_ai_threads(
+            &mut state,
+            &AiState::default(),
+            &BTreeMap::new(),
+            &known_workspace_keys,
+            Some("/repo"),
+        ));
+        assert_eq!(
+            state.ai_bookmarked_thread_ids,
+            ["thread-other-worktree".to_string()].into_iter().collect()
+        );
+
+        assert!(prune_bookmarked_ai_threads(
+            &mut state,
+            &AiState::default(),
+            &BTreeMap::from([(
+                "/repo/worktrees/task-1".to_string(),
+                AiWorkspaceState::default(),
+            )]),
+            &known_workspace_keys,
+            Some("/repo"),
+        ));
+        assert!(state.ai_bookmarked_thread_ids.is_empty());
     }
 
     #[test]

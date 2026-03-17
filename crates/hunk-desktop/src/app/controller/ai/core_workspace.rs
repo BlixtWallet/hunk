@@ -819,11 +819,14 @@ impl DiffViewer {
                 Self::apply_background_ai_workspace_fatal(state, message);
             }
         });
+        let known_workspace_keys = ai_known_workspace_keys(self.workspace_targets.as_slice());
         if should_prune_bookmarks
             && prune_bookmarked_ai_threads(
                 &mut self.state,
                 &self.ai_state_snapshot,
                 &self.ai_workspace_states,
+                &known_workspace_keys,
+                self.ai_worker_workspace_key.as_deref(),
             )
         {
             self.persist_state();
