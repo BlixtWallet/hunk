@@ -1,3 +1,4 @@
+set windows-shell := ["pwsh", "-Command"]
 set export
 
 start:
