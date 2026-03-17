@@ -135,15 +135,7 @@ fn worktree_file_state(
     }
 
     if metadata.is_file() {
-        let file = fs::File::open(absolute_path.as_path()).with_context(|| {
-            format!("failed to open worktree file '{}'", absolute_path.display())
-        })?;
-        let bytes = read_filter_output(
-            filter_pipeline
-                .convert_to_git(file, Path::new(path), index)
-                .with_context(|| format!("failed to convert worktree file '{path}' to Git form"))?,
-        )
-        .with_context(|| format!("failed to read converted worktree file '{path}'"))?;
+        let bytes = read_worktree_file_in_git_form(root, filter_pipeline, index, path)?;
         let kind = if gix::fs::is_executable(&metadata) {
             gix::objs::tree::EntryKind::BlobExecutable
         } else {

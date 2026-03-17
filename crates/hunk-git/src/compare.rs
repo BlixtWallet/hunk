@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result, anyhow};
 use git2::{DiffOptions, ObjectType, Oid, Patch, Repository, Tree};
 
-use crate::git::{ChangedFile, FileStatus, LineStats};
+use crate::git::{ChangedFile, FileStatus, LineStats, read_worktree_file_in_git_form};
 use crate::git2_helpers::open_git2_repo;
 use crate::worktree::repo_relative_path_is_within_managed_worktrees;
 
@@ -60,6 +60,38 @@ impl ComparePathState {
     }
 }
 
+enum CompareRenderContext {
+    None,
+    WorkspaceTree(WorkspaceTreeRenderCache),
+}
+
+struct WorkspaceTreeRenderCache {
+    changed_paths: BTreeSet<String>,
+    rendered_paths: BTreeMap<String, RenderedComparePath>,
+}
+
+#[derive(Debug, Clone)]
+struct RenderedComparePath {
+    patch: String,
+    line_stats: LineStats,
+}
+
+impl CompareRenderContext {
+    fn changed_paths(&self) -> Option<&BTreeSet<String>> {
+        match self {
+            Self::None => None,
+            Self::WorkspaceTree(cache) => Some(&cache.changed_paths),
+        }
+    }
+
+    fn rendered_path(&self, path: &str) -> Option<&RenderedComparePath> {
+        match self {
+            Self::None => None,
+            Self::WorkspaceTree(cache) => cache.rendered_paths.get(path),
+        }
+    }
+}
+
 pub fn compare_branch_source_id(branch_name: &str) -> String {
     format!("branch:{branch_name}")
 }
@@ -94,14 +126,38 @@ pub fn load_compare_snapshot(
     let common_repo = open_repository(primary_repo_root)?;
     let left = resolve_compare_source(&common_repo, left)?;
     let right = resolve_compare_source(&common_repo, right)?;
+    let render_context = build_compare_render_context(&left, &right)?;
+    let left_workspace_repo = left
+        .workspace_root
+        .as_deref()
+        .map(open_filter_repository)
+        .transpose()?;
+    let right_workspace_repo = right
+        .workspace_root
+        .as_deref()
+        .map(open_filter_repository)
+        .transpose()?;
+    let mut left_workspace_session =
+        match (left.workspace_root.as_ref(), left_workspace_repo.as_ref()) {
+            (Some(root), Some(repo)) => Some(CompareWorkspaceSession::new(root.clone(), repo)?),
+            _ => None,
+        };
+    let mut right_workspace_session =
+        match (right.workspace_root.as_ref(), right_workspace_repo.as_ref()) {
+            (Some(root), Some(repo)) => Some(CompareWorkspaceSession::new(root.clone(), repo)?),
+            _ => None,
+        };
 
-    let mut candidate_paths =
-        collect_tree_pair_diff_paths(&common_repo, left.head_tree_oid, right.head_tree_oid)?;
-    if let Some(paths) = collect_workspace_diff_paths(left.workspace_root.as_deref())? {
-        candidate_paths.extend(paths);
-    }
-    if let Some(paths) = collect_workspace_diff_paths(right.workspace_root.as_deref())? {
-        candidate_paths.extend(paths);
+    let mut candidate_paths = render_context.changed_paths().cloned().unwrap_or_default();
+    if candidate_paths.is_empty() {
+        candidate_paths =
+            collect_tree_pair_diff_paths(&common_repo, left.head_tree_oid, right.head_tree_oid)?;
+        if let Some(paths) = collect_workspace_diff_paths(left.workspace_root.as_deref())? {
+            candidate_paths.extend(paths);
+        }
+        if let Some(paths) = collect_workspace_diff_paths(right.workspace_root.as_deref())? {
+            candidate_paths.extend(paths);
+        }
     }
 
     let mut files = Vec::new();
@@ -110,14 +166,24 @@ pub fn load_compare_snapshot(
     let mut overall_line_stats = LineStats::default();
 
     for path in candidate_paths {
-        let old_state = load_compare_source_state(&common_repo, &left, path.as_str())?;
-        let new_state = load_compare_source_state(&common_repo, &right, path.as_str())?;
+        let old_state = load_compare_source_state(
+            &common_repo,
+            &left,
+            left_workspace_session.as_mut(),
+            path.as_str(),
+        )?;
+        let new_state = load_compare_source_state(
+            &common_repo,
+            &right,
+            right_workspace_session.as_mut(),
+            path.as_str(),
+        )?;
         if old_state == new_state {
             continue;
         }
 
         let (patch, line_stats) =
-            render_patch_and_line_stats(path.as_str(), &old_state, &new_state)?;
+            render_patch_and_line_stats(path.as_str(), &old_state, &new_state, &render_context)?;
         let status = compare_file_status(&old_state, &new_state);
         files.push(ChangedFile {
             path: path.clone(),
@@ -142,10 +208,85 @@ pub fn load_compare_snapshot(
     })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct ResolvedCompareSource {
     workspace_root: Option<PathBuf>,
     head_tree_oid: Option<Oid>,
+}
+
+struct CompareWorkspaceSession<'repo> {
+    root: PathBuf,
+    filter_pipeline: gix::filter::Pipeline<'repo>,
+    index_storage: gix::worktree::IndexPersistedOrInMemory,
+}
+
+impl<'repo> CompareWorkspaceSession<'repo> {
+    fn new(root: PathBuf, repo: &'repo gix::Repository) -> Result<Self> {
+        let (filter_pipeline, index_storage) = repo.filter_pipeline(None).with_context(|| {
+            format!(
+                "failed to initialize worktree filter pipeline for {}",
+                root.display()
+            )
+        })?;
+        Ok(Self {
+            root,
+            filter_pipeline,
+            index_storage,
+        })
+    }
+
+    fn read_path_state(&mut self, path: &str) -> Result<ComparePathState> {
+        let absolute_path = self.root.join(path);
+        let metadata = match fs::symlink_metadata(absolute_path.as_path()) {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(ComparePathState::missing());
+            }
+            Err(err) => {
+                return Err(err).with_context(|| {
+                    format!(
+                        "failed to inspect workspace path {}",
+                        absolute_path.display()
+                    )
+                });
+            }
+        };
+
+        if metadata.is_symlink() {
+            let target = fs::read_link(absolute_path.as_path())
+                .with_context(|| format!("failed to read symlink {}", absolute_path.display()))?;
+            return Ok(ComparePathState {
+                bytes: Some(target.to_string_lossy().into_owned().into_bytes()),
+                mode: Some(0o120000),
+                kind: ComparePathKind::Symlink,
+            });
+        }
+
+        if metadata.is_file() {
+            let mode = if gix::fs::is_executable(&metadata) {
+                0o100755
+            } else {
+                0o100644
+            };
+            let bytes = read_worktree_file_in_git_form(
+                self.root.as_path(),
+                &mut self.filter_pipeline,
+                compare_index_state(&self.index_storage),
+                path,
+            )?;
+            return Ok(ComparePathState {
+                bytes: Some(bytes),
+                mode: Some(mode),
+                kind: ComparePathKind::Regular,
+            });
+        }
+
+        Ok(ComparePathState {
+            bytes: None,
+            mode: Some(0o040000),
+            kind: ComparePathKind::Other,
+        })
+    }
 }
 
 fn resolve_compare_source(
@@ -203,13 +344,7 @@ fn collect_workspace_diff_paths(workspace_root: Option<&Path>) -> Result<Option<
 
 fn diff_delta_paths(diff: &git2::Diff<'_>) -> BTreeSet<String> {
     diff.deltas()
-        .filter_map(|delta| {
-            delta
-                .new_file()
-                .path()
-                .or_else(|| delta.old_file().path())
-                .and_then(path_to_repo_string)
-        })
+        .filter_map(|delta| diff_delta_path(&delta))
         .filter(|path| !repo_relative_path_is_within_managed_worktrees(path.as_str()))
         .collect()
 }
@@ -217,11 +352,14 @@ fn diff_delta_paths(diff: &git2::Diff<'_>) -> BTreeSet<String> {
 fn load_compare_source_state(
     repo: &Repository,
     source: &ResolvedCompareSource,
+    workspace_session: Option<&mut CompareWorkspaceSession<'_>>,
     path: &str,
 ) -> Result<ComparePathState> {
-    if let Some(workspace_root) = source.workspace_root.as_ref() {
-        let absolute_path = workspace_root.join(path);
-        return read_workspace_path_state(absolute_path.as_path());
+    if source.workspace_root.is_some() {
+        let workspace_session = workspace_session.ok_or_else(|| {
+            anyhow!("missing compare workspace session for workspace path '{path}'")
+        })?;
+        return workspace_session.read_path_state(path);
     }
 
     let Some(tree_oid) = source.head_tree_oid else {
@@ -237,7 +375,12 @@ fn render_patch_and_line_stats(
     path: &str,
     old_state: &ComparePathState,
     new_state: &ComparePathState,
+    render_context: &CompareRenderContext,
 ) -> Result<(String, LineStats)> {
+    if let Some(rendered_path) = render_context.rendered_path(path) {
+        return Ok((rendered_path.patch.clone(), rendered_path.line_stats));
+    }
+
     let mode_headers = render_mode_headers(old_state, new_state);
     if old_state.patch_bytes() == new_state.patch_bytes() {
         return Ok((
@@ -287,6 +430,97 @@ fn render_patch_and_line_stats(
             removed: deletions as u64,
         },
     ))
+}
+
+fn build_compare_render_context(
+    left: &ResolvedCompareSource,
+    right: &ResolvedCompareSource,
+) -> Result<CompareRenderContext> {
+    match (
+        left.workspace_root.as_deref(),
+        right.workspace_root.as_deref(),
+    ) {
+        (None, Some(workspace_root)) => Ok(CompareRenderContext::WorkspaceTree(
+            build_workspace_tree_render_cache(workspace_root, left.head_tree_oid, false)?,
+        )),
+        (Some(workspace_root), None) => Ok(CompareRenderContext::WorkspaceTree(
+            build_workspace_tree_render_cache(workspace_root, right.head_tree_oid, true)?,
+        )),
+        _ => Ok(CompareRenderContext::None),
+    }
+}
+
+fn build_workspace_tree_render_cache(
+    workspace_root: &Path,
+    tree_oid: Option<Oid>,
+    reverse: bool,
+) -> Result<WorkspaceTreeRenderCache> {
+    let repo = open_repository(workspace_root)?;
+    let tree = peel_tree(&repo, tree_oid)?;
+    let mut options = diff_options();
+    options.reverse(reverse);
+    let diff = repo
+        .diff_tree_to_workdir_with_index(tree.as_ref(), Some(&mut options))
+        .with_context(|| {
+            format!(
+                "failed to diff workspace {} against compare tree {:?}",
+                workspace_root.display(),
+                tree_oid
+            )
+        })?;
+
+    let mut changed_paths = BTreeSet::new();
+    let mut rendered_paths = BTreeMap::new();
+
+    for (delta_index, delta) in diff.deltas().enumerate() {
+        let Some(path) = diff_delta_path(&delta) else {
+            continue;
+        };
+        if repo_relative_path_is_within_managed_worktrees(path.as_str()) {
+            continue;
+        }
+        changed_paths.insert(path.clone());
+
+        if let Some(rendered_path) =
+            render_workspace_tree_diff_entry(&diff, delta_index, path.as_str())?
+        {
+            rendered_paths.insert(path, rendered_path);
+        }
+    }
+
+    Ok(WorkspaceTreeRenderCache {
+        changed_paths,
+        rendered_paths,
+    })
+}
+
+fn render_workspace_tree_diff_entry(
+    diff: &git2::Diff<'_>,
+    delta_index: usize,
+    path: &str,
+) -> Result<Option<RenderedComparePath>> {
+    let Some(mut patch) = Patch::from_diff(diff, delta_index)
+        .with_context(|| format!("failed to load workspace compare patch for '{path}'"))?
+    else {
+        return Ok(None);
+    };
+
+    let patch_text = patch
+        .to_buf()
+        .with_context(|| format!("failed to render workspace compare patch buffer for '{path}'"))?
+        .as_str()
+        .ok_or_else(|| anyhow!("workspace compare patch for '{path}' is not valid UTF-8"))?
+        .to_string();
+    let (_, additions, deletions) = patch
+        .line_stats()
+        .with_context(|| format!("failed to compute workspace patch line stats for {path}"))?;
+    Ok(Some(RenderedComparePath {
+        patch: patch_text,
+        line_stats: LineStats {
+            added: additions as u64,
+            removed: deletions as u64,
+        },
+    }))
 }
 
 fn render_metadata_only_patch(
@@ -412,49 +646,16 @@ fn tree_path_state(repo: &Repository, tree: &Tree<'_>, path: &str) -> Result<Com
     })
 }
 
-fn read_workspace_path_state(path: &Path) -> Result<ComparePathState> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(ComparePathState::missing());
-        }
-        Err(err) => {
-            return Err(err)
-                .with_context(|| format!("failed to inspect workspace path {}", path.display()));
-        }
-    };
+fn open_filter_repository(path: &Path) -> Result<gix::Repository> {
+    gix::discover(path)
+        .with_context(|| format!("failed to discover Git repository from {}", path.display()))
+}
 
-    if metadata.is_symlink() {
-        let target = fs::read_link(path)
-            .with_context(|| format!("failed to read symlink {}", path.display()))?;
-        return Ok(ComparePathState {
-            bytes: Some(target.to_string_lossy().into_owned().into_bytes()),
-            mode: Some(0o120000),
-            kind: ComparePathKind::Symlink,
-        });
+fn compare_index_state(index: &gix::worktree::IndexPersistedOrInMemory) -> &gix::index::State {
+    match index {
+        gix::worktree::IndexPersistedOrInMemory::Persisted(index) => index,
+        gix::worktree::IndexPersistedOrInMemory::InMemory(index) => index,
     }
-
-    if metadata.is_file() {
-        let mode = if gix::fs::is_executable(&metadata) {
-            0o100755
-        } else {
-            0o100644
-        };
-        return Ok(ComparePathState {
-            bytes: Some(
-                fs::read(path)
-                    .with_context(|| format!("failed to read workspace file {}", path.display()))?,
-            ),
-            mode: Some(mode),
-            kind: ComparePathKind::Regular,
-        });
-    }
-
-    Ok(ComparePathState {
-        bytes: None,
-        mode: Some(0o040000),
-        kind: ComparePathKind::Other,
-    })
 }
 
 fn diff_options() -> DiffOptions {
@@ -465,6 +666,14 @@ fn diff_options() -> DiffOptions {
         .include_unmodified(false)
         .ignore_submodules(true);
     options
+}
+
+fn diff_delta_path(delta: &git2::DiffDelta<'_>) -> Option<String> {
+    delta
+        .new_file()
+        .path()
+        .or_else(|| delta.old_file().path())
+        .and_then(path_to_repo_string)
 }
 
 fn remote_default_branch_name(repo: &gix::Repository) -> Result<Option<String>> {

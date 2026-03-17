@@ -581,6 +581,40 @@ pub fn count_non_ignored_repo_tree_entries(entries: &[RepoTreeEntry]) -> (usize,
     (file_count, folder_count)
 }
 
+pub(crate) fn read_worktree_file_in_git_form(
+    root: &Path,
+    filter_pipeline: &mut gix::filter::Pipeline<'_>,
+    index: &gix::index::State,
+    path: &str,
+) -> Result<Vec<u8>> {
+    let absolute_path = root.join(path);
+    let file = fs::File::open(absolute_path.as_path())
+        .with_context(|| format!("failed to open worktree file '{}'", absolute_path.display()))?;
+    read_to_git_output(
+        filter_pipeline
+            .convert_to_git(file, Path::new(path), index)
+            .with_context(|| format!("failed to convert worktree file '{path}' to Git form"))?,
+    )
+    .with_context(|| format!("failed to read converted worktree file '{path}'"))
+}
+
+fn read_to_git_output<R>(outcome: ToGitOutcome<'_, R>) -> Result<Vec<u8>>
+where
+    R: std::io::Read,
+{
+    let mut bytes = Vec::new();
+    match outcome {
+        ToGitOutcome::Unchanged(mut reader) => {
+            reader.read_to_end(&mut bytes)?;
+        }
+        ToGitOutcome::Process(mut reader) => {
+            reader.read_to_end(&mut bytes)?;
+        }
+        ToGitOutcome::Buffer(buffer) => bytes.extend_from_slice(buffer.as_ref()),
+    }
+    Ok(bytes)
+}
+
 pub fn invalidate_repo_metadata_caches(repo_root: &Path) {
     let root = repo_root.to_path_buf();
     let mut cache = nested_repo_roots_cache_guard();

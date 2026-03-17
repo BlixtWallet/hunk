@@ -244,23 +244,6 @@ fn is_binary(bytes: &[u8]) -> bool {
     bytes.iter().take(8 * 1024).any(|byte| *byte == 0)
 }
 
-fn read_filter_output<R>(outcome: ToGitOutcome<'_, R>) -> Result<Vec<u8>>
-where
-    R: std::io::Read,
-{
-    let mut bytes = Vec::new();
-    match outcome {
-        ToGitOutcome::Unchanged(mut reader) => {
-            reader.read_to_end(&mut bytes)?;
-        }
-        ToGitOutcome::Process(mut reader) => {
-            reader.read_to_end(&mut bytes)?;
-        }
-        ToGitOutcome::Buffer(buffer) => bytes.extend_from_slice(buffer.as_ref()),
-    }
-    Ok(bytes)
-}
-
 fn map_tree_index_status(change: &gix::diff::index::Change) -> (FileStatus, Option<String>) {
     match change {
         gix::diff::index::Change::Addition { .. } => (FileStatus::Added, None),
