@@ -164,6 +164,7 @@
             .into_iter()
             .collect(),
             ai_workspace_include_hidden_models: Default::default(),
+            ai_bookmarked_thread_ids: Default::default(),
             ai_workspace_session_overrides: Default::default(),
             git_workflow_cache: None,
             git_recent_commits_cache: None,
@@ -205,6 +206,7 @@
             ]
             .into_iter()
             .collect(),
+            ai_bookmarked_thread_ids: Default::default(),
             ai_workspace_session_overrides: Default::default(),
             git_workflow_cache: None,
             git_recent_commits_cache: None,

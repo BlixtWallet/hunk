@@ -49,7 +49,7 @@ impl DiffViewer {
     }
 
     pub(crate) fn ai_threads_for_current_workspace(&self) -> Vec<ThreadSummary> {
-        sorted_threads(&self.ai_state_snapshot)
+        sorted_threads(&self.ai_state_snapshot, &self.state.ai_bookmarked_thread_ids)
             .into_iter()
             .filter(|thread| {
                 thread.status != ThreadLifecycleStatus::Archived
@@ -167,6 +167,7 @@ impl DiffViewer {
             &self.ai_state_snapshot,
             state_snapshot_workspace_key.as_deref(),
             &self.ai_workspace_states,
+            &self.state.ai_bookmarked_thread_ids,
             self.workspace_targets.as_slice(),
             self.project_path.as_deref(),
             self.repo_root.as_deref(),

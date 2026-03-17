@@ -629,6 +629,7 @@ impl DiffViewer {
     fn apply_ai_snapshot_to_workspace_state(
         state: &mut AiWorkspaceState,
         snapshot: AiSnapshot,
+        bookmarked_thread_ids: &std::collections::BTreeSet<String>,
     ) -> Vec<AiPendingSteer> {
         let AiSnapshot {
             state: next_snapshot,
@@ -705,7 +706,8 @@ impl DiffViewer {
         if !state.new_thread_draft_active
             && !state.pending_new_thread_selection
             && state.selected_thread_id.is_none()
-            && let Some(first_thread) = sorted_threads(&state.state_snapshot).first()
+            && let Some(first_thread) =
+                sorted_threads(&state.state_snapshot, bookmarked_thread_ids).first()
         {
             state.selected_thread_id = Some(first_thread.id.clone());
         }
@@ -776,9 +778,14 @@ impl DiffViewer {
         let mut restored_pending_steers = Vec::new();
         let mut restored_queued_messages = Vec::new();
         let mut reconcile_queued_after_snapshot = false;
+        let bookmarked_thread_ids = self.state.ai_bookmarked_thread_ids.clone();
         self.update_background_ai_workspace_state(workspace_key, |state| match event {
             AiWorkerEventPayload::Snapshot(snapshot) => {
-                restored_pending_steers = Self::apply_ai_snapshot_to_workspace_state(state, *snapshot);
+                restored_pending_steers = Self::apply_ai_snapshot_to_workspace_state(
+                    state,
+                    *snapshot,
+                    &bookmarked_thread_ids,
+                );
                 reconcile_queued_after_snapshot = true;
             }
             AiWorkerEventPayload::BootstrapCompleted => {

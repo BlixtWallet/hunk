@@ -650,6 +650,23 @@ impl DiffViewer {
         cx.notify();
     }
 
+    pub(super) fn ai_toggle_thread_bookmark_action(
+        &mut self,
+        thread_id: String,
+        cx: &mut Context<Self>,
+    ) {
+        let was_bookmarked = ai_thread_is_bookmarked(&self.state, thread_id.as_str());
+        let bookmarked = toggle_ai_thread_bookmark(&mut self.state, thread_id.as_str());
+        debug_assert_ne!(was_bookmarked, bookmarked);
+        self.persist_state();
+        self.ai_status_message = Some(if bookmarked {
+            "Thread bookmarked.".to_string()
+        } else {
+            "Thread bookmark removed.".to_string()
+        });
+        cx.notify();
+    }
+
     pub(super) fn ai_scroll_timeline_to_bottom_action(&mut self, cx: &mut Context<Self>) {
         self.ai_timeline_follow_output = true;
         self.ai_scroll_timeline_to_bottom = true;

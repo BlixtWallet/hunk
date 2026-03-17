@@ -11,6 +11,7 @@ struct AiWorkspaceHeaderState {
 struct AiThreadSidebarState {
     threads: Vec<hunk_codex::state::ThreadSummary>,
     threads_loading: bool,
+    bookmarked_thread_ids: BTreeSet<String>,
     selected_thread_id: Option<String>,
     new_thread_menu_action_context: FocusHandle,
 }
@@ -344,9 +345,12 @@ impl DiffViewer {
                                     .children(state.threads.iter().cloned().map(|thread| {
                                         let workspace_label =
                                             self.ai_thread_workspace_label(thread.id.as_str());
+                                        let bookmarked =
+                                            state.bookmarked_thread_ids.contains(thread.id.as_str());
                                         render_ai_thread_sidebar_row(
                                             thread,
                                             workspace_label,
+                                            bookmarked,
                                             state.selected_thread_id.as_deref(),
                                             view.clone(),
                                             is_dark,

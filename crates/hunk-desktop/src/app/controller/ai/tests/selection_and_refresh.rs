@@ -26,7 +26,7 @@
             },
         );
 
-        let sorted = sorted_threads(&state);
+        let sorted = sorted_threads(&state, &BTreeSet::new());
         assert_eq!(sorted[0].id, "thread-late");
         assert_eq!(sorted[1].id, "thread-early");
     }

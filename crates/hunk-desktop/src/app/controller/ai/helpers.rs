@@ -8,14 +8,25 @@ use codex_app_server_protocol::CollaborationModeMask;
 use codex_protocol::config_types::ModeKind;
 use hunk_git::git::LocalBranch;
 
-fn sorted_threads(state: &hunk_codex::state::AiState) -> Vec<ThreadSummary> {
+fn compare_ai_threads(
+    left: &ThreadSummary,
+    right: &ThreadSummary,
+    bookmarked_thread_ids: &BTreeSet<String>,
+) -> std::cmp::Ordering {
+    let left_bookmarked = bookmarked_thread_ids.contains(left.id.as_str());
+    let right_bookmarked = bookmarked_thread_ids.contains(right.id.as_str());
+    right_bookmarked
+        .cmp(&left_bookmarked)
+        .then_with(|| right.created_at.cmp(&left.created_at))
+        .then_with(|| right.id.cmp(&left.id))
+}
+
+fn sorted_threads(
+    state: &hunk_codex::state::AiState,
+    bookmarked_thread_ids: &BTreeSet<String>,
+) -> Vec<ThreadSummary> {
     let mut threads = state.threads.values().cloned().collect::<Vec<_>>();
-    threads.sort_by(|left, right| {
-        right
-            .created_at
-            .cmp(&left.created_at)
-            .then_with(|| right.id.cmp(&left.id))
-    });
+    threads.sort_by(|left, right| compare_ai_threads(left, right, bookmarked_thread_ids));
     threads
 }
 
@@ -57,6 +68,7 @@ fn merged_ai_visible_threads(
     state_snapshot: &hunk_codex::state::AiState,
     state_snapshot_workspace_key: Option<&str>,
     workspace_states: &std::collections::BTreeMap<String, AiWorkspaceState>,
+    bookmarked_thread_ids: &BTreeSet<String>,
     workspace_targets: &[hunk_git::worktree::WorkspaceTargetSummary],
     project_path: Option<&std::path::Path>,
     repo_root: Option<&std::path::Path>,
@@ -117,12 +129,7 @@ fn merged_ai_visible_threads(
     }
 
     let mut threads = threads_by_id.into_values().collect::<Vec<_>>();
-    threads.sort_by(|left, right| {
-        right
-            .created_at
-            .cmp(&left.created_at)
-            .then_with(|| right.id.cmp(&left.id))
-    });
+    threads.sort_by(|left, right| compare_ai_threads(left, right, bookmarked_thread_ids));
     threads
 }
 
@@ -157,6 +164,19 @@ fn set_workspace_include_hidden_models(state: &mut AppState, workspace_key: &str
         state
             .ai_workspace_include_hidden_models
             .insert(workspace_key.to_string(), false);
+    }
+}
+
+fn ai_thread_is_bookmarked(state: &AppState, thread_id: &str) -> bool {
+    state.ai_bookmarked_thread_ids.contains(thread_id)
+}
+
+fn toggle_ai_thread_bookmark(state: &mut AppState, thread_id: &str) -> bool {
+    if state.ai_bookmarked_thread_ids.insert(thread_id.to_string()) {
+        true
+    } else {
+        state.ai_bookmarked_thread_ids.remove(thread_id);
+        false
     }
 }
 

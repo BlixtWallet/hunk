@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod ai_visible_threads_tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use hunk_codex::state::AiState;
     use hunk_codex::state::ThreadLifecycleStatus;
@@ -98,6 +98,7 @@ mod ai_visible_threads_tests {
             &state_snapshot,
             Some("/repo"),
             &background_workspace_states,
+            &BTreeSet::new(),
             &[
                 workspace_target("primary", WorkspaceTargetKind::PrimaryCheckout, "/repo"),
                 workspace_target(
@@ -145,6 +146,7 @@ mod ai_visible_threads_tests {
             &state_snapshot,
             Some("/repo-b"),
             &background_workspace_states,
+            &BTreeSet::new(),
             &[
                 workspace_target("primary", WorkspaceTargetKind::PrimaryCheckout, "/repo-b"),
                 workspace_target(
@@ -159,5 +161,83 @@ mod ai_visible_threads_tests {
         let thread_ids = threads.into_iter().map(|thread| thread.id).collect::<Vec<_>>();
 
         assert_eq!(thread_ids, vec!["thread-worktree-b", "thread-local"]);
+    }
+
+    #[test]
+    fn merged_visible_threads_prioritizes_bookmarked_threads_over_newer_unbookmarked_threads() {
+        let mut state_snapshot = AiState::default();
+        state_snapshot.threads.insert(
+            "thread-newer".to_string(),
+            thread_summary("thread-newer", "/repo", 20, 20),
+        );
+        state_snapshot.threads.insert(
+            "thread-bookmarked".to_string(),
+            thread_summary("thread-bookmarked", "/repo", 10, 10),
+        );
+
+        let bookmarked_thread_ids = ["thread-bookmarked".to_string()].into_iter().collect();
+        let threads = merged_ai_visible_threads(
+            &state_snapshot,
+            Some("/repo"),
+            &BTreeMap::new(),
+            &bookmarked_thread_ids,
+            &[workspace_target(
+                "primary",
+                WorkspaceTargetKind::PrimaryCheckout,
+                "/repo",
+            )],
+            Some(std::path::Path::new("/repo")),
+            Some(std::path::Path::new("/repo")),
+        );
+        let thread_ids = threads.into_iter().map(|thread| thread.id).collect::<Vec<_>>();
+
+        assert_eq!(thread_ids, vec!["thread-bookmarked", "thread-newer"]);
+    }
+
+    #[test]
+    fn merged_visible_threads_preserves_recency_within_bookmarked_group() {
+        let mut state_snapshot = AiState::default();
+        state_snapshot.threads.insert(
+            "thread-bookmarked-older".to_string(),
+            thread_summary("thread-bookmarked-older", "/repo", 10, 10),
+        );
+        state_snapshot.threads.insert(
+            "thread-bookmarked-newer".to_string(),
+            thread_summary("thread-bookmarked-newer", "/repo", 20, 20),
+        );
+        state_snapshot.threads.insert(
+            "thread-unbookmarked".to_string(),
+            thread_summary("thread-unbookmarked", "/repo", 30, 30),
+        );
+
+        let bookmarked_thread_ids = [
+            "thread-bookmarked-older".to_string(),
+            "thread-bookmarked-newer".to_string(),
+        ]
+        .into_iter()
+        .collect();
+        let threads = merged_ai_visible_threads(
+            &state_snapshot,
+            Some("/repo"),
+            &BTreeMap::new(),
+            &bookmarked_thread_ids,
+            &[workspace_target(
+                "primary",
+                WorkspaceTargetKind::PrimaryCheckout,
+                "/repo",
+            )],
+            Some(std::path::Path::new("/repo")),
+            Some(std::path::Path::new("/repo")),
+        );
+        let thread_ids = threads.into_iter().map(|thread| thread.id).collect::<Vec<_>>();
+
+        assert_eq!(
+            thread_ids,
+            vec![
+                "thread-bookmarked-newer",
+                "thread-bookmarked-older",
+                "thread-unbookmarked",
+            ]
+        );
     }
 }

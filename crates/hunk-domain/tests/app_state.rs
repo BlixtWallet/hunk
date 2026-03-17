@@ -19,6 +19,7 @@ fn app_state_defaults_last_project_path_to_none() {
     assert!(state.review_compare_selection_by_repo.is_empty());
     assert!(state.ai_workspace_mad_max.is_empty());
     assert!(state.ai_workspace_include_hidden_models.is_empty());
+    assert!(state.ai_bookmarked_thread_ids.is_empty());
     assert!(state.ai_workspace_session_overrides.is_empty());
     assert!(state.git_workflow_cache.is_none());
     assert!(state.git_recent_commits_cache.is_none());
@@ -33,6 +34,7 @@ fn app_state_parses_without_last_project_path_field() {
     assert!(state.review_compare_selection_by_repo.is_empty());
     assert!(state.ai_workspace_mad_max.is_empty());
     assert!(state.ai_workspace_include_hidden_models.is_empty());
+    assert!(state.ai_bookmarked_thread_ids.is_empty());
     assert!(state.ai_workspace_session_overrides.is_empty());
     assert!(state.git_workflow_cache.is_none());
     assert!(state.git_recent_commits_cache.is_none());
@@ -74,6 +76,12 @@ fn app_state_round_trips_last_project_path() {
         ai_workspace_include_hidden_models: [("/tmp/hunk-repo".to_string(), true)]
             .into_iter()
             .collect(),
+        ai_bookmarked_thread_ids: [
+            "thread-bookmarked".to_string(),
+            "thread-priority".to_string(),
+        ]
+        .into_iter()
+        .collect(),
         ai_workspace_session_overrides: [(
             "/tmp/hunk-repo".to_string(),
             AiThreadSessionState {

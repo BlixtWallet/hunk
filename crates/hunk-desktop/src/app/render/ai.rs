@@ -120,6 +120,7 @@ impl DiffViewer {
         let sidebar_state = AiThreadSidebarState {
             threads,
             threads_loading,
+            bookmarked_thread_ids: self.state.ai_bookmarked_thread_ids.clone(),
             selected_thread_id: selected_thread_id.clone(),
             new_thread_menu_action_context: self.focus_handle.clone(),
         };
