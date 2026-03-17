@@ -37,8 +37,13 @@ fn run_with_platform_stack_workaround() -> Result<()> {
 }
 
 fn run_app() -> Result<()> {
+    let default_log_level = if cfg!(debug_assertions) {
+        LevelFilter::DEBUG
+    } else {
+        LevelFilter::INFO
+    };
     let env_filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::DEBUG.into())
+        .with_default_directive(default_log_level.into())
         .from_env_lossy()
         .add_directive("jj_lib::gpg_signing=warn".parse()?)
         .add_directive("jj_lib::lock::unix=warn".parse()?)
@@ -61,6 +66,7 @@ fn install_process_signal_cleanup() -> Result<()> {
             return;
         }
 
+        hunk_codex::host::begin_host_shutdown();
         hunk_codex::host::cleanup_tracked_hosts_for_shutdown();
         std::process::exit(130);
     })

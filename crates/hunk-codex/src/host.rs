@@ -15,6 +15,8 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::RecvTimeoutError;
 use std::thread;
@@ -38,6 +40,7 @@ const STOP_TERM_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const STDERR_READER_JOIN_TIMEOUT: Duration = Duration::from_millis(750);
 static TRACKED_HOST_PROCESS_IDS: OnceLock<Mutex<BTreeSet<u32>>> = OnceLock::new();
 static SHARED_HOSTS: OnceLock<Mutex<BTreeMap<SharedHostKey, SharedHostEntry>>> = OnceLock::new();
+static BLOCK_NEW_HOST_STARTS_FOR_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostLifecycleState {
@@ -98,6 +101,12 @@ pub struct SharedHostLease {
 
 impl SharedHostLease {
     pub fn acquire(config: HostConfig, timeout: Duration) -> Result<Self> {
+        if host_shutdown_in_progress() {
+            return Err(CodexIntegrationError::WebSocketTransport(
+                "codex host shutdown is already in progress".to_string(),
+            ));
+        }
+
         let key = SharedHostKey::from_config(&config);
         let mut guard = shared_hosts()
             .lock()
@@ -267,6 +276,11 @@ impl HostRuntime {
         if self.child.is_some() {
             return Err(CodexIntegrationError::HostAlreadyRunning);
         }
+        if host_shutdown_in_progress() {
+            return Err(CodexIntegrationError::WebSocketTransport(
+                "codex host startup was blocked because shutdown is in progress".to_string(),
+            ));
+        }
 
         self.state = HostLifecycleState::Starting;
 
@@ -284,7 +298,16 @@ impl HostRuntime {
         let mut child = command
             .spawn()
             .map_err(CodexIntegrationError::HostProcessIo)?;
-        register_tracked_host_process(child.id());
+        let process_id = child.id();
+        register_tracked_host_process(process_id);
+        if host_shutdown_in_progress() {
+            stop_spawned_child_during_shutdown(process_id, &mut child);
+            unregister_tracked_host_process(process_id);
+            self.state = HostLifecycleState::Failed;
+            return Err(CodexIntegrationError::WebSocketTransport(
+                "codex host startup was interrupted because shutdown began".to_string(),
+            ));
+        }
         self.spawn_stderr_reader(&mut child);
         self.child = Some(child);
         self.wait_until_ready(timeout)
@@ -615,6 +638,10 @@ impl Drop for SharedHostLease {
     }
 }
 
+pub fn begin_host_shutdown() {
+    BLOCK_NEW_HOST_STARTS_FOR_SHUTDOWN.store(true, Ordering::SeqCst);
+}
+
 pub fn cleanup_tracked_hosts_for_shutdown() {
     for mut runtime in take_shared_host_runtimes() {
         if let Err(error) = runtime.stop() {
@@ -630,6 +657,10 @@ pub fn cleanup_tracked_hosts_for_shutdown() {
 
 fn tracked_host_processes() -> &'static Mutex<BTreeSet<u32>> {
     TRACKED_HOST_PROCESS_IDS.get_or_init(|| Mutex::new(BTreeSet::new()))
+}
+
+fn host_shutdown_in_progress() -> bool {
+    BLOCK_NEW_HOST_STARTS_FOR_SHUTDOWN.load(Ordering::SeqCst)
 }
 
 fn shared_hosts() -> &'static Mutex<BTreeMap<SharedHostKey, SharedHostEntry>> {
@@ -715,6 +746,19 @@ fn cleanup_tracked_host_process(process_id: u32) {
     {
         warn!("failed to kill tracked codex host process group {process_id}: {error}");
     }
+}
+
+#[cfg(unix)]
+fn stop_spawned_child_during_shutdown(process_id: u32, child: &mut Child) {
+    let _ = signal_process_group(process_id, ProcessSignal::Kill);
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[cfg(not(unix))]
+fn stop_spawned_child_during_shutdown(_process_id: u32, child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 #[cfg(not(unix))]
