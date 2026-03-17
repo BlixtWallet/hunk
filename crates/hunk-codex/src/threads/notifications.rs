@@ -707,7 +707,7 @@ fn workspace_path_key(path: &Path) -> String {
 
 fn workspace_path_aliases(path: &Path) -> Vec<String> {
     let normalized = normalize_workspace_path(path);
-    let mut aliases = vec![normalized.to_string_lossy().to_string()];
+    let aliases = vec![normalized.to_string_lossy().to_string()];
 
     #[cfg(windows)]
     {

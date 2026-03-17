@@ -42,6 +42,7 @@ mod ai_tests {
     use super::review_compare_selection_ids_for_workspace_root;
     use super::requested_branch_name_for_new_thread;
     use super::resolve_bundled_codex_executable_from_exe;
+    use super::resolve_workspace_codex_executable_from_exe;
     use super::resolved_ai_workspace_cwd;
     use super::seed_ai_workspace_preferences;
     #[cfg(target_os = "windows")]

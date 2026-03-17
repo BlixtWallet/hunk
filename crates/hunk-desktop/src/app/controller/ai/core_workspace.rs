@@ -297,10 +297,12 @@ impl DiffViewer {
             .map(Self::resolve_windows_codex_command_path)
             .or_else(|| {
                 let current_exe = std::env::current_exe().ok()?;
-                resolve_bundled_codex_executable_from_exe(current_exe.as_path()).or_else(|| {
-                    running_from_packaged_bundle().then(|| {
-                        expected_bundled_codex_executable_from_exe(current_exe.as_path())
-                    })?
+                resolve_workspace_codex_executable_from_exe(current_exe.as_path()).or_else(|| {
+                    resolve_bundled_codex_executable_from_exe(current_exe.as_path()).or_else(|| {
+                        running_from_packaged_bundle().then(|| {
+                            expected_bundled_codex_executable_from_exe(current_exe.as_path())
+                        })?
+                    })
                 })
             })
             .or({

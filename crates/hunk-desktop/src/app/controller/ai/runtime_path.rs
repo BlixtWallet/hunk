@@ -1,3 +1,21 @@
+fn resolve_workspace_codex_executable_from_exe(
+    current_exe: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    cargo_target_root_candidates(current_exe)
+        .into_iter()
+        .flat_map(|target_root| workspace_codex_executable_candidates(target_root.as_path()))
+        .find(|candidate| {
+            #[cfg(target_os = "windows")]
+            {
+                windows_path_is_spawnable(candidate)
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                candidate.is_file()
+            }
+        })
+}
+
 fn resolve_bundled_codex_executable_from_exe(
     current_exe: &std::path::Path,
 ) -> Option<std::path::PathBuf> {
@@ -206,6 +224,37 @@ fn bundled_codex_executable_candidates(current_exe: &std::path::Path) -> Vec<std
     push_candidates(exe_dir, &mut candidates);
 
     candidates
+}
+
+fn cargo_target_root_candidates(current_exe: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let current_exe_parent = current_exe.parent();
+    current_exe
+        .ancestors()
+        .filter_map(|ancestor| match ancestor.file_name().and_then(|name| name.to_str()) {
+            Some("target" | "target-shared")
+                if current_exe_parent
+                    .and_then(|parent| parent.file_name())
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| matches!(name, "debug" | "release")) =>
+            {
+                ancestor.parent().map(std::path::Path::to_path_buf)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn workspace_codex_executable_candidates(
+    workspace_root: &std::path::Path,
+) -> Vec<std::path::PathBuf> {
+    let base_dir = workspace_root
+        .join("assets")
+        .join("codex-runtime")
+        .join(codex_runtime_platform_dir());
+    bundled_codex_entrypoint_file_names()
+        .iter()
+        .map(|entrypoint| base_dir.join(entrypoint))
+        .collect()
 }
 
 #[cfg(target_os = "linux")]

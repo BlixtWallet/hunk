@@ -79,6 +79,7 @@ fn rejects_workspace_file_links_outside_root() {
     fs::create_dir_all(root.as_path()).expect("create workspace root");
 
     let outside_root = test_temp_dir("outside-workspace-file-links");
+    fs::create_dir_all(outside_root.as_path()).expect("create outside workspace root");
     let outside_file = outside_root.join("secrets.txt");
     fs::write(&outside_file, "secret\n").expect("write outside file");
 

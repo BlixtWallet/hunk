@@ -539,6 +539,90 @@
         let _ = std::fs::remove_dir_all(root);
     }
 
+    #[test]
+    fn workspace_codex_resolution_prefers_repo_asset_for_cargo_targets() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be monotonic")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("hunk-codex-workspace-runtime-{unique}"));
+        let exe_path = root.join("target-shared").join("debug").join("hunk");
+        std::fs::create_dir_all(
+            exe_path
+                .parent()
+                .expect("exe parent directory should exist"),
+        )
+        .expect("exe dir should be created");
+        std::fs::write(&exe_path, "").expect("fake exe should be written");
+
+        let runtime_path = root
+            .join("assets")
+            .join("codex-runtime")
+            .join(codex_runtime_platform_dir())
+            .join(if cfg!(target_os = "windows") {
+                "codex.cmd"
+            } else {
+                codex_runtime_binary_name()
+            });
+        std::fs::create_dir_all(
+            runtime_path
+                .parent()
+                .expect("runtime parent should exist"),
+        )
+        .expect("runtime dir should be created");
+        write_fake_codex_launcher(runtime_path.as_path());
+
+        let resolved = resolve_workspace_codex_executable_from_exe(exe_path.as_path());
+        assert_eq!(resolved, Some(runtime_path));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn workspace_codex_resolution_ignores_packaged_bundle_paths() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be monotonic")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("hunk-codex-bundle-runtime-{unique}"));
+        let exe_path = root
+            .join("target-shared")
+            .join("packager")
+            .join("Hunk.app")
+            .join("Contents")
+            .join("MacOS")
+            .join("Hunk");
+        std::fs::create_dir_all(
+            exe_path
+                .parent()
+                .expect("exe parent directory should exist"),
+        )
+        .expect("exe dir should be created");
+        std::fs::write(&exe_path, "").expect("fake exe should be written");
+
+        let runtime_path = root
+            .join("assets")
+            .join("codex-runtime")
+            .join(codex_runtime_platform_dir())
+            .join(if cfg!(target_os = "windows") {
+                "codex.cmd"
+            } else {
+                codex_runtime_binary_name()
+            });
+        std::fs::create_dir_all(
+            runtime_path
+                .parent()
+                .expect("runtime parent should exist"),
+        )
+        .expect("runtime dir should be created");
+        write_fake_codex_launcher(runtime_path.as_path());
+
+        let resolved = resolve_workspace_codex_executable_from_exe(exe_path.as_path());
+        assert_eq!(resolved, None);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn bundled_codex_resolution_prefers_windows_exe_over_cmd() {
