@@ -368,39 +368,48 @@ impl DiffViewer {
     }
 
     fn ai_mark_thread_archived_for_workspace(&mut self, workspace_key: &str, thread_id: &str) {
-        let Some(state) = self.ai_workspace_states.get_mut(workspace_key) else {
-            return;
-        };
-        let Some(thread) = state.state_snapshot.threads.get_mut(thread_id) else {
-            return;
-        };
-        thread.status = ThreadLifecycleStatus::Archived;
+        {
+            let Some(state) = self.ai_workspace_states.get_mut(workspace_key) else {
+                return;
+            };
+            let Some(thread) = state.state_snapshot.threads.get_mut(thread_id) else {
+                return;
+            };
+            thread.status = ThreadLifecycleStatus::Archived;
 
-        if state.state_snapshot.active_thread_for_cwd(workspace_key) == Some(thread_id) {
-            state.state_snapshot.active_thread_by_cwd.remove(workspace_key);
-            if let Some(next_thread_id) = state
-                .state_snapshot
-                .threads
-                .values()
-                .filter(|thread| {
-                    thread.cwd == workspace_key
-                        && thread.status != ThreadLifecycleStatus::Archived
-                        && thread.id != thread_id
-                })
-                .max_by(|left, right| {
-                    left.created_at
-                        .cmp(&right.created_at)
-                        .then_with(|| left.id.cmp(&right.id))
-                })
-                .map(|thread| thread.id.clone())
-            {
-                state
+            if state.state_snapshot.active_thread_for_cwd(workspace_key) == Some(thread_id) {
+                state.state_snapshot.active_thread_by_cwd.remove(workspace_key);
+                if let Some(next_thread_id) = state
                     .state_snapshot
-                    .set_active_thread_for_cwd(workspace_key.to_string(), next_thread_id);
+                    .threads
+                    .values()
+                    .filter(|thread| {
+                        thread.cwd == workspace_key
+                            && thread.status != ThreadLifecycleStatus::Archived
+                            && thread.id != thread_id
+                    })
+                    .max_by(|left, right| {
+                        left.created_at
+                            .cmp(&right.created_at)
+                            .then_with(|| left.id.cmp(&right.id))
+                    })
+                    .map(|thread| thread.id.clone())
+                {
+                    state.state_snapshot
+                        .set_active_thread_for_cwd(workspace_key.to_string(), next_thread_id);
+                }
+            }
+            if state.selected_thread_id.as_deref() == Some(thread_id) {
+                state.selected_thread_id = None;
             }
         }
-        if state.selected_thread_id.as_deref() == Some(thread_id) {
-            state.selected_thread_id = None;
+
+        if prune_bookmarked_ai_threads(
+            &mut self.state,
+            &self.ai_state_snapshot,
+            &self.ai_workspace_states,
+        ) {
+            self.persist_state();
         }
     }
 
@@ -430,6 +439,11 @@ impl DiffViewer {
             .ai_workspace_session_overrides
             .remove(workspace_key)
             .is_some();
+        state_changed |= prune_bookmarked_ai_threads(
+            &mut self.state,
+            &self.ai_state_snapshot,
+            &self.ai_workspace_states,
+        );
         if state_changed {
             self.persist_state();
         }

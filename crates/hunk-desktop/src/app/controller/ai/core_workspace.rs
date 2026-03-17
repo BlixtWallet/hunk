@@ -778,6 +778,7 @@ impl DiffViewer {
         let mut restored_pending_steers = Vec::new();
         let mut restored_queued_messages = Vec::new();
         let mut reconcile_queued_after_snapshot = false;
+        let should_prune_bookmarks = matches!(&event, AiWorkerEventPayload::Snapshot(_));
         let bookmarked_thread_ids = self.state.ai_bookmarked_thread_ids.clone();
         self.update_background_ai_workspace_state(workspace_key, |state| match event {
             AiWorkerEventPayload::Snapshot(snapshot) => {
@@ -818,6 +819,15 @@ impl DiffViewer {
                 Self::apply_background_ai_workspace_fatal(state, message);
             }
         });
+        if should_prune_bookmarks
+            && prune_bookmarked_ai_threads(
+                &mut self.state,
+                &self.ai_state_snapshot,
+                &self.ai_workspace_states,
+            )
+        {
+            self.persist_state();
+        }
         let _ = self.restore_ai_pending_steers_to_drafts(restored_pending_steers);
         if reconcile_queued_after_snapshot {
             let mut ready_thread_ids = Vec::new();

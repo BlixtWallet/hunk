@@ -133,6 +133,40 @@ fn merged_ai_visible_threads(
     threads
 }
 
+fn latest_known_ai_threads(
+    state_snapshot: &hunk_codex::state::AiState,
+    workspace_states: &std::collections::BTreeMap<String, AiWorkspaceState>,
+) -> BTreeMap<String, ThreadSummary> {
+    let mut threads_by_id = BTreeMap::<String, ThreadSummary>::new();
+
+    for thread in state_snapshot.threads.values().chain(
+        workspace_states
+            .values()
+            .flat_map(|state| state.state_snapshot.threads.values()),
+    ) {
+        let replace_existing = threads_by_id
+            .get(thread.id.as_str())
+            .is_none_or(|existing| {
+                (
+                    thread.last_sequence,
+                    thread.updated_at,
+                    thread.created_at,
+                    thread.id.as_str(),
+                ) > (
+                    existing.last_sequence,
+                    existing.updated_at,
+                    existing.created_at,
+                    existing.id.as_str(),
+                )
+            });
+        if replace_existing {
+            threads_by_id.insert(thread.id.clone(), thread.clone());
+        }
+    }
+
+    threads_by_id
+}
+
 fn workspace_mad_max_mode(state: &AppState, workspace_key: Option<&str>) -> bool {
     workspace_key
         .and_then(|workspace| state.ai_workspace_mad_max.get(workspace))
@@ -178,6 +212,21 @@ fn toggle_ai_thread_bookmark(state: &mut AppState, thread_id: &str) -> bool {
         state.ai_bookmarked_thread_ids.remove(thread_id);
         false
     }
+}
+
+fn prune_bookmarked_ai_threads(
+    state: &mut AppState,
+    state_snapshot: &hunk_codex::state::AiState,
+    workspace_states: &std::collections::BTreeMap<String, AiWorkspaceState>,
+) -> bool {
+    let latest_threads = latest_known_ai_threads(state_snapshot, workspace_states);
+    let previous_count = state.ai_bookmarked_thread_ids.len();
+    state.ai_bookmarked_thread_ids.retain(|thread_id| {
+        latest_threads
+            .get(thread_id)
+            .is_some_and(|thread| thread.status != ThreadLifecycleStatus::Archived)
+    });
+    state.ai_bookmarked_thread_ids.len() != previous_count
 }
 
 fn seed_ai_workspace_preferences(

@@ -108,6 +108,14 @@ impl DiffViewer {
             );
             self.ai_workspace_states.insert(workspace_key, state);
         }
+
+        if prune_bookmarked_ai_threads(
+            &mut self.state,
+            &self.ai_state_snapshot,
+            &self.ai_workspace_states,
+        ) {
+            self.persist_state();
+        }
     }
 
     fn prune_ai_workspace_states_for_thread_catalog(
