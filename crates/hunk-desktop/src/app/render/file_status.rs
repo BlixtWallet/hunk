@@ -10,6 +10,7 @@ impl DiffViewer {
         let view = cx.entity();
         let stable_row_id = self.diff_row_stable_id(row_ix);
         let is_dark = cx.theme().mode.is_dark();
+        let chrome = hunk_diff_chrome(cx.theme(), is_dark);
         let path = path.to_string();
         let is_collapsed = self.collapsed_files.contains(path.as_str());
         let colors = hunk_file_status_banner(cx.theme(), status, is_dark, false);
@@ -24,7 +25,7 @@ impl DiffViewer {
             .px_3()
             .py_0p5()
             .border_b_1()
-            .border_color(hunk_opacity(colors.border, is_dark, 0.92, 0.82))
+            .border_color(chrome.row_divider)
             .bg(colors.row_background)
             .w_full()
             .child({
@@ -57,7 +58,6 @@ impl DiffViewer {
                     .py_0p5()
                     .text_xs()
                     .font_semibold()
-                    .rounded_sm()
                     .bg(colors.badge_background)
                     .border_1()
                     .border_color(colors.badge_border)
@@ -66,12 +66,22 @@ impl DiffViewer {
             )
             .child(
                 div()
+                    .flex_1()
+                    .min_w_0()
                     .text_xs()
+                    .truncate()
                     .font_family(cx.theme().mono_font_family.clone())
                     .text_color(cx.theme().foreground)
                     .child(path.clone()),
             )
             .child(self.render_line_stats("file", stats, cx))
+            .child(self.render_review_view_file_button(
+                ("diff-file-view-sticky", stable_row_id),
+                path.as_str(),
+                status,
+                view.clone(),
+                cx,
+            ))
             .child(
                 div()
                     .absolute()
@@ -83,21 +93,29 @@ impl DiffViewer {
             );
 
         if self.reduced_motion_enabled() {
-            row.into_any_element()
-        } else {
-            row.with_animation(
-                ("diff-file-header-sticky-bump", stable_row_id),
-                Animation::new(self.animation_duration_ms(180))
-                    .with_easing(cubic_bezier(0.32, 0.72, 0.0, 1.0)),
-                |this, delta| {
-                    let entering = 1.0 - delta;
-                    let bump = (delta * std::f32::consts::PI).sin() * entering;
-                    this.top(px(entering * 8.0 - bump * 2.0))
-                        .opacity(0.88 + (0.12 * delta))
-                },
+            return row.into_any_element();
+        }
+
+        div()
+            .w_full()
+            .child(
+                div()
+                    .w_full()
+                    .child(row)
+                    .with_animation(
+                        ("diff-file-header-sticky-bump", stable_row_id),
+                        Animation::new(self.animation_duration_ms(160))
+                            .with_easing(cubic_bezier(0.32, 0.72, 0.0, 1.0)),
+                        |this, delta| {
+                            let entering = 1.0 - delta;
+                            let bump = (delta * std::f32::consts::PI).sin() * entering;
+                            this.w_full()
+                                .top(px(entering * 6.0 - bump * 1.5))
+                                .opacity(0.9 + (0.1 * delta))
+                        },
+                    ),
             )
             .into_any_element()
-        }
     }
 
     fn render_line_stats(

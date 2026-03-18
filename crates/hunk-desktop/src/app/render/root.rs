@@ -331,11 +331,16 @@ impl Render for DiffViewer {
             self.last_scroll_activity_at = Instant::now();
         }
         self.frame_sample_count = self.frame_sample_count.saturating_add(1);
+        let root_key_context = if self.workspace_view_mode == WorkspaceViewMode::Diff {
+            "DiffViewer ReviewWorkspace"
+        } else {
+            "DiffViewer"
+        };
 
         v_flex()
             .size_full()
             .relative()
-            .key_context("DiffViewer")
+            .key_context(root_key_context)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::select_next_line_action))
             .on_action(cx.listener(Self::select_previous_line_action))
@@ -347,6 +352,7 @@ impl Render for DiffViewer {
             .on_action(cx.listener(Self::previous_hunk_action))
             .on_action(cx.listener(Self::next_file_action))
             .on_action(cx.listener(Self::previous_file_action))
+            .on_action(cx.listener(Self::view_current_review_file_action))
             .on_action(cx.listener(Self::toggle_sidebar_tree_action))
             .on_action(cx.listener(Self::switch_to_files_view_action))
             .on_action(cx.listener(Self::switch_to_review_view_action))
