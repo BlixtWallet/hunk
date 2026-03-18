@@ -85,7 +85,30 @@ impl DiffViewer {
                     .bg(colors.accent_strip),
             );
 
-        row.into_any_element()
+        if self.reduced_motion_enabled() {
+            return row.into_any_element();
+        }
+
+        div()
+            .w_full()
+            .child(
+                div()
+                    .w_full()
+                    .child(row)
+                    .with_animation(
+                        ("diff-file-header-sticky-bump", stable_row_id),
+                        Animation::new(self.animation_duration_ms(160))
+                            .with_easing(cubic_bezier(0.32, 0.72, 0.0, 1.0)),
+                        |this, delta| {
+                            let entering = 1.0 - delta;
+                            let bump = (delta * std::f32::consts::PI).sin() * entering;
+                            this.w_full()
+                                .top(px(entering * 6.0 - bump * 1.5))
+                                .opacity(0.9 + (0.1 * delta))
+                        },
+                    ),
+            )
+            .into_any_element()
     }
 
     fn render_line_stats(
