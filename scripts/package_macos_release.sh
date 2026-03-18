@@ -104,24 +104,6 @@ bundle_macos_non_system_dylibs() {
   done
 }
 
-inject_helix_runtime_into_app_bundle() {
-  local runtime_source_dir runtime_destination
-  runtime_source_dir="$("$ROOT_DIR/scripts/resolve_helix_runtime_dir.sh")"
-
-  runtime_destination="$APP_PATH/Contents/Resources/runtime"
-  rm -rf "$runtime_destination"
-  mkdir -p "$(dirname "$runtime_destination")"
-  cp -R "$runtime_source_dir" "$runtime_destination"
-  rm -rf "$runtime_destination/grammars/sources"
-
-  if [[ ! -d "$runtime_destination/queries" || ! -d "$runtime_destination/grammars" ]]; then
-    echo "error: bundled Helix runtime is missing queries/ or grammars/" >&2
-    exit 1
-  fi
-
-  echo "Bundled Helix runtime from $runtime_source_dir" >&2
-}
-
 sign_macos_app_bundle() {
   local sign_target
 
@@ -243,7 +225,6 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
-inject_helix_runtime_into_app_bundle
 bundle_macos_non_system_dylibs "$APP_EXECUTABLE_PATH"
 echo "Validating macOS app binary dependencies..." >&2
 validate_macos_binary_dependencies "$APP_EXECUTABLE_PATH"
