@@ -187,25 +187,16 @@ impl Default for HighlightStyleMap {
 
 impl HighlightStyleMap {
     pub fn resolve(&self, capture_name: &str) -> Option<&str> {
-        let capture_parts = capture_name.split('.').collect::<Vec<_>>();
-        let mut best_match = None;
-        let mut best_match_len = 0;
-        for style in &self.styles {
-            let mut matches = true;
-            let mut len = 0;
-            for part in style.split('.') {
-                len += 1;
-                if !capture_parts.contains(&part) {
-                    matches = false;
-                    break;
-                }
-            }
-            if matches && len > best_match_len {
-                best_match = Some(style.as_str());
-                best_match_len = len;
-            }
-        }
-        best_match
+        self.styles
+            .iter()
+            .filter(|style| {
+                capture_name == style.as_str()
+                    || capture_name
+                        .strip_prefix(style.as_str())
+                        .is_some_and(|suffix| suffix.starts_with('.'))
+            })
+            .max_by_key(|style| style.len())
+            .map(String::as_str)
     }
 }
 
@@ -476,12 +467,12 @@ fn overlap_range(range: Range<usize>, visible: &Range<usize>) -> Option<Range<us
 }
 
 fn byte_to_point(source: &str, byte: usize) -> Point {
-    let prefix = &source[..byte.min(source.len())];
-    let row = prefix.bytes().filter(|value| *value == b'\n').count();
+    let prefix = &source.as_bytes()[..byte.min(source.len())];
+    let row = prefix.iter().filter(|value| **value == b'\n').count();
     let column = prefix
-        .bytes()
+        .iter()
         .rev()
-        .take_while(|value| *value != b'\n')
+        .take_while(|value| **value != b'\n')
         .count();
     Point::new(row, column)
 }

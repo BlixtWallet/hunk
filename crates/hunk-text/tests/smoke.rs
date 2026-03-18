@@ -59,6 +59,16 @@ fn anchors_track_insertions_with_bias() {
 }
 
 #[test]
+fn anchor_mapping_is_stable_for_unsorted_non_overlapping_edits() {
+    let transaction = Transaction::new()
+        .replace(10..10, "tail")
+        .replace(2..2, "head");
+    let anchor = Anchor::new(12, AnchorBias::Right).apply_transaction(&transaction);
+
+    assert_eq!(anchor.byte, 20);
+}
+
+#[test]
 fn search_finds_next_and_all_matches() {
     let buffer = TextBuffer::new(BufferId::new(9), "one two one");
     let snapshot = buffer.snapshot();

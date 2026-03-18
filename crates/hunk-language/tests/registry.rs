@@ -20,11 +20,12 @@ fn style_map_prefers_most_specific_capture_name() {
     let map = HighlightStyleMap::default();
 
     assert_eq!(
-        map.resolve("function.method.builtin"),
+        map.resolve("function.builtin.static"),
         Some("function.builtin")
     );
     assert_eq!(
         map.resolve("variable.parameter"),
         Some("variable.parameter")
     );
+    assert_eq!(map.resolve("function.method.builtin"), Some("function"));
 }

@@ -97,8 +97,10 @@ impl Anchor {
     }
 
     pub fn apply_transaction(self, transaction: &Transaction) -> Self {
+        let mut edits = transaction.edits().to_vec();
+        edits.sort_by_key(|edit| (edit.range.start, edit.range.end));
         let mut mapped = self.byte;
-        for edit in transaction.edits() {
+        for edit in &edits {
             let removed_len = edit.range.end - edit.range.start;
             let inserted_len = edit.text.len();
 
