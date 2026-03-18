@@ -136,9 +136,17 @@ fn typescript_language() -> LanguageDefinition {
             file_names: Vec::new(),
         },
         || tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        tree_sitter_typescript::HIGHLIGHTS_QUERY,
-        "",
-        tree_sitter_typescript::LOCALS_QUERY,
+        format!(
+            "{}\n{}",
+            tree_sitter_javascript::HIGHLIGHT_QUERY,
+            tree_sitter_typescript::HIGHLIGHTS_QUERY
+        ),
+        tree_sitter_javascript::INJECTIONS_QUERY,
+        format!(
+            "{}\n{}",
+            tree_sitter_javascript::LOCALS_QUERY,
+            tree_sitter_typescript::LOCALS_QUERY
+        ),
         &[
             "statement_block",
             "class_body",
@@ -161,9 +169,18 @@ fn tsx_language() -> LanguageDefinition {
             file_names: Vec::new(),
         },
         || tree_sitter_typescript::LANGUAGE_TSX.into(),
-        tree_sitter_typescript::HIGHLIGHTS_QUERY,
-        "",
-        tree_sitter_typescript::LOCALS_QUERY,
+        format!(
+            "{}\n{}\n{}",
+            tree_sitter_javascript::HIGHLIGHT_QUERY,
+            tree_sitter_javascript::JSX_HIGHLIGHT_QUERY,
+            tree_sitter_typescript::HIGHLIGHTS_QUERY
+        ),
+        tree_sitter_javascript::INJECTIONS_QUERY,
+        format!(
+            "{}\n{}",
+            tree_sitter_javascript::LOCALS_QUERY,
+            tree_sitter_typescript::LOCALS_QUERY
+        ),
         &[
             "statement_block",
             "class_body",

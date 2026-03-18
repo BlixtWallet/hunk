@@ -37,6 +37,156 @@ fn enter_preserves_existing_indentation() {
 }
 
 #[test]
+fn arrow_keys_move_the_caret_across_lines() {
+    let mut editor = FilesEditor::new();
+    let path = PathBuf::from("example.rs");
+    editor
+        .open_document(path.as_path(), "alpha\nbeta\ngamma")
+        .expect("document should open");
+    editor.set_selection_for_test(Selection::caret(TextPosition::new(1, 2)));
+
+    assert!(editor.handle_keystroke(&Keystroke::parse("up").expect("valid key")));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::caret(TextPosition::new(0, 2))
+    );
+
+    assert!(editor.handle_keystroke(&Keystroke::parse("down").expect("valid key")));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::caret(TextPosition::new(1, 2))
+    );
+}
+
+#[test]
+fn primary_shortcut_arrow_moves_to_line_boundary() {
+    let mut editor = FilesEditor::new();
+    let path = PathBuf::from("example.rs");
+    editor
+        .open_document(path.as_path(), "const answer = 42;")
+        .expect("document should open");
+    editor.set_selection_for_test(Selection::caret(TextPosition::new(0, 5)));
+
+    assert!(editor.handle_keystroke(&primary_shortcut_keystroke("right")));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::caret(TextPosition::new(0, 18))
+    );
+
+    assert!(editor.handle_keystroke(&primary_shortcut_keystroke("left")));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::caret(TextPosition::new(0, 0))
+    );
+}
+
+#[test]
+fn primary_shortcut_shift_arrow_extends_to_line_boundary() {
+    let mut editor = FilesEditor::new();
+    let path = PathBuf::from("example.rs");
+    editor
+        .open_document(path.as_path(), "const answer = 42;")
+        .expect("document should open");
+    editor.set_selection_for_test(Selection::caret(TextPosition::new(0, 6)));
+
+    assert!(editor.handle_keystroke(&primary_shift_shortcut_keystroke("right")));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::new(TextPosition::new(0, 6), TextPosition::new(0, 18))
+    );
+}
+
+#[test]
+fn word_navigation_moves_to_word_boundaries() {
+    let mut editor = FilesEditor::new();
+    let path = PathBuf::from("example.ts");
+    editor
+        .open_document(path.as_path(), "const query_string = value;")
+        .expect("document should open");
+    editor.set_selection_for_test(Selection::caret(TextPosition::new(0, 0)));
+
+    assert!(editor.move_word_action(true, false));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::caret(TextPosition::new(0, 5))
+    );
+
+    assert!(editor.move_word_action(true, false));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::caret(TextPosition::new(0, 18))
+    );
+
+    assert!(editor.move_word_action(false, false));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::caret(TextPosition::new(0, 6))
+    );
+}
+
+#[test]
+fn double_click_selects_the_containing_word() {
+    let mut editor = FilesEditor::new();
+    let path = PathBuf::from("example.ts");
+    editor
+        .open_document(path.as_path(), "const queryString = value;")
+        .expect("document should open");
+
+    assert!(editor.begin_pointer_selection_for_test(TextPosition::new(0, 8), false, 2,));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::new(TextPosition::new(0, 6), TextPosition::new(0, 17))
+    );
+}
+
+#[test]
+fn double_click_drag_extends_by_word() {
+    let mut editor = FilesEditor::new();
+    let path = PathBuf::from("example.ts");
+    editor
+        .open_document(path.as_path(), "const queryString = sampleValue;")
+        .expect("document should open");
+
+    assert!(editor.begin_pointer_selection_for_test(TextPosition::new(0, 8), false, 2));
+    assert!(editor.drag_pointer_selection_for_test(TextPosition::new(0, 24)));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::new(TextPosition::new(0, 6), TextPosition::new(0, 31))
+    );
+}
+
+#[test]
+fn triple_click_selects_the_entire_line() {
+    let mut editor = FilesEditor::new();
+    let path = PathBuf::from("example.ts");
+    editor
+        .open_document(path.as_path(), "const value = 1;\nnext line")
+        .expect("document should open");
+
+    assert!(editor.begin_pointer_selection_for_test(TextPosition::new(0, 7), false, 3,));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::new(TextPosition::new(0, 0), TextPosition::new(0, 16))
+    );
+}
+
+#[test]
+fn triple_click_drag_extends_by_line() {
+    let mut editor = FilesEditor::new();
+    let path = PathBuf::from("example.ts");
+    editor
+        .open_document(path.as_path(), "const value = 1;\nnext line\nthird line")
+        .expect("document should open");
+
+    assert!(editor.begin_pointer_selection_for_test(TextPosition::new(0, 7), false, 3));
+    assert!(editor.drag_pointer_selection_for_test(TextPosition::new(1, 2)));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::new(TextPosition::new(0, 0), TextPosition::new(1, 9))
+    );
+}
+
+#[test]
 fn reopening_same_file_restores_selection_and_viewport() {
     let mut editor = FilesEditor::new();
     let path = PathBuf::from("example.rs");
@@ -183,6 +333,15 @@ fn primary_shortcut_keystroke(key: &str) -> Keystroke {
         format!("cmd-{key}")
     } else {
         format!("ctrl-{key}")
+    };
+    Keystroke::parse(shortcut.as_str()).expect("valid shortcut")
+}
+
+fn primary_shift_shortcut_keystroke(key: &str) -> Keystroke {
+    let shortcut = if cfg!(target_os = "macos") {
+        format!("shift-cmd-{key}")
+    } else {
+        format!("shift-ctrl-{key}")
     };
     Keystroke::parse(shortcut.as_str()).expect("valid shortcut")
 }

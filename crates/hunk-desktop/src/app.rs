@@ -182,6 +182,24 @@ actions!(
         FilesEditorCopy,
         FilesEditorCut,
         FilesEditorPaste,
+        FilesEditorMoveUp,
+        FilesEditorMoveDown,
+        FilesEditorMoveLeft,
+        FilesEditorMoveRight,
+        FilesEditorMoveToBeginningOfLine,
+        FilesEditorMoveToEndOfLine,
+        FilesEditorMoveToPreviousWordStart,
+        FilesEditorMoveToNextWordEnd,
+        FilesEditorSelectUp,
+        FilesEditorSelectDown,
+        FilesEditorSelectLeft,
+        FilesEditorSelectRight,
+        FilesEditorSelectToBeginningOfLine,
+        FilesEditorSelectToEndOfLine,
+        FilesEditorSelectToPreviousWordStart,
+        FilesEditorSelectToNextWordEnd,
+        FilesEditorPageUp,
+        FilesEditorPageDown,
         SaveCurrentFile,
         OpenSettings,
         QuitApp,
@@ -450,6 +468,139 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
         FilesEditorPaste,
         Some("FilesEditor"),
     ));
+    bindings.push(KeyBinding::new(
+        "up",
+        FilesEditorMoveUp,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "down",
+        FilesEditorMoveDown,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "left",
+        FilesEditorMoveLeft,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "right",
+        FilesEditorMoveRight,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-up",
+        FilesEditorSelectUp,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-down",
+        FilesEditorSelectDown,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-left",
+        FilesEditorSelectLeft,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-right",
+        FilesEditorSelectRight,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "home",
+        FilesEditorMoveToBeginningOfLine,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "end",
+        FilesEditorMoveToEndOfLine,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-home",
+        FilesEditorSelectToBeginningOfLine,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-end",
+        FilesEditorSelectToEndOfLine,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "pageup",
+        FilesEditorPageUp,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "pagedown",
+        FilesEditorPageDown,
+        Some("FilesEditor"),
+    ));
+    if cfg!(target_os = "macos") {
+        bindings.push(KeyBinding::new(
+            "cmd-left",
+            FilesEditorMoveToBeginningOfLine,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "cmd-right",
+            FilesEditorMoveToEndOfLine,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "cmd-shift-left",
+            FilesEditorSelectToBeginningOfLine,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "cmd-shift-right",
+            FilesEditorSelectToEndOfLine,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "alt-left",
+            FilesEditorMoveToPreviousWordStart,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "alt-right",
+            FilesEditorMoveToNextWordEnd,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "alt-shift-left",
+            FilesEditorSelectToPreviousWordStart,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "alt-shift-right",
+            FilesEditorSelectToNextWordEnd,
+            Some("FilesEditor"),
+        ));
+    } else {
+        bindings.push(KeyBinding::new(
+            "ctrl-left",
+            FilesEditorMoveToPreviousWordStart,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "ctrl-right",
+            FilesEditorMoveToNextWordEnd,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "ctrl-shift-left",
+            FilesEditorSelectToPreviousWordStart,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "ctrl-shift-right",
+            FilesEditorSelectToNextWordEnd,
+            Some("FilesEditor"),
+        ));
+    }
     bindings.extend(
         shortcuts
             .save_current_file

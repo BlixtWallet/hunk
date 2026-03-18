@@ -501,6 +501,219 @@ impl DiffViewer {
         }
     }
 
+    pub(super) fn files_editor_move_up_action(
+        &mut self,
+        _: &FilesEditorMoveUp,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_vertical_action(false, false)
+        });
+    }
+
+    pub(super) fn files_editor_move_down_action(
+        &mut self,
+        _: &FilesEditorMoveDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_vertical_action(true, false)
+        });
+    }
+
+    pub(super) fn files_editor_select_up_action(
+        &mut self,
+        _: &FilesEditorSelectUp,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_vertical_action(false, true)
+        });
+    }
+
+    pub(super) fn files_editor_select_down_action(
+        &mut self,
+        _: &FilesEditorSelectDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_vertical_action(true, true)
+        });
+    }
+
+    pub(super) fn files_editor_move_left_action(
+        &mut self,
+        _: &FilesEditorMoveLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_horizontal_action(false, false)
+        });
+    }
+
+    pub(super) fn files_editor_move_right_action(
+        &mut self,
+        _: &FilesEditorMoveRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_horizontal_action(true, false)
+        });
+    }
+
+    pub(super) fn files_editor_select_left_action(
+        &mut self,
+        _: &FilesEditorSelectLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_horizontal_action(false, true)
+        });
+    }
+
+    pub(super) fn files_editor_select_right_action(
+        &mut self,
+        _: &FilesEditorSelectRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_horizontal_action(true, true)
+        });
+    }
+
+    pub(super) fn files_editor_move_to_beginning_of_line_action(
+        &mut self,
+        _: &FilesEditorMoveToBeginningOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_to_line_boundary_action(true, false)
+        });
+    }
+
+    pub(super) fn files_editor_move_to_end_of_line_action(
+        &mut self,
+        _: &FilesEditorMoveToEndOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_to_line_boundary_action(false, false)
+        });
+    }
+
+    pub(super) fn files_editor_select_to_beginning_of_line_action(
+        &mut self,
+        _: &FilesEditorSelectToBeginningOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_to_line_boundary_action(true, true)
+        });
+    }
+
+    pub(super) fn files_editor_select_to_end_of_line_action(
+        &mut self,
+        _: &FilesEditorSelectToEndOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_to_line_boundary_action(false, true)
+        });
+    }
+
+    pub(super) fn files_editor_move_to_previous_word_start_action(
+        &mut self,
+        _: &FilesEditorMoveToPreviousWordStart,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_word_action(false, false)
+        });
+    }
+
+    pub(super) fn files_editor_move_to_next_word_end_action(
+        &mut self,
+        _: &FilesEditorMoveToNextWordEnd,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_word_action(true, false)
+        });
+    }
+
+    pub(super) fn files_editor_select_to_previous_word_start_action(
+        &mut self,
+        _: &FilesEditorSelectToPreviousWordStart,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_word_action(false, true)
+        });
+    }
+
+    pub(super) fn files_editor_select_to_next_word_end_action(
+        &mut self,
+        _: &FilesEditorSelectToNextWordEnd,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_word_action(true, true)
+        });
+    }
+
+    pub(super) fn files_editor_page_up_action(
+        &mut self,
+        _: &FilesEditorPageUp,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.page_scroll_action(crate::app::native_files_editor::ScrollDirection::Backward)
+        });
+    }
+
+    pub(super) fn files_editor_page_down_action(
+        &mut self,
+        _: &FilesEditorPageDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.page_scroll_action(crate::app::native_files_editor::ScrollDirection::Forward)
+        });
+    }
+
+    fn handle_files_editor_motion(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        apply: impl FnOnce(&mut crate::app::native_files_editor::FilesEditor) -> bool,
+    ) {
+        if self.editor_markdown_preview || !self.files_editor_focus_handle.is_focused(window) {
+            return;
+        }
+        if self.files_editor.borrow_mut().apply_motion_action(apply) {
+            self.sync_editor_dirty_from_input(cx);
+            cx.notify();
+        }
+    }
+
     fn open_files_editor_document(
         &mut self,
         relative_path: &str,

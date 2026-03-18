@@ -60,6 +60,40 @@ fn html_injection_highlights_embedded_javascript_and_css() {
 }
 
 #[test]
+fn typescript_source_uses_javascript_base_highlights() {
+    let registry = LanguageRegistry::builtin();
+    let mut session = SyntaxSession::new();
+    let source = "import { parseBIP321 } from \"./index\";\nconst TEST_DATA = parseBIP321(\"bitcoin:addr\");\n";
+
+    session
+        .parse_for_path(&registry, Path::new("fixture.ts"), source)
+        .expect("parse typescript");
+    let captures = session
+        .highlight_visible_range(&registry, source, 0..source.len())
+        .expect("typescript highlights");
+
+    let import_offset = source.find("import").expect("import");
+    let const_offset = source.find("const").expect("const");
+    let function_offset = source.find("parseBIP321").expect("function");
+
+    assert!(captures.iter().any(|capture| {
+        capture.style_key == "keyword"
+            && capture.byte_range.start <= import_offset
+            && capture.byte_range.end >= import_offset + "import".len()
+    }));
+    assert!(captures.iter().any(|capture| {
+        capture.style_key == "keyword"
+            && capture.byte_range.start <= const_offset
+            && capture.byte_range.end >= const_offset + "const".len()
+    }));
+    assert!(captures.iter().any(|capture| {
+        (capture.style_key == "function" || capture.style_key == "variable")
+            && capture.byte_range.start <= function_offset
+            && capture.byte_range.end >= function_offset + "parseBIP321".len()
+    }));
+}
+
+#[test]
 fn fold_candidates_cover_multiline_rust_blocks() {
     let registry = LanguageRegistry::builtin();
     let mut session = SyntaxSession::new();

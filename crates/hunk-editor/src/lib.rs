@@ -804,10 +804,29 @@ impl EditorState {
                 self.show_whitespace,
             );
             let line_search_matches = search_matches_for_line(&snapshot, &search_matches, line);
-            let wrap_width = self
-                .wrap_width
-                .unwrap_or_else(|| expanded_line.display_len().max(1));
-            let display_len = expanded_line.display_len().max(1);
+            let display_len = expanded_line.display_len();
+            let wrap_width = self.wrap_width.unwrap_or_else(|| display_len.max(1));
+            if display_len == 0 {
+                rows.push(VisualRow {
+                    row_index,
+                    kind: DisplayRowKind::Text,
+                    source_line: line,
+                    raw_start_column: 0,
+                    raw_end_column: 0,
+                    raw_column_offsets: vec![0],
+                    start_column: 0,
+                    end_column: 0,
+                    text: String::new(),
+                    is_wrapped: false,
+                    whitespace_markers: Vec::new(),
+                    search_highlights: Vec::new(),
+                    overlays: overlays_for_line(&self.overlays, line),
+                    expanded_line,
+                });
+                row_index += 1;
+                line += 1;
+                continue;
+            }
             let mut start_column = 0;
             while start_column < display_len {
                 let end_column = min(start_column + wrap_width.max(1), display_len);
@@ -835,28 +854,6 @@ impl EditorState {
                 });
                 row_index += 1;
                 start_column = end_column;
-                if expanded_line.display_len() == 0 {
-                    break;
-                }
-            }
-            if expanded_line.display_len() == 0 {
-                rows.push(VisualRow {
-                    row_index,
-                    kind: DisplayRowKind::Text,
-                    source_line: line,
-                    raw_start_column: 0,
-                    raw_end_column: 0,
-                    raw_column_offsets: vec![0],
-                    start_column: 0,
-                    end_column: 0,
-                    text: String::new(),
-                    is_wrapped: false,
-                    whitespace_markers: Vec::new(),
-                    search_highlights: Vec::new(),
-                    overlays: overlays_for_line(&self.overlays, line),
-                    expanded_line,
-                });
-                row_index += 1;
             }
             line += 1;
         }

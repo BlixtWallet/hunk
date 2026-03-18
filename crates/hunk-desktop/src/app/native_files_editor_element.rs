@@ -121,6 +121,7 @@ impl Element for FilesEditorElement {
                     event.position,
                     &mouse_down_layout,
                     event.modifiers.shift,
+                    event.click_count,
                 )
             {
                 window.refresh();

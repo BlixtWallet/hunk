@@ -1,4 +1,4 @@
-use gpui::{Pixels, TextStyle, relative};
+use gpui::{Keystroke, Pixels, TextStyle, relative};
 
 use crate::app::theme::{
     HunkAccentTone, hunk_blend, hunk_input_surface, hunk_text_selection_background,
@@ -119,6 +119,24 @@ impl DiffViewer {
             .on_action(cx.listener(Self::files_editor_copy_action))
             .on_action(cx.listener(Self::files_editor_cut_action))
             .on_action(cx.listener(Self::files_editor_paste_action))
+            .on_action(cx.listener(Self::files_editor_move_up_action))
+            .on_action(cx.listener(Self::files_editor_move_down_action))
+            .on_action(cx.listener(Self::files_editor_move_left_action))
+            .on_action(cx.listener(Self::files_editor_move_right_action))
+            .on_action(cx.listener(Self::files_editor_select_up_action))
+            .on_action(cx.listener(Self::files_editor_select_down_action))
+            .on_action(cx.listener(Self::files_editor_select_left_action))
+            .on_action(cx.listener(Self::files_editor_select_right_action))
+            .on_action(cx.listener(Self::files_editor_move_to_beginning_of_line_action))
+            .on_action(cx.listener(Self::files_editor_move_to_end_of_line_action))
+            .on_action(cx.listener(Self::files_editor_select_to_beginning_of_line_action))
+            .on_action(cx.listener(Self::files_editor_select_to_end_of_line_action))
+            .on_action(cx.listener(Self::files_editor_move_to_previous_word_start_action))
+            .on_action(cx.listener(Self::files_editor_move_to_next_word_end_action))
+            .on_action(cx.listener(Self::files_editor_select_to_previous_word_start_action))
+            .on_action(cx.listener(Self::files_editor_select_to_next_word_end_action))
+            .on_action(cx.listener(Self::files_editor_page_up_action))
+            .on_action(cx.listener(Self::files_editor_page_down_action))
             .on_mouse_down(MouseButton::Left, {
                 let view = view.clone();
                 move |_, window, cx| {
@@ -148,6 +166,10 @@ impl DiffViewer {
                             || !this.files_editor_focus_handle.is_focused(window)
                             || is_desktop_clipboard_shortcut(&event.keystroke)
                         {
+                            return false;
+                        }
+
+                        if uses_files_editor_action_dispatch(&event.keystroke) {
                             return false;
                         }
 
@@ -493,5 +515,18 @@ impl DiffViewer {
                     ),
             )
             .into_any_element()
+    }
+}
+
+fn uses_files_editor_action_dispatch(keystroke: &Keystroke) -> bool {
+    match keystroke.key.as_str() {
+        "up" | "down" | "left" | "right" | "home" | "end" => true,
+        "pageup" | "pagedown" => {
+            !keystroke.modifiers.shift
+                && !keystroke.modifiers.alt
+                && !keystroke.modifiers.control
+                && !keystroke.modifiers.platform
+        }
+        _ => false,
     }
 }

@@ -114,3 +114,41 @@ fn display_rows_preserve_raw_to_display_offsets_for_tab_expansion() {
         vec![0, 4, 5, 6, 7, 8]
     );
 }
+
+#[test]
+fn blank_lines_project_to_one_display_row() {
+    let mut editor = sample_editor("one\n\ntwo");
+    editor.apply(EditorCommand::SetViewport(Viewport {
+        first_visible_row: 0,
+        visible_row_count: 10,
+        horizontal_offset: 0,
+    }));
+
+    let display = editor.display_snapshot();
+    assert_eq!(display.total_display_rows, 3);
+    assert_eq!(display.visible_rows[0].source_line, 0);
+    assert_eq!(display.visible_rows[1].source_line, 1);
+    assert_eq!(display.visible_rows[2].source_line, 2);
+    assert_eq!(display.visible_rows[1].text, "");
+}
+
+#[test]
+fn wrapped_content_keeps_blank_lines_single_row() {
+    let mut editor = sample_editor("abcdefghij\n\nxy");
+    editor.apply(EditorCommand::SetWrapWidth(Some(4)));
+    editor.apply(EditorCommand::SetViewport(Viewport {
+        first_visible_row: 0,
+        visible_row_count: 10,
+        horizontal_offset: 0,
+    }));
+
+    let display = editor.display_snapshot();
+    assert_eq!(display.total_display_rows, 5);
+    let blank_rows = display
+        .visible_rows
+        .iter()
+        .filter(|row| row.source_line == 1)
+        .collect::<Vec<_>>();
+    assert_eq!(blank_rows.len(), 1);
+    assert_eq!(blank_rows[0].text, "");
+}

@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::cmp::min;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -18,15 +17,15 @@ use tracing::error;
 
 #[path = "native_files_editor_element.rs"]
 mod element_impl;
+#[path = "native_files_editor_input.rs"]
+mod input_impl;
 #[path = "native_files_editor_language.rs"]
 mod language_impl;
 #[path = "native_files_editor_paint.rs"]
 mod paint;
 
 use language_impl::overlay_kind_for_diagnostic_severity;
-use paint::{
-    EditorLayout, current_line_text, last_position, raw_column_for_display, uses_primary_shortcut,
-};
+use paint::EditorLayout;
 
 pub(crate) fn scroll_direction_and_count(
     event: &ScrollWheelEvent,
@@ -59,7 +58,7 @@ pub(crate) struct FilesEditor {
     active_path: Option<PathBuf>,
     view_state_by_path: BTreeMap<PathBuf, FilesEditorViewState>,
     language_label: String,
-    drag_anchor: Option<TextPosition>,
+    pointer_selection: Option<PointerSelectionState>,
     fold_candidates: Vec<FoldCandidate>,
     search_query: Option<String>,
     syntax_highlights: Vec<HighlightCapture>,
@@ -144,6 +143,19 @@ struct FilesEditorViewState {
     show_whitespace: bool,
 }
 
+#[derive(Clone, Copy)]
+struct PointerSelectionState {
+    anchor: TextPosition,
+    mode: PointerSelectionMode,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PointerSelectionMode {
+    Character,
+    Word,
+    Line,
+}
+
 impl FilesEditor {
     pub(crate) fn new() -> Self {
         Self {
@@ -154,7 +166,7 @@ impl FilesEditor {
             active_path: None,
             view_state_by_path: BTreeMap::new(),
             language_label: "text".to_string(),
-            drag_anchor: None,
+            pointer_selection: None,
             fold_candidates: Vec::new(),
             search_query: None,
             syntax_highlights: Vec::new(),
@@ -178,7 +190,7 @@ impl FilesEditor {
             .language_for_path(path)
             .map(|definition| definition.name.clone())
             .unwrap_or_else(|| "text".to_string());
-        self.drag_anchor = None;
+        self.pointer_selection = None;
         self.fold_candidates.clear();
         self.syntax_highlights.clear();
         self.apply_path_defaults(path);
@@ -197,7 +209,7 @@ impl FilesEditor {
         self.editor = EditorState::new(TextBuffer::new(BufferId::new(self.next_buffer_id), ""));
         self.next_buffer_id = self.next_buffer_id.saturating_add(1);
         self.language_label = "text".to_string();
-        self.drag_anchor = None;
+        self.pointer_selection = None;
         self.fold_candidates.clear();
         self.syntax_highlights.clear();
         self.manual_overlays.clear();
@@ -370,225 +382,6 @@ impl FilesEditor {
         }
     }
 
-    pub(crate) fn handle_keystroke(&mut self, keystroke: &Keystroke) -> bool {
-        if self.active_path.is_none() {
-            return false;
-        }
-
-        if self.handle_shortcut(keystroke) {
-            return true;
-        }
-
-        match keystroke.key.as_str() {
-            "left" => self.move_horizontally(false, keystroke.modifiers.shift),
-            "right" => self.move_horizontally(true, keystroke.modifiers.shift),
-            "up" => self.move_vertically(false, keystroke.modifiers.shift),
-            "down" => self.move_vertically(true, keystroke.modifiers.shift),
-            "home" => self.move_to_line_boundary(true, keystroke.modifiers.shift),
-            "end" => self.move_to_line_boundary(false, keystroke.modifiers.shift),
-            "pageup" => {
-                self.page_scroll(ScrollDirection::Backward);
-                true
-            }
-            "pagedown" => {
-                self.page_scroll(ScrollDirection::Forward);
-                true
-            }
-            "backspace" => {
-                self.apply_editor_command(EditorCommand::DeleteBackward)
-                    .document_changed
-            }
-            "delete" => {
-                self.apply_editor_command(EditorCommand::DeleteForward)
-                    .document_changed
-            }
-            "escape" => self.collapse_selection_to_head(),
-            "enter" => self.insert_newline_with_indent(),
-            "tab" if !keystroke.modifiers.control && !keystroke.modifiers.platform => {
-                self.insert_text("    ")
-            }
-            _ => self.insert_key_char(keystroke),
-        }
-    }
-
-    pub(crate) fn scroll_lines(&mut self, line_count: usize, direction: ScrollDirection) {
-        let snapshot = self.editor.display_snapshot();
-        let max_first_row = snapshot
-            .total_display_rows
-            .saturating_sub(snapshot.viewport.visible_row_count);
-        let next_first_row = match direction {
-            ScrollDirection::Backward => snapshot
-                .viewport
-                .first_visible_row
-                .saturating_sub(line_count),
-            ScrollDirection::Forward => min(
-                snapshot
-                    .viewport
-                    .first_visible_row
-                    .saturating_add(line_count),
-                max_first_row,
-            ),
-        };
-        self.editor.apply(EditorCommand::SetViewport(Viewport {
-            first_visible_row: next_first_row,
-            visible_row_count: snapshot.viewport.visible_row_count,
-            horizontal_offset: 0,
-        }));
-    }
-
-    fn page_scroll(&mut self, direction: ScrollDirection) {
-        let snapshot = self.editor.display_snapshot();
-        let page = snapshot.viewport.visible_row_count.max(1);
-        self.scroll_lines(page, direction);
-    }
-
-    fn handle_shortcut(&mut self, keystroke: &Keystroke) -> bool {
-        if !uses_primary_shortcut(keystroke) {
-            return false;
-        }
-
-        match keystroke.key.as_str() {
-            "a" if !keystroke.modifiers.shift => self.select_all(),
-            "z" if !keystroke.modifiers.shift => {
-                self.editor.apply(EditorCommand::Undo).document_changed
-            }
-            "z" if keystroke.modifiers.shift => {
-                self.editor.apply(EditorCommand::Redo).document_changed
-            }
-            "y" if !cfg!(target_os = "macos") => {
-                self.editor.apply(EditorCommand::Redo).document_changed
-            }
-            _ => false,
-        }
-    }
-
-    fn move_horizontally(&mut self, forward: bool, extend: bool) -> bool {
-        let selection = self.editor.selection();
-        if !extend && !selection.is_caret() {
-            let target = if forward {
-                selection.range().end
-            } else {
-                selection.range().start
-            };
-            return self
-                .editor
-                .apply(EditorCommand::SetSelection(Selection::caret(target)))
-                .selection_changed;
-        }
-
-        let anchor = selection.anchor;
-        let output = if forward {
-            self.editor.apply(EditorCommand::MoveRight)
-        } else {
-            self.editor.apply(EditorCommand::MoveLeft)
-        };
-        if !extend || !output.selection_changed {
-            return output.selection_changed;
-        }
-
-        let head = self.editor.selection().head;
-        self.editor
-            .apply(EditorCommand::SetSelection(Selection::new(anchor, head)))
-            .selection_changed
-    }
-
-    fn move_vertically(&mut self, forward: bool, extend: bool) -> bool {
-        let selection = self.editor.selection();
-        if !extend && !selection.is_caret() {
-            let target = if forward {
-                selection.range().end
-            } else {
-                selection.range().start
-            };
-            return self
-                .editor
-                .apply(EditorCommand::SetSelection(Selection::caret(target)))
-                .selection_changed;
-        }
-
-        let anchor = selection.anchor;
-        let output = if forward {
-            self.editor.apply(EditorCommand::MoveDown)
-        } else {
-            self.editor.apply(EditorCommand::MoveUp)
-        };
-        if !extend || !output.selection_changed {
-            return output.selection_changed;
-        }
-
-        let head = self.editor.selection().head;
-        self.editor
-            .apply(EditorCommand::SetSelection(Selection::new(anchor, head)))
-            .selection_changed
-    }
-
-    fn move_to_line_boundary(&mut self, start: bool, extend: bool) -> bool {
-        let selection = self.editor.selection();
-        let snapshot = self.editor.buffer().snapshot();
-        let line_text = current_line_text(&snapshot, selection.head.line);
-        let column = if start { 0 } else { line_text.chars().count() };
-        let target = TextPosition::new(selection.head.line, column);
-        let next_selection = if extend {
-            Selection::new(selection.anchor, target)
-        } else {
-            Selection::caret(target)
-        };
-        self.editor
-            .apply(EditorCommand::SetSelection(next_selection))
-            .selection_changed
-    }
-
-    fn collapse_selection_to_head(&mut self) -> bool {
-        let head = self.editor.selection().head;
-        self.editor
-            .apply(EditorCommand::SetSelection(Selection::caret(head)))
-            .selection_changed
-    }
-
-    fn select_all(&mut self) -> bool {
-        let snapshot = self.editor.buffer().snapshot();
-        let Some(end_position) = last_position(&snapshot) else {
-            return false;
-        };
-        self.editor
-            .apply(EditorCommand::SetSelection(Selection::new(
-                TextPosition::default(),
-                end_position,
-            )))
-            .selection_changed
-    }
-
-    fn insert_key_char(&mut self, keystroke: &Keystroke) -> bool {
-        if keystroke.modifiers.control || keystroke.modifiers.platform {
-            return false;
-        }
-
-        let Some(text) = keystroke.key_char.as_deref() else {
-            return false;
-        };
-        if text.is_empty() || matches!(keystroke.key.as_str(), "enter" | "tab") {
-            return false;
-        }
-
-        self.insert_text(text)
-    }
-
-    fn insert_newline_with_indent(&mut self) -> bool {
-        let selection = self.editor.selection();
-        let snapshot = self.editor.buffer().snapshot();
-        let line_text = current_line_text(&snapshot, selection.head.line);
-        let indent: String = line_text
-            .chars()
-            .take_while(|ch| matches!(ch, ' ' | '\t'))
-            .collect();
-        self.insert_text(format!("\n{indent}").as_str())
-    }
-
-    fn insert_text(&mut self, text: &str) -> bool {
-        self.apply_editor_command(EditorCommand::InsertText(text.to_string()))
-            .document_changed
-    }
-
     fn capture_active_view_state(&mut self) {
         let Some(path) = self.active_path.clone() else {
             return;
@@ -695,74 +488,6 @@ impl FilesEditor {
         let display_snapshot = self.editor.display_snapshot();
         self.refresh_visible_syntax_highlights(&display_snapshot);
         display_snapshot
-    }
-
-    fn handle_mouse_down(
-        &mut self,
-        position: Point<Pixels>,
-        layout: &EditorLayout,
-        shift_held: bool,
-    ) -> bool {
-        if self.handle_fold_toggle_click(position, layout) {
-            return true;
-        }
-        let Some(next_position) = self.position_for_point(position, layout) else {
-            return false;
-        };
-        let anchor = if shift_held {
-            self.drag_anchor.unwrap_or(self.editor.selection().anchor)
-        } else {
-            next_position
-        };
-        self.drag_anchor = Some(anchor);
-        self.editor
-            .apply(EditorCommand::SetSelection(Selection::new(
-                anchor,
-                next_position,
-            )));
-        true
-    }
-
-    fn handle_mouse_drag(&mut self, position: Point<Pixels>, layout: &EditorLayout) -> bool {
-        let Some(anchor) = self.drag_anchor else {
-            return false;
-        };
-        let Some(next_position) = self.position_for_point(position, layout) else {
-            return false;
-        };
-        self.editor
-            .apply(EditorCommand::SetSelection(Selection::new(
-                anchor,
-                next_position,
-            )));
-        true
-    }
-
-    fn handle_mouse_up(&mut self) -> bool {
-        self.drag_anchor.take().is_some()
-    }
-
-    fn position_for_point(
-        &self,
-        position: Point<Pixels>,
-        layout: &EditorLayout,
-    ) -> Option<TextPosition> {
-        if !layout.hitbox.bounds.contains(&position) {
-            return None;
-        }
-        let row = ((position.y - layout.hitbox.bounds.origin.y) / layout.line_height)
-            .floor()
-            .max(0.0) as usize;
-        let display_row = layout.display_snapshot.visible_rows.get(row)?;
-        let display_column = if position.x <= layout.content_origin_x() {
-            0
-        } else {
-            ((position.x - layout.content_origin_x()) / layout.cell_width)
-                .floor()
-                .max(0.0) as usize
-        };
-        let raw_column = raw_column_for_display(display_row, display_column);
-        Some(TextPosition::new(display_row.source_line, raw_column))
     }
 
     fn apply_editor_command(&mut self, command: EditorCommand) -> hunk_editor::CommandOutput {
