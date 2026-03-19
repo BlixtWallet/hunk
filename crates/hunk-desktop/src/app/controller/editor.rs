@@ -57,7 +57,7 @@ impl DiffViewer {
             self.editor_dirty = false;
             self.editor_markdown_preview = false;
             self.invalidate_editor_markdown_preview();
-            self.helix_files_editor.borrow_mut().clear();
+            self.files_editor.borrow_mut().clear();
             cx.notify();
             return;
         };
@@ -97,18 +97,16 @@ impl DiffViewer {
                             this.editor_last_saved_text = Some(text.clone());
                             this.editor_dirty = false;
                             this.editor_error = None;
-                            let open_result = this.open_helix_editor_document(
+                            let open_result = this.open_files_editor_document(
                                 path.as_str(),
                                 &repo_root,
                                 text.as_str(),
                                 cx,
                             );
                             if let Err(err) = open_result {
-                                this.editor_error = Some(format!(
-                                    "Helix editor failed to open {}: {err:#}",
-                                    path
-                                ));
-                                this.helix_files_editor.borrow_mut().clear();
+                                this.editor_error =
+                                    Some(format!("File editor failed to open {}: {err:#}", path));
+                                this.files_editor.borrow_mut().clear();
                             } else if this.editor_markdown_preview {
                                 this.schedule_editor_markdown_preview_parse(cx);
                             }
@@ -117,7 +115,7 @@ impl DiffViewer {
                             this.editor_last_saved_text = None;
                             this.editor_dirty = false;
                             this.editor_error = Some(format!("Editor unavailable: {err}"));
-                            this.helix_files_editor.borrow_mut().clear();
+                            this.files_editor.borrow_mut().clear();
                         }
                     }
 
@@ -248,7 +246,7 @@ impl DiffViewer {
                         Ok(()) => {
                             if this.editor_path.as_deref() == Some(status_path.as_str()) {
                                 this.editor_last_saved_text = Some(saved_text.clone());
-                                this.helix_files_editor.borrow_mut().mark_saved();
+                                this.files_editor.borrow_mut().mark_saved();
                                 this.sync_editor_dirty_from_input(cx);
                             }
                             this.git_status_message = Some(format!("Saved {}", status_path));
@@ -302,7 +300,7 @@ impl DiffViewer {
         };
         let saved_text = self.editor_last_saved_text.as_deref().unwrap_or_default();
         let dirty =
-            self.helix_files_editor.borrow().is_dirty() || current_text.as_str() != saved_text;
+            self.files_editor.borrow().is_dirty() || current_text.as_str() != saved_text;
         if self.editor_dirty != dirty {
             self.editor_dirty = dirty;
             cx.notify();
@@ -442,14 +440,15 @@ impl DiffViewer {
         self.editor_save_loading = false;
         self.editor_markdown_preview = false;
         self.invalidate_editor_markdown_preview();
-        self.helix_files_editor.borrow_mut().clear();
+        self.files_editor.borrow_mut().clear();
+        self.editor_search_visible = false;
     }
 
     pub(crate) fn current_editor_text(&self) -> anyhow::Result<String> {
-        self.helix_files_editor
+        self.files_editor
             .borrow()
             .current_text()
-            .ok_or_else(|| anyhow::anyhow!("no active Helix editor buffer"))
+            .ok_or_else(|| anyhow::anyhow!("no active file editor buffer"))
     }
 
     pub(super) fn files_editor_copy_action(
@@ -461,7 +460,7 @@ impl DiffViewer {
         if self.editor_markdown_preview || !self.files_editor_focus_handle.is_focused(window) {
             return;
         }
-        let Some(text) = self.helix_files_editor.borrow().copy_selection_text() else {
+        let Some(text) = self.files_editor.borrow().copy_selection_text() else {
             return;
         };
         cx.write_to_clipboard(ClipboardItem::new_string(text));
@@ -476,7 +475,7 @@ impl DiffViewer {
         if self.editor_markdown_preview || !self.files_editor_focus_handle.is_focused(window) {
             return;
         }
-        let Some(text) = self.helix_files_editor.borrow_mut().cut_selection_text() else {
+        let Some(text) = self.files_editor.borrow_mut().cut_selection_text() else {
             return;
         };
         cx.write_to_clipboard(ClipboardItem::new_string(text));
@@ -496,13 +495,270 @@ impl DiffViewer {
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
-        if self.helix_files_editor.borrow_mut().paste_text(text.as_str()) {
+        if self.files_editor.borrow_mut().paste_text(text.as_str()) {
             self.sync_editor_dirty_from_input(cx);
             cx.notify();
         }
     }
 
-    fn open_helix_editor_document(
+    pub(super) fn files_editor_move_up_action(
+        &mut self,
+        _: &FilesEditorMoveUp,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_vertical_action(false, false)
+        });
+    }
+
+    pub(super) fn files_editor_move_down_action(
+        &mut self,
+        _: &FilesEditorMoveDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_vertical_action(true, false)
+        });
+    }
+
+    pub(super) fn files_editor_select_up_action(
+        &mut self,
+        _: &FilesEditorSelectUp,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_vertical_action(false, true)
+        });
+    }
+
+    pub(super) fn files_editor_select_down_action(
+        &mut self,
+        _: &FilesEditorSelectDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_vertical_action(true, true)
+        });
+    }
+
+    pub(super) fn files_editor_move_left_action(
+        &mut self,
+        _: &FilesEditorMoveLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_horizontal_action(false, false)
+        });
+    }
+
+    pub(super) fn files_editor_move_right_action(
+        &mut self,
+        _: &FilesEditorMoveRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_horizontal_action(true, false)
+        });
+    }
+
+    pub(super) fn files_editor_select_left_action(
+        &mut self,
+        _: &FilesEditorSelectLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_horizontal_action(false, true)
+        });
+    }
+
+    pub(super) fn files_editor_select_right_action(
+        &mut self,
+        _: &FilesEditorSelectRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_horizontal_action(true, true)
+        });
+    }
+
+    pub(super) fn files_editor_move_to_beginning_of_line_action(
+        &mut self,
+        _: &FilesEditorMoveToBeginningOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_to_line_boundary_action(true, false)
+        });
+    }
+
+    pub(super) fn files_editor_move_to_end_of_line_action(
+        &mut self,
+        _: &FilesEditorMoveToEndOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_to_line_boundary_action(false, false)
+        });
+    }
+
+    pub(super) fn files_editor_move_to_beginning_of_document_action(
+        &mut self,
+        _: &FilesEditorMoveToBeginningOfDocument,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_to_document_boundary_action(true, false)
+        });
+    }
+
+    pub(super) fn files_editor_move_to_end_of_document_action(
+        &mut self,
+        _: &FilesEditorMoveToEndOfDocument,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_to_document_boundary_action(false, false)
+        });
+    }
+
+    pub(super) fn files_editor_select_to_beginning_of_line_action(
+        &mut self,
+        _: &FilesEditorSelectToBeginningOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_to_line_boundary_action(true, true)
+        });
+    }
+
+    pub(super) fn files_editor_select_to_end_of_line_action(
+        &mut self,
+        _: &FilesEditorSelectToEndOfLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_to_line_boundary_action(false, true)
+        });
+    }
+
+    pub(super) fn files_editor_select_to_beginning_of_document_action(
+        &mut self,
+        _: &FilesEditorSelectToBeginningOfDocument,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_to_document_boundary_action(true, true)
+        });
+    }
+
+    pub(super) fn files_editor_select_to_end_of_document_action(
+        &mut self,
+        _: &FilesEditorSelectToEndOfDocument,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_to_document_boundary_action(false, true)
+        });
+    }
+
+    pub(super) fn files_editor_move_to_previous_word_start_action(
+        &mut self,
+        _: &FilesEditorMoveToPreviousWordStart,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_word_action(false, false)
+        });
+    }
+
+    pub(super) fn files_editor_move_to_next_word_end_action(
+        &mut self,
+        _: &FilesEditorMoveToNextWordEnd,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_word_action(true, false)
+        });
+    }
+
+    pub(super) fn files_editor_select_to_previous_word_start_action(
+        &mut self,
+        _: &FilesEditorSelectToPreviousWordStart,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_word_action(false, true)
+        });
+    }
+
+    pub(super) fn files_editor_select_to_next_word_end_action(
+        &mut self,
+        _: &FilesEditorSelectToNextWordEnd,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.move_word_action(true, true)
+        });
+    }
+
+    pub(super) fn files_editor_page_up_action(
+        &mut self,
+        _: &FilesEditorPageUp,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.page_scroll_action(crate::app::native_files_editor::ScrollDirection::Backward)
+        });
+    }
+
+    pub(super) fn files_editor_page_down_action(
+        &mut self,
+        _: &FilesEditorPageDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_files_editor_motion(window, cx, |editor| {
+            editor.page_scroll_action(crate::app::native_files_editor::ScrollDirection::Forward)
+        });
+    }
+
+    fn handle_files_editor_motion(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        apply: impl FnOnce(&mut crate::app::native_files_editor::FilesEditor) -> bool,
+    ) {
+        if self.editor_markdown_preview || !self.files_editor_focus_handle.is_focused(window) {
+            return;
+        }
+        if self.files_editor.borrow_mut().apply_motion_action(apply) {
+            self.sync_editor_dirty_from_input(cx);
+            cx.notify();
+        }
+    }
+
+    fn open_files_editor_document(
         &mut self,
         relative_path: &str,
         repo_root: &std::path::Path,
@@ -510,15 +766,16 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) -> anyhow::Result<()> {
         let absolute_path = repo_root.join(relative_path);
-        self.helix_files_editor
+        self.files_editor
             .borrow_mut()
             .open_document(&absolute_path, text)?;
+        self.sync_editor_search_query(cx);
 
         let focus_handle = self.files_editor_focus_handle.clone();
         if let Err(err) = Self::update_any_window(cx, |window, cx| {
             focus_handle.focus(window, cx);
         }) {
-            error!("failed to focus helix-backed files editor: {err:#}");
+            error!("failed to focus files editor: {err:#}");
             return Err(err);
         }
         Ok(())
@@ -567,5 +824,56 @@ impl DiffViewer {
     fn next_editor_save_epoch(&mut self) -> usize {
         self.editor_save_epoch = self.editor_save_epoch.saturating_add(1);
         self.editor_save_epoch
+    }
+
+    pub(super) fn sync_editor_search_query(&mut self, cx: &mut Context<Self>) {
+        let query = if self.editor_search_visible {
+            self.editor_search_input_state.read(cx).value().to_string()
+        } else {
+            String::new()
+        };
+        self.files_editor
+            .borrow_mut()
+            .set_search_query(Some(query.as_str()));
+        cx.notify();
+    }
+
+    pub(super) fn toggle_editor_search(
+        &mut self,
+        visible: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.editor_search_visible = visible;
+        if visible {
+            self.editor_search_input_state.update(cx, |state, cx| {
+                state.focus(window, cx);
+            });
+        } else {
+            self.editor_search_input_state.update(cx, |state, cx| {
+                state.set_value("", window, cx);
+            });
+            self.files_editor.borrow_mut().set_search_query(None);
+            self.files_editor_focus_handle.focus(window, cx);
+        }
+        cx.notify();
+    }
+
+    pub(super) fn toggle_editor_search_visibility(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_editor_search(!self.editor_search_visible, window, cx);
+    }
+
+    pub(super) fn navigate_editor_search(
+        &mut self,
+        forward: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.files_editor.borrow_mut().select_next_search_match(forward) {
+            cx.notify();
+        }
     }
 }

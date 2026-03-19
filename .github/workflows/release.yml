@@ -270,8 +270,6 @@ jobs:
       - windows
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    permissions:
-      contents: write
 
     steps:
       - name: Download release artifacts
@@ -286,9 +284,6 @@ jobs:
         shell: bash
 
       - name: List prepared release artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
         run: |
           mapfile -d '' files < <(find dist -type f -print0 | sort -z)
           if [[ ${#files[@]} -eq 0 ]]; then

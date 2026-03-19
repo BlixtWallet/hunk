@@ -1,6 +1,6 @@
 [package]
 name = "hunk-desktop"
-version = "0.0.1-alpha.7"
+version = "0.0.1-alpha.8"
 edition = "2024"
 authors = ["Nitesh Balusu"]
 
@@ -43,24 +43,21 @@ gpui-component = { git = "https://github.com/niteshbalusu11/gpui-component", rev
   "tree-sitter-languages",
 ] }
 gpui-component-assets = { git = "https://github.com/niteshbalusu11/gpui-component", rev = "4640591715ae6732b6b2075f040672eeabdb5c87" }
-helix-core = { git = "https://github.com/helix-editor/helix", rev = "78b999f11eb67de3ed4cd9946ad71fc00b8737c7" }
-helix-loader = { git = "https://github.com/helix-editor/helix", rev = "78b999f11eb67de3ed4cd9946ad71fc00b8737c7" }
-helix-term = { git = "https://github.com/helix-editor/helix", rev = "78b999f11eb67de3ed4cd9946ad71fc00b8737c7" }
-helix-view = { git = "https://github.com/helix-editor/helix", rev = "78b999f11eb67de3ed4cd9946ad71fc00b8737c7" }
 notify = "8.2.0"
-syntect = "5.3"
 toml = "0.9"
 serde_json = "1.0"
 lsp-types = { version = "0.97.0", features = ["proposed"] }
-tokio = { version = "1", features = ["sync"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 time = { version = "0.3", features = ["formatting", "local-offset"] }
 hunk-domain = { path = "../hunk-domain" }
 hunk-git = { path = "../hunk-git" }
 hunk-codex = { path = "../hunk-codex" }
-codex-app-server-protocol = { git = "https://github.com/openai/codex.git", tag = "rust-v0.115.0" }
-codex-protocol = { git = "https://github.com/openai/codex.git", tag = "rust-v0.115.0" }
+hunk-editor = { path = "../hunk-editor" }
+hunk-language = { path = "../hunk-language" }
+hunk-text = { path = "../hunk-text" }
+codex-app-server-protocol = { git = "https://github.com/openai/codex.git", tag = "rust-v0.116.0" }
+codex-protocol = { git = "https://github.com/openai/codex.git", tag = "rust-v0.116.0" }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 git2 = { version = "0.20", features = ["https", "ssh", "vendored-libgit2", "vendored-openssl"] }

@@ -104,24 +104,6 @@ bundle_macos_non_system_dylibs() {
   done
 }
 
-inject_helix_runtime_into_app_bundle() {
-  local runtime_source_dir runtime_destination
-  runtime_source_dir="$("$ROOT_DIR/scripts/resolve_helix_runtime_dir.sh")"
-
-  runtime_destination="$APP_PATH/Contents/Resources/runtime"
-  rm -rf "$runtime_destination"
-  mkdir -p "$(dirname "$runtime_destination")"
-  cp -R "$runtime_source_dir" "$runtime_destination"
-  rm -rf "$runtime_destination/grammars/sources"
-
-  if [[ ! -d "$runtime_destination/queries" || ! -d "$runtime_destination/grammars" ]]; then
-    echo "error: bundled Helix runtime is missing queries/ or grammars/" >&2
-    exit 1
-  fi
-
-  echo "Bundled Helix runtime from $runtime_source_dir" >&2
-}
-
 sign_macos_app_bundle() {
   local sign_target
 
@@ -234,8 +216,19 @@ echo "Building macOS app bundle..." >&2
   export RANLIB="$MACOS_RANLIB"
   export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="$MACOS_LINKER"
 
+  rm -rf "$APP_PATH"
   cargo build -p hunk-desktop --release --target "$TARGET_TRIPLE" --locked
-  cargo packager -p hunk-desktop --release -f app --target "$TARGET_TRIPLE" --out-dir "$PACKAGER_OUT_DIR"
+  (
+    cd "$ROOT_DIR/crates/hunk-desktop"
+    cargo packager \
+      -p hunk-desktop \
+      --manifest-path Cargo.toml \
+      --release \
+      -f app \
+      --target "$TARGET_TRIPLE" \
+      --out-dir "$PACKAGER_OUT_DIR" \
+      1>&2
+  )
 )
 
 if [[ ! -d "$APP_PATH" ]]; then
@@ -243,7 +236,7 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
-inject_helix_runtime_into_app_bundle
+"$ROOT_DIR/scripts/validate_release_bundle_layout.sh" macos-app "$APP_PATH"
 bundle_macos_non_system_dylibs "$APP_EXECUTABLE_PATH"
 echo "Validating macOS app binary dependencies..." >&2
 validate_macos_binary_dependencies "$APP_EXECUTABLE_PATH"

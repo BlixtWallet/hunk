@@ -144,9 +144,9 @@ mod ai_runtime;
 mod controller;
 mod data;
 mod data_segments;
-mod files_editor;
 mod highlight;
 mod markdown_links;
+mod native_files_editor;
 mod notifications;
 mod render;
 mod repo_file_search;
@@ -182,6 +182,28 @@ actions!(
         FilesEditorCopy,
         FilesEditorCut,
         FilesEditorPaste,
+        FilesEditorMoveUp,
+        FilesEditorMoveDown,
+        FilesEditorMoveLeft,
+        FilesEditorMoveRight,
+        FilesEditorMoveToBeginningOfLine,
+        FilesEditorMoveToEndOfLine,
+        FilesEditorMoveToBeginningOfDocument,
+        FilesEditorMoveToEndOfDocument,
+        FilesEditorMoveToPreviousWordStart,
+        FilesEditorMoveToNextWordEnd,
+        FilesEditorSelectUp,
+        FilesEditorSelectDown,
+        FilesEditorSelectLeft,
+        FilesEditorSelectRight,
+        FilesEditorSelectToBeginningOfLine,
+        FilesEditorSelectToEndOfLine,
+        FilesEditorSelectToBeginningOfDocument,
+        FilesEditorSelectToEndOfDocument,
+        FilesEditorSelectToPreviousWordStart,
+        FilesEditorSelectToNextWordEnd,
+        FilesEditorPageUp,
+        FilesEditorPageDown,
         SaveCurrentFile,
         OpenSettings,
         QuitApp,
@@ -450,6 +472,189 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
         FilesEditorPaste,
         Some("FilesEditor"),
     ));
+    bindings.push(KeyBinding::new(
+        "up",
+        FilesEditorMoveUp,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "down",
+        FilesEditorMoveDown,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "left",
+        FilesEditorMoveLeft,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "right",
+        FilesEditorMoveRight,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-up",
+        FilesEditorSelectUp,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-down",
+        FilesEditorSelectDown,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-left",
+        FilesEditorSelectLeft,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-right",
+        FilesEditorSelectRight,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "home",
+        FilesEditorMoveToBeginningOfLine,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "end",
+        FilesEditorMoveToEndOfLine,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-home",
+        FilesEditorSelectToBeginningOfLine,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "shift-end",
+        FilesEditorSelectToEndOfLine,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "pageup",
+        FilesEditorPageUp,
+        Some("FilesEditor"),
+    ));
+    bindings.push(KeyBinding::new(
+        "pagedown",
+        FilesEditorPageDown,
+        Some("FilesEditor"),
+    ));
+    if cfg!(target_os = "macos") {
+        bindings.push(KeyBinding::new(
+            "cmd-left",
+            FilesEditorMoveToBeginningOfLine,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "cmd-right",
+            FilesEditorMoveToEndOfLine,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "cmd-up",
+            FilesEditorMoveToBeginningOfDocument,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "cmd-down",
+            FilesEditorMoveToEndOfDocument,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "cmd-shift-left",
+            FilesEditorSelectToBeginningOfLine,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "cmd-shift-right",
+            FilesEditorSelectToEndOfLine,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "cmd-shift-up",
+            FilesEditorSelectToBeginningOfDocument,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "cmd-shift-down",
+            FilesEditorSelectToEndOfDocument,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "cmd-home",
+            FilesEditorMoveToBeginningOfDocument,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "cmd-end",
+            FilesEditorMoveToEndOfDocument,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "alt-left",
+            FilesEditorMoveToPreviousWordStart,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "alt-right",
+            FilesEditorMoveToNextWordEnd,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "alt-shift-left",
+            FilesEditorSelectToPreviousWordStart,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "alt-shift-right",
+            FilesEditorSelectToNextWordEnd,
+            Some("FilesEditor"),
+        ));
+    } else {
+        bindings.push(KeyBinding::new(
+            "ctrl-left",
+            FilesEditorMoveToPreviousWordStart,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "ctrl-right",
+            FilesEditorMoveToNextWordEnd,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "ctrl-shift-left",
+            FilesEditorSelectToPreviousWordStart,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "ctrl-shift-right",
+            FilesEditorSelectToNextWordEnd,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "ctrl-home",
+            FilesEditorMoveToBeginningOfDocument,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "ctrl-end",
+            FilesEditorMoveToEndOfDocument,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "ctrl-shift-home",
+            FilesEditorSelectToBeginningOfDocument,
+            Some("FilesEditor"),
+        ));
+        bindings.push(KeyBinding::new(
+            "ctrl-shift-end",
+            FilesEditorSelectToEndOfDocument,
+            Some("FilesEditor"),
+        ));
+    }
     bindings.extend(
         shortcuts
             .save_current_file
@@ -515,7 +720,6 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
 }
 
 pub fn run() -> Result<()> {
-    files_editor::initialize_helix_runtime_environment();
     let app = gpui_platform::application().with_assets(Assets);
     let keyboard_shortcuts = load_keyboard_shortcuts();
     app.on_reopen(|cx: &mut App| {
@@ -838,7 +1042,8 @@ struct DiffViewer {
     repo_tree: RepoTreeState,
     repo_tree_inline_edit: Option<RepoTreeInlineEditState>,
     repo_tree_context_menu: Option<RepoTreeContextMenuState>,
-    helix_files_editor: files_editor::SharedHelixFilesEditor,
+    files_editor: native_files_editor::SharedFilesEditor,
+    editor_search_input_state: Entity<InputState>,
     file_quick_open_input_state: Entity<InputState>,
     file_quick_open_visible: bool,
     file_quick_open_matches: Vec<String>,
@@ -858,11 +1063,12 @@ struct DiffViewer {
     editor_markdown_preview_loading: bool,
     editor_markdown_preview_revision: usize,
     editor_markdown_preview: bool,
+    editor_search_visible: bool,
 }
 
 impl Drop for DiffViewer {
     fn drop(&mut self) {
-        self.helix_files_editor.borrow_mut().shutdown();
+        self.files_editor.borrow_mut().shutdown();
         self.shutdown_ai_worker_blocking();
     }
 }
