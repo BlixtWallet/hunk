@@ -23,6 +23,33 @@ fn ai_commit_progress_detail(subject: &str) -> String {
     format!("Commit: {subject}")
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AiOpenPrBranchStrategy {
+    CreateReviewBranch,
+    ReuseCurrentBranch,
+}
+
+fn ai_open_pr_branch_strategy(
+    repo_root: &std::path::Path,
+    branch_name: &str,
+) -> AiOpenPrBranchStrategy {
+    let default_branch_name = resolve_default_base_branch_name(repo_root).ok().flatten();
+    ai_open_pr_branch_strategy_for_branch(branch_name, default_branch_name.as_deref())
+}
+
+fn ai_open_pr_branch_strategy_for_branch(
+    branch_name: &str,
+    default_branch_name: Option<&str>,
+) -> AiOpenPrBranchStrategy {
+    let branch_name = branch_name.trim();
+    let default_branch_name = default_branch_name.map(str::trim);
+    if default_branch_name == Some(branch_name) {
+        AiOpenPrBranchStrategy::CreateReviewBranch
+    } else {
+        AiOpenPrBranchStrategy::ReuseCurrentBranch
+    }
+}
+
 fn ai_publish_blocker_reason(
     context: Result<AiThreadGitActionContext, String>,
 ) -> Option<String> {
@@ -184,6 +211,30 @@ mod ai_git_ops_tests {
         assert_eq!(
             ai_publish_blocker_reason(Err("Select a thread before publishing.".to_string())),
             Some("Select a thread before publishing.".to_string())
+        );
+    }
+
+    #[test]
+    fn open_pr_branch_strategy_creates_review_branch_for_default_branch() {
+        assert_eq!(
+            ai_open_pr_branch_strategy_for_branch("main", Some("main")),
+            AiOpenPrBranchStrategy::CreateReviewBranch
+        );
+    }
+
+    #[test]
+    fn open_pr_branch_strategy_reuses_non_default_branch() {
+        assert_eq!(
+            ai_open_pr_branch_strategy_for_branch("feature/ai-thread", Some("main")),
+            AiOpenPrBranchStrategy::ReuseCurrentBranch
+        );
+    }
+
+    #[test]
+    fn open_pr_branch_strategy_reuses_when_default_branch_is_unknown() {
+        assert_eq!(
+            ai_open_pr_branch_strategy_for_branch("feature/ai-thread", None),
+            AiOpenPrBranchStrategy::ReuseCurrentBranch
         );
     }
 }

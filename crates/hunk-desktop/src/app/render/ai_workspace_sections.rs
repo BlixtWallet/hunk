@@ -520,7 +520,7 @@ impl DiffViewer {
                         let publish_tooltip = state.ai_publish_blocker.clone().unwrap_or_else(|| {
                             match state.selected_thread_start_mode {
                                 Some(AiNewThreadStartMode::Local) => {
-                                    "Commit and push this branch directly, or create a review branch and open PR/MR.".to_string()
+                                    "Commit and push this branch directly, or open PR/MR for it. If the current branch is the default branch, Hunk creates a review branch first.".to_string()
                                 }
                                 Some(AiNewThreadStartMode::Worktree) => {
                                     "Commit and push this worktree branch directly, or open PR/MR for the current branch.".to_string()
