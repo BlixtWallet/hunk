@@ -647,7 +647,14 @@ impl DiffViewer {
         let branch_name = context.branch_name.clone();
         let start_mode = context.start_mode;
         let epoch = self.begin_git_action("Open PR", cx);
-        let create_review_branch = start_mode == AiNewThreadStartMode::Local;
+        let open_pr_branch_strategy = ai_open_pr_branch_strategy(repo_root.as_path(), &branch_name);
+        let create_review_branch =
+            open_pr_branch_strategy == AiOpenPrBranchStrategy::CreateReviewBranch;
+        let branch_detail_label = if create_review_branch {
+            "Review branch"
+        } else {
+            "Branch"
+        };
         let initial_step = if create_review_branch {
             AiGitProgressStep::GeneratingBranchName
         } else {
@@ -671,7 +678,9 @@ impl DiffViewer {
             cx,
             move |progress_tx| {
                 (|| -> anyhow::Result<(Option<String>, String, String)> {
-                    let review_branch_name = if start_mode == AiNewThreadStartMode::Local {
+                    let review_branch_name = if open_pr_branch_strategy
+                        == AiOpenPrBranchStrategy::CreateReviewBranch
+                    {
                         let requested_branch_name = try_ai_branch_name_for_prompt(
                             codex_executable.as_path(),
                             repo_root.as_path(),
@@ -700,7 +709,7 @@ impl DiffViewer {
                         &progress_tx,
                         AiGitProgressStep::GeneratingCommitMessage,
                         Some(ai_branch_progress_detail(
-                            "Review branch",
+                            branch_detail_label,
                             review_branch_name.as_str(),
                         )),
                     );
@@ -734,7 +743,7 @@ impl DiffViewer {
                         &progress_tx,
                         AiGitProgressStep::PushingBranch,
                         Some(ai_branch_progress_detail(
-                            "Review branch",
+                            branch_detail_label,
                             review_branch_name.as_str(),
                         )),
                     );
@@ -747,7 +756,7 @@ impl DiffViewer {
                         &progress_tx,
                         AiGitProgressStep::PreparingReviewUrl,
                         Some(ai_branch_progress_detail(
-                            "Review branch",
+                            branch_detail_label,
                             review_branch_name.as_str(),
                         )),
                     );

@@ -22,7 +22,7 @@ fn commit_and_push_progress_steps_match_publish_flow() {
 }
 
 #[test]
-fn open_pr_progress_steps_include_review_branch_generation_for_local_threads() {
+fn open_pr_progress_steps_include_review_branch_generation_when_needed() {
     let steps = ai_open_pr_progress_steps(true);
 
     assert_eq!(
@@ -40,7 +40,7 @@ fn open_pr_progress_steps_include_review_branch_generation_for_local_threads() {
 }
 
 #[test]
-fn open_pr_progress_steps_skip_branch_creation_for_worktree_threads() {
+fn open_pr_progress_steps_skip_branch_creation_when_reusing_current_branch() {
     let steps = ai_open_pr_progress_steps(false);
 
     assert_eq!(
