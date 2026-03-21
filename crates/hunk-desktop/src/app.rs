@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -11,12 +11,12 @@ use codex_app_server_protocol::SkillMetadata;
 use gpui::{
     AnchoredPositionMode, Animation, AnimationExt as _, AnyElement, AnyWindowHandle, App,
     AppContext as _, Bounds, ClipboardItem, Context, Corner, DragMoveEvent, Empty, Entity,
-    EntityId, EntityInputHandler, FocusHandle, Hsla, InteractiveElement as _, IntoElement,
-    IsZero as _, KeyBinding, ListAlignment, ListOffset, ListSizingBehavior, ListState, Menu,
-    MenuItem, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, OsAction,
-    ParentElement as _, PathPromptOptions, Pixels, Point, Render, ScrollHandle, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement as _, Styled as _, SystemMenuType, Task,
-    TitlebarOptions, Window, WindowOptions, actions, anchored, canvas, deferred, div, list, point,
+    EntityId, EntityInputHandler, FocusHandle, InteractiveElement as _, IntoElement, IsZero as _,
+    KeyBinding, ListAlignment, ListOffset, ListSizingBehavior, ListState, Menu, MenuItem,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, OsAction, ParentElement as _,
+    PathPromptOptions, Pixels, Point, Render, ScrollHandle, ScrollWheelEvent, SharedString,
+    StatefulInteractiveElement as _, Styled as _, SystemMenuType, Task, TitlebarOptions, Window,
+    WindowOptions, actions, anchored, canvas, deferred, div, list, point,
     prelude::FluentBuilder as _, px,
 };
 use gpui_component::{
@@ -50,6 +50,10 @@ use hunk_git::history::{
     DEFAULT_RECENT_AUTHORED_COMMIT_LIMIT, RecentCommitSummary, RecentCommitsFingerprint,
 };
 use hunk_git::worktree::WorkspaceTargetSummary;
+use hunk_terminal::{
+    TerminalEvent, TerminalScreenSnapshot, TerminalScroll, TerminalSessionHandle,
+    TerminalSpawnRequest, spawn_terminal_session,
+};
 
 use ai_composer_completion::{
     ActivePrefixedToken, AiComposerFileCompletionMenuState, AiComposerFileCompletionProvider,
@@ -174,6 +178,7 @@ actions!(
         SwitchToReviewView,
         SwitchToGitView,
         SwitchToAiView,
+        AiToggleTerminalDrawer,
         AiNewThread,
         AiNewWorktreeThread,
         AiQueuePrompt,
@@ -423,6 +428,12 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
             .switch_to_ai_view
             .iter()
             .map(|shortcut| KeyBinding::new(shortcut.as_str(), SwitchToAiView, None)),
+    );
+    bindings.extend(
+        shortcuts
+            .toggle_ai_terminal_drawer
+            .iter()
+            .map(|shortcut| KeyBinding::new(shortcut.as_str(), AiToggleTerminalDrawer, None)),
     );
     bindings.push(KeyBinding::new("cmd-n", AiNewThread, Some("DiffViewer")));
     bindings.push(KeyBinding::new("ctrl-n", AiNewThread, Some("DiffViewer")));
@@ -929,6 +940,17 @@ struct DiffViewer {
     ai_command_tx: Option<mpsc::Sender<AiWorkerCommand>>,
     ai_worker_workspace_key: Option<String>,
     ai_draft_workspace_target_id: Option<String>,
+    ai_terminal_open: bool,
+    ai_terminal_follow_output: bool,
+    ai_terminal_height_px: f32,
+    ai_terminal_input_draft: String,
+    ai_terminal_session: AiTerminalSessionState,
+    ai_terminal_input_state: Entity<InputState>,
+    ai_terminal_focus_handle: FocusHandle,
+    ai_terminal_event_task: Task<()>,
+    ai_terminal_runtime: Option<AiTerminalRuntimeHandle>,
+    ai_terminal_runtime_generation: usize,
+    ai_terminal_stop_requested: bool,
     repo_file_search_provider: Rc<RepoFileSearchProvider>,
     repo_file_search_reload_task: Task<()>,
     repo_file_search_loading: bool,
@@ -1075,6 +1097,7 @@ struct DiffViewer {
 impl Drop for DiffViewer {
     fn drop(&mut self) {
         self.files_editor.borrow_mut().shutdown();
+        self.stop_ai_terminal_runtime("dropping app");
         self.shutdown_ai_worker_blocking();
     }
 }

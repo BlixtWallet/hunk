@@ -2,6 +2,23 @@ use std::time::Duration;
 
 const AI_COMPOSER_SURFACE_MAX_WIDTH: f32 = 740.0;
 
+struct AiTerminalPanelState {
+    open: bool,
+    accepts_input: bool,
+    cwd_label: String,
+    status_label: &'static str,
+    status_message: Option<String>,
+    running: bool,
+    screen: Option<Arc<TerminalScreenSnapshot>>,
+    display_offset: usize,
+    has_transcript: bool,
+    has_output: bool,
+    has_last_command: bool,
+    transcript: String,
+    height_px: f32,
+    submit_label: &'static str,
+}
+
 impl DiffViewer {
     fn render_ai_workspace_screen(&mut self, cx: &mut Context<Self>) -> AnyElement {
         if self.repo_discovery_failed {
@@ -163,15 +180,51 @@ impl DiffViewer {
             composer_drop_border_color,
             composer_drop_bg,
         };
+        let terminal_state = AiTerminalPanelState {
+            open: self.ai_terminal_open,
+            accepts_input: self.current_ai_terminal_can_run() || self.ai_terminal_is_running(),
+            cwd_label: self
+                .ai_terminal_session
+                .cwd
+                .clone()
+                .or_else(|| self.ai_workspace_cwd())
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "No workspace selected".to_string()),
+            status_label: self.ai_terminal_status_label(),
+            status_message: self.ai_terminal_session.status_message.clone(),
+            running: self.ai_terminal_is_running(),
+            screen: self.ai_terminal_session.screen.clone(),
+            display_offset: self
+                .ai_terminal_session
+                .screen
+                .as_ref()
+                .map(|screen| screen.display_offset)
+                .unwrap_or(0),
+            has_transcript: !self.ai_terminal_session.transcript.trim().is_empty(),
+            has_output: self.ai_terminal_session.screen.is_some()
+                || !self.ai_terminal_session.transcript.trim().is_empty(),
+            has_last_command: self.ai_terminal_session.last_command.is_some(),
+            transcript: self.ai_terminal_session.transcript.clone(),
+            height_px: self.ai_terminal_height_px,
+            submit_label: if self.ai_terminal_is_running() {
+                "Send"
+            } else {
+                "Run"
+            },
+        };
 
         let composer_panel =
             self.render_ai_composer_panel(view.clone(), &composer_state, is_dark, cx);
+        let terminal_panel = self
+            .render_ai_terminal_panel(view.clone(), &terminal_state, is_dark, cx)
+            .filter(|_| terminal_state.open);
         let workspace = self.render_ai_workspace_content(
             view,
             AiWorkspaceContentSections {
                 header: &header_state,
                 sidebar: &sidebar_state,
                 timeline: &timeline_state,
+                terminal_panel,
                 composer_panel,
             },
             is_dark,
