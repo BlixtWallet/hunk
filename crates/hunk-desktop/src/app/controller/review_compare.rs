@@ -79,6 +79,53 @@ fn review_compare_selection_ids_for_workspace_root(
     ))
 }
 
+fn selected_git_workspace_review_compare_selection_ids(
+    sources: &[ReviewCompareSourceOption],
+    workspace_targets: &[hunk_git::worktree::WorkspaceTargetSummary],
+    workspace_root: Option<&std::path::Path>,
+    default_base_branch_name: Option<&str>,
+) -> Option<(Option<String>, Option<String>)> {
+    let workspace_root = workspace_root?;
+    review_compare_selection_ids_for_workspace_root(
+        sources,
+        workspace_targets,
+        workspace_root,
+        None,
+        default_base_branch_name,
+    )
+}
+
+fn update_persisted_review_compare_selection(
+    persist_selection: bool,
+    selections: &mut BTreeMap<String, ReviewCompareSelectionState>,
+    repo_key: Option<&str>,
+    left_source_id: Option<String>,
+    right_source_id: Option<String>,
+) -> bool {
+    if !persist_selection {
+        return false;
+    }
+
+    let Some(repo_key) = repo_key else {
+        return false;
+    };
+
+    match (left_source_id, right_source_id) {
+        (Some(left_source_id), Some(right_source_id)) => {
+            let next = ReviewCompareSelectionState {
+                left_source_id: Some(left_source_id),
+                right_source_id: Some(right_source_id),
+            };
+            if selections.get(repo_key) == Some(&next) {
+                return false;
+            }
+            selections.insert(repo_key.to_string(), next);
+            true
+        }
+        _ => selections.remove(repo_key).is_some(),
+    }
+}
+
 impl DiffViewer {
     fn subscribe_review_compare_picker_states(&self, cx: &mut Context<Self>) {
         let review_left_picker_state = self.review_left_picker_state.clone();
@@ -206,6 +253,41 @@ impl DiffViewer {
         source_id
             .and_then(|source_id| self.review_compare_source_option(source_id))
             .map(|source| source.detail.clone())
+    }
+
+    fn selected_git_workspace_review_compare_selection(
+        &self,
+    ) -> Option<(Option<String>, Option<String>)> {
+        let default_base_branch_name = self
+            .project_path
+            .as_deref()
+            .and_then(|project_path| resolve_default_base_branch_name(project_path).ok().flatten());
+        selected_git_workspace_review_compare_selection_ids(
+            &self.review_compare_sources,
+            &self.workspace_targets,
+            self.selected_git_workspace_root().as_deref(),
+            default_base_branch_name.as_deref(),
+        )
+    }
+
+    pub(super) fn open_git_workspace_change_in_review(
+        &mut self,
+        path: String,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some((left_source_id, right_source_id)) =
+            self.selected_git_workspace_review_compare_selection()
+        {
+            self.update_review_compare_selection_with_persistence(
+                left_source_id,
+                right_source_id,
+                false,
+                cx,
+            );
+        }
+        self.selected_path = Some(path);
+        self.selected_status = None;
+        self.set_workspace_view_mode(WorkspaceViewMode::Diff, cx);
     }
 
     fn active_diff_files(&self) -> &[ChangedFile] {
@@ -382,43 +464,17 @@ impl DiffViewer {
     }
 
     fn persist_review_compare_selection(&mut self) {
-        let Some(repo_key) = self.review_compare_repo_key() else {
-            return;
-        };
-
-        match (
+        let repo_key = self.review_compare_repo_key();
+        let changed = update_persisted_review_compare_selection(
+            true,
+            &mut self.state.review_compare_selection_by_repo,
+            repo_key.as_deref(),
             self.review_left_source_id.clone(),
             self.review_right_source_id.clone(),
-        ) {
-            (Some(left_source_id), Some(right_source_id)) => {
-                let next = ReviewCompareSelectionState {
-                    left_source_id: Some(left_source_id),
-                    right_source_id: Some(right_source_id),
-                };
-                if self
-                    .state
-                    .review_compare_selection_by_repo
-                    .get(repo_key.as_str())
-                    == Some(&next)
-                {
-                    return;
-                }
-                self.state
-                    .review_compare_selection_by_repo
-                    .insert(repo_key, next);
-            }
-            _ => {
-                if self
-                    .state
-                    .review_compare_selection_by_repo
-                    .remove(repo_key.as_str())
-                    .is_none()
-                {
-                    return;
-                }
-            }
+        );
+        if changed {
+            self.persist_state();
         }
-        self.persist_state();
     }
 
     fn refresh_review_compare_sources_from_git_state(&mut self, cx: &mut Context<Self>) {
@@ -681,6 +737,21 @@ impl DiffViewer {
         next_right_source_id: Option<String>,
         cx: &mut Context<Self>,
     ) {
+        self.update_review_compare_selection_with_persistence(
+            next_left_source_id,
+            next_right_source_id,
+            true,
+            cx,
+        );
+    }
+
+    fn update_review_compare_selection_with_persistence(
+        &mut self,
+        next_left_source_id: Option<String>,
+        next_right_source_id: Option<String>,
+        persist_selection: bool,
+        cx: &mut Context<Self>,
+    ) {
         let left_source_id = next_left_source_id.or_else(|| self.review_left_source_id.clone());
         let right_source_id = next_right_source_id.or_else(|| self.review_right_source_id.clone());
         let (left_source_id, right_source_id) = Self::normalize_review_compare_selection_ids(
@@ -696,7 +767,9 @@ impl DiffViewer {
 
         self.review_left_source_id = left_source_id;
         self.review_right_source_id = right_source_id;
-        self.persist_review_compare_selection();
+        if persist_selection {
+            self.persist_review_compare_selection();
+        }
         self.sync_review_compare_picker_states(cx);
         self.comments_cache.clear();
         self.comment_miss_streaks.clear();

@@ -9,6 +9,9 @@ start-windows:
 
 start-linux:
     ./scripts/run_linux_dev.sh
+    
+fmt:
+    cargo fmt --all
 
 build:
     CARGO_TARGET_DIR="$(./scripts/resolve_cargo_target_dir.sh)" ./scripts/run_with_macos_sdk_env.sh cargo build -p hunk-desktop
