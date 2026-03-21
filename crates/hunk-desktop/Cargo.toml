@@ -60,7 +60,7 @@ codex-app-server-protocol = { git = "https://github.com/openai/codex.git", tag =
 codex-protocol = { git = "https://github.com/openai/codex.git", tag = "rust-v0.116.0" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-ashpd = "0.13.7"
+ashpd = { version = "0.13.7", default-features = false, features = ["async-io", "open_uri"] }
 pollster = "0.4"
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
