@@ -55,6 +55,8 @@ use hunk_terminal::{
     TerminalSpawnRequest, spawn_terminal_session,
 };
 
+const AI_TERMINAL_TEXT_SELECTION_ROW_ID: &str = "ai-terminal";
+
 use ai_composer_completion::{
     ActivePrefixedToken, AiComposerFileCompletionMenuState, AiComposerFileCompletionProvider,
     AiComposerSkillCompletionMenuState, ai_composer_inserted_path_text,

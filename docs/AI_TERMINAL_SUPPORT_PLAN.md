@@ -85,11 +85,12 @@ Implemented today:
 - Output is bounded and now rendered through a VT-backed GPUI cell surface with transcript fallback for empty and failure states.
 - Live terminal sessions can now take direct keyboard input from the terminal surface, including bracketed paste when the shell requests it.
 - VT scrollback now stays interactive after process exit, with mouse-wheel scrolling plus `Shift+PageUp/PageDown/Home/End` viewport controls.
+- The VT surface now supports mouse text selection plus terminal-style copy shortcuts (`cmd-c` on macOS, `ctrl-shift-c` on Linux/Windows) when a terminal selection is active.
 - Workspace-wide validation already passes for the current slice.
 
 Not implemented yet:
 
-- terminal cursor, selection, hyperlink detection, and copy semantics
+- terminal cursor and hyperlink detection polish
 - alternate screen and TUI compatibility
 - command-row affordances from the AI timeline
 - persisted terminal state across full app relaunch
@@ -552,7 +553,7 @@ Exit criteria:
 - [x] Replace transcript rendering with a VT cell surface.
 - [x] Add terminal keyboard input routing into the live PTY session.
 - [x] Replace command-line style input routing with terminal-surface keystroke routing.
-- [ ] Add terminal text selection and copy behavior.
+- [x] Add terminal text selection and copy behavior.
 - [x] Add proper terminal scrolling and viewport behavior.
 
 ### AI Integration

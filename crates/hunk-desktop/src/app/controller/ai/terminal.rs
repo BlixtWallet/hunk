@@ -9,6 +9,20 @@ impl DiffViewer {
         self.ai_terminal_session.status == AiTerminalSessionStatus::Running
     }
 
+    fn ai_terminal_selection_active(&self) -> bool {
+        self.ai_text_selection
+            .as_ref()
+            .is_some_and(|selection| {
+                selection.row_id == crate::app::AI_TERMINAL_TEXT_SELECTION_ROW_ID
+            })
+    }
+
+    fn clear_ai_terminal_text_selection(&mut self, cx: &mut Context<Self>) {
+        if self.ai_terminal_selection_active() {
+            self.ai_clear_text_selection(cx);
+        }
+    }
+
     fn focus_ai_terminal_surface(&mut self, cx: &mut Context<Self>) {
         let focus_handle = self.ai_terminal_focus_handle.clone();
         if let Err(error) = Self::update_any_window(cx, move |window, cx| {
@@ -203,6 +217,10 @@ impl DiffViewer {
             return false;
         }
 
+        if ai_terminal_uses_copy_shortcut(keystroke) && self.ai_terminal_selection_active() {
+            return self.ai_copy_selected_text(cx);
+        }
+
         if let Some(scroll) = ai_terminal_viewport_scroll_for_keystroke(keystroke) {
             return self.ai_scroll_terminal_viewport(scroll, cx);
         }
@@ -262,9 +280,6 @@ impl DiffViewer {
         scroll: TerminalScroll,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(runtime) = self.ai_terminal_runtime.as_ref() else {
-            return false;
-        };
         if self
             .ai_terminal_session
             .screen
@@ -273,6 +288,12 @@ impl DiffViewer {
         {
             return false;
         }
+
+        self.clear_ai_terminal_text_selection(cx);
+
+        let Some(runtime) = self.ai_terminal_runtime.as_ref() else {
+            return false;
+        };
 
         if let Err(error) = runtime.handle.scroll_display(scroll) {
             self.ai_terminal_session.status_message = Some(error.to_string());
@@ -444,7 +465,7 @@ impl DiffViewer {
                         return;
                     }
                     for event in buffered_events {
-                        this.apply_ai_terminal_event(event);
+                        this.apply_ai_terminal_event(event, cx);
                     }
                     if event_stream_disconnected && this.ai_terminal_runtime_is_current(workspace_key.as_str(), generation) {
                         this.ai_terminal_runtime = None;
@@ -458,7 +479,7 @@ impl DiffViewer {
         });
     }
 
-    fn apply_ai_terminal_event(&mut self, event: TerminalEvent) {
+    fn apply_ai_terminal_event(&mut self, event: TerminalEvent, cx: &mut Context<Self>) {
         match event {
             TerminalEvent::Output(output) => {
                 let sanitized = sanitize_ai_terminal_output(output.as_slice());
@@ -468,6 +489,9 @@ impl DiffViewer {
                 append_ai_terminal_transcript(&mut self.ai_terminal_session.transcript, sanitized);
             }
             TerminalEvent::Screen(screen) => {
+                if self.ai_terminal_is_running() {
+                    self.clear_ai_terminal_text_selection(cx);
+                }
                 self.ai_terminal_follow_output = screen.display_offset == 0;
                 self.ai_terminal_session.screen = Some(screen);
             }
@@ -651,6 +675,27 @@ fn ai_terminal_viewport_scroll_for_keystroke(keystroke: &gpui::Keystroke) -> Opt
     }
 }
 
+fn ai_terminal_uses_copy_shortcut(keystroke: &gpui::Keystroke) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        keystroke.modifiers.platform
+            && !keystroke.modifiers.control
+            && !keystroke.modifiers.alt
+            && !keystroke.modifiers.shift
+            && !keystroke.modifiers.function
+            && keystroke.key == "c"
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        keystroke.modifiers.control
+            && keystroke.modifiers.shift
+            && !keystroke.modifiers.alt
+            && !keystroke.modifiers.function
+            && keystroke.key == "c"
+    }
+}
+
 fn ai_terminal_input_bytes_for_keystroke(keystroke: &gpui::Keystroke) -> Option<Vec<u8>> {
     if keystroke.modifiers.platform || keystroke.modifiers.function {
         return None;
@@ -749,8 +794,9 @@ fn ai_terminal_uses_desktop_clipboard_shortcut(keystroke: &gpui::Keystroke) -> b
 mod terminal_tests {
     use super::{
         ai_terminal_input_bytes_for_keystroke, ai_terminal_paste_bytes,
-        ai_terminal_uses_desktop_clipboard_shortcut, ai_terminal_viewport_scroll_for_keystroke,
-        sanitize_ai_terminal_output, strip_ansi_sequences,
+        ai_terminal_uses_copy_shortcut, ai_terminal_uses_desktop_clipboard_shortcut,
+        ai_terminal_viewport_scroll_for_keystroke, sanitize_ai_terminal_output,
+        strip_ansi_sequences,
     };
     use gpui::Keystroke;
     use hunk_terminal::TerminalScroll;
@@ -851,5 +897,28 @@ mod terminal_tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn terminal_copy_shortcuts_match_terminal_platform_conventions() {
+        #[cfg(target_os = "macos")]
+        {
+            assert!(ai_terminal_uses_copy_shortcut(
+                &Keystroke::parse("cmd-c").expect("valid cmd-c keystroke")
+            ));
+            assert!(!ai_terminal_uses_copy_shortcut(
+                &Keystroke::parse("ctrl-c").expect("valid ctrl-c keystroke")
+            ));
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert!(ai_terminal_uses_copy_shortcut(
+                &Keystroke::parse("ctrl-shift-c").expect("valid ctrl-shift-c keystroke")
+            ));
+            assert!(!ai_terminal_uses_copy_shortcut(
+                &Keystroke::parse("ctrl-c").expect("valid ctrl-c keystroke")
+            ));
+        }
     }
 }

@@ -79,29 +79,62 @@ impl DiffViewer {
     ) -> AnyElement {
         let chrome = hunk_editor_chrome_colors(cx.theme(), is_dark);
         let lines = ai_terminal_renderable_lines(screen, is_dark, cx);
+        let selection_surfaces = ai_terminal_selection_surfaces(lines.as_slice());
+        let link_ranges = ai_text_link_ranges(Vec::new());
+        let view = cx.entity();
 
         v_flex()
             .w_full()
             .gap_0()
             .bg(chrome.background)
-            .children(lines.into_iter().map(|line| {
+            .children(lines.into_iter().enumerate().map(|(row_index, line)| {
                 let styled_text = if line.highlights.is_empty() {
                     gpui::StyledText::new(line.text.clone())
                 } else {
                     gpui::StyledText::new(line.text.clone()).with_highlights(line.highlights)
                 };
 
-                div()
-                    .w_full()
-                    .text_xs()
-                    .font_family(cx.theme().mono_font_family.clone())
-                    .text_color(chrome.foreground)
-                    .whitespace_nowrap()
-                    .child(styled_text)
-                    .into_any_element()
+                ai_render_selectable_styled_text(
+                    self,
+                    view.clone(),
+                    crate::app::AI_TERMINAL_TEXT_SELECTION_ROW_ID,
+                    ai_terminal_text_surface_id(row_index),
+                    selection_surfaces.clone(),
+                    link_ranges.clone(),
+                    styled_text,
+                    is_dark,
+                    cx,
+                )
+                .into_any_element()
             }))
             .into_any_element()
     }
+}
+
+fn ai_terminal_selection_surfaces(
+    lines: &[AiTerminalRenderableLine],
+) -> std::sync::Arc<[AiTextSelectionSurfaceSpec]> {
+    ai_text_selection_surfaces(
+        lines.iter()
+            .enumerate()
+            .map(|(row_index, line)| {
+                let surface =
+                    AiTextSelectionSurfaceSpec::new(ai_terminal_text_surface_id(row_index), line.text.to_string());
+                if row_index == 0 {
+                    surface
+                } else {
+                    surface.with_separator_before("\n")
+                }
+            })
+            .collect(),
+    )
+}
+
+fn ai_terminal_text_surface_id(row_index: usize) -> String {
+    format!(
+        "{}\u{1f}row\u{1f}{row_index}",
+        crate::app::AI_TERMINAL_TEXT_SELECTION_ROW_ID
+    )
 }
 
 fn ai_terminal_renderable_lines(

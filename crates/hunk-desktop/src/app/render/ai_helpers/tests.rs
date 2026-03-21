@@ -18,6 +18,7 @@ mod ai_helper_tests {
     use super::ai_item_display_label;
     use super::ai_reasoning_effort_label;
     use super::ai_rate_limit_summary;
+    use super::ai_terminal_selection_surfaces;
     use super::ai_turn_diff_summary;
     use super::ai_tool_header_label;
     use super::ai_timeline_item_is_renderable;
@@ -231,6 +232,28 @@ mod ai_helper_tests {
         let grid = ai_terminal_screen_grid(&screen);
         assert_eq!(grid[0][0].character, 'e');
         assert_eq!(grid[0][0].zerowidth, "\u{301}");
+    }
+
+    #[test]
+    fn terminal_selection_surfaces_insert_newline_separators_between_rows() {
+        let surfaces = ai_terminal_selection_surfaces(
+            &[
+                super::AiTerminalRenderableLine {
+                    text: "hello".into(),
+                    highlights: Vec::new(),
+                },
+                super::AiTerminalRenderableLine {
+                    text: "world".into(),
+                    highlights: Vec::new(),
+                },
+            ],
+        );
+
+        assert_eq!(surfaces.len(), 2);
+        assert_eq!(surfaces[0].separator_before, "");
+        assert_eq!(surfaces[1].separator_before, "\n");
+        assert_eq!(surfaces[0].text, "hello");
+        assert_eq!(surfaces[1].text, "world");
     }
 
     #[test]
