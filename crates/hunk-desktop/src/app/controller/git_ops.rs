@@ -1011,6 +1011,105 @@ impl DiffViewer {
         });
     }
 
+    pub(super) fn generate_commit_message_from_staged(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.git_controls_busy() {
+            return;
+        }
+
+        let Some(repo_root) = self.selected_git_workspace_root() else {
+            self.git_status_message = Some("No Git repository available.".to_string());
+            cx.notify();
+            return;
+        };
+        if self.staged_commit_file_count() == 0 {
+            self.git_status_message =
+                Some("Stage at least one file before generating a commit message.".to_string());
+            cx.notify();
+            return;
+        }
+
+        let codex_executable = Self::resolve_codex_executable_path();
+        let branch_name = self.git_workspace.branch_name.clone();
+        let commit_input_state = self.commit_input_state.clone();
+        let window_handle = window.window_handle();
+        let epoch = self.begin_git_action("Generate commit message", cx);
+        let started_at = Instant::now();
+
+        self.git_action_task = cx.spawn(async move |this, cx| {
+            let (execution_elapsed, result) = cx
+                .background_executor()
+                .spawn(async move {
+                    let execution_started_at = Instant::now();
+                    let result = try_ai_commit_message_for_staged_index(
+                        AiCodexGenerationConfig {
+                            codex_executable: codex_executable.as_path(),
+                            repo_root: repo_root.as_path(),
+                        },
+                        repo_root.as_path(),
+                        branch_name.as_str(),
+                    );
+                    (execution_started_at.elapsed(), result)
+                })
+                .await;
+
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |this, cx| {
+                    if epoch != this.git_action_epoch {
+                        return;
+                    }
+
+                    let total_elapsed = started_at.elapsed();
+                    this.finish_git_action();
+                    match result {
+                        Ok(commit_message) => {
+                            debug!(
+                                "git action complete: epoch={} action=Generate commit message exec_elapsed_ms={} total_elapsed_ms={}",
+                                epoch,
+                                execution_elapsed.as_millis(),
+                                total_elapsed.as_millis()
+                            );
+                            let commit_message_text = commit_message.as_git_message();
+                            this.git_status_message = Some("Generated commit message".to_string());
+                            if let Err(err) = cx.update_window(window_handle, |_, window, cx| {
+                                commit_input_state.update(cx, |state, cx| {
+                                    state.set_value(commit_message_text.clone(), window, cx);
+                                });
+                            }) {
+                                error!("failed to populate generated commit message: {err:#}");
+                                this.git_status_message =
+                                    Some(format!("Set commit message failed: {err:#}"));
+                                Self::push_error_notification(
+                                    "Generate commit message failed: could not update the commit input.".to_string(),
+                                    cx,
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            error!(
+                                "git action failed: epoch={} action=Generate commit message exec_elapsed_ms={} total_elapsed_ms={} err={err:#}",
+                                epoch,
+                                execution_elapsed.as_millis(),
+                                total_elapsed.as_millis()
+                            );
+                            let summary = err.to_string();
+                            this.git_status_message = Some(format!("Git error: {err:#}"));
+                            Self::push_error_notification(
+                                format!("Generate commit message failed: {summary}"),
+                                cx,
+                            );
+                        }
+                    }
+
+                    cx.notify();
+                });
+            }
+        });
+    }
+
     pub(super) fn undo_working_copy_file(
         &mut self,
         file_path: String,

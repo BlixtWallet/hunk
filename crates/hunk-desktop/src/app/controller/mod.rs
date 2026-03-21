@@ -45,7 +45,8 @@ use hunk_git::history::{
 use hunk_git::mutation::{
     activate_or_create_branch as checkout_or_create_branch_with_change_transfer,
     commit_all_with_details as commit_staged_with_details, commit_index_with_details,
-    restore_working_copy_paths, stage_paths, unstage_paths, working_copy_context_for_ai,
+    restore_working_copy_paths, stage_paths, staged_index_context_for_ai, unstage_paths,
+    working_copy_context_for_ai,
 };
 use hunk_git::network::{
     push_current_branch, sync_branch_from_remote_if_tracked, sync_current_branch,

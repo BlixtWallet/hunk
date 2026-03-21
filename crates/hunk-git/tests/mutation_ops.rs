@@ -7,7 +7,7 @@ use hunk_git::git::{FileStatus, load_workflow_snapshot};
 use hunk_git::mutation::{
     activate_or_create_branch, commit_all, commit_all_with_details, commit_index_with_details,
     commit_selected_paths, commit_selected_paths_with_details, restore_working_copy_paths,
-    stage_paths, unstage_paths, working_copy_context_for_ai,
+    stage_paths, staged_index_context_for_ai, unstage_paths, working_copy_context_for_ai,
 };
 use tempfile::TempDir;
 
@@ -405,6 +405,89 @@ fn working_copy_context_for_ai_supports_unborn_head_repositories() -> Result<()>
 
     let context = working_copy_context_for_ai(fixture.root(), 10, 10_000)?
         .expect("context should exist for an unborn repo");
+
+    assert!(context.changed_files_summary.contains("tracked.txt"));
+    Ok(())
+}
+
+#[test]
+fn staged_index_context_for_ai_returns_none_without_staged_changes() -> Result<()> {
+    let fixture = TempGitRepo::new()?;
+    fixture.configure_signature()?;
+    fixture.write_file("tracked.txt", "base\n")?;
+    fixture.commit_all_git2("initial")?;
+    fixture.write_file("tracked.txt", "base\nupdated\n")?;
+
+    let context = staged_index_context_for_ai(fixture.root(), 10, 10_000)?;
+
+    assert!(context.is_none());
+    Ok(())
+}
+
+#[test]
+fn staged_index_context_for_ai_returns_summary_and_patch() -> Result<()> {
+    let fixture = TempGitRepo::new()?;
+    fixture.configure_signature()?;
+    fixture.write_file("tracked.txt", "base\n")?;
+    fixture.commit_all_git2("initial")?;
+    fixture.write_file("tracked.txt", "base\nupdated\n")?;
+    fixture.write_file("new.txt", "hello\n")?;
+    fixture.stage_path("tracked.txt")?;
+    fixture.stage_path("new.txt")?;
+
+    let context = staged_index_context_for_ai(fixture.root(), 10, 10_000)?
+        .expect("context should exist for staged changes");
+
+    assert!(context.changed_files_summary.contains("tracked.txt"));
+    assert!(context.changed_files_summary.contains("new.txt"));
+    assert!(context.diff_patch.contains("diff --git"));
+    assert!(context.diff_patch.contains("updated"));
+    assert!(context.diff_patch.contains("hello"));
+    Ok(())
+}
+
+#[test]
+fn staged_index_context_for_ai_uses_only_staged_content() -> Result<()> {
+    let fixture = TempGitRepo::new()?;
+    fixture.configure_signature()?;
+    fixture.write_file("tracked.txt", "base\n")?;
+    fixture.commit_all_git2("initial")?;
+    fixture.write_file("tracked.txt", "base\nstaged\n")?;
+    fixture.stage_path("tracked.txt")?;
+    fixture.write_file("tracked.txt", "base\nstaged\nunstaged\n")?;
+
+    let context = staged_index_context_for_ai(fixture.root(), 10, 10_000)?
+        .expect("context should exist for staged changes");
+
+    assert!(context.diff_patch.contains("staged"));
+    assert!(!context.diff_patch.contains("unstaged"));
+    Ok(())
+}
+
+#[test]
+fn staged_index_context_for_ai_truncates_large_patch_output() -> Result<()> {
+    let fixture = TempGitRepo::new()?;
+    fixture.configure_signature()?;
+    fixture.write_file("tracked.txt", "base\n")?;
+    fixture.commit_all_git2("initial")?;
+    fixture.write_file("tracked.txt", &format!("base\n{}\n", "updated".repeat(100)))?;
+    fixture.stage_path("tracked.txt")?;
+
+    let context = staged_index_context_for_ai(fixture.root(), 10, 80)?
+        .expect("context should exist for staged changes");
+
+    assert!(context.diff_patch.contains("[truncated]"));
+    Ok(())
+}
+
+#[test]
+fn staged_index_context_for_ai_supports_unborn_head_repositories() -> Result<()> {
+    let fixture = TempGitRepo::new()?;
+    fixture.write_file("tracked.txt", "pending\n")?;
+    fixture.stage_path("tracked.txt")?;
+
+    let context = staged_index_context_for_ai(fixture.root(), 10, 10_000)?
+        .expect("context should exist for an unborn repo with staged changes");
 
     assert!(context.changed_files_summary.contains("tracked.txt"));
     Ok(())

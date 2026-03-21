@@ -178,6 +178,8 @@ impl DiffViewer {
         let is_dark = cx.theme().mode.is_dark();
         let colors = hunk_git_workspace(cx.theme(), is_dark);
         let create_commit_loading = self.git_action_loading_named("Create commit");
+        let generate_commit_message_loading =
+            self.git_action_loading_named("Generate commit message");
         let push_loading = self.git_action_loading_named("Push branch");
         let git_controls_busy = self.git_rail_controls_busy();
         let push_button_colors = hunk_action_ready_button(cx.theme(), is_dark, HunkAccentTone::Accent);
@@ -194,9 +196,22 @@ impl DiffViewer {
         };
         let staged_count = self.staged_commit_file_count();
         let total_count = self.git_workspace.files.len();
-        let commit_disabled = staged_count == 0 || (git_controls_busy && !create_commit_loading);
+        let commit_message_has_text = self
+            .commit_input_state
+            .read(cx)
+            .value()
+            .trim()
+            .is_empty();
+        let commit_message_has_text = !commit_message_has_text;
+        let commit_disabled = staged_count == 0
+            || !commit_message_has_text
+            || (git_controls_busy && !create_commit_loading);
+        let generate_commit_message_disabled =
+            staged_count == 0 || (git_controls_busy && !generate_commit_message_loading);
         let commit_readiness_label = if staged_count == 0 {
             "Stage files".to_string()
+        } else if !commit_message_has_text {
+            "Add commit message".to_string()
         } else {
             "Ready to commit".to_string()
         };
@@ -266,16 +281,47 @@ impl DiffViewer {
                     )),
             )
             .child(
-                Input::new(&self.commit_input_state)
-                    .appearance(true)
+                div()
+                    .relative()
                     .w_full()
-                    .with_size(gpui_component::Size::Medium)
-                    .px_2()
-                    .h(px(84.0))
-                    .rounded(px(8.0))
-                    .bg(colors.muted_card.background)
-                    .border_color(colors.muted_card.border)
-                    .disabled(git_controls_busy),
+                    .child(
+                        Input::new(&self.commit_input_state)
+                            .appearance(true)
+                            .w_full()
+                            .with_size(gpui_component::Size::Medium)
+                            .px_2()
+                            .h(px(112.0))
+                            .rounded(px(8.0))
+                            .bg(colors.muted_card.background)
+                            .border_color(colors.muted_card.border)
+                            .disabled(git_controls_busy),
+                    )
+                    .child({
+                        let view = view.clone();
+                        Button::new("git-generate-commit-message")
+                            .ghost()
+                            .compact()
+                            .rounded(px(999.0))
+                            .with_size(gpui_component::Size::Small)
+                            .icon(Icon::new(IconName::Star).size(px(12.0)))
+                            .tooltip("Generate a commit message from the staged changes.")
+                            .loading(generate_commit_message_loading)
+                            .disabled(generate_commit_message_disabled)
+                            .text_color(cx.theme().muted_foreground)
+                            .bg(colors.rail.background.opacity(0.96))
+                            .border_1()
+                            .border_color(colors.muted_card.border)
+                            .min_w(px(20.0))
+                            .h(px(20.0))
+                            .absolute()
+                            .left(px(10.0))
+                            .bottom(px(10.0))
+                            .on_click(move |_, window, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.generate_commit_message_from_staged(window, cx);
+                                });
+                            })
+                    }),
             )
             .child(
                 h_flex()
