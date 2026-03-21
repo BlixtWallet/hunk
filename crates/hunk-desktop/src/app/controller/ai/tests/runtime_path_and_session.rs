@@ -214,6 +214,34 @@ fn review_mode_selected_path_falls_back_to_first_review_file() {
 }
 
 #[test]
+fn update_persisted_review_compare_selection_skips_mutation_when_disabled() {
+    let mut selections = BTreeMap::from([(
+        "/repo".to_string(),
+        ReviewCompareSelectionState {
+            left_source_id: Some("branch:release".to_string()),
+            right_source_id: Some("workspace:primary".to_string()),
+        },
+    )]);
+
+    let changed = update_persisted_review_compare_selection(
+        false,
+        &mut selections,
+        Some("/repo"),
+        Some("branch:main".to_string()),
+        Some("workspace:worktree:task-1".to_string()),
+    );
+
+    assert!(!changed);
+    assert_eq!(
+        selections.get("/repo"),
+        Some(&ReviewCompareSelectionState {
+            left_source_id: Some("branch:release".to_string()),
+            right_source_id: Some("workspace:primary".to_string()),
+        }),
+    );
+}
+
+#[test]
 fn workspace_mad_max_mode_defaults_to_true_when_missing() {
     let state = AppState::default();
     assert!(workspace_mad_max_mode(&state, Some("/repo")));

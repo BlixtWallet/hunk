@@ -56,6 +56,7 @@ mod ai_tests {
     use super::review_mode_selected_path;
     use super::seed_ai_workspace_preferences;
     use super::selected_git_workspace_review_compare_selection_ids;
+    use super::update_persisted_review_compare_selection;
     use super::should_follow_timeline_output;
     use super::should_reset_ai_timeline_measurements;
     use super::should_scroll_timeline_to_bottom_on_new_activity;
@@ -110,6 +111,7 @@ mod ai_tests {
     use hunk_domain::state::AiServiceTierSelection;
     use hunk_domain::state::AiThreadSessionState;
     use hunk_domain::state::AppState;
+    use hunk_domain::state::ReviewCompareSelectionState;
     use hunk_git::git::LocalBranch;
     use hunk_git::worktree::WorkspaceTargetKind;
     use hunk_git::worktree::WorkspaceTargetSummary;
