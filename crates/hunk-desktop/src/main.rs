@@ -40,7 +40,7 @@ fn run_app() -> Result<()> {
     let default_log_level = if cfg!(debug_assertions) {
         LevelFilter::DEBUG
     } else {
-        LevelFilter::WARN
+        LevelFilter::INFO
     };
     let env_filter = EnvFilter::builder()
         .with_default_directive(default_log_level.into())
