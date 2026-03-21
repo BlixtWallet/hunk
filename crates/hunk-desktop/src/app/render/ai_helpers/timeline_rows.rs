@@ -749,10 +749,13 @@ fn render_ai_command_execution_details(
         terminal_surface_id.clone(),
         preview_text.clone(),
     )]);
+    let rerun_button_id = format!("ai-rerun-command-exec-{}", row_id.replace('\u{1f}', "--"));
     let copy_button_id = format!("ai-copy-command-exec-{}", row_id.replace('\u{1f}', "--"));
     let status_color = ai_command_execution_status_color(details, cx);
     let status_text = details.status.replace('_', " ");
     let transcript_width = ai_command_execution_transcript_width(preview_text.as_str());
+    let command_to_rerun = details.command.clone();
+    let command_cwd = (!details.cwd.trim().is_empty()).then(|| std::path::PathBuf::from(details.cwd.clone()));
 
     div()
         .w_full()
@@ -806,6 +809,26 @@ fn render_ai_command_execution_details(
                                         .text_xs()
                                         .text_color(status_color)
                                         .child(status_text),
+                                )
+                                .child(
+                                    Button::new(rerun_button_id)
+                                        .ghost()
+                                        .compact()
+                                        .rounded(px(7.0))
+                                        .label("Run in terminal")
+                                        .tooltip("Run this command in the AI terminal")
+                                        .on_click({
+                                            let view = view.clone();
+                                            move |_, _, cx| {
+                                                view.update(cx, |this, cx| {
+                                                    this.ai_run_command_in_terminal(
+                                                        command_cwd.clone(),
+                                                        command_to_rerun.clone(),
+                                                        cx,
+                                                    );
+                                                });
+                                            }
+                                        }),
                                 )
                                 .child(
                                     Button::new(copy_button_id)

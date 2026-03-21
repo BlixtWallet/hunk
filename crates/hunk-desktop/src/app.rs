@@ -952,6 +952,7 @@ struct DiffViewer {
     ai_terminal_surface_focused: bool,
     ai_terminal_panel_bounds: Option<Bounds<Pixels>>,
     ai_terminal_grid_size: Option<(u16, u16)>,
+    ai_terminal_pending_input: Option<String>,
     ai_terminal_event_task: Task<()>,
     ai_terminal_runtime: Option<AiTerminalRuntimeHandle>,
     ai_terminal_runtime_generation: usize,

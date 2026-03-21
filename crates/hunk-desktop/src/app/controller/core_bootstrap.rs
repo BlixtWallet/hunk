@@ -475,6 +475,7 @@ impl DiffViewer {
             ai_terminal_surface_focused: false,
             ai_terminal_panel_bounds: None,
             ai_terminal_grid_size: None,
+            ai_terminal_pending_input: None,
             ai_terminal_event_task: Task::ready(()),
             ai_terminal_runtime: None,
             ai_terminal_runtime_generation: 0,

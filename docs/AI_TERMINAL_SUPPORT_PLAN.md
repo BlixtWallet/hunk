@@ -96,12 +96,12 @@ Implemented today:
 - The terminal pane header was reduced to slimmer editor-style chrome and the standalone stop control was removed.
 - The terminal pane is now vertically resizable from a drag handle along its top border.
 - The VT surface now resizes the PTY and terminal grid to the actual rendered panel size, which restores correct prompt placement, auto-follow behavior, and scroll reachability for long output.
+- Command execution rows in the AI timeline can now reopen the terminal and rerun that command directly inside the interactive shell pane.
 - Workspace-wide validation already passes for the current slice.
 
 Not implemented yet:
 
 - terminal hyperlink detection and any remaining cursor blink polish
-- command-row affordances from the AI timeline
 - persisted terminal state across full app relaunch
 
 ## Current Integration Points

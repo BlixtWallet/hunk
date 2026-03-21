@@ -147,6 +147,7 @@ impl DiffViewer {
         if !self.ai_terminal_is_running() {
             self.stop_ai_terminal_runtime("clearing terminal session");
         }
+        self.ai_terminal_pending_input = None;
         self.ai_terminal_session.transcript.clear();
         self.ai_terminal_session.screen = None;
         self.ai_terminal_session.status_message = None;
@@ -561,6 +562,46 @@ impl DiffViewer {
         self.start_ai_terminal_command_session(cwd, command, cx);
     }
 
+    pub(super) fn ai_run_command_in_terminal(
+        &mut self,
+        cwd: Option<PathBuf>,
+        command: String,
+        cx: &mut Context<Self>,
+    ) {
+        let command = command.trim().to_string();
+        if command.is_empty() {
+            return;
+        }
+
+        let target_cwd = cwd.or_else(|| self.ai_workspace_cwd());
+        let Some(target_cwd) = target_cwd else {
+            self.ai_terminal_session.status_message =
+                Some("Open a workspace before using the terminal.".to_string());
+            self.ai_terminal_session.status = AiTerminalSessionStatus::Failed;
+            self.ai_terminal_set_open(true, cx);
+            cx.notify();
+            return;
+        };
+
+        self.ai_terminal_set_open(true, cx);
+        self.ai_terminal_session.last_command = Some(command.clone());
+        self.ai_terminal_pending_input = Some(command);
+
+        let session_cwd_matches = self
+            .ai_terminal_session
+            .cwd
+            .as_ref()
+            .is_some_and(|cwd| cwd == &target_cwd);
+
+        if self.ai_terminal_is_running() && session_cwd_matches {
+            self.flush_ai_terminal_pending_input(cx);
+            self.defer_ai_terminal_interaction_focus(cx);
+            return;
+        }
+
+        self.start_default_ai_terminal_session(target_cwd, cx);
+    }
+
     fn start_default_ai_terminal_session(&mut self, cwd: PathBuf, cx: &mut Context<Self>) {
         self.stop_ai_terminal_runtime("starting default terminal shell");
 
@@ -571,7 +612,9 @@ impl DiffViewer {
                 self.ai_terminal_open = true;
                 self.ai_terminal_stop_requested = false;
                 self.ai_terminal_session.cwd = Some(cwd);
-                self.ai_terminal_session.last_command = None;
+                if self.ai_terminal_pending_input.is_none() {
+                    self.ai_terminal_session.last_command = None;
+                }
                 self.ai_terminal_session.status = AiTerminalSessionStatus::Running;
                 self.ai_terminal_session.exit_code = None;
                 self.ai_terminal_session.screen = None;
@@ -609,6 +652,7 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) {
         self.stop_ai_terminal_runtime("starting terminal command");
+        self.ai_terminal_pending_input = None;
 
         let workspace_key = cwd.to_string_lossy().to_string();
         let request = TerminalSpawnRequest::new(cwd.clone(), command.clone());
@@ -712,6 +756,7 @@ impl DiffViewer {
                 }
                 self.ai_terminal_follow_output = screen.display_offset == 0;
                 self.ai_terminal_session.screen = Some(screen);
+                self.flush_ai_terminal_pending_input(cx);
             }
             TerminalEvent::Exit { exit_code } => {
                 let stopped = self.ai_terminal_stop_requested;
@@ -754,6 +799,33 @@ impl DiffViewer {
                 );
             }
         }
+    }
+
+    fn flush_ai_terminal_pending_input(&mut self, cx: &mut Context<Self>) {
+        if !self.ai_terminal_is_running() {
+            return;
+        }
+        let Some(runtime) = self.ai_terminal_runtime.as_ref() else {
+            return;
+        };
+        let Some(mut input) = self.ai_terminal_pending_input.take() else {
+            return;
+        };
+
+        if !input.ends_with('\n') {
+            input.push('\n');
+        }
+
+        if let Err(error) = runtime.handle.write_input(input.as_bytes()) {
+            self.ai_terminal_pending_input = Some(input.trim_end_matches('\n').to_string());
+            self.ai_terminal_session.status_message = Some(error.to_string());
+            self.ai_terminal_session.status = AiTerminalSessionStatus::Failed;
+            cx.notify();
+            return;
+        }
+
+        self.ai_terminal_session.status_message = None;
+        cx.notify();
     }
 }
 
