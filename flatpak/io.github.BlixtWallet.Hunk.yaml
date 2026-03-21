@@ -30,7 +30,7 @@ modules:
       - mkdir -p .cargo
       - cp flatpak/cargo-config.toml .cargo/config.toml
       - cargo build --offline --release -p hunk-desktop
-      - install -Dm755 /run/build/hunk-flatpak/target/release/hunk_desktop /app/bin/hunk_desktop
+      - install -Dm755 target/release/hunk_desktop /app/bin/hunk_desktop
       - install -Dm755 assets/codex-runtime/linux/codex /app/bin/codex-runtime/linux/codex
       - install -Dm644 flatpak/io.github.BlixtWallet.Hunk.desktop /app/share/applications/io.github.BlixtWallet.Hunk.desktop
       - install -Dm644 flatpak/io.github.BlixtWallet.Hunk.metainfo.xml /app/share/metainfo/io.github.BlixtWallet.Hunk.metainfo.xml
