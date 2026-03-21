@@ -225,7 +225,7 @@ find_linux_library_path_by_name() {
   fi
 
   local search_root
-  for search_root in /lib /usr/lib /usr/lib64 /usr/local/lib; do
+  for search_root in /lib /usr/lib /usr/lib64 /usr/local/lib /nix/store; do
     [[ -d "$search_root" ]] || continue
     local match
     match="$(find "$search_root" -path "*/$library_name" -type f 2>/dev/null | head -n 1)"
@@ -236,16 +236,6 @@ find_linux_library_path_by_name() {
   done
 
   return 1
-}
-
-reject_nix_linux_runtime_path() {
-  local source_path="$1"
-
-  if [[ "$source_path" == /nix/store/* ]]; then
-    echo "error: refusing to bundle Linux runtime library from Nix store: $source_path" >&2
-    echo "Build Linux release artifacts outside nix/direnv so they link against host runtime libraries." >&2
-    exit 1
-  fi
 }
 
 download_cached_appimage_tool() {
@@ -344,7 +334,6 @@ bundle_linux_runtime_dependencies() {
 
     while IFS= read -r dependency_path; do
       [[ -n "$dependency_path" ]] || continue
-      reject_nix_linux_runtime_path "$dependency_path"
 
       local dependency_name
       dependency_name="$(basename "$dependency_path")"
@@ -389,7 +378,6 @@ bundle_linux_extra_runtime_libraries() {
       echo "warning: optional Linux runtime library '$library_name' was not found on this host" >&2
       continue
     fi
-    reject_nix_linux_runtime_path "$source_path"
 
     echo "Bundling extra Linux runtime library $library_name from $source_path" >&2
     cp -L "$source_path" "$destination_dir/$library_name"
