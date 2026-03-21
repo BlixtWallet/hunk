@@ -946,6 +946,7 @@ struct DiffViewer {
     ai_terminal_input_draft: String,
     ai_terminal_session: AiTerminalSessionState,
     ai_terminal_input_state: Entity<InputState>,
+    ai_terminal_focus_handle: FocusHandle,
     ai_terminal_event_task: Task<()>,
     ai_terminal_runtime: Option<AiTerminalRuntimeHandle>,
     ai_terminal_runtime_generation: usize,

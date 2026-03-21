@@ -83,6 +83,7 @@ Implemented today:
 - The drawer supports live PTY input forwarding for running sessions.
 - The drawer can be toggled with `cmd-j` on macOS and `ctrl-j` on Linux/Windows.
 - Output is bounded and now rendered through a VT-backed GPUI cell surface with transcript fallback for empty and failure states.
+- Live terminal sessions can now take direct keyboard input from the terminal surface, including bracketed paste when the shell requests it.
 - Workspace-wide validation already passes for the current slice.
 
 Not implemented yet:
@@ -550,7 +551,7 @@ Exit criteria:
 - [x] Add drawer height controls.
 - [x] Replace transcript rendering with a VT cell surface.
 - [x] Add terminal keyboard input routing into the live PTY session.
-- [ ] Replace command-line style input routing with terminal-surface keystroke routing.
+- [x] Replace command-line style input routing with terminal-surface keystroke routing.
 - [ ] Add terminal text selection and copy behavior.
 - [ ] Add proper terminal scrolling and viewport behavior.
 

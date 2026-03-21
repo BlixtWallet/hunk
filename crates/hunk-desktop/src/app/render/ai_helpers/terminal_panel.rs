@@ -173,40 +173,79 @@ impl DiffViewer {
                                     0.34,
                                 ))
                                 .overflow_y_scrollbar()
+                                .key_context("AiTerminal")
+                                .track_focus(&self.ai_terminal_focus_handle)
+                                .on_mouse_down(MouseButton::Left, {
+                                    let view = view.clone();
+                                    move |_, _, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.ai_focus_terminal_surface_action(cx);
+                                        });
+                                    }
+                                })
+                                .on_key_down({
+                                    let view = view.clone();
+                                    move |event, window, cx| {
+                                        let handled = view.update(cx, |this, cx| {
+                                            this.ai_terminal_surface_key_down(
+                                                &event.keystroke,
+                                                window,
+                                                cx,
+                                            )
+                                        });
+                                        if handled {
+                                            cx.stop_propagation();
+                                        }
+                                    }
+                                })
                                 .p_3()
                                 .child(self.render_ai_terminal_surface(state, is_dark, cx)),
                         )
                         .child(
                             h_flex()
                                 .w_full()
-                                .items_end()
+                                .items_center()
                                 .gap_2()
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .child(
-                                            Input::new(&self.ai_terminal_input_state)
-                                                .appearance(false)
-                                                .bordered(true)
-                                                .focus_bordered(true)
-                                                .w_full()
-                                                .disabled(!state.accepts_input),
-                                        ),
-                                )
-                                .child({
-                                    let view = view.clone();
-                                    Button::new("ai-terminal-run")
-                                        .compact()
-                                        .outline()
-                                        .rounded(px(8.0))
-                                        .label(state.submit_label)
-                                        .disabled(!state.accepts_input)
-                                        .on_click(move |_, _, cx| {
-                                            view.update(cx, |this, cx| {
-                                                this.ai_submit_terminal_input_action(cx);
-                                            });
-                                        })
+                                .when(!state.running, |this| {
+                                    this.child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .child(
+                                                Input::new(&self.ai_terminal_input_state)
+                                                    .appearance(false)
+                                                    .bordered(true)
+                                                    .focus_bordered(true)
+                                                    .w_full()
+                                                    .disabled(!state.accepts_input),
+                                            ),
+                                    )
+                                    .child({
+                                        let view = view.clone();
+                                        Button::new("ai-terminal-run")
+                                            .compact()
+                                            .outline()
+                                            .rounded(px(8.0))
+                                            .label(state.submit_label)
+                                            .disabled(!state.accepts_input)
+                                            .on_click(move |_, _, cx| {
+                                                view.update(cx, |this, cx| {
+                                                    this.ai_submit_terminal_input_action(cx);
+                                                });
+                                            })
+                                    })
+                                })
+                                .when(state.running, |this| {
+                                    this.child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .text_xs()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(
+                                                "Terminal is live. Click the surface to focus and type directly.",
+                                            ),
+                                    )
                                 })
                                 .child({
                                     let view = view.clone();

@@ -471,6 +471,7 @@ impl DiffViewer {
             ai_terminal_input_draft: String::new(),
             ai_terminal_session: AiTerminalSessionState::default(),
             ai_terminal_input_state,
+            ai_terminal_focus_handle: cx.focus_handle(),
             ai_terminal_event_task: Task::ready(()),
             ai_terminal_runtime: None,
             ai_terminal_runtime_generation: 0,
