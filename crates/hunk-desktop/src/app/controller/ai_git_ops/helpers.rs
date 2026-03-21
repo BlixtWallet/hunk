@@ -83,6 +83,29 @@ fn resolve_ai_commit_message_for_working_copy(
     .unwrap_or_else(|| fallback_commit_message.clone())
 }
 
+fn try_ai_commit_message_for_staged_index(
+    generation_config: AiCodexGenerationConfig<'_>,
+    repo_root: &std::path::Path,
+    branch_name: &str,
+) -> anyhow::Result<AiCommitMessage> {
+    let staged_context = staged_index_context_for_ai(repo_root, 200, 40_000)?;
+    let Some(staged_context) = staged_context else {
+        return Err(anyhow::anyhow!("no staged changes to summarize"));
+    };
+
+    try_ai_commit_message(
+        generation_config,
+        AiCommitGenerationContext {
+            branch_name,
+            prompt_seed: None,
+            latest_agent_message: None,
+            changed_files_summary: staged_context.changed_files_summary.as_str(),
+            diff_patch: staged_context.diff_patch.as_str(),
+        },
+    )
+    .ok_or_else(|| anyhow::anyhow!("AI commit message generation returned no structured output"))
+}
+
 fn activate_new_ai_review_branch(
     repo_root: &std::path::Path,
     requested_branch_name: &str,
