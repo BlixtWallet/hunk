@@ -8,14 +8,25 @@ use codex_app_server_protocol::CollaborationModeMask;
 use codex_protocol::config_types::ModeKind;
 use hunk_git::git::LocalBranch;
 
-fn sorted_threads(state: &hunk_codex::state::AiState) -> Vec<ThreadSummary> {
+fn compare_ai_threads(
+    left: &ThreadSummary,
+    right: &ThreadSummary,
+    bookmarked_thread_ids: &BTreeSet<String>,
+) -> std::cmp::Ordering {
+    let left_bookmarked = bookmarked_thread_ids.contains(left.id.as_str());
+    let right_bookmarked = bookmarked_thread_ids.contains(right.id.as_str());
+    right_bookmarked
+        .cmp(&left_bookmarked)
+        .then_with(|| right.created_at.cmp(&left.created_at))
+        .then_with(|| right.id.cmp(&left.id))
+}
+
+fn sorted_threads(
+    state: &hunk_codex::state::AiState,
+    bookmarked_thread_ids: &BTreeSet<String>,
+) -> Vec<ThreadSummary> {
     let mut threads = state.threads.values().cloned().collect::<Vec<_>>();
-    threads.sort_by(|left, right| {
-        right
-            .created_at
-            .cmp(&left.created_at)
-            .then_with(|| right.id.cmp(&left.id))
-    });
+    threads.sort_by(|left, right| compare_ai_threads(left, right, bookmarked_thread_ids));
     threads
 }
 
@@ -57,6 +68,7 @@ fn merged_ai_visible_threads(
     state_snapshot: &hunk_codex::state::AiState,
     state_snapshot_workspace_key: Option<&str>,
     workspace_states: &std::collections::BTreeMap<String, AiWorkspaceState>,
+    bookmarked_thread_ids: &BTreeSet<String>,
     workspace_targets: &[hunk_git::worktree::WorkspaceTargetSummary],
     project_path: Option<&std::path::Path>,
     repo_root: Option<&std::path::Path>,
@@ -117,13 +129,42 @@ fn merged_ai_visible_threads(
     }
 
     let mut threads = threads_by_id.into_values().collect::<Vec<_>>();
-    threads.sort_by(|left, right| {
-        right
-            .created_at
-            .cmp(&left.created_at)
-            .then_with(|| right.id.cmp(&left.id))
-    });
+    threads.sort_by(|left, right| compare_ai_threads(left, right, bookmarked_thread_ids));
     threads
+}
+
+fn latest_known_ai_threads(
+    state_snapshot: &hunk_codex::state::AiState,
+    workspace_states: &std::collections::BTreeMap<String, AiWorkspaceState>,
+) -> BTreeMap<String, ThreadSummary> {
+    let mut threads_by_id = BTreeMap::<String, ThreadSummary>::new();
+
+    for thread in state_snapshot.threads.values().chain(
+        workspace_states
+            .values()
+            .flat_map(|state| state.state_snapshot.threads.values()),
+    ) {
+        let replace_existing = threads_by_id
+            .get(thread.id.as_str())
+            .is_none_or(|existing| {
+                (
+                    thread.last_sequence,
+                    thread.updated_at,
+                    thread.created_at,
+                    thread.id.as_str(),
+                ) > (
+                    existing.last_sequence,
+                    existing.updated_at,
+                    existing.created_at,
+                    existing.id.as_str(),
+                )
+            });
+        if replace_existing {
+            threads_by_id.insert(thread.id.clone(), thread.clone());
+        }
+    }
+
+    threads_by_id
 }
 
 fn workspace_mad_max_mode(state: &AppState, workspace_key: Option<&str>) -> bool {
@@ -158,6 +199,59 @@ fn set_workspace_include_hidden_models(state: &mut AppState, workspace_key: &str
             .ai_workspace_include_hidden_models
             .insert(workspace_key.to_string(), false);
     }
+}
+
+fn ai_thread_is_bookmarked(state: &AppState, thread_id: &str) -> bool {
+    state.ai_bookmarked_thread_ids.contains(thread_id)
+}
+
+fn toggle_ai_thread_bookmark(state: &mut AppState, thread_id: &str) -> bool {
+    if state.ai_bookmarked_thread_ids.insert(thread_id.to_string()) {
+        true
+    } else {
+        state.ai_bookmarked_thread_ids.remove(thread_id);
+        false
+    }
+}
+
+fn prune_bookmarked_ai_threads(
+    state: &mut AppState,
+    state_snapshot: &hunk_codex::state::AiState,
+    workspace_states: &std::collections::BTreeMap<String, AiWorkspaceState>,
+    known_workspace_keys: &BTreeSet<String>,
+    visible_workspace_key: Option<&str>,
+) -> bool {
+    let latest_threads = latest_known_ai_threads(state_snapshot, workspace_states);
+    let workspace_coverage_complete =
+        known_ai_workspace_coverage_is_complete(known_workspace_keys, visible_workspace_key, workspace_states);
+    let previous_count = state.ai_bookmarked_thread_ids.len();
+    state.ai_bookmarked_thread_ids.retain(|thread_id| {
+        let Some(thread) = latest_threads.get(thread_id) else {
+            return !workspace_coverage_complete;
+        };
+
+        if thread.status == ThreadLifecycleStatus::Archived {
+            return !workspace_coverage_complete;
+        }
+
+        true
+    });
+    state.ai_bookmarked_thread_ids.len() != previous_count
+}
+
+fn known_ai_workspace_coverage_is_complete(
+    known_workspace_keys: &BTreeSet<String>,
+    visible_workspace_key: Option<&str>,
+    workspace_states: &std::collections::BTreeMap<String, AiWorkspaceState>,
+) -> bool {
+    if known_workspace_keys.is_empty() {
+        return false;
+    }
+
+    known_workspace_keys.iter().all(|workspace_key| {
+        visible_workspace_key == Some(workspace_key.as_str())
+            || workspace_states.contains_key(workspace_key.as_str())
+    })
 }
 
 fn seed_ai_workspace_preferences(

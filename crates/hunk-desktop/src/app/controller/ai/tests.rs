@@ -40,6 +40,7 @@ mod ai_tests {
     use super::normalized_thread_session_state;
     use super::normalized_user_input_answers;
     use super::preferred_ai_worktree_base_branch_name;
+    use super::prune_bookmarked_ai_threads;
     use super::review_compare_selection_ids_for_workspace_root;
     use super::requested_branch_name_for_new_thread;
     use super::resolve_bundled_codex_executable_from_exe;
@@ -220,6 +221,25 @@ mod ai_tests {
             branch_name: "main".to_string(),
             managed: matches!(kind, WorkspaceTargetKind::LinkedWorktree),
             is_active: false,
+        }
+    }
+
+    fn thread_summary(
+        id: &str,
+        cwd: &str,
+        status: ThreadLifecycleStatus,
+        created_at: i64,
+        updated_at: i64,
+        last_sequence: u64,
+    ) -> ThreadSummary {
+        ThreadSummary {
+            id: id.to_string(),
+            cwd: cwd.to_string(),
+            title: Some(id.to_string()),
+            status,
+            created_at,
+            updated_at,
+            last_sequence,
         }
     }
 

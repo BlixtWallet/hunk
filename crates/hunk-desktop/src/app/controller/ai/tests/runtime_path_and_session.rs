@@ -164,6 +164,7 @@
             .into_iter()
             .collect(),
             ai_workspace_include_hidden_models: Default::default(),
+            ai_bookmarked_thread_ids: Default::default(),
             ai_workspace_session_overrides: Default::default(),
             git_workflow_cache: None,
             git_recent_commits_cache: None,
@@ -205,6 +206,7 @@
             ]
             .into_iter()
             .collect(),
+            ai_bookmarked_thread_ids: Default::default(),
             ai_workspace_session_overrides: Default::default(),
             git_workflow_cache: None,
             git_recent_commits_cache: None,
@@ -212,6 +214,160 @@
         assert!(workspace_include_hidden_models(&state, Some("/repo-a")));
         assert!(!workspace_include_hidden_models(&state, Some("/repo-b")));
         assert!(workspace_include_hidden_models(&state, Some("/repo-c")));
+    }
+
+    #[test]
+    fn prune_bookmarked_ai_threads_removes_archived_and_missing_threads() {
+        let mut state = AppState {
+            ai_bookmarked_thread_ids: [
+                "thread-live".to_string(),
+                "thread-archived".to_string(),
+                "thread-missing".to_string(),
+            ]
+            .into_iter()
+            .collect(),
+            ..AppState::default()
+        };
+
+        let mut snapshot = AiState::default();
+        snapshot.threads.insert(
+            "thread-live".to_string(),
+            thread_summary("thread-live", "/repo", ThreadLifecycleStatus::Idle, 10, 10, 10),
+        );
+        snapshot.threads.insert(
+            "thread-archived".to_string(),
+            thread_summary(
+                "thread-archived",
+                "/repo",
+                ThreadLifecycleStatus::Archived,
+                20,
+                20,
+                20,
+            ),
+        );
+
+        assert!(prune_bookmarked_ai_threads(
+            &mut state,
+            &snapshot,
+            &BTreeMap::new(),
+            &["/repo".to_string()].into_iter().collect(),
+            Some("/repo"),
+        ));
+        assert_eq!(
+            state.ai_bookmarked_thread_ids,
+            ["thread-live".to_string()].into_iter().collect()
+        );
+    }
+
+    #[test]
+    fn prune_bookmarked_ai_threads_keeps_threads_known_only_in_background_workspace_state() {
+        let mut state = AppState {
+            ai_bookmarked_thread_ids: ["thread-background".to_string()].into_iter().collect(),
+            ..AppState::default()
+        };
+
+        let mut workspace_state = AiWorkspaceState::default();
+        workspace_state.state_snapshot.threads.insert(
+            "thread-background".to_string(),
+            thread_summary(
+                "thread-background",
+                "/repo/worktrees/task-1",
+                ThreadLifecycleStatus::Idle,
+                10,
+                10,
+                10,
+            ),
+        );
+
+        assert!(!prune_bookmarked_ai_threads(
+            &mut state,
+            &AiState::default(),
+            &BTreeMap::from([("/repo/worktrees/task-1".to_string(), workspace_state)]),
+            &["/repo".to_string(), "/repo/worktrees/task-1".to_string()]
+                .into_iter()
+                .collect(),
+            Some("/repo"),
+        ));
+        assert_eq!(
+            state.ai_bookmarked_thread_ids,
+            ["thread-background".to_string()].into_iter().collect()
+        );
+    }
+
+    #[test]
+    fn prune_bookmarked_ai_threads_uses_latest_known_thread_status() {
+        let mut state = AppState {
+            ai_bookmarked_thread_ids: ["thread-1".to_string()].into_iter().collect(),
+            ..AppState::default()
+        };
+
+        let mut snapshot = AiState::default();
+        snapshot.threads.insert(
+            "thread-1".to_string(),
+            thread_summary("thread-1", "/repo", ThreadLifecycleStatus::Archived, 10, 10, 10),
+        );
+
+        let mut workspace_state = AiWorkspaceState::default();
+        workspace_state.state_snapshot.threads.insert(
+            "thread-1".to_string(),
+            thread_summary(
+                "thread-1",
+                "/repo/worktrees/task-1",
+                ThreadLifecycleStatus::Idle,
+                20,
+                20,
+                20,
+            ),
+        );
+
+        assert!(!prune_bookmarked_ai_threads(
+            &mut state,
+            &snapshot,
+            &BTreeMap::from([("/repo/worktrees/task-1".to_string(), workspace_state)]),
+            &["/repo".to_string(), "/repo/worktrees/task-1".to_string()]
+                .into_iter()
+                .collect(),
+            Some("/repo"),
+        ));
+        assert_eq!(
+            state.ai_bookmarked_thread_ids,
+            ["thread-1".to_string()].into_iter().collect()
+        );
+    }
+
+    #[test]
+    fn prune_bookmarked_ai_threads_waits_for_all_known_workspaces_before_pruning_missing_ids() {
+        let mut state = AppState {
+            ai_bookmarked_thread_ids: ["thread-other-worktree".to_string()].into_iter().collect(),
+            ..AppState::default()
+        };
+        let known_workspace_keys = ["/repo".to_string(), "/repo/worktrees/task-1".to_string()]
+            .into_iter()
+            .collect();
+
+        assert!(!prune_bookmarked_ai_threads(
+            &mut state,
+            &AiState::default(),
+            &BTreeMap::new(),
+            &known_workspace_keys,
+            Some("/repo"),
+        ));
+        assert_eq!(
+            state.ai_bookmarked_thread_ids,
+            ["thread-other-worktree".to_string()].into_iter().collect()
+        );
+
+        assert!(prune_bookmarked_ai_threads(
+            &mut state,
+            &AiState::default(),
+            &BTreeMap::from([(
+                "/repo/worktrees/task-1".to_string(),
+                AiWorkspaceState::default(),
+            )]),
+            &known_workspace_keys,
+            Some("/repo"),
+        ));
+        assert!(state.ai_bookmarked_thread_ids.is_empty());
     }
 
     #[test]

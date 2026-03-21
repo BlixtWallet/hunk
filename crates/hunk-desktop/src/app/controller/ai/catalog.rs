@@ -101,8 +101,23 @@ impl DiffViewer {
                 .unwrap_or_else(|| {
                     self.default_ai_workspace_state_for_workspace_key(Some(workspace_key.as_str()))
                 });
-            apply_ai_thread_catalog_to_workspace_state(&mut state, catalog);
+            apply_ai_thread_catalog_to_workspace_state(
+                &mut state,
+                catalog,
+                &self.state.ai_bookmarked_thread_ids,
+            );
             self.ai_workspace_states.insert(workspace_key, state);
+        }
+
+        let known_workspace_keys = ai_known_workspace_keys(self.workspace_targets.as_slice());
+        if prune_bookmarked_ai_threads(
+            &mut self.state,
+            &self.ai_state_snapshot,
+            &self.ai_workspace_states,
+            &known_workspace_keys,
+            visible_workspace_key,
+        ) {
+            self.persist_state();
         }
     }
 
@@ -165,6 +180,7 @@ fn ai_thread_catalog_workspace_roots(
 fn apply_ai_thread_catalog_to_workspace_state(
     state: &mut AiWorkspaceState,
     catalog: AiWorkspaceThreadCatalog,
+    bookmarked_thread_ids: &std::collections::BTreeSet<String>,
 ) {
     state.connection_state = AiConnectionState::Disconnected;
     state.bootstrap_loading = false;
@@ -210,7 +226,8 @@ fn apply_ai_thread_catalog_to_workspace_state(
     if !state.new_thread_draft_active
         && !state.pending_new_thread_selection
         && state.selected_thread_id.is_none()
-        && let Some(first_thread) = sorted_threads(&state.state_snapshot).first()
+        && let Some(first_thread) =
+            sorted_threads(&state.state_snapshot, bookmarked_thread_ids).first()
     {
         state.selected_thread_id = Some(first_thread.id.clone());
     }

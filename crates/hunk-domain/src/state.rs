@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -123,6 +123,7 @@ pub struct AppState {
     pub review_compare_selection_by_repo: BTreeMap<String, ReviewCompareSelectionState>,
     pub ai_workspace_mad_max: BTreeMap<String, bool>,
     pub ai_workspace_include_hidden_models: BTreeMap<String, bool>,
+    pub ai_bookmarked_thread_ids: BTreeSet<String>,
     pub ai_workspace_session_overrides: BTreeMap<String, AiThreadSessionState>,
     pub git_workflow_cache: Option<CachedWorkflowState>,
     pub git_recent_commits_cache: Option<CachedRecentCommitsState>,

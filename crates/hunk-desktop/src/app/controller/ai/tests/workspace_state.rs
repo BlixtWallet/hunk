@@ -25,7 +25,7 @@
                 last_sequence: 1,
             },
         );
-        let sorted = sorted_threads(&state);
+        let sorted = sorted_threads(&state, &BTreeSet::new());
         assert_eq!(sorted[0].id, "t-newer");
         assert_eq!(sorted[1].id, "t-older");
     }
@@ -58,9 +58,43 @@
             },
         );
 
-        let sorted = sorted_threads(&state);
+        let sorted = sorted_threads(&state, &BTreeSet::new());
         assert_eq!(sorted[0].id, "thread-z");
         assert_eq!(sorted[1].id, "thread-a");
+    }
+
+    #[test]
+    fn sorted_threads_prioritizes_bookmarks_before_created_at() {
+        let mut state = AiState::default();
+        state.threads.insert(
+            "thread-bookmarked".to_string(),
+            ThreadSummary {
+                id: "thread-bookmarked".to_string(),
+                cwd: "/repo".to_string(),
+                title: None,
+                status: ThreadLifecycleStatus::Active,
+                created_at: 10,
+                updated_at: 10,
+                last_sequence: 1,
+            },
+        );
+        state.threads.insert(
+            "thread-newer".to_string(),
+            ThreadSummary {
+                id: "thread-newer".to_string(),
+                cwd: "/repo".to_string(),
+                title: None,
+                status: ThreadLifecycleStatus::Active,
+                created_at: 20,
+                updated_at: 20,
+                last_sequence: 2,
+            },
+        );
+
+        let bookmarks = ["thread-bookmarked".to_string()].into_iter().collect();
+        let sorted = sorted_threads(&state, &bookmarks);
+        assert_eq!(sorted[0].id, "thread-bookmarked");
+        assert_eq!(sorted[1].id, "thread-newer");
     }
 
     #[test]
@@ -151,6 +185,7 @@
                 include_hidden_models: true,
                 mad_max_mode: false,
             },
+            &BTreeSet::new(),
         );
 
         assert_eq!(workspace_state.connection_state, AiConnectionState::Ready);
@@ -459,6 +494,7 @@
                 include_hidden_models: true,
                 mad_max_mode: false,
             },
+            &BTreeSet::new(),
         );
 
         let pending = workspace_state
@@ -510,6 +546,7 @@
                 include_hidden_models: true,
                 mad_max_mode: false,
             },
+            &BTreeSet::new(),
         );
 
         assert!(workspace_state.pending_thread_start.is_none());
@@ -564,6 +601,7 @@
                 include_hidden_models: true,
                 mad_max_mode: false,
             },
+            &BTreeSet::new(),
         );
 
         assert!(workspace_state.new_thread_draft_active);
@@ -639,6 +677,7 @@
                 include_hidden_models: true,
                 mad_max_mode: false,
             },
+            &BTreeSet::new(),
         );
 
         assert!(!workspace_state.new_thread_draft_active);
@@ -898,6 +937,7 @@
                 state_snapshot,
                 active_thread_id: Some("thread-a".to_string()),
             },
+            &BTreeSet::new(),
         );
 
         assert_eq!(workspace_state.connection_state, AiConnectionState::Disconnected);
@@ -907,6 +947,52 @@
         assert_eq!(workspace_state.selected_thread_id.as_deref(), Some("thread-a"));
         assert!(workspace_state.state_snapshot.threads.contains_key("thread-a"));
         assert!(workspace_state.state_snapshot.threads.contains_key("thread-b"));
+    }
+
+    #[test]
+    fn thread_catalog_state_defaults_selection_to_bookmarked_thread_when_no_active_thread_exists() {
+        let mut workspace_state = AiWorkspaceState::default();
+        let mut state_snapshot = AiState::default();
+        state_snapshot.threads.insert(
+            "thread-bookmarked".to_string(),
+            ThreadSummary {
+                id: "thread-bookmarked".to_string(),
+                cwd: "/repo".to_string(),
+                title: Some("Bookmarked".to_string()),
+                status: ThreadLifecycleStatus::Idle,
+                created_at: 10,
+                updated_at: 10,
+                last_sequence: 1,
+            },
+        );
+        state_snapshot.threads.insert(
+            "thread-newer".to_string(),
+            ThreadSummary {
+                id: "thread-newer".to_string(),
+                cwd: "/repo".to_string(),
+                title: Some("Newer".to_string()),
+                status: ThreadLifecycleStatus::Idle,
+                created_at: 20,
+                updated_at: 20,
+                last_sequence: 2,
+            },
+        );
+
+        let bookmarks = ["thread-bookmarked".to_string()].into_iter().collect();
+        apply_ai_thread_catalog_to_workspace_state(
+            &mut workspace_state,
+            AiWorkspaceThreadCatalog {
+                workspace_key: "/repo".to_string(),
+                state_snapshot,
+                active_thread_id: None,
+            },
+            &bookmarks,
+        );
+
+        assert_eq!(
+            workspace_state.selected_thread_id.as_deref(),
+            Some("thread-bookmarked")
+        );
     }
 
     #[test]
@@ -1226,6 +1312,7 @@
                 include_hidden_models: true,
                 mad_max_mode: false,
             },
+            &BTreeSet::new(),
         );
 
         assert_eq!(restored.len(), 1);

@@ -46,6 +46,16 @@ impl DiffViewer {
             .unwrap_or_default();
 
         self.ai_state_snapshot = state;
+        let known_workspace_keys = ai_known_workspace_keys(self.workspace_targets.as_slice());
+        if prune_bookmarked_ai_threads(
+            &mut self.state,
+            &self.ai_state_snapshot,
+            &self.ai_workspace_states,
+            &known_workspace_keys,
+            self.ai_worker_workspace_key.as_deref(),
+        ) {
+            self.persist_state();
+        }
         reconcile_ai_pending_steers(&mut self.ai_pending_steers, &self.ai_state_snapshot);
         let restorable_pending_steers =
             take_restorable_ai_pending_steers(&mut self.ai_pending_steers, &self.ai_state_snapshot);

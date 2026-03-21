@@ -631,6 +631,7 @@ impl DiffViewer {
     fn apply_ai_snapshot_to_workspace_state(
         state: &mut AiWorkspaceState,
         snapshot: AiSnapshot,
+        bookmarked_thread_ids: &std::collections::BTreeSet<String>,
     ) -> Vec<AiPendingSteer> {
         let AiSnapshot {
             state: next_snapshot,
@@ -709,7 +710,8 @@ impl DiffViewer {
         if !state.new_thread_draft_active
             && !state.pending_new_thread_selection
             && state.selected_thread_id.is_none()
-            && let Some(first_thread) = sorted_threads(&state.state_snapshot).first()
+            && let Some(first_thread) =
+                sorted_threads(&state.state_snapshot, bookmarked_thread_ids).first()
         {
             state.selected_thread_id = Some(first_thread.id.clone());
         }
@@ -781,9 +783,15 @@ impl DiffViewer {
         let mut restored_pending_steers = Vec::new();
         let mut restored_queued_messages = Vec::new();
         let mut reconcile_queued_after_snapshot = false;
+        let should_prune_bookmarks = matches!(&event, AiWorkerEventPayload::Snapshot(_));
+        let bookmarked_thread_ids = self.state.ai_bookmarked_thread_ids.clone();
         self.update_background_ai_workspace_state(workspace_key, |state| match event {
             AiWorkerEventPayload::Snapshot(snapshot) => {
-                restored_pending_steers = Self::apply_ai_snapshot_to_workspace_state(state, *snapshot);
+                restored_pending_steers = Self::apply_ai_snapshot_to_workspace_state(
+                    state,
+                    *snapshot,
+                    &bookmarked_thread_ids,
+                );
                 reconcile_queued_after_snapshot = true;
             }
             AiWorkerEventPayload::BootstrapCompleted => {
@@ -816,6 +824,18 @@ impl DiffViewer {
                 Self::apply_background_ai_workspace_fatal(state, message);
             }
         });
+        let known_workspace_keys = ai_known_workspace_keys(self.workspace_targets.as_slice());
+        if should_prune_bookmarks
+            && prune_bookmarked_ai_threads(
+                &mut self.state,
+                &self.ai_state_snapshot,
+                &self.ai_workspace_states,
+                &known_workspace_keys,
+                self.ai_worker_workspace_key.as_deref(),
+            )
+        {
+            self.persist_state();
+        }
         let _ = self.restore_ai_pending_steers_to_drafts(restored_pending_steers);
         if reconcile_queued_after_snapshot {
             let mut ready_thread_ids = Vec::new();
