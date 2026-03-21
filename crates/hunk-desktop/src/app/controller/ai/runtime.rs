@@ -133,6 +133,7 @@ impl DiffViewer {
             self.ai_selected_thread_id.clone(),
             cx,
         );
+        self.ai_prune_terminal_threads("applying AI snapshot", cx);
         if should_scroll_timeline_to_bottom_on_selection_change(
             previous_selected_thread.as_deref(),
             self.ai_selected_thread_id.as_deref(),

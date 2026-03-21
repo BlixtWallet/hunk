@@ -167,6 +167,48 @@ impl DiffViewer {
         cx.notify();
     }
 
+    pub(super) fn ai_prune_terminal_threads(&mut self, reason: &str, cx: &mut Context<Self>) {
+        let retained_thread_ids = ai_retainable_terminal_thread_ids(
+            &self.ai_state_snapshot,
+            self.ai_workspace_states
+                .values()
+                .map(|state| &state.state_snapshot),
+        );
+
+        let visible_runtime_removed = self.ai_terminal_runtime.as_ref().is_some_and(|runtime| {
+            !retained_thread_ids.contains(runtime.thread_id.as_str())
+        });
+        if visible_runtime_removed {
+            self.stop_ai_terminal_runtime(reason);
+            self.ai_terminal_open = false;
+            self.ai_terminal_surface_focused = false;
+            self.ai_terminal_follow_output = true;
+            self.ai_terminal_pending_input = None;
+            self.ai_terminal_input_draft.clear();
+            self.ai_terminal_session = AiTerminalSessionState::default();
+            self.ai_terminal_grid_size = None;
+            self.defer_ai_composer_focus(cx);
+        }
+
+        self.ai_terminal_states_by_thread
+            .retain(|thread_id, _| retained_thread_ids.contains(thread_id));
+
+        let mut retained_hidden_runtimes = BTreeMap::new();
+        for (thread_id, hidden) in std::mem::take(&mut self.ai_hidden_terminal_runtimes) {
+            if retained_thread_ids.contains(thread_id.as_str()) {
+                retained_hidden_runtimes.insert(thread_id, hidden);
+                continue;
+            }
+
+            if let Err(error) = hidden.runtime.handle.kill() {
+                error!(
+                    "failed to stop hidden AI terminal runtime for pruned thread {thread_id} during {reason}: {error:#}"
+                );
+            }
+        }
+        self.ai_hidden_terminal_runtimes = retained_hidden_runtimes;
+    }
+
     fn ai_terminal_runtime_is_current(&self, thread_id: &str, generation: usize) -> bool {
         if self.ai_terminal_runtime.as_ref().is_some_and(|runtime| {
             runtime.thread_id == thread_id && runtime.generation == generation
@@ -767,6 +809,8 @@ impl DiffViewer {
             TerminalEvent::Exit { exit_code } => {
                 let stopped = self.ai_terminal_stop_requested;
                 self.ai_terminal_stop_requested = false;
+                self.ai_terminal_runtime = None;
+                self.ai_terminal_session.exit_code = exit_code;
                 if stopped {
                     self.ai_terminal_session.status = AiTerminalSessionStatus::Stopped;
                 } else if exit_code == Some(0) {
@@ -839,6 +883,7 @@ impl DiffViewer {
                 self.flush_hidden_ai_terminal_pending_input(thread_id);
             }
             TerminalEvent::Exit { .. } => {
+                self.ai_hidden_terminal_runtimes.remove(thread_id);
                 self.ai_terminal_states_by_thread.remove(thread_id);
             }
             TerminalEvent::Failed(message) => {
@@ -1005,9 +1050,39 @@ fn skip_ansi_sequence(bytes: &[u8], start: usize) -> usize {
     start.saturating_add(2)
 }
 
+fn ai_retainable_terminal_thread_ids<'a>(
+    visible_state: &hunk_codex::state::AiState,
+    background_states: impl IntoIterator<Item = &'a hunk_codex::state::AiState>,
+) -> std::collections::BTreeSet<String> {
+    let mut retained_thread_ids = std::collections::BTreeSet::new();
+    ai_extend_retainable_terminal_thread_ids(&mut retained_thread_ids, visible_state);
+    for state in background_states {
+        ai_extend_retainable_terminal_thread_ids(&mut retained_thread_ids, state);
+    }
+    retained_thread_ids
+}
+
+fn ai_extend_retainable_terminal_thread_ids(
+    retained_thread_ids: &mut std::collections::BTreeSet<String>,
+    state: &hunk_codex::state::AiState,
+) {
+    retained_thread_ids.extend(
+        state
+            .threads
+            .values()
+            .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
+            .map(|thread| thread.id.clone()),
+    );
+}
+
 #[cfg(test)]
 mod terminal_output_tests {
-    use super::{sanitize_ai_terminal_output, strip_ansi_sequences};
+    use super::{
+        ai_retainable_terminal_thread_ids, sanitize_ai_terminal_output, strip_ansi_sequences,
+    };
+    use crate::app::AiWorkspaceState;
+    use hunk_codex::state::{AiState, ThreadLifecycleStatus, ThreadSummary};
+    use std::collections::BTreeMap;
 
     #[test]
     fn strips_basic_ansi_sequences() {
@@ -1019,5 +1094,65 @@ mod terminal_output_tests {
     fn normalizes_carriage_returns() {
         let value = sanitize_ai_terminal_output(b"hello\rworld\r\nnext");
         assert_eq!(value, "hello\nworld\nnext");
+    }
+
+    #[test]
+    fn retainable_terminal_threads_include_visible_and_background_non_archived_threads() {
+        let mut visible_state = AiState::default();
+        visible_state.threads.insert(
+            "thread-visible".to_string(),
+            ThreadSummary {
+                id: "thread-visible".to_string(),
+                cwd: "/repo".to_string(),
+                title: None,
+                status: ThreadLifecycleStatus::Active,
+                created_at: 1,
+                updated_at: 1,
+                last_sequence: 1,
+            },
+        );
+        visible_state.threads.insert(
+            "thread-archived".to_string(),
+            ThreadSummary {
+                id: "thread-archived".to_string(),
+                cwd: "/repo".to_string(),
+                title: None,
+                status: ThreadLifecycleStatus::Archived,
+                created_at: 2,
+                updated_at: 2,
+                last_sequence: 2,
+            },
+        );
+
+        let mut background_state = AiState::default();
+        background_state.threads.insert(
+            "thread-background".to_string(),
+            ThreadSummary {
+                id: "thread-background".to_string(),
+                cwd: "/repo/worktree".to_string(),
+                title: None,
+                status: ThreadLifecycleStatus::Idle,
+                created_at: 3,
+                updated_at: 3,
+                last_sequence: 3,
+            },
+        );
+
+        let workspace_states = BTreeMap::from([(
+            "/repo/worktree".to_string(),
+            AiWorkspaceState {
+                state_snapshot: background_state,
+                ..AiWorkspaceState::default()
+            },
+        )]);
+
+        let retained = ai_retainable_terminal_thread_ids(
+            &visible_state,
+            workspace_states.values().map(|state| &state.state_snapshot),
+        );
+
+        assert!(retained.contains("thread-visible"));
+        assert!(retained.contains("thread-background"));
+        assert!(!retained.contains("thread-archived"));
     }
 }

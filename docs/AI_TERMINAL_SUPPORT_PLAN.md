@@ -100,12 +100,13 @@ Implemented today:
 - The fallback command-launcher input has been removed; the AI terminal is now shell-first and `exit` closes the terminal session instead of dropping into a second text box.
 - Terminal runtimes are now parked by AI thread instead of being killed on thread/workspace switches, so switching between worktree threads restores that thread's live shell.
 - Each AI thread now owns its own terminal session state instead of sharing a single terminal bucket per workspace.
+- Shell exit now tears down the old PTY runtime immediately, so reopening the terminal always starts a fresh shell instead of getting stuck on a stale "Starting shell..." state.
+- Hidden terminal runtimes and saved per-thread terminal state are now pruned when archived or deleted threads disappear from the visible or background AI workspace model.
 - Workspace-wide validation already passes for the current slice.
 
 Not implemented yet:
 
 - terminal hyperlink detection and any remaining cursor blink polish
-- cleanup/pruning of hidden terminal runtimes when archived or deleted threads are removed from the session model
 - persisted terminal state across full app relaunch
 
 ## Current Integration Points

@@ -826,6 +826,9 @@ impl DiffViewer {
                 Self::apply_background_ai_workspace_fatal(state, message);
             }
         });
+        if reconcile_queued_after_snapshot {
+            self.ai_prune_terminal_threads("updating background AI workspace snapshot", cx);
+        }
         let _ = self.restore_ai_pending_steers_to_drafts(restored_pending_steers);
         if reconcile_queued_after_snapshot {
             let mut ready_thread_ids = Vec::new();

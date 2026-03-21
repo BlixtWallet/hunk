@@ -1,5 +1,5 @@
 impl DiffViewer {
-    fn clear_ai_state_outside_current_project(&mut self) {
+    fn clear_ai_state_outside_current_project(&mut self, cx: &mut Context<Self>) {
         let hidden_workspace_keys = self
             .ai_hidden_runtimes
             .keys()
@@ -45,7 +45,7 @@ impl DiffViewer {
             .cloned()
             .collect::<Vec<_>>();
         for workspace_key in removable_workspace_keys {
-            self.ai_forget_deleted_workspace_state(workspace_key.as_str());
+            self.ai_forget_deleted_workspace_state(workspace_key.as_str(), cx);
         }
     }
 
@@ -86,7 +86,7 @@ impl DiffViewer {
             self.store_current_ai_workspace_state(previous_workspace_key.as_deref());
             self.park_visible_ai_runtime();
         } else {
-            self.clear_ai_state_outside_current_project();
+            self.clear_ai_state_outside_current_project(cx);
         }
         self.restore_ai_workspace_state_for_key(next_workspace_key.as_deref());
         let next_terminal_thread_id = self.current_ai_thread_id();
