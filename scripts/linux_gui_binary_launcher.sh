@@ -18,6 +18,12 @@ run_hunk_x11() {
     "$REAL_BINARY_PATH" "$@"
 }
 
+print_launch_debug() {
+  if [[ -n "${HUNK_LINUX_LAUNCH_DEBUG:-}" ]]; then
+    echo "$1" >&2
+  fi
+}
+
 wayland_launch_failed() {
   local log_path="$1"
 
@@ -60,11 +66,19 @@ if [[ "$(uname -s)" != "Linux" ]]; then
 fi
 
 if [[ -n "${HUNK_FORCE_X11:-}" ]]; then
+  print_launch_debug "Launching hunk-desktop with explicit X11 override."
+  run_hunk_x11 "$@"
+  exit $?
+fi
+
+if [[ -n "${DISPLAY:-}" && -n "${WAYLAND_DISPLAY:-}" && -z "${HUNK_PREFER_WAYLAND:-}" ]]; then
+  print_launch_debug "Launching hunk-desktop via X11 by default; set HUNK_PREFER_WAYLAND=1 to opt into native Wayland."
   run_hunk_x11 "$@"
   exit $?
 fi
 
 if [[ -z "${WAYLAND_DISPLAY:-}" || -z "${DISPLAY:-}" ]]; then
+  print_launch_debug "Launching hunk-desktop without dual-display fallback."
   run_hunk "$@"
   exit $?
 fi
