@@ -410,7 +410,7 @@ fn binding_after_prompt_edit(
         let shifted_end = shifted_start.checked_add(binding.token.len())?;
         shifted_start..shifted_end
     } else {
-        return None;
+        return rebound_binding_after_overlap_edit(binding, next_prompt);
     };
 
     let next_binding = AiComposerSkillBinding {
@@ -421,9 +421,53 @@ fn binding_after_prompt_edit(
 }
 
 fn binding_token_matches_prompt(binding: &AiComposerSkillBinding, prompt: &str) -> bool {
+    prompt.get(binding.range.clone()).is_some_and(|slice| {
+        slice == binding.token
+            && skill_token_has_boundaries(prompt, binding.range.start, binding.range.end)
+    })
+}
+
+fn rebound_binding_after_overlap_edit(
+    binding: &AiComposerSkillBinding,
+    next_prompt: &str,
+) -> Option<AiComposerSkillBinding> {
+    let mut matches =
+        exact_skill_token_match_ranges(next_prompt, binding.token.as_str()).into_iter();
+    let rebound_range = match (matches.next(), matches.next()) {
+        (Some(range), None) => range,
+        _ => return None,
+    };
+
+    Some(AiComposerSkillBinding {
+        range: rebound_range,
+        ..binding.clone()
+    })
+}
+
+fn exact_skill_token_match_ranges(prompt: &str, token: &str) -> Vec<Range<usize>> {
     prompt
-        .get(binding.range.clone())
-        .is_some_and(|slice| slice == binding.token)
+        .match_indices(token)
+        .filter_map(|(start, _)| {
+            let end = start + token.len();
+            skill_token_has_boundaries(prompt, start, end).then_some(start..end)
+        })
+        .collect()
+}
+
+fn skill_token_has_boundaries(prompt: &str, start: usize, end: usize) -> bool {
+    let before_ok = prompt[..start]
+        .chars()
+        .next_back()
+        .is_none_or(|ch| !is_skill_token_continuation_char(ch));
+    let after_ok = prompt[end..]
+        .chars()
+        .next()
+        .is_none_or(|ch| !is_skill_token_continuation_char(ch));
+    before_ok && after_ok
+}
+
+fn is_skill_token_continuation_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '$')
 }
 
 fn prompt_edit_diff(previous_prompt: &str, next_prompt: &str) -> Option<PromptEditDiff> {
@@ -1036,6 +1080,46 @@ mod tests {
             "Use $gpui now",
             bindings.as_slice(),
             "Use $gpux now",
+        );
+
+        assert!(reconciled.is_empty());
+    }
+
+    #[test]
+    fn reconcile_skill_bindings_rebinds_moved_token_when_match_is_unique() {
+        let bindings = vec![binding("gpui", 4)];
+        let next_prompt = "Now use this later: $gpui";
+
+        let reconciled =
+            reconcile_ai_composer_skill_bindings("Use $gpui now", bindings.as_slice(), next_prompt);
+
+        let rebound_start = next_prompt
+            .find("$gpui")
+            .expect("moved token should exist in the next prompt");
+        assert_eq!(reconciled, vec![binding("gpui", rebound_start)]);
+    }
+
+    #[test]
+    fn reconcile_skill_bindings_drops_binding_when_move_is_ambiguous() {
+        let bindings = vec![binding("gpui", 4)];
+
+        let reconciled = reconcile_ai_composer_skill_bindings(
+            "Use $gpui now",
+            bindings.as_slice(),
+            "$gpui and then $gpui",
+        );
+
+        assert!(reconciled.is_empty());
+    }
+
+    #[test]
+    fn reconcile_skill_bindings_does_not_rebind_inside_longer_skill_name() {
+        let bindings = vec![binding("gpui", 4)];
+
+        let reconciled = reconcile_ai_composer_skill_bindings(
+            "Use $gpui now",
+            bindings.as_slice(),
+            "Use $gpui-helper now",
         );
 
         assert!(reconciled.is_empty());
