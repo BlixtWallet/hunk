@@ -136,10 +136,20 @@ pwsh ./scripts/package_windows_release.ps1
 These produce:
 
 - macOS ARM64: `Hunk-<version>-macos-arm64.dmg`, signed/notarized when Apple secrets are configured
-- Linux x86_64: `Hunk-<version>-linux-x86_64.AppImage` plus fallback `Hunk-<version>-linux-x86_64.tar.gz`
+- Linux x86_64: `Hunk-<version>-linux-x86_64.AppImage`, fallback `Hunk-<version>-linux-x86_64.tar.gz`, `hunk-desktop_<version>-1_amd64.deb`, and `hunk-desktop-<rpm-version>-1.x86_64.rpm`
 - Windows x86_64: `Hunk-<version>-windows-x86_64.msi`
 
-Linux release packaging requires `patchelf` for the tarball fallback bundle.
+Linux release packaging is custom and does not use `cargo packager`. On Ubuntu hosts you can either enter `nix develop` to get the packaging toolchain from the flake, or install host deps with `just install-linux-packaging-deps-ubuntu`, then use:
+
+```bash
+just package-linux-release
+just package-linux-deb-release
+just package-linux-rpm-release
+just smoke-test-linux-deb
+just smoke-test-linux-rpm
+```
+
+The Debian smoke test installs the package in an Ubuntu container. The RPM smoke test installs it in a Fedora container.
 
 ## Prepare Bundled Codex Runtime
 
