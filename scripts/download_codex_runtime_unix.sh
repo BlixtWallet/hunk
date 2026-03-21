@@ -33,6 +33,17 @@ case "$PLATFORM" in
     ;;
 esac
 
+tag_marker="$destination.tag"
+
+if [[ -x "$destination" && -f "$tag_marker" ]]; then
+  existing_tag="$(<"$tag_marker")"
+  if [[ "$existing_tag" == "$CODEX_TAG" ]]; then
+    echo "Using existing bundled Codex runtime at $destination" >&2
+    printf '%s\n' "$destination"
+    exit 0
+  fi
+fi
+
 archive_path="$TMP_DIR/$asset_name"
 download_url="https://github.com/openai/codex/releases/download/$CODEX_TAG/$asset_name"
 
@@ -50,6 +61,7 @@ fi
 mkdir -p "$(dirname "$destination")"
 cp "$source_binary" "$destination"
 chmod +x "$destination"
+printf '%s\n' "$CODEX_TAG" >"$tag_marker"
 
 echo "Prepared bundled Codex runtime at $destination" >&2
 
