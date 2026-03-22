@@ -458,7 +458,11 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
         AiTerminalSendCtrlA,
         Some("AiTerminal"),
     ));
-    bindings.push(KeyBinding::new("tab", AiTerminalSendTab, Some("AiTerminal")));
+    bindings.push(KeyBinding::new(
+        "tab",
+        AiTerminalSendTab,
+        Some("AiTerminal"),
+    ));
     bindings.push(KeyBinding::new(
         "shift-tab",
         AiTerminalSendBackTab,
