@@ -550,6 +550,24 @@ impl DiffViewer {
         self.ai_terminal_dispatch_synthesized_keystroke("ctrl-a", window, cx);
     }
 
+    pub(super) fn ai_terminal_send_tab_action(
+        &mut self,
+        _: &AiTerminalSendTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ai_terminal_dispatch_synthesized_keystroke("tab", window, cx);
+    }
+
+    pub(super) fn ai_terminal_send_back_tab_action(
+        &mut self,
+        _: &AiTerminalSendBackTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ai_terminal_dispatch_synthesized_keystroke("shift-tab", window, cx);
+    }
+
     pub(super) fn ai_terminal_send_up_action(
         &mut self,
         _: &AiTerminalSendUp,

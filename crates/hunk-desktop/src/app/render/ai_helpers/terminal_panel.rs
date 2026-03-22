@@ -246,6 +246,8 @@ impl DiffViewer {
                                 .track_focus(&self.ai_terminal_focus_handle)
                                 .on_action(cx.listener(Self::ai_terminal_send_ctrl_c_action))
                                 .on_action(cx.listener(Self::ai_terminal_send_ctrl_a_action))
+                                .on_action(cx.listener(Self::ai_terminal_send_tab_action))
+                                .on_action(cx.listener(Self::ai_terminal_send_back_tab_action))
                                 .on_action(cx.listener(Self::ai_terminal_send_up_action))
                                 .on_action(cx.listener(Self::ai_terminal_send_down_action))
                                 .on_action(cx.listener(Self::ai_terminal_send_left_action))

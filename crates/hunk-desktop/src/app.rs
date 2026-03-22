@@ -184,6 +184,8 @@ actions!(
         AiToggleTerminalDrawer,
         AiTerminalSendCtrlC,
         AiTerminalSendCtrlA,
+        AiTerminalSendTab,
+        AiTerminalSendBackTab,
         AiTerminalSendUp,
         AiTerminalSendDown,
         AiTerminalSendLeft,
@@ -454,6 +456,12 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
     bindings.push(KeyBinding::new(
         "ctrl-a",
         AiTerminalSendCtrlA,
+        Some("AiTerminal"),
+    ));
+    bindings.push(KeyBinding::new("tab", AiTerminalSendTab, Some("AiTerminal")));
+    bindings.push(KeyBinding::new(
+        "shift-tab",
+        AiTerminalSendBackTab,
         Some("AiTerminal"),
     ));
     bindings.push(KeyBinding::new("up", AiTerminalSendUp, Some("AiTerminal")));
