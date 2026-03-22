@@ -407,7 +407,10 @@ fn markdown_edits_keep_native_editor_layout_and_syntax_caches_consistent() {
     let mut editor = FilesEditor::new();
     let path = PathBuf::from("README.md");
     editor
-        .open_document(path.as_path(), "# Hunk\n\n- item\n\n```rust\nfn main() {}\n```\n")
+        .open_document(
+            path.as_path(),
+            "# Hunk\n\n- item\n\n```rust\nfn main() {}\n```\n",
+        )
         .expect("document should open");
 
     let initial_snapshot = editor.display_snapshot_for_test(120, 20);
