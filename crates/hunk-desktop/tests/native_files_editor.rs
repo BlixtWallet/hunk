@@ -67,13 +67,13 @@ fn primary_shortcut_arrow_moves_to_line_boundary() {
         .expect("document should open");
     editor.set_selection_for_test(Selection::caret(TextPosition::new(0, 5)));
 
-    assert!(editor.handle_keystroke(&primary_shortcut_keystroke("right")));
+    assert!(editor.handle_keystroke(&line_boundary_keystroke(false)));
     assert_eq!(
         editor.selection_for_test(),
         Selection::caret(TextPosition::new(0, 18))
     );
 
-    assert!(editor.handle_keystroke(&primary_shortcut_keystroke("left")));
+    assert!(editor.handle_keystroke(&line_boundary_keystroke(true)));
     assert_eq!(
         editor.selection_for_test(),
         Selection::caret(TextPosition::new(0, 0))
@@ -89,7 +89,7 @@ fn primary_shortcut_shift_arrow_extends_to_line_boundary() {
         .expect("document should open");
     editor.set_selection_for_test(Selection::caret(TextPosition::new(0, 6)));
 
-    assert!(editor.handle_keystroke(&primary_shift_shortcut_keystroke("right")));
+    assert!(editor.handle_keystroke(&line_boundary_selection_keystroke(false)));
     assert_eq!(
         editor.selection_for_test(),
         Selection::new(TextPosition::new(0, 6), TextPosition::new(0, 18))
@@ -446,11 +446,28 @@ fn primary_shortcut_keystroke(key: &str) -> Keystroke {
     Keystroke::parse(shortcut.as_str()).expect("valid shortcut")
 }
 
-fn primary_shift_shortcut_keystroke(key: &str) -> Keystroke {
+fn line_boundary_keystroke(start: bool) -> Keystroke {
     let shortcut = if cfg!(target_os = "macos") {
-        format!("shift-cmd-{key}")
+        if start { "cmd-left" } else { "cmd-right" }
+    } else if start {
+        "home"
     } else {
-        format!("shift-ctrl-{key}")
+        "end"
     };
-    Keystroke::parse(shortcut.as_str()).expect("valid shortcut")
+    Keystroke::parse(shortcut).expect("valid line boundary shortcut")
+}
+
+fn line_boundary_selection_keystroke(start: bool) -> Keystroke {
+    let shortcut = if cfg!(target_os = "macos") {
+        if start {
+            "shift-cmd-left"
+        } else {
+            "shift-cmd-right"
+        }
+    } else if start {
+        "shift-home"
+    } else {
+        "shift-end"
+    };
+    Keystroke::parse(shortcut).expect("valid line boundary selection shortcut")
 }
