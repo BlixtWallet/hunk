@@ -64,7 +64,11 @@ impl DiffViewer {
         next_workspace_key: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        let previous_terminal_thread_id = self.current_ai_thread_id();
+        let previous_terminal_thread_id = self
+            .ai_terminal_runtime
+            .as_ref()
+            .map(|runtime| runtime.thread_id.clone())
+            .or_else(|| self.current_ai_thread_id());
         if previous_workspace_key == next_workspace_key {
             self.ai_sync_workspace_preferences(cx);
             return;

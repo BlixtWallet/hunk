@@ -162,6 +162,16 @@ impl DiffViewer {
             .insert(thread_id.to_string(), self.ai_capture_visible_terminal_state());
     }
 
+    fn ai_visible_terminal_owner_thread_id<'a>(
+        &'a self,
+        fallback_thread_id: Option<&'a str>,
+    ) -> Option<&'a str> {
+        self.ai_terminal_runtime
+            .as_ref()
+            .map(|runtime| runtime.thread_id.as_str())
+            .or(fallback_thread_id)
+    }
+
     fn ai_restore_visible_terminal_state_for_thread(&mut self, thread_id: Option<&str>) {
         let state = thread_id
             .and_then(|thread_id| self.ai_terminal_states_by_thread.get(thread_id).cloned())
@@ -202,14 +212,51 @@ impl DiffViewer {
             return;
         }
 
-        self.ai_store_visible_terminal_state_for_thread(previous_thread_id.as_deref());
-        self.ai_park_visible_terminal_runtime_for_thread(previous_thread_id.as_deref());
+        let previous_terminal_owner_thread_id = self
+            .ai_visible_terminal_owner_thread_id(previous_thread_id.as_deref())
+            .map(str::to_string);
+        let visible_state = self.ai_capture_visible_terminal_state();
+        if let Some(next_thread_id) = next_thread_id.as_deref()
+            && should_bind_visible_terminal_state_to_new_thread(
+                previous_thread_id.as_deref(),
+                Some(next_thread_id),
+                self.ai_terminal_states_by_thread
+                    .contains_key(next_thread_id),
+                &visible_state,
+            )
+        {
+            let bound_state = AiThreadTerminalState {
+                open: visible_state.open,
+                follow_output: visible_state.follow_output,
+                ..AiThreadTerminalState::default()
+            };
+            debug!(
+                thread_id = next_thread_id,
+                open = bound_state.open,
+                "Binding pending AI terminal drawer intent to newly selected thread"
+            );
+            self.ai_terminal_states_by_thread
+                .insert(next_thread_id.to_string(), bound_state);
+        }
+
+        self.ai_store_visible_terminal_state_for_thread(
+            previous_terminal_owner_thread_id.as_deref(),
+        );
+        self.ai_park_visible_terminal_runtime_for_thread(
+            previous_terminal_owner_thread_id.as_deref(),
+        );
         self.ai_restore_visible_terminal_state_for_thread(next_thread_id.as_deref());
 
         if let Some(next_thread_id) = next_thread_id.as_deref() {
             if !self.ai_promote_hidden_terminal_runtime_for_thread(next_thread_id)
                 && self.ai_terminal_open
             {
+                debug!(
+                    thread_id = next_thread_id,
+                    has_screen = self.ai_terminal_session.screen.is_some(),
+                    has_runtime = self.ai_terminal_runtime.is_some(),
+                    "Ensuring AI terminal session after thread selection"
+                );
                 self.ensure_ai_terminal_session(cx);
             }
         } else {
@@ -350,14 +397,46 @@ impl DiffViewer {
     }
 
     fn ensure_ai_terminal_session(&mut self, cx: &mut Context<Self>) {
-        if self.current_ai_thread_id().is_none() {
+        let Some(thread_id) = self.current_ai_thread_id() else {
+            debug!(
+                terminal_open = self.ai_terminal_open,
+                pending_new_thread_selection = self.ai_pending_new_thread_selection,
+                new_thread_draft_active = self.ai_new_thread_draft_active,
+                "Skipping AI terminal start because no thread is currently selected"
+            );
             return;
+        };
+        if let Some(active_runtime_thread_id) = self
+            .ai_terminal_runtime
+            .as_ref()
+            .map(|runtime| runtime.thread_id.clone())
+        {
+            if active_runtime_thread_id == thread_id {
+                debug!(
+                    thread_id,
+                    "Skipping AI terminal start because the selected thread already owns a runtime"
+                );
+                return;
+            }
+
+            debug!(
+                thread_id,
+                active_runtime_thread_id,
+                "Parking stale visible AI terminal runtime before starting a session for the selected thread"
+            );
+            self.ai_park_visible_terminal_runtime_for_thread(Some(active_runtime_thread_id.as_str()));
         }
-        if self.ai_terminal_runtime.is_some() || self.ai_terminal_session.screen.is_some() {
+        if self.ai_terminal_session.screen.is_some() {
+            debug!(
+                thread_id,
+                status = ?self.ai_terminal_session.status,
+                "Skipping AI terminal start because a terminal screen is already present"
+            );
             return;
         }
 
         let Some(cwd) = self.ai_workspace_cwd() else {
+            debug!(thread_id, "Skipping AI terminal start because no workspace cwd is available");
             return;
         };
 
@@ -883,6 +962,12 @@ impl DiffViewer {
         let Some(thread_id) = self.current_ai_thread_id() else {
             return;
         };
+        debug!(
+            thread_id = thread_id.as_str(),
+            cwd = %cwd.display(),
+            pending_input = self.ai_terminal_pending_input.is_some(),
+            "Starting AI terminal session"
+        );
         let request = TerminalSpawnRequest::shell(cwd.clone());
         match spawn_terminal_session(request) {
             Ok((handle, event_rx)) => {
@@ -1169,6 +1254,22 @@ fn ai_terminal_strip_matching_outer_quotes(value: &str) -> &str {
         }
     }
     trimmed
+}
+
+fn should_bind_visible_terminal_state_to_new_thread(
+    previous_thread_id: Option<&str>,
+    next_thread_id: Option<&str>,
+    next_thread_has_saved_state: bool,
+    visible_state: &AiThreadTerminalState,
+) -> bool {
+    previous_thread_id.is_none()
+        && next_thread_id.is_some()
+        && !next_thread_has_saved_state
+        && ai_thread_terminal_state_has_binding_intent(visible_state)
+}
+
+fn ai_thread_terminal_state_has_binding_intent(state: &AiThreadTerminalState) -> bool {
+    state.open || state.pending_input.is_some()
 }
 
 fn append_ai_terminal_transcript(buffer: &mut String, text: String) {
