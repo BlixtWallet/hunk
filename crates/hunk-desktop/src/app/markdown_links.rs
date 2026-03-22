@@ -289,7 +289,7 @@ fn pathbuf_to_workspace_relative(path: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_markdown_link_target, split_markdown_file_target, MarkdownLinkTarget};
+    use super::{MarkdownLinkTarget, resolve_markdown_link_target, split_markdown_file_target};
 
     #[test]
     fn split_markdown_file_target_accepts_line_and_column_suffixes() {
@@ -308,11 +308,13 @@ mod tests {
         let target = resolve_markdown_link_target("src/main.rs:12:5", Some(workspace.path()), None);
         assert_eq!(
             target,
-            Some(MarkdownLinkTarget::WorkspaceFile(super::MarkdownWorkspaceFileLink {
-                raw_target: "src/main.rs:12:5".to_string(),
-                normalized_path: "src/main.rs".to_string(),
-                line: Some(12),
-            }))
+            Some(MarkdownLinkTarget::WorkspaceFile(
+                super::MarkdownWorkspaceFileLink {
+                    raw_target: "src/main.rs:12:5".to_string(),
+                    normalized_path: "src/main.rs".to_string(),
+                    line: Some(12),
+                }
+            ))
         );
     }
 }
