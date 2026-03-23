@@ -325,12 +325,19 @@ fn shell_command_builder(command: &str, cwd: &Path) -> CommandBuilder {
 
     #[cfg(not(target_os = "windows"))]
     {
-        let shell = std::env::var_os("SHELL").unwrap_or_else(|| OsString::from("/bin/bash"));
-        let mut builder = CommandBuilder::new(shell);
+        let interactive_shell =
+            std::env::var_os("SHELL").unwrap_or_else(|| OsString::from("/bin/bash"));
+        let mut builder = if command.trim().is_empty() {
+            CommandBuilder::new(interactive_shell)
+        } else if Path::new("/bin/sh").exists() {
+            CommandBuilder::new("/bin/sh")
+        } else {
+            CommandBuilder::new(OsString::from("/bin/bash"))
+        };
         if command.trim().is_empty() {
             builder.arg("-i");
         } else {
-            builder.arg("-lc");
+            builder.arg("-c");
             builder.arg(command);
         }
         builder.cwd(cwd.as_os_str());
