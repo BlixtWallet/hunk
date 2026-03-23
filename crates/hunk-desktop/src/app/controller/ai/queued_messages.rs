@@ -25,16 +25,17 @@ fn ai_queued_message_matching_sequence(
     queued: &AiQueuedUserMessage,
     min_sequence: u64,
 ) -> Option<u64> {
-    let expected_content =
-        ai_pending_steer_seed_content(queued.prompt.as_str(), queued.local_images.as_slice())?;
-
     state
         .items
         .values()
         .filter(|item| {
             item.thread_id == queued.thread_id
                 && item.kind == "userMessage"
-                && item.content == expected_content
+                && ai_user_message_matches_pending_input(
+                    item.content.as_str(),
+                    queued.prompt.as_str(),
+                    queued.local_images.as_slice(),
+                )
                 && item.last_sequence > min_sequence
         })
         .map(|item| item.last_sequence)
