@@ -1,13 +1,3 @@
-struct AiWorkspaceHeaderState {
-    active_branch: String,
-    show_worktree_base_branch_picker: bool,
-    selected_worktree_base_branch: String,
-    pending_approval_count: usize,
-    pending_user_input_count: usize,
-    connection_label: &'static str,
-    connection_color: Hsla,
-}
-
 struct AiThreadSidebarState {
     threads: Vec<hunk_codex::state::ThreadSummary>,
     threads_loading: bool,
@@ -17,6 +7,9 @@ struct AiThreadSidebarState {
 
 struct AiTimelinePanelState {
     active_branch: String,
+    workspace_label: String,
+    show_worktree_base_branch_picker: bool,
+    selected_worktree_base_branch: String,
     selected_thread_id: Option<String>,
     selected_thread_start_mode: Option<AiNewThreadStartMode>,
     pending_approvals: Vec<AiPendingApproval>,
@@ -43,7 +36,6 @@ struct AiTimelinePanelState {
 }
 
 struct AiWorkspaceContentSections<'a> {
-    header: &'a AiWorkspaceHeaderState,
     sidebar: &'a AiThreadSidebarState,
     timeline: &'a AiTimelinePanelState,
     terminal_panel: Option<AnyElement>,
@@ -141,7 +133,6 @@ impl DiffViewer {
             .min_h_0()
             .key_context("AiWorkspace")
             .on_action(cx.listener(Self::ai_interrupt_selected_turn_action))
-            .child(self.render_ai_workspace_header(view.clone(), sections.header, is_dark, cx))
             .child(
                 div()
                     .flex_1()
@@ -169,122 +160,6 @@ impl DiffViewer {
                                         }),
                                 ),
                             ),
-                    ),
-            )
-            .into_any_element()
-    }
-
-    fn render_ai_workspace_header(
-        &self,
-        view: Entity<Self>,
-        state: &AiWorkspaceHeaderState,
-        is_dark: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        h_flex()
-            .w_full()
-            .min_h(px(48.0))
-            .items_center()
-            .justify_between()
-            .py_2()
-            .px_3()
-            .gap_3()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(hunk_opacity(cx.theme().muted, is_dark, 0.32, 0.62))
-            .child(
-                v_flex()
-                    .gap_0p5()
-                    .child(div().text_sm().font_semibold().child("Codex Agent Workspace"))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(format!("Target: {}", self.ai_active_workspace_label())),
-                    )
-                    .when(state.show_worktree_base_branch_picker, |this| {
-                        this.child(
-                            h_flex()
-                                .items_center()
-                                .gap_2()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_semibold()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child("Base Branch"),
-                                )
-                                .child(
-                                    Select::new(&self.ai_worktree_base_branch_picker_state)
-                                        .with_size(gpui_component::Size::Small)
-                                        .placeholder(state.selected_worktree_base_branch.clone())
-                                        .search_placeholder("Choose a base branch")
-                                        .rounded(px(8.0))
-                                        .w(px(220.0))
-                                        .bg(hunk_opacity(cx.theme().background, is_dark, 0.82, 0.98))
-                                        .border_color(cx.theme().border)
-                                        .disabled(self.git_controls_busy() || self.branches.is_empty())
-                                        .empty(
-                                            h_flex()
-                                                .h(px(72.0))
-                                                .justify_center()
-                                                .text_sm()
-                                                .text_color(cx.theme().muted_foreground)
-                                                .child("No branches available."),
-                                        ),
-                                ),
-                        )
-                    }),
-            )
-            .child(
-                v_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .items_end()
-                    .child(
-                        h_flex()
-                            .min_w_0()
-                            .items_center()
-                            .gap_2()
-                            .flex_wrap()
-                            .justify_end()
-                            .child(render_ai_header_metric_chip(
-                                "Branch",
-                                state.active_branch.clone(),
-                                cx.theme().accent,
-                                is_dark,
-                                cx,
-                            ))
-                            .child(render_ai_header_metric_chip(
-                                "Approvals",
-                                state.pending_approval_count.to_string(),
-                                if state.pending_approval_count > 0 {
-                                    cx.theme().warning
-                                } else {
-                                    cx.theme().muted_foreground
-                                },
-                                is_dark,
-                                cx,
-                            ))
-                            .child(render_ai_header_metric_chip(
-                                "Inputs",
-                                state.pending_user_input_count.to_string(),
-                                if state.pending_user_input_count > 0 {
-                                    cx.theme().warning
-                                } else {
-                                    cx.theme().muted_foreground
-                                },
-                                is_dark,
-                                cx,
-                            ))
-                            .child(render_ai_account_actions_for_view(self, view.clone(), cx))
-                            .child(render_ai_header_metric_chip(
-                                "Status",
-                                state.connection_label.to_string(),
-                                state.connection_color,
-                                is_dark,
-                                cx,
-                            )),
                     ),
             )
             .into_any_element()
@@ -571,6 +446,51 @@ impl DiffViewer {
                     .flex_none()
                     .items_center()
                     .gap_2()
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_family(cx.theme().mono_font_family.clone())
+                            .text_color(cx.theme().muted_foreground)
+                            .child(format!("Target: {}", state.workspace_label)),
+                    )
+                    .when(state.show_worktree_base_branch_picker, |this| {
+                        this.child(
+                            h_flex()
+                                .items_center()
+                                .gap_1p5()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_semibold()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child("Base Branch"),
+                                )
+                                .child(
+                                    Select::new(&self.ai_worktree_base_branch_picker_state)
+                                        .with_size(gpui_component::Size::Small)
+                                        .placeholder(state.selected_worktree_base_branch.clone())
+                                        .search_placeholder("Choose a base branch")
+                                        .rounded(px(8.0))
+                                        .w(px(220.0))
+                                        .bg(hunk_opacity(
+                                            cx.theme().background,
+                                            is_dark,
+                                            0.82,
+                                            0.98,
+                                        ))
+                                        .border_color(cx.theme().border)
+                                        .disabled(self.git_controls_busy() || self.branches.is_empty())
+                                        .empty(
+                                            h_flex()
+                                                .h(px(72.0))
+                                                .justify_center()
+                                                .text_sm()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child("No branches available."),
+                                        ),
+                                ),
+                        )
+                    })
                     .child(
                         div()
                             .text_xs()

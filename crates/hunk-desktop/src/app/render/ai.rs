@@ -59,10 +59,9 @@ impl DiffViewer {
         let show_global_loading_overlay = self.ai_bootstrap_loading;
         let threads_loading = show_global_loading_overlay && threads.is_empty();
         let active_branch = self.ai_active_workspace_branch_name();
+        let active_workspace_label = self.ai_active_workspace_label();
         let pending_approvals = self.ai_visible_pending_approvals();
-        let pending_approval_count = pending_approvals.len();
         let pending_user_inputs = self.ai_visible_pending_user_inputs();
-        let pending_user_input_count = pending_user_inputs.len();
         let selected_thread_id = self.current_ai_thread_id();
         let pending_thread_start = self.ai_pending_thread_start_for_timeline();
         let selected_thread_start_mode = selected_thread_id
@@ -98,7 +97,6 @@ impl DiffViewer {
         let show_select_thread_empty_state =
             selected_thread_id.is_none() && !timeline_loading && pending_thread_start.is_none();
         let ai_timeline_list_state = self.ai_timeline_list_state.clone();
-        let (connection_label, connection_color) = ai_connection_label(self.ai_connection_state, cx);
         let composer_attachment_paths = self.current_ai_composer_local_images();
         let composer_attachment_count = composer_attachment_paths.len();
         let composer_send_waiting_on_connection =
@@ -138,15 +136,6 @@ impl DiffViewer {
             hunk_opacity(cx.theme().warning, is_dark, 0.14, 0.08)
         };
 
-        let header_state = AiWorkspaceHeaderState {
-            active_branch: active_branch.clone(),
-            show_worktree_base_branch_picker,
-            selected_worktree_base_branch,
-            pending_approval_count,
-            pending_user_input_count,
-            connection_label,
-            connection_color,
-        };
         let sidebar_state = AiThreadSidebarState {
             threads,
             threads_loading,
@@ -155,6 +144,9 @@ impl DiffViewer {
         };
         let timeline_state = AiTimelinePanelState {
             active_branch: active_branch.clone(),
+            workspace_label: active_workspace_label,
+            show_worktree_base_branch_picker,
+            selected_worktree_base_branch,
             selected_thread_id: selected_thread_id.clone(),
             selected_thread_start_mode,
             pending_approvals,
@@ -240,7 +232,6 @@ impl DiffViewer {
         let workspace = self.render_ai_workspace_content(
             view,
             AiWorkspaceContentSections {
-                header: &header_state,
                 sidebar: &sidebar_state,
                 timeline: &timeline_state,
                 terminal_panel,

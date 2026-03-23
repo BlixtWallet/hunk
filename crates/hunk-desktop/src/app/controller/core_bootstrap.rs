@@ -265,22 +265,6 @@ impl DiffViewer {
         self.apply_theme_preference(window, cx);
     }
 
-    pub(super) fn set_theme_preference(
-        &mut self,
-        theme: ThemePreference,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.config.theme == theme {
-            return;
-        }
-
-        self.config.theme = theme;
-        self.apply_theme_preference(window, cx);
-        self.persist_config();
-        cx.notify();
-    }
-
     pub(super) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let (config_store, config) = Self::load_app_config();
         let (state_store, mut state) = Self::load_app_state();

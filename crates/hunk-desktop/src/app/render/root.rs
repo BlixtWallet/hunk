@@ -384,7 +384,9 @@ impl Render for DiffViewer {
                     }),
             )
             .child(self.render_app_footer(cx))
-            .when(self.comments_preview_open, |this| {
+            .when(
+                self.comments_preview_open && self.workspace_view_mode == WorkspaceViewMode::Diff,
+                |this| {
                 this.child(self.render_comments_preview(cx))
             })
             .when(self.file_quick_open_visible, |this| {

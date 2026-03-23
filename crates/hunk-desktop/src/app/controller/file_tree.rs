@@ -107,6 +107,9 @@ impl DiffViewer {
         }
 
         self.workspace_view_mode = mode;
+        if mode != WorkspaceViewMode::Diff {
+            self.comments_preview_open = false;
+        }
         if mode != WorkspaceViewMode::Files {
             self.repo_tree_inline_edit = None;
             self.repo_tree_context_menu = None;

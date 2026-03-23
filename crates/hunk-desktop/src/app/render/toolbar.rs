@@ -7,23 +7,17 @@ impl DiffViewer {
             .as_ref()
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "No Git repository found".to_string());
-        let selected_theme = self.config.theme;
-        let theme_label = match self.config.theme {
-            ThemePreference::System => "System",
-            ThemePreference::Light => "Light",
-            ThemePreference::Dark => "Dark",
-        };
-        let theme_button_label = format!("Theme ({theme_label})");
         let is_dark = cx.theme().mode.is_dark();
         let git_selected = self.workspace_view_mode == WorkspaceViewMode::GitWorkspace;
         let review_selected = self.workspace_view_mode == WorkspaceViewMode::Diff;
+        let ai_selected = self.workspace_view_mode == WorkspaceViewMode::Ai;
         let active_branch = self
             .primary_checked_out_branch_name()
             .unwrap_or(self.branch_name.as_str())
             .to_string();
         let chip_colors = hunk_toolbar_chip(cx.theme(), is_dark);
         let brand_colors = hunk_toolbar_brand_chip(cx.theme(), is_dark);
-        let dropdown_bg = hunk_dropdown_fill(cx.theme(), is_dark);
+        let toolbar_button_bg = hunk_dropdown_fill(cx.theme(), is_dark);
         let visible_line_stats = self.active_diff_overall_line_stats();
         let visible_file_count = if review_selected {
             self.active_diff_file_count()
@@ -32,6 +26,12 @@ impl DiffViewer {
         } else {
             self.files.len()
         };
+        let ai_workspace_branch = ai_selected.then(|| self.ai_active_workspace_branch_name());
+        let ai_pending_approval_count = ai_selected.then(|| self.ai_visible_pending_approvals().len());
+        let ai_pending_user_input_count =
+            ai_selected.then(|| self.ai_visible_pending_user_inputs().len());
+        let (ai_connection_status_label, ai_connection_status_color) =
+            ai_connection_label(self.ai_connection_state, cx);
 
         h_flex()
             .w_full()
@@ -86,11 +86,11 @@ impl DiffViewer {
                     )
                     .child(
                         h_flex()
-                            .flex_1()
+                            .flex_none()
                             .min_w_0()
+                            .max_w(px(560.0))
                             .items_center()
                             .gap_1()
-                            .overflow_x_hidden()
                             .px_2()
                             .py_0p5()
                             .rounded_md()
@@ -99,10 +99,8 @@ impl DiffViewer {
                             .border_color(chip_colors.border)
                             .child(
                                 div()
-                                    .flex_1()
                                     .min_w_0()
-                                    .overflow_x_hidden()
-                                    .whitespace_nowrap()
+                                    .truncate()
                                     .text_sm()
                                     .text_color(cx.theme().foreground.opacity(0.82))
                                     .child(repo_label),
@@ -114,83 +112,21 @@ impl DiffViewer {
                     .flex_none()
                     .items_center()
                     .gap_2()
-                    .child(
-                        h_flex().items_center().gap_1().child(
-                            Button::new("theme-dropdown")
+                    .when(review_selected, |this| {
+                        let view = view.clone();
+                        this.child(
+                            Button::new("toggle-comments-preview")
                                 .outline()
                                 .compact()
                                 .rounded(px(7.0))
-                                .bg(dropdown_bg)
-                                .dropdown_caret(true)
-                                .label(theme_button_label)
-                                .dropdown_menu({
-                                    let view = view.clone();
-                                    move |menu, _, _| {
-                                        menu.item(
-                                            PopupMenuItem::new("System")
-                                                .checked(selected_theme == ThemePreference::System)
-                                                .on_click({
-                                                    let view = view.clone();
-                                                    move |_, window, cx| {
-                                                        view.update(cx, |this, cx| {
-                                                            this.set_theme_preference(
-                                                                ThemePreference::System,
-                                                                window,
-                                                                cx,
-                                                            );
-                                                        });
-                                                    }
-                                                }),
-                                        )
-                                        .item(
-                                            PopupMenuItem::new("Light")
-                                                .checked(selected_theme == ThemePreference::Light)
-                                                .on_click({
-                                                    let view = view.clone();
-                                                    move |_, window, cx| {
-                                                        view.update(cx, |this, cx| {
-                                                            this.set_theme_preference(
-                                                                ThemePreference::Light,
-                                                                window,
-                                                                cx,
-                                                            );
-                                                        });
-                                                    }
-                                                }),
-                                        )
-                                        .item(
-                                            PopupMenuItem::new("Dark")
-                                                .checked(selected_theme == ThemePreference::Dark)
-                                                .on_click({
-                                                    let view = view.clone();
-                                                    move |_, window, cx| {
-                                                        view.update(cx, |this, cx| {
-                                                            this.set_theme_preference(
-                                                                ThemePreference::Dark,
-                                                                window,
-                                                                cx,
-                                                            );
-                                                        });
-                                                    }
-                                                }),
-                                        )
-                                    }
+                                .bg(toolbar_button_bg)
+                                .label(format!("Comments ({})", self.comments_open_count()))
+                                .on_click(move |_, _, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.toggle_comments_preview(cx);
+                                    });
                                 }),
-                        ),
-                    )
-                    .child({
-                        let view = view.clone();
-                        Button::new("toggle-comments-preview")
-                            .outline()
-                            .compact()
-                            .rounded(px(7.0))
-                            .bg(dropdown_bg)
-                            .label(format!("Comments ({})", self.comments_open_count()))
-                            .on_click(move |_, _, cx| {
-                                view.update(cx, |this, cx| {
-                                    this.toggle_comments_preview(cx);
-                                });
-                            })
+                        )
                     })
                     .when(git_selected, |this| {
                         this.when(self.git_workspace.overall_line_stats.changed() > 0, |this| {
@@ -249,6 +185,51 @@ impl DiffViewer {
                                     .text_color(cx.theme().muted_foreground)
                                     .child(format!("{} files", visible_file_count)),
                             )
+                    })
+                    .when(ai_selected, |this| {
+                        this.when_some(ai_workspace_branch.clone(), |this, branch_name| {
+                            this.child(render_ai_header_metric_chip(
+                                "Branch",
+                                branch_name,
+                                cx.theme().accent,
+                                is_dark,
+                                cx,
+                            ))
+                        })
+                        .when_some(ai_pending_approval_count, |this, count| {
+                            this.child(render_ai_header_metric_chip(
+                                "Approvals",
+                                count.to_string(),
+                                if count > 0 {
+                                    cx.theme().warning
+                                } else {
+                                    cx.theme().muted_foreground
+                                },
+                                is_dark,
+                                cx,
+                            ))
+                        })
+                        .when_some(ai_pending_user_input_count, |this, count| {
+                            this.child(render_ai_header_metric_chip(
+                                "Inputs",
+                                count.to_string(),
+                                if count > 0 {
+                                    cx.theme().warning
+                                } else {
+                                    cx.theme().muted_foreground
+                                },
+                                is_dark,
+                                cx,
+                            ))
+                        })
+                        .child(render_ai_account_actions_for_view(self, view.clone(), cx))
+                        .child(render_ai_header_metric_chip(
+                            "Status",
+                            ai_connection_status_label.to_string(),
+                            ai_connection_status_color,
+                            is_dark,
+                            cx,
+                        ))
                     })
                     .when(self.config.show_fps_counter, |this| {
                         this.child(
