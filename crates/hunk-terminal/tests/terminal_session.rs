@@ -66,7 +66,8 @@ fn terminal_session_emits_updated_screen_snapshot_after_resize() {
 fn terminal_session_supports_scrollback_after_output() {
     let mut request = TerminalSpawnRequest::new(
         repo_root(),
-        "for i in $(seq 1 12); do printf 'line %s\\n' \"$i\"; done; sleep 1".to_string(),
+        "i=1; while [ \"$i\" -le 12 ]; do printf 'line %s\\n' \"$i\"; i=$((i + 1)); done; sleep 1"
+            .to_string(),
     );
     request.rows = 5;
     request.cols = 80;
