@@ -303,7 +303,7 @@ impl DiffViewer {
                             .compact()
                             .rounded(px(999.0))
                             .with_size(gpui_component::Size::Small)
-                            .icon(Icon::new(IconName::Bot).size(px(12.0)))
+                            .icon(Icon::new(HunkIconName::Wand).size(px(12.0)))
                             .tooltip("Generate a commit message from the staged changes.")
                             .loading(generate_commit_message_loading)
                             .disabled(generate_commit_message_disabled)

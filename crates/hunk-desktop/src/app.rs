@@ -29,8 +29,12 @@ use gpui_component::{
     select::{SelectEvent, SelectState},
     v_flex,
 };
-use gpui_component_assets::Assets;
 use tracing::error;
+
+mod hunk_assets;
+
+use hunk_assets::HunkAssets;
+pub(crate) use hunk_assets::HunkIconName;
 
 use hunk_domain::config::{AppConfig, ConfigStore, KeyboardShortcuts, ThemePreference};
 use hunk_domain::db::{
@@ -794,7 +798,7 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
 }
 
 pub fn run() -> Result<()> {
-    let app = gpui_platform::application().with_assets(Assets);
+    let app = gpui_platform::application().with_assets(HunkAssets);
     let keyboard_shortcuts = load_keyboard_shortcuts();
     app.on_reopen(|cx: &mut App| {
         if cx.windows().is_empty() {

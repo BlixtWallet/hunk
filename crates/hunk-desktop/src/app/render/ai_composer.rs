@@ -30,20 +30,46 @@ struct AiComposerCompletionMenuShell<'a> {
 }
 
 fn ai_composer_mode_badge_label(mode: &str) -> String {
+    mode.to_string()
+}
+
+fn ai_composer_mode_badge_icon(mode: &str) -> Option<HunkIconName> {
     match mode {
-        "Code" => "💻 Code".to_string(),
-        "Plan" => "🧭 Plan".to_string(),
-        "Review" => "🔎 Review".to_string(),
-        _ => mode.to_string(),
+        "Code" => Some(HunkIconName::Computer),
+        "Plan" => Some(HunkIconName::NotebookPen),
+        "Review" => Some(HunkIconName::UserStar),
+        _ => None,
     }
 }
 
 fn ai_render_composer_status_chip(
-    label: String,
+    label: &str,
+    icon: Option<HunkIconName>,
     border_color: Hsla,
     background_color: Hsla,
     text_color: Hsla,
 ) -> AnyElement {
+    let content = if let Some(icon) = icon {
+        h_flex()
+            .items_center()
+            .gap_1()
+            .text_xs()
+            .font_semibold()
+            .text_color(text_color)
+            .child(Icon::new(icon).size(px(12.0)))
+            .child(label.to_string())
+            .into_any_element()
+    } else {
+        h_flex()
+            .items_center()
+            .gap_1()
+            .text_xs()
+            .font_semibold()
+            .text_color(text_color)
+            .child(label.to_string())
+            .into_any_element()
+    };
+
     div()
         .rounded(px(999.0))
         .border_1()
@@ -51,10 +77,7 @@ fn ai_render_composer_status_chip(
         .bg(background_color)
         .px_2()
         .py_0p5()
-        .text_xs()
-        .font_semibold()
-        .text_color(text_color)
-        .child(label)
+        .child(content)
         .into_any_element()
 }
 
@@ -296,17 +319,22 @@ impl DiffViewer {
                                             .child(ai_render_composer_status_chip(
                                                 ai_composer_mode_badge_label(
                                                     state.current_mode_label.as_str(),
+                                                )
+                                                .as_str(),
+                                                ai_composer_mode_badge_icon(
+                                                    state.current_mode_label.as_str(),
                                                 ),
                                                 completion_colors.row_selected_border,
                                                 completion_colors.accent_soft_background,
-                                                completion_colors.accent_text,
+                                                cx.theme().foreground,
                                             ))
                                             .when(state.fast_mode_enabled, |this| {
                                                 this.child(ai_render_composer_status_chip(
-                                                    "🚀 Fast".to_string(),
+                                                    "Fast",
+                                                    Some(HunkIconName::Rocket),
                                                     completion_colors.row_selected_border,
                                                     completion_colors.accent_soft_background,
-                                                    completion_colors.accent_text,
+                                                    cx.theme().foreground,
                                                 ))
                                             }),
                                     )
