@@ -239,8 +239,8 @@ impl DiffViewer {
                         let mut button = Button::new("footer-workspace-files")
                             .compact()
                             .rounded(px(7.0))
-                            .label("Files")
-                            .min_w(px(52.0))
+                            .icon(Icon::new(HunkIconName::FolderTree).size(px(14.0)))
+                            .min_w(px(36.0))
                             .h(px(28.0))
                             .tooltip("Switch to file view (Cmd/Ctrl+1)")
                             .on_click(move |_, window, cx| {
@@ -261,8 +261,8 @@ impl DiffViewer {
                         let mut button = Button::new("footer-workspace-diff")
                             .compact()
                             .rounded(px(7.0))
-                            .label("Review")
-                            .min_w(px(56.0))
+                            .icon(Icon::new(HunkIconName::FileDiff).size(px(14.0)))
+                            .min_w(px(36.0))
                             .h(px(28.0))
                             .tooltip("Switch to review mode (Cmd/Ctrl+2)")
                             .on_click(move |_, window, cx| {
@@ -283,8 +283,8 @@ impl DiffViewer {
                         let mut button = Button::new("footer-workspace-git")
                             .compact()
                             .rounded(px(7.0))
-                            .label("Git")
-                            .min_w(px(52.0))
+                            .icon(Icon::new(HunkIconName::GitBranch).size(px(14.0)))
+                            .min_w(px(36.0))
                             .h(px(28.0))
                             .tooltip("Switch to Git workspace (Cmd/Ctrl+3)")
                             .on_click(move |_, window, cx| {
@@ -308,8 +308,8 @@ impl DiffViewer {
                         let mut button = Button::new("footer-workspace-ai")
                             .compact()
                             .rounded(px(7.0))
-                            .label("AI")
-                            .min_w(px(42.0))
+                            .icon(Icon::new(HunkIconName::BotMessageSquare).size(px(14.0)))
+                            .min_w(px(36.0))
                             .h(px(28.0))
                             .tooltip("Switch to AI coding workspace (Cmd/Ctrl+4)")
                             .on_click(move |_, window, cx| {
