@@ -86,11 +86,31 @@ impl DiffViewer {
         self.file_editor_tabs.len().saturating_sub(1)
     }
 
-    fn ensure_file_editor_tab_index(&mut self, path: &str) -> usize {
+    fn oldest_recyclable_file_editor_tab_index(&self) -> Option<usize> {
+        self.file_editor_tabs.iter().enumerate().find_map(|(index, tab)| {
+            let is_active = self.active_file_editor_tab_id == Some(tab.id);
+            (!is_active && !tab.dirty && !tab.save_loading && !tab.loading).then_some(index)
+        })
+    }
+
+    fn ensure_file_editor_tab_index(&mut self, path: &str) -> Option<usize> {
         if let Some(tab_index) = self.file_editor_tab_index_for_path(path) {
-            return tab_index;
+            return Some(tab_index);
         }
-        self.create_file_editor_tab(path.to_string())
+
+        if self.file_editor_tabs.len() >= FILE_EDITOR_TAB_LIMIT {
+            let Some(tab_index) = self.oldest_recyclable_file_editor_tab_index() else {
+                self.git_status_message = Some(
+                    "Tab limit reached. Save or close another file tab before opening a new one."
+                        .to_string(),
+                );
+                return None;
+            };
+            let removed = self.file_editor_tabs.remove(tab_index);
+            removed.files_editor.borrow_mut().shutdown();
+        }
+
+        Some(self.create_file_editor_tab(path.to_string()))
     }
 
     fn activate_file_editor_tab_index(
@@ -260,6 +280,58 @@ impl DiffViewer {
         self.save_current_editor_file(window, cx);
     }
 
+    pub(super) fn next_editor_tab_action(
+        &mut self,
+        _: &NextEditorTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.workspace_view_mode != WorkspaceViewMode::Files || self.file_editor_tabs.len() < 2 {
+            return;
+        }
+
+        let next_index = self
+            .active_file_editor_tab_index()
+            .map(|index| (index + 1) % self.file_editor_tabs.len())
+            .unwrap_or(0);
+        self.activate_file_editor_tab_index(next_index, Some(window), cx);
+    }
+
+    pub(super) fn previous_editor_tab_action(
+        &mut self,
+        _: &PreviousEditorTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.workspace_view_mode != WorkspaceViewMode::Files || self.file_editor_tabs.len() < 2 {
+            return;
+        }
+
+        let previous_index = self
+            .active_file_editor_tab_index()
+            .map(|index| {
+                if index == 0 {
+                    self.file_editor_tabs.len().saturating_sub(1)
+                } else {
+                    index.saturating_sub(1)
+                }
+            })
+            .unwrap_or(0);
+        self.activate_file_editor_tab_index(previous_index, Some(window), cx);
+    }
+
+    pub(super) fn close_editor_tab_action(
+        &mut self,
+        _: &CloseEditorTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.workspace_view_mode != WorkspaceViewMode::Files {
+            return;
+        }
+        self.close_active_file_editor_tab(window, cx);
+    }
+
     pub(super) fn reload_current_editor_file(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.editor_path.clone() else {
             return;
@@ -271,8 +343,11 @@ impl DiffViewer {
         self.request_file_editor_reload(path, cx);
     }
 
-    pub(super) fn request_file_editor_reload(&mut self, path: String, cx: &mut Context<Self>) {
-        let tab_index = self.ensure_file_editor_tab_index(path.as_str());
+    pub(super) fn request_file_editor_reload(&mut self, path: String, cx: &mut Context<Self>) -> bool {
+        let Some(tab_index) = self.ensure_file_editor_tab_index(path.as_str()) else {
+            cx.notify();
+            return false;
+        };
         self.activate_file_editor_tab_index(tab_index, None, cx);
 
         let retain_markdown_preview = if self.editor_path.as_deref() == Some(path.as_str()) {
@@ -290,7 +365,7 @@ impl DiffViewer {
             self.files_editor.borrow_mut().clear();
             self.sync_active_file_editor_tab_state();
             cx.notify();
-            return;
+            return true;
         };
 
         let epoch = self.next_editor_epoch();
@@ -357,6 +432,7 @@ impl DiffViewer {
                 });
             }
         });
+        true
     }
 
     pub(super) fn can_open_file_in_files_workspace(
@@ -396,11 +472,13 @@ impl DiffViewer {
 
         if let Some(tab_index) = self.file_editor_tab_index_for_path(path.as_str()) {
             self.activate_file_editor_tab_index(tab_index, Some(window), cx);
-            if self.editor_loading || self.editor_error.is_some() {
-                self.request_file_editor_reload(path.clone(), cx);
+            if (self.editor_loading || self.editor_error.is_some())
+                && !self.request_file_editor_reload(path.clone(), cx)
+            {
+                return false;
             }
-        } else {
-            self.request_file_editor_reload(path.clone(), cx);
+        } else if !self.request_file_editor_reload(path.clone(), cx) {
+            return false;
         }
 
         self.files_editor_focus_handle.focus(window, cx);

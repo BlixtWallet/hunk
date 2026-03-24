@@ -1,5 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -126,6 +126,7 @@ const DIFF_SPLIT_MIN_CODE_WIDTH: f32 = 120.0;
 const DIFF_SPLIT_HANDLE_WIDTH: f32 = 1.0;
 const DIFF_SPLIT_HANDLE_HIT_WIDTH: f32 = 10.0;
 const FILE_EDITOR_MAX_BYTES: usize = 2_400_000;
+const FILE_EDITOR_TAB_LIMIT: usize = 6;
 const MARKDOWN_PREVIEW_DEBOUNCE: Duration = Duration::from_millis(200);
 const DIFF_SEGMENT_PREFETCH_RADIUS_ROWS: usize = 120;
 const DIFF_SEGMENT_PREFETCH_STEP_ROWS: usize = 24;
@@ -235,6 +236,9 @@ actions!(
         FilesEditorSelectToNextWordEnd,
         FilesEditorPageUp,
         FilesEditorPageDown,
+        NextEditorTab,
+        PreviousEditorTab,
+        CloseEditorTab,
         SaveCurrentFile,
         OpenSettings,
         QuitApp,
@@ -262,6 +266,14 @@ fn preferred_mono_font_family() -> &'static str {
         "Consolas"
     } else {
         "DejaVu Sans Mono"
+    }
+}
+
+fn preferred_files_editor_font_family() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Monaco"
+    } else {
+        preferred_mono_font_family()
     }
 }
 
@@ -773,6 +785,27 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
         KeyBinding::new(
             shortcut.as_str(),
             SaveCurrentFile,
+            Some(WorkspaceViewMode::Files.shortcut_context()),
+        )
+    }));
+    bindings.extend(shortcuts.next_editor_tab.iter().map(|shortcut| {
+        KeyBinding::new(
+            shortcut.as_str(),
+            NextEditorTab,
+            Some(WorkspaceViewMode::Files.shortcut_context()),
+        )
+    }));
+    bindings.extend(shortcuts.previous_editor_tab.iter().map(|shortcut| {
+        KeyBinding::new(
+            shortcut.as_str(),
+            PreviousEditorTab,
+            Some(WorkspaceViewMode::Files.shortcut_context()),
+        )
+    }));
+    bindings.extend(shortcuts.close_editor_tab.iter().map(|shortcut| {
+        KeyBinding::new(
+            shortcut.as_str(),
+            CloseEditorTab,
             Some(WorkspaceViewMode::Files.shortcut_context()),
         )
     }));

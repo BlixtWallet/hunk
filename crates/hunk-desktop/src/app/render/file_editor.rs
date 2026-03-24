@@ -35,40 +35,33 @@ impl DiffViewer {
     fn render_file_editor_tab_bar(
         &self,
         view: Entity<Self>,
-        editor_chrome: HunkEditorChromeColors,
-        is_dark: bool,
+        _editor_chrome: HunkEditorChromeColors,
+        _is_dark: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if self.file_editor_tabs.is_empty() {
             return div().into_any_element();
         }
 
-        let divider_color = hunk_opacity(cx.theme().border, is_dark, 0.86, 0.72);
+        let tab_height = px(34.0);
+        let border_color = cx.theme().border;
 
         div()
             .w_full()
-            .border_b_1()
-            .border_color(divider_color)
-            .bg(hunk_blend(
-                editor_chrome.background,
-                cx.theme().sidebar,
-                is_dark,
-                0.18,
-                0.16,
-            ))
+            .h(tab_height)
+            .bg(cx.theme().tab_bar)
             .child(
                 div()
                     .id("file-editor-tab-scroll-area")
                     .w_full()
+                    .h_full()
                     .track_scroll(&self.file_editor_tab_scroll_handle)
                     .overflow_x_scroll()
                     .child(
                         h_flex()
                             .w_full()
-                            .items_end()
-                            .px_2()
-                            .pt_2()
-                            .gap_1()
+                            .h_full()
+                            .items_center()
                             .children(self.file_editor_tabs.iter().map(|tab| {
                                 let activate_view = view.clone();
                                 let tab_id = tab.id;
@@ -77,41 +70,8 @@ impl DiffViewer {
                                     .status_for_path(path.as_str())
                                     .unwrap_or(FileStatus::Unknown);
                                 let is_active = self.active_file_editor_tab_id == Some(tab_id);
-                                let title = self.file_editor_tab_title(path.as_str());
+                                let mut title = self.file_editor_tab_title(path.as_str());
                                 let detail = self.file_editor_tab_detail(path.as_str());
-                                let title_color = if is_active {
-                                    editor_chrome.foreground
-                                } else {
-                                    hunk_blend(
-                                        editor_chrome.foreground,
-                                        editor_chrome.line_number,
-                                        is_dark,
-                                        0.84,
-                                        0.78,
-                                    )
-                                };
-                                let background = if is_active {
-                                    hunk_blend(
-                                        editor_chrome.background,
-                                        cx.theme().accent,
-                                        is_dark,
-                                        0.20,
-                                        0.09,
-                                    )
-                                } else {
-                                    hunk_blend(
-                                        editor_chrome.background,
-                                        cx.theme().muted,
-                                        is_dark,
-                                        0.12,
-                                        0.18,
-                                    )
-                                };
-                                let border = if is_active {
-                                    hunk_opacity(cx.theme().accent, is_dark, 0.74, 0.52)
-                                } else {
-                                    divider_color
-                                };
                                 let is_dirty =
                                     if is_active { self.editor_dirty } else { tab.dirty };
                                 let is_loading =
@@ -121,32 +81,22 @@ impl DiffViewer {
                                 } else {
                                     tab.error.is_some()
                                 };
+                                if is_dirty {
+                                    title.push_str(" •");
+                                }
 
-                                div()
+                                let mut tab_surface = div()
                                     .id(("file-editor-tab", tab_id))
                                     .flex_none()
-                                    .min_w(px(170.0))
-                                    .max_w(px(280.0))
-                                    .h(px(42.0))
+                                    .min_w(px(150.0))
+                                    .max_w(px(260.0))
+                                    .h(tab_height)
                                     .px_2()
                                     .gap_2()
                                     .items_center()
-                                    .rounded(px(10.0))
-                                    .border_1()
-                                    .border_color(border)
-                                    .bg(background)
-                                    .cursor_pointer()
-                                    .when(!is_active, |this| {
-                                        this.hover(|style| {
-                                            style.bg(hunk_blend(
-                                                editor_chrome.background,
-                                                cx.theme().accent,
-                                                is_dark,
-                                                0.14,
-                                                0.06,
-                                            ))
-                                        })
-                                    })
+                                    .border_r_1()
+                                    .border_b_1()
+                                    .border_color(border_color)
                                     .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                                         activate_view.update(cx, |this, cx| {
                                             let _ = this.open_file_in_files_workspace(
@@ -156,81 +106,102 @@ impl DiffViewer {
                                                 cx,
                                             );
                                         });
-                                    })
+                                    });
+                                if is_active {
+                                    tab_surface = tab_surface
+                                        .bg(cx.theme().tab_active)
+                                        .border_b_0();
+                                } else {
+                                    tab_surface = tab_surface
+                                        .bg(cx.theme().tab)
+                                        .hover(|this| this.bg(cx.theme().muted))
+                                        .cursor_pointer();
+                                }
+
+                                tab_surface
                                     .child(
-                                        div()
-                                            .flex_none()
-                                            .child(
-                                                if has_error {
-                                                    Icon::new(IconName::TriangleAlert)
-                                                        .size(px(12.0))
-                                                        .text_color(cx.theme().danger)
-                                                        .into_any_element()
-                                                } else if is_loading {
-                                                    Icon::new(IconName::LoaderCircle)
-                                                        .size(px(12.0))
-                                                        .text_color(cx.theme().warning)
-                                                        .into_any_element()
-                                                } else if is_dirty {
-                                                    div()
-                                                        .size(px(8.0))
-                                                        .rounded_full()
-                                                        .bg(cx.theme().warning)
-                                                        .into_any_element()
-                                                } else {
-                                                    Icon::new(IconName::File)
-                                                        .size(px(12.0))
-                                                        .text_color(editor_chrome.line_number)
-                                                        .into_any_element()
-                                                },
-                                            ),
-                                    )
-                                    .child(
-                                        v_flex()
+                                        h_flex()
                                             .flex_1()
                                             .min_w_0()
-                                            .gap_0()
+                                            .items_center()
+                                            .gap_1()
                                             .child(
-                                                div()
-                                                    .truncate()
-                                                    .text_xs()
-                                                    .font_semibold()
-                                                    .text_color(title_color)
-                                                    .child(title),
-                                            )
-                                            .when_some(detail, |this, detail| {
-                                                this.child(
-                                                    div()
-                                                        .truncate()
-                                                        .text_xs()
-                                                        .font_family(
-                                                            cx.theme().mono_font_family.clone(),
+                                                h_flex()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .items_center()
+                                                    .gap_1()
+                                                    .child(
+                                                        div()
+                                                            .truncate()
+                                                            .text_sm()
+                                                            .font_family(
+                                                                cx.theme().font_family.clone(),
+                                                            )
+                                                            .text_color(if is_active {
+                                                                cx.theme().tab_active_foreground
+                                                            } else {
+                                                                cx.theme().tab_foreground
+                                                            })
+                                                            .child(title),
+                                                    )
+                                                    .when_some(detail, |this, detail| {
+                                                        this.child(
+                                                            div()
+                                                                .truncate()
+                                                                .text_xs()
+                                                                .italic()
+                                                                .text_color(if is_active {
+                                                                    cx.theme().tab_active_foreground
+                                                                } else {
+                                                                    cx.theme().tab_foreground
+                                                                })
+                                                                .child(detail),
                                                         )
-                                                        .text_color(editor_chrome.line_number)
-                                                        .child(detail),
+                                                    }),
+                                            )
+                                            .child({
+                                                let close_view = view.clone();
+                                                Button::new(("file-editor-tab-close", tab_id))
+                                                    .ghost()
+                                                    .xsmall()
+                                                    .icon(Icon::new(IconName::Close).size(px(12.0)))
+                                                    .tooltip("Close tab")
+                                                    .on_click(move |_, window, cx| {
+                                                        cx.stop_propagation();
+                                                        close_view.update(cx, |this, cx| {
+                                                            this.close_file_editor_tab_by_id(
+                                                                tab_id, window, cx,
+                                                            );
+                                                        });
+                                                    })
+                                            })
+                                            .when(has_error || is_loading, |this| {
+                                                this.child(
+                                                    if has_error {
+                                                        Icon::new(IconName::TriangleAlert)
+                                                            .size(px(12.0))
+                                                            .text_color(cx.theme().danger)
+                                                            .into_any_element()
+                                                    } else {
+                                                        Icon::new(IconName::LoaderCircle)
+                                                            .size(px(12.0))
+                                                            .text_color(cx.theme().warning)
+                                                            .into_any_element()
+                                                    },
                                                 )
                                             }),
                                     )
-                                    .child({
-                                        let close_view = view.clone();
-                                        Button::new(("file-editor-tab-close", tab_id))
-                                            .ghost()
-                                            .compact()
-                                            .rounded(px(999.0))
-                                            .with_size(gpui_component::Size::Small)
-                                            .icon(Icon::new(IconName::Close).size(px(12.0)))
-                                            .tooltip("Close tab")
-                                            .on_click(move |_, window, cx| {
-                                                cx.stop_propagation();
-                                                close_view.update(cx, |this, cx| {
-                                                    this.close_file_editor_tab_by_id(
-                                                        tab_id, window, cx,
-                                                    );
-                                                });
-                                            })
-                                    })
                                     .into_any_element()
-                            })),
+                            }))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .h_full()
+                                    .border_b_1()
+                                    .border_color(border_color),
+                            ),
                     ),
             )
             .into_any_element()

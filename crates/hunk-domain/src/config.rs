@@ -92,6 +92,9 @@ pub struct KeyboardShortcuts {
     pub toggle_ai_terminal_drawer: Vec<String>,
     pub open_project: Vec<String>,
     pub save_current_file: Vec<String>,
+    pub next_editor_tab: Vec<String>,
+    pub previous_editor_tab: Vec<String>,
+    pub close_editor_tab: Vec<String>,
     pub open_settings: Vec<String>,
     pub quit_app: Vec<String>,
     pub repo_tree_new_file: Vec<String>,
@@ -121,6 +124,13 @@ impl Default for KeyboardShortcuts {
             toggle_ai_terminal_drawer: vec!["cmd-j".into(), "ctrl-j".into()],
             open_project: vec!["cmd-shift-o".into(), "ctrl-shift-o".into()],
             save_current_file: vec!["cmd-s".into(), "ctrl-s".into()],
+            next_editor_tab: vec!["ctrl-tab".into()],
+            previous_editor_tab: vec!["ctrl-shift-tab".into()],
+            close_editor_tab: if cfg!(target_os = "macos") {
+                vec!["cmd-w".into()]
+            } else {
+                vec!["ctrl-w".into()]
+            },
             open_settings: vec!["cmd-,".into(), "ctrl-,".into()],
             quit_app: vec!["cmd-q".into()],
             repo_tree_new_file: vec!["%".into()],

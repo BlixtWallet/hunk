@@ -422,7 +422,11 @@ impl FilesEditor {
             .find(|found| {
                 found.byte_range.start == selection_start && found.byte_range.end == selection_end
             })
-            .or_else(|| matches.iter().find(|found| found.byte_range.start >= selection_end))
+            .or_else(|| {
+                matches
+                    .iter()
+                    .find(|found| found.byte_range.start >= selection_end)
+            })
             .or_else(|| matches.first());
         let Some(target) = target else {
             return false;
@@ -437,9 +441,8 @@ impl FilesEditor {
 
         self.editor
             .apply(EditorCommand::SetSelection(Selection::new(start, end)));
-        let output = self.apply_editor_command(EditorCommand::ReplaceSelection(
-            replacement.to_string(),
-        ));
+        let output =
+            self.apply_editor_command(EditorCommand::ReplaceSelection(replacement.to_string()));
         self.editor
             .apply(EditorCommand::SetSearchQuery(self.search_query.clone()));
         output.document_changed
