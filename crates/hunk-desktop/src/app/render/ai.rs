@@ -1,6 +1,10 @@
 use std::time::Duration;
 
 const AI_COMPOSER_SURFACE_MAX_WIDTH: f32 = 740.0;
+const AI_USAGE_POPOVER_MAX_WIDTH: f32 = 434.0;
+const AI_USAGE_ROW_LABEL_WIDTH: f32 = 68.0;
+const AI_USAGE_ROW_BAR_HEIGHT: f32 = 14.0;
+const AI_USAGE_ROW_DETAILS_WIDTH: f32 = 134.0;
 
 struct AiTerminalPanelState {
     open: bool,
@@ -275,23 +279,23 @@ impl DiffViewer {
         v_flex()
             .id("ai-usage-popover")
             .w_full()
-            .max_w(px(620.0))
-            .rounded(px(22.0))
+            .max_w(px(AI_USAGE_POPOVER_MAX_WIDTH))
+            .rounded(px(16.0))
             .border_1()
             .border_color(popover_surface.border)
             .bg(popover_surface.background)
             .shadow_lg()
-            .px_4()
-            .py_3()
-            .gap_3()
+            .px_3()
+            .py_2()
+            .gap_2()
             .child(
                 h_flex()
                     .items_center()
                     .justify_between()
-                    .gap_3()
+                    .gap_2()
                     .child(
                         div()
-                            .text_base()
+                            .text_sm()
                             .font_semibold()
                             .text_color(cx.theme().foreground)
                             .child("Status"),
@@ -314,14 +318,14 @@ impl DiffViewer {
                 div()
                     .w_full()
                     .min_w_0()
-                    .text_sm()
+                    .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .whitespace_normal()
                     .child(account_summary),
             )
             .child(
                 v_flex()
-                    .gap_3()
+                    .gap_2()
                     .child(render_ai_usage_row(
                         "5h limit",
                         five_hour_window.as_ref(),
@@ -356,11 +360,11 @@ fn render_ai_usage_row(
     h_flex()
         .w_full()
         .items_center()
-        .gap_4()
+        .gap_3()
         .child(
             div()
-                .w(px(96.0))
-                .text_sm()
+                .w(px(AI_USAGE_ROW_LABEL_WIDTH))
+                .text_xs()
                 .font_family(cx.theme().mono_font_family.clone())
                 .text_color(cx.theme().muted_foreground)
                 .child(format!("{label}:")),
@@ -368,7 +372,7 @@ fn render_ai_usage_row(
         .child(
             div()
                 .flex_1()
-                .h(px(20.0))
+                .h(px(AI_USAGE_ROW_BAR_HEIGHT))
                 .rounded(px(999.0))
                 .border_1()
                 .border_color(hunk_opacity(cx.theme().border, is_dark, 0.78, 0.62))
@@ -383,8 +387,8 @@ fn render_ai_usage_row(
         )
         .child(
             div()
-                .w(px(190.0))
-                .text_sm()
+                .w(px(AI_USAGE_ROW_DETAILS_WIDTH))
+                .text_xs()
                 .font_family(cx.theme().mono_font_family.clone())
                 .text_color(cx.theme().foreground)
                 .child(match reset_label {
