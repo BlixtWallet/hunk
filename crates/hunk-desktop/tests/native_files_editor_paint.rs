@@ -35,6 +35,22 @@ struct FilesEditorPalette {
     diff_modification: Hsla,
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+struct FilesEditorPaletteOverlay {
+    gutter_marker: Hsla,
+    inline_background: Hsla,
+}
+
+impl FilesEditorPalette {
+    fn overlay_colors(self, _kind: hunk_editor::OverlayKind) -> FilesEditorPaletteOverlay {
+        FilesEditorPaletteOverlay {
+            gutter_marker: self.diagnostic_info,
+            inline_background: self.diagnostic_info,
+        }
+    }
+}
+
 #[path = "../src/app/native_files_editor_paint.rs"]
 mod native_files_editor_paint;
 
