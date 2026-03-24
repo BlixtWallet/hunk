@@ -349,26 +349,6 @@ fn ai_turn_diff_summary(diff_text: &str) -> AiTurnDiffSummary {
     }
 }
 
-fn ai_diff_line_counts(diff_text: &str) -> (usize, usize) {
-    let mut added = 0usize;
-    let mut removed = 0usize;
-
-    for line in diff_text.lines() {
-        if line.starts_with("+++") || line.starts_with("---") {
-            continue;
-        }
-        if line.starts_with('+') {
-            added = added.saturating_add(1);
-            continue;
-        }
-        if line.starts_with('-') {
-            removed = removed.saturating_add(1);
-        }
-    }
-
-    (added, removed)
-}
-
 fn ai_diff_summary_push_file(
     summary: &mut AiTurnDiffSummary,
     path: String,
@@ -457,7 +437,7 @@ fn ai_file_change_summary(
         } else {
             path.to_string()
         };
-        let (added, removed) = ai_diff_line_counts(change.diff.as_str());
+        let (added, removed) = hunk_codex::diff_stats::file_update_change_line_counts(&change);
         ai_diff_summary_push_file(&mut summary, resolved_path, added, removed);
     }
 

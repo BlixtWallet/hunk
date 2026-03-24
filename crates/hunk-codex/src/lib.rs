@@ -1,4 +1,5 @@
 pub mod api;
+pub mod diff_stats;
 pub mod errors;
 pub mod host;
 pub mod rpc;

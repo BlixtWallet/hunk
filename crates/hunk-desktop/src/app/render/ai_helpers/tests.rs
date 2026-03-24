@@ -700,6 +700,35 @@ diff --git a/crates/hunk-desktop/src/app/render/ai.rs b/crates/hunk-desktop/src/
     }
 
     #[test]
+    fn patch_change_line_counts_handle_added_and_deleted_files() {
+        let added_change = serde_json::from_value::<codex_app_server_protocol::FileUpdateChange>(
+            serde_json::json!({
+                "path": "docs/new.md",
+                "kind": { "type": "add" },
+                "diff": "first line\nsecond line\n"
+            }),
+        )
+        .expect("added change should deserialize");
+        let deleted_change = serde_json::from_value::<codex_app_server_protocol::FileUpdateChange>(
+            serde_json::json!({
+                "path": "docs/old.md",
+                "kind": { "type": "delete" },
+                "diff": "gone line\n"
+            }),
+        )
+        .expect("deleted change should deserialize");
+
+        assert_eq!(
+            hunk_codex::diff_stats::file_update_change_line_counts(&added_change),
+            (2, 0)
+        );
+        assert_eq!(
+            hunk_codex::diff_stats::file_update_change_line_counts(&deleted_change),
+            (0, 1)
+        );
+    }
+
+    #[test]
     fn display_path_parts_split_windows_paths() {
         let (file_name, directory) =
             ai_display_path_parts(r"C:\Users\nites\Documents\hunk\src\main.rs");

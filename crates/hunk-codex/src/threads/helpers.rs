@@ -87,11 +87,11 @@ fn thread_item_display_details_json(item: &ThreadItem) -> Option<String> {
                 .iter()
                 .map(|change| {
                     let path = change.path.trim();
-                    let (added, removed) = file_change_diff_line_counts(change.diff.as_str());
+                    let (added, removed) = crate::diff_stats::file_update_change_line_counts(change);
                     serde_json::json!({
                         "path": if path.is_empty() { "changes" } else { path },
-                        "added": added,
-                        "removed": removed,
+                        "added": added as u64,
+                        "removed": removed as u64,
                     })
                 })
                 .collect::<Vec<_>>();
@@ -115,26 +115,6 @@ fn thread_item_display_details_json(item: &ThreadItem) -> Option<String> {
             .ok()
             .map(|json| truncate_utf8_for_display(json, MAX_ITEM_DETAILS_JSON_BYTES)),
     }
-}
-
-fn file_change_diff_line_counts(diff_text: &str) -> (u64, u64) {
-    let mut added = 0u64;
-    let mut removed = 0u64;
-
-    for line in diff_text.lines() {
-        if line.starts_with("+++") || line.starts_with("---") {
-            continue;
-        }
-        if line.starts_with('+') {
-            added = added.saturating_add(1);
-            continue;
-        }
-        if line.starts_with('-') {
-            removed = removed.saturating_add(1);
-        }
-    }
-
-    (added, removed)
 }
 
 fn thread_item_supports_display_metadata(item: &ThreadItem) -> bool {
@@ -557,5 +537,46 @@ mod tests {
             .get("truncatedCount")
             .and_then(|value| value.as_u64())
             .is_some());
+    }
+
+    #[test]
+    fn file_change_display_details_count_added_and_deleted_file_contents() {
+        let item = serde_json::from_value::<ThreadItem>(serde_json::json!({
+            "type": "fileChange",
+            "id": "item-2",
+            "changes": [
+                {
+                    "path": "docs/new.md",
+                    "kind": { "type": "add" },
+                    "diff": "first line\nsecond line\n"
+                },
+                {
+                    "path": "docs/old.md",
+                    "kind": { "type": "delete" },
+                    "diff": "gone line\n"
+                }
+            ],
+            "status": "completed"
+        }))
+        .expect("file change item should deserialize");
+
+        let details_json = thread_item_display_details_json(&item).expect("details json");
+        let value =
+            serde_json::from_str::<serde_json::Value>(details_json.as_str()).expect("valid json");
+        let changes = value
+            .get("changes")
+            .and_then(|value| value.as_array())
+            .expect("changes array");
+
+        assert_eq!(changes[0].get("added").and_then(|value| value.as_u64()), Some(2));
+        assert_eq!(
+            changes[0].get("removed").and_then(|value| value.as_u64()),
+            Some(0)
+        );
+        assert_eq!(changes[1].get("added").and_then(|value| value.as_u64()), Some(0));
+        assert_eq!(
+            changes[1].get("removed").and_then(|value| value.as_u64()),
+            Some(1)
+        );
     }
 }
