@@ -364,3 +364,9 @@ Keybindings in bacon UI:
 - `c` -> check
 - `t` -> test
 - `l` -> clippy
+
+## Credits
+
+- [Zed](https://zed.dev/) was a major inspiration for Hunk. We directly studied and copied parts of their open-source code as reference implementations, especially around editor/text-system behavior and terminal-related implementation details, and their architecture heavily influenced this project.
+- [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui) deserves credit as the UI framework Hunk is built on.
+- [gpui-component](https://github.com/longbridge/gpui-component) by Longbridge deserves credit as well. Hunk relies heavily on their component library throughout the app.
