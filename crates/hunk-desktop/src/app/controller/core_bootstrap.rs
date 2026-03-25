@@ -415,6 +415,7 @@ impl DiffViewer {
             ai_thread_sidebar_rows: Vec::new(),
             ai_thread_sidebar_list_state: ListState::new(0, ListAlignment::Top, px(48.0)),
             ai_thread_sidebar_row_count: 0,
+            ai_timeline_list_view: None,
             ai_timeline_list_state: ListState::new(0, ListAlignment::Top, px(360.0)),
             ai_timeline_list_row_count: 0,
             ai_timeline_visible_turn_limit_by_thread: BTreeMap::new(),
@@ -423,6 +424,7 @@ impl DiffViewer {
             ai_timeline_rows_by_id: BTreeMap::new(),
             ai_timeline_groups_by_id: BTreeMap::new(),
             ai_timeline_group_parent_by_child_row_id: BTreeMap::new(),
+            ai_markdown_row_cache: Mutex::new(BTreeMap::new()),
             ai_in_progress_turn_started_at: BTreeMap::new(),
             ai_composer_activity_elapsed_second: None,
             ai_expanded_timeline_row_ids: BTreeSet::new(),
@@ -849,6 +851,7 @@ impl DiffViewer {
         )
         .detach();
 
+        view.initialize_ai_timeline_list_view(cx);
         view.install_list_scroll_handlers(cx);
         view.subscribe_review_compare_picker_states(cx);
 
@@ -909,5 +912,16 @@ impl DiffViewer {
                 });
             }
         });
+    }
+
+    fn initialize_ai_timeline_list_view(&mut self, cx: &mut Context<Self>) {
+        if self.ai_timeline_list_view.is_some() {
+            return;
+        }
+
+        let root_view = cx.entity().downgrade();
+        let list_state = self.ai_timeline_list_state.clone();
+        self.ai_timeline_list_view =
+            Some(cx.new(|_| render::AiTimelineListView::new(root_view, list_state)));
     }
 }

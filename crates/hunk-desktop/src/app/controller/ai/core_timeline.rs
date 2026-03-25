@@ -1,4 +1,55 @@
 impl DiffViewer {
+    fn ai_composer_activity_label_for_kind(kind: &str) -> &'static str {
+        match kind {
+            "reasoning" => "Thinking",
+            "commandExecution" => "Running",
+            "fileChange" => "Editing",
+            "dynamicToolCall" | "mcpToolCall" | "collabAgentToolCall" => "Tool",
+            "webSearch" => "Searching",
+            "agentMessage" | "plan" => "Writing",
+            _ => "Working",
+        }
+    }
+
+    fn current_ai_composer_feedback_state(&self) -> Option<AiComposerFeedbackState> {
+        if let Some(status) = self.current_ai_composer_status_message()
+            && let Some(tone) = ai_composer_status_tone(status)
+        {
+            return Some(AiComposerFeedbackState::Status {
+                message: status.to_string(),
+                tone,
+            });
+        }
+
+        self.current_ai_composer_activity_feedback()
+            .map(AiComposerFeedbackState::Activity)
+    }
+
+    fn current_ai_composer_activity_feedback(&self) -> Option<AiComposerFeedbackActivity> {
+        let thread_id = self.current_ai_thread_id()?;
+        let turn_id = self.current_ai_in_progress_turn_id(thread_id.as_str())?;
+        let tracking_key = format!("{thread_id}::{turn_id}");
+        let started_at = *self.ai_in_progress_turn_started_at.get(tracking_key.as_str())?;
+        let label = self
+            .ai_state_snapshot
+            .items
+            .values()
+            .filter(|item| {
+                item.thread_id == thread_id
+                    && item.turn_id == turn_id
+                    && item.status != hunk_codex::state::ItemStatus::Completed
+            })
+            .max_by_key(|item| item.last_sequence)
+            .map(|item| Self::ai_composer_activity_label_for_kind(item.kind.as_str()))
+            .unwrap_or("Working");
+
+        Some(AiComposerFeedbackActivity {
+            label: label.to_string(),
+            started_at,
+            animation_key: tracking_key,
+        })
+    }
+
     fn ai_review_compare_base_branch_name_for_workspace(
         &self,
         workspace_key: &str,
@@ -95,11 +146,7 @@ impl DiffViewer {
     }
 
     pub(super) fn rebuild_ai_thread_sidebar_state(&mut self) {
-        let started_at = Instant::now();
-        let threads_started_at = Instant::now();
         let threads = self.ai_visible_threads();
-        let threads_elapsed_ms = threads_started_at.elapsed().as_millis();
-        let sections_started_at = Instant::now();
         let sections = ai_visible_thread_sections(
             threads,
             self.state.workspace_project_paths.as_slice(),
@@ -107,19 +154,7 @@ impl DiffViewer {
             self.repo_root.as_deref(),
             &self.ai_expanded_thread_sidebar_project_roots,
         );
-        let sections_elapsed_ms = sections_started_at.elapsed().as_millis();
-        let rows_started_at = Instant::now();
         let rows = self.ai_thread_sidebar_rows_from_sections(sections.as_slice());
-        let rows_elapsed_ms = rows_started_at.elapsed().as_millis();
-        debug!(
-            "rebuilt ai thread sidebar rows: sections={} rows={} threads_ms={} sections_ms={} rows_ms={} elapsed_ms={}",
-            sections.len(),
-            rows.len(),
-            threads_elapsed_ms,
-            sections_elapsed_ms,
-            rows_elapsed_ms,
-            started_at.elapsed().as_millis()
-        );
         let visible_thread_count = sections
             .iter()
             .map(|section| section.total_thread_count)
@@ -142,7 +177,6 @@ impl DiffViewer {
             return state;
         }
 
-        let started_at = Instant::now();
         let project_count = self.ai_visible_thread_sections().len();
         let visible_thread_count = self
             .ai_visible_thread_sections()
@@ -150,17 +184,12 @@ impl DiffViewer {
             .map(|section| section.total_thread_count)
             .sum::<usize>();
         let threads_loading = self.ai_bootstrap_loading && visible_thread_count == 0;
-        let labels_started_at = Instant::now();
         let active_branch = self.ai_active_workspace_branch_name();
         let active_workspace_label = self.ai_active_workspace_label();
-        let labels_elapsed_ms = labels_started_at.elapsed().as_millis();
-        let approvals_started_at = Instant::now();
         let pending_approvals = self.ai_visible_pending_approvals();
         let pending_user_inputs = self.ai_visible_pending_user_inputs();
-        let approvals_elapsed_ms = approvals_started_at.elapsed().as_millis();
         let selected_thread_id = self.current_ai_thread_id();
         let pending_thread_start = self.ai_pending_thread_start_for_timeline();
-        let thread_state_started_at = Instant::now();
         let selected_thread_start_mode = selected_thread_id
             .as_deref()
             .and_then(|thread_id| self.ai_thread_start_mode(thread_id));
@@ -170,8 +199,6 @@ impl DiffViewer {
             .ai_selected_worktree_base_branch_name()
             .unwrap_or("Choose base branch")
             .to_string();
-        let thread_state_elapsed_ms = thread_state_started_at.elapsed().as_millis();
-        let timeline_started_at = Instant::now();
         let (
             timeline_total_turn_count,
             timeline_visible_turn_count,
@@ -182,7 +209,6 @@ impl DiffViewer {
         } else {
             (0, 0, 0, Vec::new())
         };
-        let timeline_elapsed_ms = timeline_started_at.elapsed().as_millis();
         let show_no_turns_empty_state = crate::app::render::ai_should_show_no_turns_empty_state(
             timeline_visible_row_ids.len(),
             pending_thread_start.is_some(),
@@ -192,7 +218,7 @@ impl DiffViewer {
             && timeline_visible_row_ids.is_empty();
         let show_select_thread_empty_state =
             selected_thread_id.is_none() && !timeline_loading && pending_thread_start.is_none();
-        let composer_started_at = Instant::now();
+        let composer_feedback = self.current_ai_composer_feedback_state();
         let composer_send_waiting_on_connection =
             crate::app::controller::ai_prompt_send_waiting_on_connection(
                 self.ai_connection_state,
@@ -207,8 +233,6 @@ impl DiffViewer {
             .map(|thread_id| self.ai_queued_message_row_ids_for_thread(thread_id).len())
             .unwrap_or(0);
         let model_supports_image_inputs = self.current_ai_model_supports_image_inputs();
-        let composer_elapsed_ms = composer_started_at.elapsed().as_millis();
-        let actions_started_at = Instant::now();
         let selected_thread_in_progress = selected_thread_id
             .as_deref()
             .and_then(|thread_id| self.current_ai_in_progress_turn_id(thread_id))
@@ -299,7 +323,6 @@ impl DiffViewer {
             .or_else(|| selected_workspace_root.clone())
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "No workspace selected".to_string());
-        let actions_elapsed_ms = actions_started_at.elapsed().as_millis();
 
         let state = AiVisibleFrameState {
             project_count,
@@ -321,6 +344,7 @@ impl DiffViewer {
             timeline_loading,
             show_select_thread_empty_state,
             show_no_turns_empty_state,
+            composer_feedback,
             composer_send_waiting_on_connection,
             composer_interrupt_available,
             queued_message_count,
@@ -333,22 +357,6 @@ impl DiffViewer {
             ai_delete_worktree_blocker,
             terminal_cwd_label,
         };
-        debug!(
-            "rebuilt ai visible frame state: projects={} threads={} approvals={} inputs={} timeline_rows={} workspace_states={} labels_ms={} approvals_ms={} thread_state_ms={} timeline_ms={} composer_ms={} actions_ms={} elapsed_ms={}",
-            state.project_count,
-            state.visible_thread_count,
-            state.pending_approvals.len(),
-            state.pending_user_inputs.len(),
-            state.timeline_visible_row_ids.len(),
-            self.ai_workspace_states.len(),
-            labels_elapsed_ms,
-            approvals_elapsed_ms,
-            thread_state_elapsed_ms,
-            timeline_elapsed_ms,
-            composer_elapsed_ms,
-            actions_elapsed_ms,
-            started_at.elapsed().as_millis()
-        );
         self.ai_visible_frame_state = Some(state.clone());
         state
     }

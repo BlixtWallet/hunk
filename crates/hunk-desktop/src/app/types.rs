@@ -127,7 +127,7 @@ enum AiComposerStatusKey {
     Workspace(Option<String>),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AiComposerStatusTone {
     Danger,
     Warning,
@@ -320,6 +320,7 @@ struct AiVisibleFrameState {
     timeline_loading: bool,
     show_select_thread_empty_state: bool,
     show_no_turns_empty_state: bool,
+    composer_feedback: Option<AiComposerFeedbackState>,
     composer_send_waiting_on_connection: bool,
     composer_interrupt_available: bool,
     queued_message_count: usize,
@@ -331,6 +332,22 @@ struct AiVisibleFrameState {
     ai_managed_worktree_target: Option<WorkspaceTargetSummary>,
     ai_delete_worktree_blocker: Option<String>,
     terminal_cwd_label: String,
+}
+
+#[derive(Debug, Clone)]
+struct AiComposerFeedbackActivity {
+    label: String,
+    started_at: Instant,
+    animation_key: String,
+}
+
+#[derive(Debug, Clone)]
+enum AiComposerFeedbackState {
+    Status {
+        message: String,
+        tone: AiComposerStatusTone,
+    },
+    Activity(AiComposerFeedbackActivity),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -634,6 +651,13 @@ impl AiTextSelectionSurfaceSpec {
         self.separator_before = separator_before.into();
         self
     }
+}
+
+#[derive(Debug, Clone)]
+struct AiMarkdownRowCacheEntry {
+    markdown: String,
+    blocks: Arc<[MarkdownPreviewBlock]>,
+    selection_surfaces: Arc<[AiTextSelectionSurfaceSpec]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

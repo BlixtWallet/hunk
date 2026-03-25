@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -1115,6 +1115,7 @@ struct DiffViewer {
     ai_thread_sidebar_rows: Vec<AiThreadSidebarRow>,
     ai_thread_sidebar_list_state: ListState,
     ai_thread_sidebar_row_count: usize,
+    ai_timeline_list_view: Option<Entity<render::AiTimelineListView>>,
     ai_timeline_list_state: ListState,
     ai_timeline_list_row_count: usize,
     ai_timeline_visible_turn_limit_by_thread: BTreeMap<String, usize>,
@@ -1123,6 +1124,7 @@ struct DiffViewer {
     ai_timeline_rows_by_id: BTreeMap<String, AiTimelineRow>,
     ai_timeline_groups_by_id: BTreeMap<String, AiTimelineGroup>,
     ai_timeline_group_parent_by_child_row_id: BTreeMap<String, String>,
+    ai_markdown_row_cache: Mutex<BTreeMap<String, AiMarkdownRowCacheEntry>>,
     ai_in_progress_turn_started_at: BTreeMap<String, Instant>,
     ai_composer_activity_elapsed_second: Option<u64>,
     ai_expanded_timeline_row_ids: BTreeSet<String>,

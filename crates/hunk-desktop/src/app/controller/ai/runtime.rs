@@ -24,11 +24,10 @@ impl DiffViewer {
         if self.ai_state_snapshot.threads.is_empty() {
             return false;
         }
-        if self
+        if !self
             .ai_state_snapshot
             .threads
-            .get(current_thread_id.as_str())
-            .is_none()
+            .contains_key(current_thread_id.as_str())
         {
             return false;
         }

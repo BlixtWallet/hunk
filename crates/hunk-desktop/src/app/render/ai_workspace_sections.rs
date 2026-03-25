@@ -22,7 +22,6 @@ struct AiTimelinePanelState {
     timeline_loading: bool,
     show_select_thread_empty_state: bool,
     show_no_turns_empty_state: bool,
-    ai_timeline_list_state: ListState,
     ai_timeline_follow_output: bool,
     ai_publish_blocker: Option<String>,
     ai_publish_disabled: bool,
@@ -359,6 +358,7 @@ impl DiffViewer {
         }
     }
 
+#[allow(clippy::too_many_arguments)]
     fn render_ai_thread_project_header_row(
         &self,
         view: Entity<Self>,
@@ -535,7 +535,7 @@ impl DiffViewer {
     }
 
     fn render_ai_timeline_panel(
-        &self,
+        &mut self,
         view: Entity<Self>,
         state: &AiTimelinePanelState,
         is_dark: bool,
@@ -955,33 +955,25 @@ impl DiffViewer {
     }
 
     fn render_ai_timeline_rows(
-        &self,
+        &mut self,
         view: Entity<Self>,
         state: &AiTimelinePanelState,
         thread_id: String,
         is_dark: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let timeline_row_ids_for_list = state.timeline_visible_row_ids.clone();
-        let timeline_list_state = state.ai_timeline_list_state.clone();
-        let view_for_list = view.clone();
-        let theme_for_list = cx.theme().clone();
-        let timeline_list = list(timeline_list_state.clone(), {
-            cx.processor(move |this, ix: usize, _window, _cx| {
-                let Some(row_id) = timeline_row_ids_for_list.get(ix) else {
-                    return div().w_full().h(px(0.0)).into_any_element();
-                };
-                render_ai_chat_timeline_row_for_view(
-                    this,
-                    row_id.as_str(),
-                    view_for_list.clone(),
-                    &theme_for_list,
-                    is_dark,
-                )
+        let timeline_list_view = self.ai_timeline_list_view.get_or_insert_with(|| {
+            cx.new(|_| {
+                AiTimelineListView::new(view.downgrade(), self.ai_timeline_list_state.clone())
             })
-        })
-        .size_full()
-        .with_sizing_behavior(ListSizingBehavior::Auto);
+        });
+        timeline_list_view.update(cx, |this: &mut AiTimelineListView, cx| {
+            this.sync_state(
+                state.timeline_visible_row_ids.clone(),
+                state.ai_timeline_follow_output,
+                cx,
+            );
+        });
 
         v_flex()
             .flex_1()
@@ -1074,52 +1066,12 @@ impl DiffViewer {
                 )
             })
             .when(!state.timeline_visible_row_ids.is_empty(), |this| {
-                let view = view.clone();
-                let ai_timeline_follow_output = state.ai_timeline_follow_output;
-                let timeline_list_state = timeline_list_state.clone();
                 this.child(
                     div()
                         .flex_1()
                         .min_h_0()
                         .relative()
-                        .child(div().size_full().child(timeline_list))
-                        .child(
-                            div()
-                                .absolute()
-                                .top_0()
-                                .right_0()
-                                .bottom_0()
-                                .w(px(16.0))
-                                .child(
-                                    Scrollbar::vertical(&timeline_list_state)
-                                        .scrollbar_show(ScrollbarShow::Always),
-                                ),
-                        )
-                        .when(!ai_timeline_follow_output, |this| {
-                            let view = view.clone();
-                            this.child(
-                                div()
-                                    .absolute()
-                                    .right(px(16.0))
-                                    .bottom(px(8.0))
-                                    .left_0()
-                                    .flex()
-                                    .justify_center()
-                                    .child(
-                                        Button::new("ai-timeline-scroll-to-bottom")
-                                            .compact()
-                                            .primary()
-                                            .with_size(gpui_component::Size::Small)
-                                            .icon(Icon::new(IconName::ChevronDown).size(px(14.0)))
-                                            .tooltip("Scroll to the bottom")
-                                            .on_click(move |_, _, cx| {
-                                                view.update(cx, |this, cx| {
-                                                    this.ai_scroll_timeline_to_bottom_action(cx);
-                                                });
-                                            }),
-                                    ),
-                            )
-                        }),
+                        .child(timeline_list_view.clone()),
                 )
             })
             .into_any_element()
