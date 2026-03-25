@@ -408,13 +408,6 @@ pub(crate) fn hunk_toolbar_chip(theme: &Theme, is_dark: bool) -> HunkSurfaceColo
     }
 }
 
-pub(crate) fn hunk_toolbar_brand_chip(theme: &Theme, is_dark: bool) -> HunkSurfaceColors {
-    HunkSurfaceColors {
-        background: hunk_opacity(theme.accent, is_dark, 0.26, 0.14),
-        border: hunk_opacity(theme.accent, is_dark, 0.62, 0.42),
-    }
-}
-
 pub(crate) fn hunk_disclosure_row(theme: &Theme, is_dark: bool) -> HunkDisclosureColors {
     let title = hunk_opacity(theme.foreground, is_dark, 0.78, 0.74);
     HunkDisclosureColors {
