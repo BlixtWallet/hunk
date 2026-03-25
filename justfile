@@ -12,6 +12,9 @@ start-windows-release:
 
 start-linux:
     ./scripts/run_linux_dev.sh
+
+start-linux-release:
+    ./scripts/run_linux_release.sh
     
 fmt:
     cargo fmt --all
