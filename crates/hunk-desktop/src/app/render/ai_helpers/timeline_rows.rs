@@ -37,6 +37,56 @@ struct AiTurnDiffSummary {
     total_removed: usize,
 }
 
+fn ai_turn_plan_summary<'a>(
+    state: &'a hunk_codex::state::AiState,
+    turn_key: &str,
+) -> Option<&'a hunk_codex::state::TurnPlanSummary> {
+    state.turn_plans.get(turn_key)
+}
+
+fn ai_turn_plan_is_renderable(plan: &hunk_codex::state::TurnPlanSummary) -> bool {
+    plan.explanation
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+        || !plan.steps.is_empty()
+}
+
+fn ai_turn_plan_step_marker(status: hunk_codex::state::TurnPlanStepStatus) -> &'static str {
+    match status {
+        hunk_codex::state::TurnPlanStepStatus::Completed => "[x]",
+        hunk_codex::state::TurnPlanStepStatus::InProgress => "[>]",
+        hunk_codex::state::TurnPlanStepStatus::Pending => "[ ]",
+    }
+}
+
+fn ai_turn_plan_step_style(
+    step: &hunk_codex::state::TurnPlanStepSummary,
+    theme: &gpui_component::Theme,
+) -> StyledText {
+    let text = step.step.clone();
+    let highlight = match step.status {
+        hunk_codex::state::TurnPlanStepStatus::Completed => HighlightStyle {
+            color: Some(theme.muted_foreground),
+            strikethrough: Some(StrikethroughStyle {
+                thickness: px(1.0),
+                ..StrikethroughStyle::default()
+            }),
+            ..HighlightStyle::default()
+        },
+        hunk_codex::state::TurnPlanStepStatus::InProgress => HighlightStyle {
+            color: Some(theme.foreground),
+            font_weight: Some(FontWeight::SEMIBOLD),
+            ..HighlightStyle::default()
+        },
+        hunk_codex::state::TurnPlanStepStatus::Pending => HighlightStyle {
+            color: Some(theme.muted_foreground),
+            ..HighlightStyle::default()
+        },
+    };
+
+    StyledText::new(text.clone()).with_highlights(vec![(0..text.len(), highlight)])
+}
+
 fn ai_timeline_item_role(kind: &str) -> AiTimelineItemRole {
     match kind {
         "userMessage" => AiTimelineItemRole::User,
@@ -79,6 +129,11 @@ fn ai_timeline_row_is_renderable(this: &DiffViewer, row: &AiTimelineRow) -> bool
             .turn_diffs
             .get(turn_key.as_str())
             .is_some_and(|diff| !diff.trim().is_empty()),
+        AiTimelineRowSource::TurnPlan { turn_key } => ai_turn_plan_summary(
+            &this.ai_state_snapshot,
+            turn_key.as_str(),
+        )
+        .is_some_and(ai_turn_plan_is_renderable),
     }
 }
 
@@ -1121,6 +1176,105 @@ fn render_ai_turn_diff_row(
     )
 }
 
+fn render_ai_turn_plan_row(
+    this: &DiffViewer,
+    row: &AiTimelineRow,
+    plan: &hunk_codex::state::TurnPlanSummary,
+    theme: &gpui_component::Theme,
+    is_dark: bool,
+) -> AnyElement {
+    let explanation = plan
+        .explanation
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let steps = plan
+        .steps
+        .iter()
+        .map(|step| {
+            let marker_color = match step.status {
+                hunk_codex::state::TurnPlanStepStatus::Completed => theme.success,
+                hunk_codex::state::TurnPlanStepStatus::InProgress => theme.accent,
+                hunk_codex::state::TurnPlanStepStatus::Pending => theme.muted_foreground,
+            };
+
+            h_flex()
+                .w_full()
+                .min_w_0()
+                .items_start()
+                .gap_2()
+                .child(
+                    div()
+                        .flex_none()
+                        .pt_0p5()
+                        .text_xs()
+                        .font_family(theme.mono_font_family.clone())
+                        .text_color(marker_color)
+                        .child(ai_turn_plan_step_marker(step.status)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_sm()
+                        .child(ai_turn_plan_step_style(step, theme)),
+                )
+                .into_any_element()
+        })
+        .collect::<Vec<_>>();
+
+    ai_timeline_row_with_animation(
+        this,
+        row.id.as_str(),
+        h_flex()
+            .w_full()
+            .min_w_0()
+            .justify_start()
+            .child(
+                v_flex()
+                    .w_full()
+                    .min_w_0()
+                    .max_w(px(700.0))
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_semibold()
+                            .text_color(theme.foreground)
+                            .child("Updated Plan"),
+                    )
+                    .child(
+                        v_flex()
+                            .w_full()
+                            .min_w_0()
+                            .gap_1p5()
+                            .px_3()
+                            .py_2p5()
+                            .rounded(px(10.0))
+                            .border_1()
+                            .border_color(hunk_opacity(theme.border, is_dark, 0.8, 0.7))
+                            .bg(hunk_blend(
+                                theme.background,
+                                theme.muted,
+                                is_dark,
+                                0.14,
+                                0.18,
+                            ))
+                            .when_some(explanation, |this, explanation| {
+                                this.child(
+                                    div()
+                                        .text_xs()
+                                        .italic()
+                                        .text_color(theme.muted_foreground)
+                                        .child(explanation.to_string()),
+                                )
+                            })
+                            .children(steps),
+                    ),
+            ),
+    )
+}
+
 fn render_ai_chat_timeline_row_for_view(
     this: &DiffViewer,
     row_id: &str,
@@ -1296,6 +1450,19 @@ fn render_ai_chat_timeline_row_for_view(
             (
                 render_ai_turn_diff_row(this, view, row, diff_text, theme, is_dark),
                 "diff",
+                false,
+            )
+        }
+        AiTimelineRowSource::TurnPlan { turn_key } => {
+            let Some(plan) = ai_turn_plan_summary(&this.ai_state_snapshot, turn_key.as_str()) else {
+                return div().w_full().h(px(0.0)).into_any_element();
+            };
+            if !ai_turn_plan_is_renderable(plan) {
+                return div().w_full().h(px(0.0)).into_any_element();
+            }
+            (
+                render_ai_turn_plan_row(this, row, plan, theme, is_dark),
+                "plan-update",
                 false,
             )
         }

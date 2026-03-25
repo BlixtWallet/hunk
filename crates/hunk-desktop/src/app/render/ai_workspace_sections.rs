@@ -219,23 +219,43 @@ impl DiffViewer {
                     )
                     .child({
                         let view = view.clone();
-                        Button::new("ai-thread-refresh")
-                            .ghost()
-                            .compact()
-                            .rounded(px(999.0))
-                            .with_size(gpui_component::Size::Small)
-                            .label("Refresh")
-                            .text_color(hunk_opacity(
-                                cx.theme().muted_foreground,
-                                is_dark,
-                                0.88,
-                                0.96,
-                            ))
-                            .on_click(move |_, _, cx| {
-                                view.update(cx, |this, cx| {
-                                    this.ai_refresh_threads(cx);
-                                });
+                        h_flex()
+                            .items_center()
+                            .gap_1p5()
+                            .child({
+                                let view = view.clone();
+                                Button::new("ai-add-project")
+                                    .compact()
+                                    .outline()
+                                    .rounded(px(999.0))
+                                    .with_size(gpui_component::Size::Small)
+                                    .icon(Icon::new(HunkIconName::FolderPlus).size(px(14.0)))
+                                    .label("Add Project")
+                                    .on_click(move |_, _, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.open_project_picker(cx);
+                                        });
+                                    })
                             })
+                            .child(
+                                Button::new("ai-thread-refresh")
+                                    .ghost()
+                                    .compact()
+                                    .rounded(px(999.0))
+                                    .with_size(gpui_component::Size::Small)
+                                    .label("Refresh")
+                                    .text_color(hunk_opacity(
+                                        cx.theme().muted_foreground,
+                                        is_dark,
+                                        0.88,
+                                        0.96,
+                                    ))
+                                    .on_click(move |_, _, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.ai_refresh_threads(cx);
+                                        });
+                                    }),
+                            )
                     }),
             )
             .child(
@@ -398,11 +418,6 @@ impl DiffViewer {
                     .items_start()
                     .gap_1p5()
                     .child(
-                        Icon::new(IconName::FolderClosed)
-                            .size(px(12.0))
-                            .text_color(cx.theme().muted_foreground),
-                    )
-                    .child(
                         v_flex()
                             .flex_1()
                             .min_w_0()
@@ -424,47 +439,79 @@ impl DiffViewer {
                     ),
             )
             .child(
-                Button::new(format!("ai-thread-project-actions-{project_key}"))
-                    .compact()
-                    .outline()
-                    .rounded(px(999.0))
-                    .with_size(gpui_component::Size::Small)
-                    .label("New")
-                    .dropdown_caret(true)
-                    .dropdown_menu(move |menu, _, _| {
-                        menu.item(
-                            PopupMenuItem::new("New Thread").on_click({
+                h_flex()
+                    .items_center()
+                    .gap_1p5()
+                    .child(
+                        {
+                            let new_button_view = view.clone();
+                            let new_button_project_root = project_root.clone();
+                            Button::new(format!("ai-thread-project-actions-{project_key}"))
+                                .compact()
+                                .outline()
+                                .rounded(px(999.0))
+                                .with_size(gpui_component::Size::Small)
+                                .icon(Icon::new(HunkIconName::NotebookPen).size(px(14.0)))
+                                .label("New")
+                                .dropdown_caret(true)
+                                .dropdown_menu(move |menu, _, _| {
+                                    menu.item(
+                                        PopupMenuItem::new("New Thread").on_click({
+                                            let view = new_button_view.clone();
+                                            let project_root = new_button_project_root.clone();
+                                            move |_, window, cx| {
+                                                view.update(cx, |this, cx| {
+                                                    this.ai_start_thread_draft_for_project_root(
+                                                        project_root.clone(),
+                                                        AiNewThreadStartMode::Local,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                });
+                                            }
+                                        }),
+                                    )
+                                    .item(
+                                        PopupMenuItem::new("New Worktree").on_click({
+                                            let view = new_button_view.clone();
+                                            let project_root = new_button_project_root.clone();
+                                            move |_, window, cx| {
+                                                view.update(cx, |this, cx| {
+                                                    this.ai_start_thread_draft_for_project_root(
+                                                        project_root.clone(),
+                                                        AiNewThreadStartMode::Worktree,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                });
+                                            }
+                                        }),
+                                    )
+                                })
+                        },
+                    )
+                    .child(
+                        Button::new(format!("ai-thread-project-remove-{project_key}"))
+                            .compact()
+                            .danger()
+                            .rounded(px(999.0))
+                            .with_size(gpui_component::Size::Small)
+                            .icon(Icon::new(IconName::Delete).size(px(14.0)))
+                            .label("Remove")
+                            .on_click({
                                 let view = view.clone();
                                 let project_root = project_root.clone();
                                 move |_, window, cx| {
                                     view.update(cx, |this, cx| {
-                                        this.ai_start_thread_draft_for_project_root(
+                                        this.confirm_remove_workspace_project_action(
                                             project_root.clone(),
-                                            AiNewThreadStartMode::Local,
                                             window,
                                             cx,
                                         );
                                     });
                                 }
                             }),
-                        )
-                        .item(
-                            PopupMenuItem::new("New Worktree").on_click({
-                                let view = view.clone();
-                                let project_root = project_root.clone();
-                                move |_, window, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.ai_start_thread_draft_for_project_root(
-                                            project_root.clone(),
-                                            AiNewThreadStartMode::Worktree,
-                                            window,
-                                            cx,
-                                        );
-                                    });
-                                }
-                            }),
-                        )
-                    }),
+                    ),
             )
             .into_any_element()
     }

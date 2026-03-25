@@ -637,12 +637,23 @@ fn ai_timeline_row_is_renderable_for_layout(
             .turn_diffs
             .get(turn_key.as_str())
             .is_some_and(|diff| !diff.trim().is_empty()),
+        AiTimelineRowSource::TurnPlan { turn_key } => state
+            .turn_plans
+            .get(turn_key.as_str())
+            .is_some_and(|plan| {
+                plan.explanation
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty())
+                    || !plan.steps.is_empty()
+            }),
     }
 }
 
 fn ai_timeline_row_is_renderable_for_controller(this: &DiffViewer, row: &AiTimelineRow) -> bool {
     match &row.source {
-        AiTimelineRowSource::Item { .. } | AiTimelineRowSource::TurnDiff { .. } => {
+        AiTimelineRowSource::Item { .. }
+        | AiTimelineRowSource::TurnDiff { .. }
+        | AiTimelineRowSource::TurnPlan { .. } => {
             ai_timeline_row_is_renderable_for_layout(&this.ai_state_snapshot, row)
         }
         AiTimelineRowSource::Group { group_id } => this
@@ -708,6 +719,11 @@ fn timeline_row_ids_with_height_changes(
         {
             changed_row_ids.insert(format!("turn-diff:{turn_key}"));
         }
+        if previous_state.turn_plans.get(turn_key.as_str())
+            != next_state.turn_plans.get(turn_key.as_str())
+        {
+            changed_row_ids.insert(format!("turn-plan:{turn_key}"));
+        }
     }
 
     changed_row_ids
@@ -770,6 +786,7 @@ fn ai_timeline_row_needs_full_measurement_reset(this: &DiffViewer, row_id: &str)
                     .any(|child_row_id| ai_timeline_row_needs_full_measurement_reset(this, child_row_id))
             }),
         AiTimelineRowSource::TurnDiff { .. } => false,
+        AiTimelineRowSource::TurnPlan { .. } => true,
     }
 }
 

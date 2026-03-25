@@ -607,6 +607,7 @@ enum AiTimelineRowSource {
     Item { item_key: String },
     Group { group_id: String },
     TurnDiff { turn_key: String },
+    TurnPlan { turn_key: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
