@@ -612,7 +612,6 @@ where
                                                 div()
                                                     .w_full()
                                                     .px_1()
-                                                    .pr_3()
                                                     .child(
                                                         div()
                                                             .w_full()
