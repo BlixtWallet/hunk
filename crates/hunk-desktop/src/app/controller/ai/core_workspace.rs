@@ -627,10 +627,6 @@ impl DiffViewer {
                 generation: self.ai_event_epoch,
             },
         );
-        debug!(
-            "parked ai runtime; hidden_runtimes={} current_worker_cleared=true",
-            self.ai_hidden_runtimes.len()
-        );
         self.ai_worker_workspace_key = None;
     }
 

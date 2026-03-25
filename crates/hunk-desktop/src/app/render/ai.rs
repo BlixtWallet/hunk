@@ -1,65 +1,8 @@
-use std::time::Duration;
-use std::{sync::LazyLock, sync::Mutex, time::Instant};
-
 const AI_COMPOSER_SURFACE_MAX_WIDTH: f32 = 740.0;
 const AI_USAGE_POPOVER_MAX_WIDTH: f32 = 434.0;
 const AI_USAGE_ROW_LABEL_WIDTH: f32 = 68.0;
 const AI_USAGE_ROW_BAR_HEIGHT: f32 = 14.0;
 const AI_USAGE_ROW_DETAILS_WIDTH: f32 = 134.0;
-
-struct AiWorkspaceScreenRenderMetrics {
-    window_started_at: Instant,
-    render_count: usize,
-    latest_project_count: usize,
-    latest_thread_count: usize,
-    latest_timeline_row_count: usize,
-    latest_terminal_open: bool,
-}
-
-impl AiWorkspaceScreenRenderMetrics {
-    fn new() -> Self {
-        Self {
-            window_started_at: Instant::now(),
-            render_count: 0,
-            latest_project_count: 0,
-            latest_thread_count: 0,
-            latest_timeline_row_count: 0,
-            latest_terminal_open: false,
-        }
-    }
-}
-
-static AI_WORKSPACE_SCREEN_RENDER_METRICS: LazyLock<Mutex<AiWorkspaceScreenRenderMetrics>> =
-    LazyLock::new(|| Mutex::new(AiWorkspaceScreenRenderMetrics::new()));
-
-fn record_ai_workspace_screen_render(
-    project_count: usize,
-    thread_count: usize,
-    timeline_row_count: usize,
-    terminal_open: bool,
-) {
-    let Ok(mut metrics) = AI_WORKSPACE_SCREEN_RENDER_METRICS.lock() else {
-        return;
-    };
-    metrics.render_count = metrics.render_count.saturating_add(1);
-    metrics.latest_project_count = project_count;
-    metrics.latest_thread_count = thread_count;
-    metrics.latest_timeline_row_count = timeline_row_count;
-    metrics.latest_terminal_open = terminal_open;
-    if metrics.window_started_at.elapsed() < Duration::from_secs(1) {
-        return;
-    }
-
-    tracing::debug!(
-        "ai workspace screen renders/sec={} projects={} threads={} timeline_rows={} terminal_open={}",
-        metrics.render_count,
-        metrics.latest_project_count,
-        metrics.latest_thread_count,
-        metrics.latest_timeline_row_count,
-        metrics.latest_terminal_open
-    );
-    *metrics = AiWorkspaceScreenRenderMetrics::new();
-}
 
 struct TerminalPanelState {
     kind: WorkspaceTerminalKind,
@@ -112,7 +55,6 @@ impl DiffViewer {
         let (selected_thread_mode_for_picker, thread_mode_picker_editable) = self
             .ai_thread_mode_picker_state(ai_view_state.selected_thread_start_mode);
         let ai_timeline_follow_output = self.ai_timeline_follow_output;
-        let ai_timeline_list_state = self.ai_timeline_list_state.clone();
         let composer_attachment_paths = self.current_ai_composer_local_images();
         let composer_attachment_count = composer_attachment_paths.len();
         let ai_commit_and_push_loading = self.git_action_loading_named("Commit and Push");
@@ -151,7 +93,6 @@ impl DiffViewer {
             timeline_loading: ai_view_state.timeline_loading,
             show_select_thread_empty_state: ai_view_state.show_select_thread_empty_state,
             show_no_turns_empty_state: ai_view_state.show_no_turns_empty_state,
-            ai_timeline_list_state,
             ai_timeline_follow_output,
             ai_publish_blocker: ai_view_state.ai_publish_blocker.clone(),
             ai_publish_disabled: ai_view_state.ai_publish_disabled,
@@ -164,6 +105,7 @@ impl DiffViewer {
             ai_error_message: self.ai_error_message.clone(),
         };
         let composer_state = AiComposerPanelState {
+            composer_feedback: ai_view_state.composer_feedback.clone(),
             composer_attachment_paths,
             composer_attachment_count,
             model_supports_image_inputs: ai_view_state.model_supports_image_inputs,
@@ -211,13 +153,6 @@ impl DiffViewer {
             transcript: self.ai_terminal_session.transcript.clone(),
             height_px: self.ai_terminal_height_px,
         };
-        record_ai_workspace_screen_render(
-            ai_view_state.project_count,
-            ai_view_state.visible_thread_count,
-            ai_view_state.timeline_visible_row_ids.len(),
-            terminal_state.open,
-        );
-
         let composer_panel =
             self.render_ai_composer_panel(view.clone(), &composer_state, is_dark, cx);
         let terminal_panel = self

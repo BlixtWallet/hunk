@@ -31,25 +31,12 @@ impl DiffViewer {
             return;
         };
         let worker_workspace_key = cwd.to_string_lossy().to_string();
-        debug!(
-            "ensure_ai_runtime_started_for_workspace_key: requested={} current_worker={} hidden_runtimes={} start_in_flight={}",
-            worker_workspace_key,
-            self.ai_worker_workspace_key.as_deref().unwrap_or("<none>"),
-            self.ai_hidden_runtimes.len(),
-            self.ai_runtime_starting_workspace_key
-                .as_deref()
-                .unwrap_or("<none>")
-        );
         if self.ai_command_tx.is_some()
             && self.ai_worker_workspace_key.as_deref() == Some(worker_workspace_key.as_str())
         {
             return;
         }
         if self.ai_runtime_start_is_in_flight_for_workspace(worker_workspace_key.as_str()) {
-            debug!(
-                "suppressing duplicate ai runtime start for workspace={}",
-                worker_workspace_key
-            );
             return;
         }
         if self.ai_command_tx.is_some() {
@@ -62,11 +49,6 @@ impl DiffViewer {
         self.sync_ai_workspace_preferences_from_state();
 
         if self.promote_hidden_ai_runtime(worker_workspace_key.as_str()) {
-            debug!(
-                "promoted hidden ai runtime for workspace={} hidden_runtimes_remaining={}",
-                worker_workspace_key,
-                self.ai_hidden_runtimes.len()
-            );
             cx.notify();
             return;
         }
@@ -97,11 +79,6 @@ impl DiffViewer {
 
         let worker = spawn_ai_worker(start_config, command_rx, event_tx);
         self.mark_ai_runtime_start_in_flight(worker_workspace_key.as_str());
-        debug!(
-            "spawning fresh ai runtime for workspace={} hidden_runtimes={}",
-            worker_workspace_key,
-            self.ai_hidden_runtimes.len()
-        );
 
         self.ai_connection_state = AiConnectionState::Connecting;
         self.ai_bootstrap_loading = true;
