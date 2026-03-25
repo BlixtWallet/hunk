@@ -667,6 +667,23 @@ impl DiffViewer {
             });
         }
 
+        for (turn_key, plan) in &self.ai_state_snapshot.turn_plans {
+            let plan_row_id = format!("turn-plan:{turn_key}");
+            base_rows_by_thread
+                .entry(plan.thread_id.clone())
+                .or_default()
+                .push((plan.created_sequence, plan_row_id.clone()));
+            rows_by_id.entry(plan_row_id.clone()).or_insert(AiTimelineRow {
+                id: plan_row_id,
+                thread_id: plan.thread_id.clone(),
+                turn_id: plan.turn_id.clone(),
+                last_sequence: plan.created_sequence,
+                source: AiTimelineRowSource::TurnPlan {
+                    turn_key: turn_key.clone(),
+                },
+            });
+        }
+
         let base_row_ids_by_thread = base_rows_by_thread
             .into_iter()
             .map(|(thread_id, mut entries)| {

@@ -217,7 +217,6 @@ actions!(
         AiEditLastQueuedPrompt,
         AiInterruptSelectedTurn,
         OpenProject,
-        RemoveProject,
         QuickOpenFile,
         FilesEditorCopy,
         FilesEditorCut,
@@ -294,7 +293,6 @@ fn build_application_menus() -> Vec<Menu> {
                 name: "File".into(),
                 items: vec![
                     MenuItem::action("Open Project...", OpenProject),
-                    MenuItem::action("Close Project", RemoveProject),
                     MenuItem::action("Quick Open...", QuickOpenFile),
                     MenuItem::action("Save File", SaveCurrentFile),
                     MenuItem::separator(),
@@ -315,7 +313,6 @@ fn build_application_menus() -> Vec<Menu> {
                 name: "File".into(),
                 items: vec![
                     MenuItem::action("Open Project...", OpenProject),
-                    MenuItem::action("Close Project", RemoveProject),
                     MenuItem::action("Quick Open...", QuickOpenFile),
                     MenuItem::action("Save File", SaveCurrentFile),
                     MenuItem::action("Settings...", OpenSettings),
