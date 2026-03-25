@@ -5,6 +5,7 @@ Hunk is a fast diff viewer that is extremely simple written in Rust.
 
 - Production Git behavior should live in `crates/hunk-git`, using `gix` first and narrow `git2` fallbacks only when necessary. Do not shell out to the Git CLI from app code.
 - When fixing a bug or adding a new feature, always switch to plan mode and plan first before writing code.
+- After making an implementation plan, keep it updated as you work. When you finish a step or the status changes, update the plan before continuing.
 - Simplicity first, make every change as simple as possible.
 - Make sure code is scalable.
 - Don't make files over 1000 lines long.

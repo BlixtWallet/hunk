@@ -174,7 +174,7 @@
     }
 
     #[test]
-    fn thread_latest_timeline_sequence_uses_turn_and_item_sequences() {
+    fn thread_latest_timeline_sequence_uses_turn_item_and_plan_sequences() {
         let mut state = AiState::default();
         state.threads.insert(
             "thread-a".to_string(),
@@ -210,8 +210,22 @@
                 last_sequence: 11,
             },
         );
+        state.turn_plans.insert(
+            hunk_codex::state::turn_storage_key("thread-a", "turn-a"),
+            hunk_codex::state::TurnPlanSummary {
+                thread_id: "thread-a".to_string(),
+                turn_id: "turn-a".to_string(),
+                explanation: Some("Updated plan".to_string()),
+                steps: vec![hunk_codex::state::TurnPlanStepSummary {
+                    step: "Fix ordering".to_string(),
+                    status: hunk_codex::state::TurnPlanStepStatus::InProgress,
+                }],
+                created_sequence: 5,
+                last_sequence: 13,
+            },
+        );
 
-        assert_eq!(thread_latest_timeline_sequence(&state, "thread-a"), 11);
+        assert_eq!(thread_latest_timeline_sequence(&state, "thread-a"), 13);
         assert_eq!(thread_latest_timeline_sequence(&state, "missing"), 0);
     }
 
