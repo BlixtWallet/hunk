@@ -1063,9 +1063,15 @@ fn thread_latest_timeline_sequence(state: &hunk_codex::state::AiState, thread_id
         .values()
         .filter(|item| item.thread_id == thread_id)
         .map(|item| item.last_sequence);
+    let turn_plan_sequences = state
+        .turn_plans
+        .values()
+        .filter(|plan| plan.thread_id == thread_id)
+        .map(|plan| plan.last_sequence);
 
     turn_sequences
         .chain(item_sequences)
+        .chain(turn_plan_sequences)
         .max()
         .map_or(thread_sequence, |max_sequence| max_sequence.max(thread_sequence))
 }

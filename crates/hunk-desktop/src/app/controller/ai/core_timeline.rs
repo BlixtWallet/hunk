@@ -672,12 +672,12 @@ impl DiffViewer {
             base_rows_by_thread
                 .entry(plan.thread_id.clone())
                 .or_default()
-                .push((plan.created_sequence, plan_row_id.clone()));
+                .push((plan.last_sequence, plan_row_id.clone()));
             rows_by_id.entry(plan_row_id.clone()).or_insert(AiTimelineRow {
                 id: plan_row_id,
                 thread_id: plan.thread_id.clone(),
                 turn_id: plan.turn_id.clone(),
-                last_sequence: plan.created_sequence,
+                last_sequence: plan.last_sequence,
                 source: AiTimelineRowSource::TurnPlan {
                     turn_key: turn_key.clone(),
                 },
