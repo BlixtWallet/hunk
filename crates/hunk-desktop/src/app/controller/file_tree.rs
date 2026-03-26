@@ -166,7 +166,13 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) {
         self.focus_handle.focus(window, cx);
-        self.set_workspace_view_mode(WorkspaceSwitchAction::Files.target_mode(), cx);
+        let action = WorkspaceSwitchAction::Files;
+        if action.toggles_sidebar_when_repeated(self.workspace_view_mode) {
+            self.toggle_active_sidebar(cx);
+            return;
+        }
+
+        self.set_workspace_view_mode(action.target_mode(), cx);
     }
 
     pub(super) fn switch_to_review_view_action(

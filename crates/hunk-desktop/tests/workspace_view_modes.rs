@@ -43,6 +43,17 @@ fn ai_controller_switch_action_targets_ai_mode() {
 }
 
 #[test]
+fn repeated_files_shortcut_toggles_sidebar_only_in_files_mode() {
+    assert!(WorkspaceSwitchAction::Files.toggles_sidebar_when_repeated(WorkspaceViewMode::Files));
+    assert!(!WorkspaceSwitchAction::Files.toggles_sidebar_when_repeated(WorkspaceViewMode::Diff));
+    assert!(!WorkspaceSwitchAction::Review.toggles_sidebar_when_repeated(WorkspaceViewMode::Diff));
+    assert!(
+        !WorkspaceSwitchAction::Git.toggles_sidebar_when_repeated(WorkspaceViewMode::GitWorkspace)
+    );
+    assert!(!WorkspaceSwitchAction::Ai.toggles_sidebar_when_repeated(WorkspaceViewMode::Ai));
+}
+
+#[test]
 fn only_review_mode_enables_diff_stream() {
     assert!(!WorkspaceViewMode::Ai.supports_sidebar_tree());
     assert!(!WorkspaceViewMode::Ai.supports_diff_stream());
