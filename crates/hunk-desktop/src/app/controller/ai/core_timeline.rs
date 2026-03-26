@@ -11,7 +11,10 @@ impl DiffViewer {
         }
     }
 
-    fn current_ai_composer_feedback_state(&self) -> Option<AiComposerFeedbackState> {
+    fn current_ai_composer_feedback_state_for_thread(
+        &self,
+        current_thread_id: Option<&str>,
+    ) -> Option<AiComposerFeedbackState> {
         if let Some(status) = self.current_ai_composer_status_message()
             && let Some(tone) = ai_composer_status_tone(status)
         {
@@ -21,13 +24,16 @@ impl DiffViewer {
             });
         }
 
-        self.current_ai_composer_activity_feedback()
+        self.current_ai_composer_activity_feedback_for_thread(current_thread_id)
             .map(AiComposerFeedbackState::Activity)
     }
 
-    fn current_ai_composer_activity_feedback(&self) -> Option<AiComposerFeedbackActivity> {
-        let thread_id = self.current_ai_thread_id()?;
-        let turn_id = self.current_ai_in_progress_turn_id(thread_id.as_str())?;
+    fn current_ai_composer_activity_feedback_for_thread(
+        &self,
+        current_thread_id: Option<&str>,
+    ) -> Option<AiComposerFeedbackActivity> {
+        let thread_id = current_thread_id?;
+        let turn_id = self.current_ai_in_progress_turn_id(thread_id)?;
         let tracking_key = format!("{thread_id}::{turn_id}");
         let started_at = *self.ai_in_progress_turn_started_at.get(tracking_key.as_str())?;
         let label = self
@@ -185,47 +191,97 @@ impl DiffViewer {
         }
 
         let build_started_at = Instant::now();
-        let project_count = self.ai_visible_thread_sections().len();
-        let visible_thread_count = self
-            .ai_visible_thread_sections()
-            .iter()
-            .map(|section| section.total_thread_count)
-            .sum::<usize>();
-        let threads_loading = self.ai_bootstrap_loading && visible_thread_count == 0;
-        let toolbar_project_label = self
-            .ai_visible_project_root()
-            .or_else(|| self.repo_root.clone())
-            .as_deref()
-            .map(crate::app::project_picker::project_display_name)
-            .unwrap_or_else(|| {
-                self.repo_root
-                    .as_ref()
-                    .or(self.project_path.as_ref())
-                    .and_then(|path| path.file_name())
-                    .map(|name| name.to_string_lossy().to_string())
-                    .filter(|label| !label.is_empty())
-                    .unwrap_or_else(|| "Hunk".to_string())
-            });
-        let toolbar_repo_label = self
-            .ai_workspace_cwd()
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "No Git repository found".to_string());
-        let active_branch = self.ai_active_workspace_branch_name();
-        let active_workspace_label = self.ai_active_workspace_label();
-        let pending_approvals = self.ai_visible_pending_approvals();
-        let pending_user_inputs = self.ai_visible_pending_user_inputs();
-        let selected_thread_id = self.current_ai_thread_id();
-        let pending_thread_start = self.ai_pending_thread_start_for_timeline();
-        let selected_thread_start_mode = selected_thread_id
-            .as_deref()
-            .and_then(|thread_id| self.ai_thread_start_mode(thread_id));
-        let selected_workspace_root = self.ai_workspace_cwd();
-        let show_worktree_base_branch_picker = self.ai_show_worktree_base_branch_picker();
-        let selected_worktree_base_branch = self
-            .ai_selected_worktree_base_branch_name()
-            .unwrap_or("Choose base branch")
-            .to_string();
+        let resolved = self.resolve_ai_current_state();
+        let (project_count, visible_thread_count, threads_loading) = {
+            let project_count = self.ai_visible_thread_sections().len();
+            let visible_thread_count = self
+                .ai_visible_thread_sections()
+                .iter()
+                .map(|section| section.total_thread_count)
+                .sum::<usize>();
+            let threads_loading = self.ai_bootstrap_loading && visible_thread_count == 0;
+            (project_count, visible_thread_count, threads_loading)
+        };
+        let (toolbar_project_label, toolbar_repo_label, active_branch, active_workspace_label) = {
+            let toolbar_project_label = self
+                .ai_visible_project_root_with_context(
+                    resolved.current_thread_id.as_deref(),
+                    resolved.workspace_root.as_deref(),
+                )
+                .or_else(|| self.repo_root.clone())
+                .as_deref()
+                .map(crate::app::project_picker::project_display_name)
+                .unwrap_or_else(|| {
+                    self.repo_root
+                        .as_ref()
+                        .or(self.project_path.as_ref())
+                        .and_then(|path| path.file_name())
+                        .map(|name| name.to_string_lossy().to_string())
+                        .filter(|label| !label.is_empty())
+                        .unwrap_or_else(|| "Hunk".to_string())
+                });
+            let toolbar_repo_label = resolved
+                .workspace_root
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "No Git repository found".to_string());
+            let active_branch =
+                self.ai_active_workspace_branch_name_with_root(resolved.workspace_root.as_deref());
+            let active_workspace_label =
+                self.ai_active_workspace_label_with_root(resolved.workspace_root.as_deref());
+            (
+                toolbar_project_label,
+                toolbar_repo_label,
+                active_branch,
+                active_workspace_label,
+            )
+        };
+        let (pending_approvals, pending_user_inputs) = {
+            (
+                self.ai_visible_pending_approvals(),
+                self.ai_visible_pending_user_inputs(),
+            )
+        };
+        let (
+            selected_thread_id,
+            pending_thread_start,
+            selected_thread_start_mode,
+            selected_workspace_root,
+            show_worktree_base_branch_picker,
+            selected_worktree_base_branch,
+        ) = {
+            let selected_thread_id = resolved.current_thread_id.clone();
+            let pending_thread_start = self.ai_pending_thread_start_for_timeline_with_context(
+                resolved.current_thread_id.as_deref(),
+                resolved.workspace_key.as_deref(),
+            );
+            let selected_thread_start_mode = selected_thread_id
+                .as_deref()
+                .and_then(|_| {
+                    resolved.current_thread_workspace_root.as_deref().map(|thread_root| {
+                        ai_thread_start_mode_for_workspace(
+                            self.repo_root.as_deref(),
+                            &self.workspace_targets,
+                            thread_root,
+                        )
+                    })
+                })
+                .flatten();
+            let selected_workspace_root = resolved.workspace_root.clone();
+            let show_worktree_base_branch_picker = self.ai_show_worktree_base_branch_picker();
+            let selected_worktree_base_branch = self
+                .ai_selected_worktree_base_branch_name()
+                .unwrap_or("Choose base branch")
+                .to_string();
+            (
+                selected_thread_id,
+                pending_thread_start,
+                selected_thread_start_mode,
+                selected_workspace_root,
+                show_worktree_base_branch_picker,
+                selected_worktree_base_branch,
+            )
+        };
         let timeline_rows_started_at = Instant::now();
         let (
             timeline_total_turn_count,
@@ -247,104 +303,133 @@ impl DiffViewer {
             && timeline_visible_row_ids.is_empty();
         let show_select_thread_empty_state =
             selected_thread_id.is_none() && !timeline_loading && pending_thread_start.is_none();
-        let composer_feedback_started_at = Instant::now();
-        let composer_feedback = self.current_ai_composer_feedback_state();
-        self.record_ai_visible_frame_composer_feedback_timing(
-            composer_feedback_started_at.elapsed(),
-        );
-        let composer_attachment_paths = self
-            .current_ai_composer_draft()
-            .map(|draft| Arc::<[PathBuf]>::from(draft.local_images.clone()))
-            .unwrap_or_else(|| Arc::<[PathBuf]>::from(Vec::<PathBuf>::new()));
-        let composer_send_waiting_on_connection =
-            crate::app::controller::ai_prompt_send_waiting_on_connection(
-                self.ai_connection_state,
-                self.ai_bootstrap_loading,
+        let (
+            composer_feedback,
+            composer_attachment_paths,
+            composer_send_waiting_on_connection,
+            composer_interrupt_available,
+            queued_message_count,
+            model_supports_image_inputs,
+            selected_thread_in_progress,
+        ) = {
+            let composer_feedback_started_at = Instant::now();
+            let composer_feedback =
+                self.current_ai_composer_feedback_state_for_thread(resolved.current_thread_id.as_deref());
+            self.record_ai_visible_frame_composer_feedback_timing(
+                composer_feedback_started_at.elapsed(),
             );
-        let composer_interrupt_available = selected_thread_id
-            .as_deref()
-            .and_then(|thread_id| self.current_ai_in_progress_turn_id(thread_id))
-            .is_some();
-        let queued_message_count = selected_thread_id
-            .as_deref()
-            .map(|thread_id| self.ai_queued_message_row_ids_for_thread(thread_id).len())
-            .unwrap_or(0);
-        let model_supports_image_inputs = self.current_ai_model_supports_image_inputs();
-        let selected_thread_in_progress = selected_thread_id
-            .as_deref()
-            .and_then(|thread_id| self.current_ai_in_progress_turn_id(thread_id))
-            .is_some();
-        let review_action_blocker = match selected_thread_id.as_deref() {
-            Some(_) if selected_thread_in_progress => {
-                Some("Wait for the current run to finish or interrupt it first.".to_string())
-            }
-            Some(_) => None,
-            None => Some("Select a thread before starting review.".to_string()),
+            let composer_attachment_paths = self
+                .current_ai_composer_draft()
+                .map(|draft| Arc::<[PathBuf]>::from(draft.local_images.clone()))
+                .unwrap_or_else(|| Arc::<[PathBuf]>::from(Vec::<PathBuf>::new()));
+            let composer_send_waiting_on_connection =
+                crate::app::controller::ai_prompt_send_waiting_on_connection(
+                    self.ai_connection_state,
+                    self.ai_bootstrap_loading,
+                );
+            let composer_interrupt_available = selected_thread_id
+                .as_deref()
+                .and_then(|thread_id| self.current_ai_in_progress_turn_id(thread_id))
+                .is_some();
+            let queued_message_count = selected_thread_id
+                .as_deref()
+                .map(|thread_id| self.ai_queued_message_row_ids_for_thread(thread_id).len())
+                .unwrap_or(0);
+            let model_supports_image_inputs = self.current_ai_model_supports_image_inputs();
+            let selected_thread_in_progress = selected_thread_id
+                .as_deref()
+                .and_then(|thread_id| self.current_ai_in_progress_turn_id(thread_id))
+                .is_some();
+            (
+                composer_feedback,
+                composer_attachment_paths,
+                composer_send_waiting_on_connection,
+                composer_interrupt_available,
+                queued_message_count,
+                model_supports_image_inputs,
+                selected_thread_in_progress,
+            )
         };
-        let ai_publish_blocker = match (
-            self.git_controls_busy(),
-            selected_thread_id.as_deref(),
-            selected_thread_start_mode,
-            selected_workspace_root.as_deref(),
-        ) {
-            (true, _, _, _) => Some("Another workspace action is in progress.".to_string()),
-            (_, None, _, _) => Some("Select a thread before publishing.".to_string()),
-            (_, Some(_), None, _) => {
-                Some("Unable to resolve the selected thread before publishing.".to_string())
-            }
-            (_, Some(_), Some(_), None) => {
-                Some("Open a workspace before publishing.".to_string())
-            }
-            (_, Some(thread_id), Some(start_mode), Some(repo_root)) => {
-                let normalized_branch = active_branch.trim();
-                if normalized_branch.is_empty()
-                    || matches!(normalized_branch, "detached" | "unknown")
-                {
-                    Some("Activate a branch before publishing.".to_string())
-                } else {
-                    let _context = AiThreadGitActionContext {
-                        repo_root: repo_root.to_path_buf(),
-                        thread_id: thread_id.to_string(),
-                        branch_name: normalized_branch.to_string(),
-                        start_mode,
-                    };
-                    None
+        let (
+            review_action_blocker,
+            ai_publish_blocker,
+            ai_publish_disabled,
+            ai_open_pr_disabled,
+            ai_managed_worktree_target,
+            ai_delete_worktree_blocker,
+            terminal_cwd_label,
+        ) = {
+            let review_action_blocker = match selected_thread_id.as_deref() {
+                Some(_) if selected_thread_in_progress => {
+                    Some("Wait for the current run to finish or interrupt it first.".to_string())
                 }
-            }
-        };
-        let ai_publish_disabled = ai_publish_blocker.is_some();
-        let ai_open_pr_disabled = match (
-            self.git_controls_busy(),
-            selected_thread_id.as_deref(),
-            selected_thread_start_mode,
-            selected_workspace_root.as_deref(),
-        ) {
-            (true, _, _, _) => true,
-            (_, Some(_), Some(_), Some(_)) => {
-                let normalized_branch = active_branch.trim();
-                normalized_branch.is_empty() || matches!(normalized_branch, "detached" | "unknown")
-            }
-            _ => true,
-        };
-        let ai_managed_worktree_target = if selected_thread_start_mode
-            == Some(AiNewThreadStartMode::Worktree)
-        {
-            selected_workspace_root.as_deref().and_then(|workspace_root| {
-                self.workspace_targets
-                    .iter()
-                    .find(|target| {
-                        target.root.as_path() == workspace_root
-                            && target.kind == hunk_git::worktree::WorkspaceTargetKind::LinkedWorktree
-                            && target.managed
-                    })
-                    .cloned()
-            })
-        } else {
-            None
-        };
-        let ai_delete_worktree_blocker = ai_managed_worktree_target
-            .as_ref()
-            .and_then(|_| {
+                Some(_) => None,
+                None => Some("Select a thread before starting review.".to_string()),
+            };
+            let ai_publish_blocker = match (
+                self.git_controls_busy(),
+                selected_thread_id.as_deref(),
+                selected_thread_start_mode,
+                selected_workspace_root.as_deref(),
+            ) {
+                (true, _, _, _) => Some("Another workspace action is in progress.".to_string()),
+                (_, None, _, _) => Some("Select a thread before publishing.".to_string()),
+                (_, Some(_), None, _) => {
+                    Some("Unable to resolve the selected thread before publishing.".to_string())
+                }
+                (_, Some(_), Some(_), None) => {
+                    Some("Open a workspace before publishing.".to_string())
+                }
+                (_, Some(thread_id), Some(start_mode), Some(repo_root)) => {
+                    let normalized_branch = active_branch.trim();
+                    if normalized_branch.is_empty()
+                        || matches!(normalized_branch, "detached" | "unknown")
+                    {
+                        Some("Activate a branch before publishing.".to_string())
+                    } else {
+                        let _context = AiThreadGitActionContext {
+                            repo_root: repo_root.to_path_buf(),
+                            thread_id: thread_id.to_string(),
+                            branch_name: normalized_branch.to_string(),
+                            start_mode,
+                        };
+                        None
+                    }
+                }
+            };
+            let ai_publish_disabled = ai_publish_blocker.is_some();
+            let ai_open_pr_disabled = match (
+                self.git_controls_busy(),
+                selected_thread_id.as_deref(),
+                selected_thread_start_mode,
+                selected_workspace_root.as_deref(),
+            ) {
+                (true, _, _, _) => true,
+                (_, Some(_), Some(_), Some(_)) => {
+                    let normalized_branch = active_branch.trim();
+                    normalized_branch.is_empty()
+                        || matches!(normalized_branch, "detached" | "unknown")
+                }
+                _ => true,
+            };
+            let ai_managed_worktree_target = if selected_thread_start_mode
+                == Some(AiNewThreadStartMode::Worktree)
+            {
+                selected_workspace_root.as_deref().and_then(|workspace_root| {
+                    self.workspace_targets
+                        .iter()
+                        .find(|target| {
+                            target.root.as_path() == workspace_root
+                                && target.kind
+                                    == hunk_git::worktree::WorkspaceTargetKind::LinkedWorktree
+                                && target.managed
+                        })
+                        .cloned()
+                })
+            } else {
+                None
+            };
+            let ai_delete_worktree_blocker = ai_managed_worktree_target.as_ref().and_then(|_| {
                 if self.git_controls_busy() {
                     Some("Another workspace action is in progress.".to_string())
                 } else if selected_thread_in_progress {
@@ -353,13 +438,23 @@ impl DiffViewer {
                     None
                 }
             });
-        let terminal_cwd_label = self
-            .ai_terminal_session
-            .cwd
-            .clone()
-            .or_else(|| selected_workspace_root.clone())
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "No workspace selected".to_string());
+            let terminal_cwd_label = self
+                .ai_terminal_session
+                .cwd
+                .clone()
+                .or_else(|| selected_workspace_root.clone())
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "No workspace selected".to_string());
+            (
+                review_action_blocker,
+                ai_publish_blocker,
+                ai_publish_disabled,
+                ai_open_pr_disabled,
+                ai_managed_worktree_target,
+                ai_delete_worktree_blocker,
+                terminal_cwd_label,
+            )
+        };
 
         let state = AiVisibleFrameState {
             project_count,

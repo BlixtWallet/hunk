@@ -46,6 +46,13 @@ impl DiffViewer {
     fn apply_ai_snapshot(&mut self, snapshot: AiSnapshot, cx: &mut Context<Self>) {
         let previous_selected_thread = self.ai_selected_thread_id.clone();
         let previous_draft_key = self.current_ai_composer_draft_key();
+        let previous_sidebar_workspace_key = self.ai_state_snapshot_workspace_key();
+        let previous_workspace_key = self.ai_workspace_key();
+        let visible_threads_changed = ai_snapshot_threads_changed(&self.ai_state_snapshot, &snapshot.state);
+        let visible_threads_removed =
+            ai_snapshot_removed_thread_ids(&self.ai_state_snapshot, &snapshot.state);
+        let retainable_terminal_threads_removed =
+            ai_snapshot_removed_retainable_terminal_threads(&self.ai_state_snapshot, &snapshot.state);
         self.sync_ai_visible_composer_prompt_to_draft(cx);
         let previous_visible_row_ids = previous_selected_thread
             .as_deref()
@@ -114,16 +121,21 @@ impl DiffViewer {
         self.ai_models = models;
         self.ai_experimental_features = experimental_features;
         self.ai_collaboration_modes = collaboration_modes;
+        if self.ai_skills != skills {
+            self.ai_skills_generation = self.ai_skills_generation.saturating_add(1);
+            self.ai_composer_completion_sync_key = None;
+        }
         self.ai_skills = skills;
         self.ai_include_hidden_models = include_hidden_models;
         self.ai_mad_max_mode = mad_max_mode;
-        self.ai_thread_title_refresh_state_by_thread
-            .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
-        self.ai_timeline_visible_turn_limit_by_thread
-            .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
-        self.prune_ai_composer_statuses();
+        if visible_threads_removed {
+            self.ai_thread_title_refresh_state_by_thread
+                .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
+            self.ai_timeline_visible_turn_limit_by_thread
+                .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
+            self.prune_ai_composer_statuses();
+        }
         self.invalidate_ai_visible_frame_state_with_reason("runtime");
-        self.rebuild_ai_thread_sidebar_state();
 
         if let Some(thread_id) = pending_new_thread_selection_ready_thread_id(
             self.ai_pending_new_thread_selection,
@@ -175,12 +187,19 @@ impl DiffViewer {
         }) {
             self.ai_pending_thread_start = None;
         }
+        let next_sidebar_workspace_key = self.ai_state_snapshot_workspace_key();
+        let next_workspace_key = self.ai_workspace_key();
+        if visible_threads_changed || previous_sidebar_workspace_key != next_sidebar_workspace_key {
+            self.rebuild_ai_thread_sidebar_state();
+        }
         self.ai_handle_terminal_thread_change(
             previous_selected_thread.clone(),
             self.ai_selected_thread_id.clone(),
             cx,
         );
-        self.ai_prune_terminal_threads("applying AI snapshot", cx);
+        if retainable_terminal_threads_removed || previous_workspace_key != next_workspace_key {
+            self.ai_prune_terminal_threads("applying AI snapshot", cx);
+        }
         if should_scroll_timeline_to_bottom_on_selection_change(
             previous_selected_thread.as_deref(),
             self.ai_selected_thread_id.as_deref(),
@@ -235,7 +254,9 @@ impl DiffViewer {
         }
         self.flush_ai_timeline_scroll_request();
 
-        self.prune_ai_composer_drafts();
+        if visible_threads_removed {
+            self.prune_ai_composer_drafts();
+        }
         let next_draft_key = self.current_ai_composer_draft_key();
         if previous_draft_key != next_draft_key
             || next_draft_key
@@ -309,6 +330,39 @@ impl DiffViewer {
         self.ai_in_progress_turn_started_at
             .retain(|key, _| in_progress_turn_keys.contains(key));
     }
+}
+
+fn ai_snapshot_threads_changed(
+    previous_state: &hunk_codex::state::AiState,
+    next_state: &hunk_codex::state::AiState,
+) -> bool {
+    previous_state.threads != next_state.threads
+}
+
+fn ai_snapshot_removed_thread_ids(
+    previous_state: &hunk_codex::state::AiState,
+    next_state: &hunk_codex::state::AiState,
+) -> bool {
+    previous_state
+        .threads
+        .keys()
+        .any(|thread_id| !next_state.threads.contains_key(thread_id))
+}
+
+fn ai_snapshot_removed_retainable_terminal_threads(
+    previous_state: &hunk_codex::state::AiState,
+    next_state: &hunk_codex::state::AiState,
+) -> bool {
+    let next_retainable = ai_retainable_terminal_thread_ids(
+        next_state,
+        std::iter::empty::<&hunk_codex::state::AiState>(),
+    );
+
+    previous_state
+        .threads
+        .values()
+        .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
+        .any(|thread| !next_retainable.contains(thread.cwd.as_str()))
 }
 
 include!("runtime_composer.rs");
@@ -780,26 +834,34 @@ impl DiffViewer {
     }
 
     fn sync_ai_session_selection_from_state(&mut self) {
-        let selected_thread_id = self.current_ai_thread_id();
-        let workspace_key = self.ai_workspace_key();
-        let persisted = resolved_ai_thread_session_state(
-            &self.state,
-            selected_thread_id.as_deref(),
-            workspace_key.as_deref(),
-        );
-        let (selected_model, selected_effort) = normalized_ai_session_selection(
-            self.ai_models.as_slice(),
-            persisted.model,
-            persisted.effort,
-        );
+        let resolved = {
+            self.resolve_ai_current_state()
+        };
+        let persisted = {
+            resolved_ai_thread_session_state(
+                &self.state,
+                resolved.current_thread_id.as_deref(),
+                resolved.workspace_key.as_deref(),
+            )
+        };
+        let (selected_model, selected_effort) = {
+            normalized_ai_session_selection(
+                self.ai_models.as_slice(),
+                persisted.model,
+                persisted.effort,
+            )
+        };
 
-        self.ai_selected_model = selected_model;
-        self.ai_selected_collaboration_mode = persisted.collaboration_mode;
-        self.ai_selected_effort = selected_effort;
-        self.ai_selected_service_tier = persisted.service_tier.unwrap_or_default();
-        self.ai_review_mode_active = selected_thread_id
-            .as_ref()
-            .is_some_and(|thread_id| self.ai_review_mode_thread_ids.contains(thread_id));
+        {
+            self.ai_selected_model = selected_model;
+            self.ai_selected_collaboration_mode = persisted.collaboration_mode;
+            self.ai_selected_effort = selected_effort;
+            self.ai_selected_service_tier = persisted.service_tier.unwrap_or_default();
+            self.ai_review_mode_active = resolved
+                .current_thread_id
+                .as_ref()
+                .is_some_and(|thread_id| self.ai_review_mode_thread_ids.contains(thread_id));
+        }
     }
 
     fn seeded_ai_workspace_state_for_new_thread_workspace(

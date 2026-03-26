@@ -325,6 +325,7 @@ impl DiffViewer {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn record_ai_markdown_cache_miss(
         &self,
         parse_duration: Duration,
@@ -377,30 +378,5 @@ impl DiffViewer {
     pub(super) fn ai_perf_log_line(&self, fps: f32) -> Option<String> {
         let metrics = self.ai_perf_metrics.borrow();
         ai_perf_report_line(&metrics.last_report, fps)
-    }
-
-    pub(super) fn ai_perf_toolbar_label(&self) -> Option<String> {
-        let metrics = self.ai_perf_metrics.borrow();
-        let report = &metrics.last_report;
-        if report.elapsed_ms == 0 || !report.window.has_data() {
-            return None;
-        }
-
-        let invalidation_label = ai_perf_top_invalidation_reason(&report.window)
-            .map(|(reason, count)| format!("{count}({reason})"))
-            .unwrap_or_else(|| report.window.visible_frame_invalidations.to_string());
-
-        Some(format!(
-            "ai vf {}x{}ms idx {}x{}ms row {}x{}ms md {}/{} inv {}",
-            report.window.visible_frame_build.count,
-            ai_perf_format_average_ms(report.window.visible_frame_build),
-            report.window.timeline_index_rebuild.count,
-            ai_perf_format_average_ms(report.window.timeline_index_rebuild),
-            report.window.timeline_row_render.count,
-            ai_perf_format_average_ms(report.window.timeline_row_render),
-            report.window.markdown_cache_hits,
-            report.window.markdown_cache_misses,
-            invalidation_label,
-        ))
     }
 }

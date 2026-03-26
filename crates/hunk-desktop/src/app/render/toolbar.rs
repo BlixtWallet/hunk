@@ -50,8 +50,6 @@ impl DiffViewer {
             ai_view_state.map(|state| state.pending_user_inputs.len());
         let (ai_connection_status_label, ai_connection_status_color) =
             ai_connection_label(self.ai_connection_state, cx);
-        let ai_perf_label = ai_selected.then(|| self.ai_perf_toolbar_label()).flatten();
-
         let left = h_flex()
             .flex_1()
             .min_w_0()
@@ -278,15 +276,6 @@ impl DiffViewer {
                             cx.theme().danger
                         })
                         .child(format!("{:>3.0} fps", self.fps.round())),
-                )
-            })
-            .when_some(ai_perf_label, |this, label| {
-                this.child(
-                    div()
-                        .text_xs()
-                        .font_family(cx.theme().mono_font_family.clone())
-                        .text_color(cx.theme().muted_foreground)
-                        .child(label),
                 )
             })
             .into_any_element();

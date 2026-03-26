@@ -475,6 +475,7 @@ impl DiffViewer {
             ai_experimental_features: Vec::new(),
             ai_collaboration_modes: Vec::new(),
             ai_skills: Vec::new(),
+            ai_skills_generation: 0,
             ai_include_hidden_models: initial_ai_include_hidden_models,
             ai_selected_model: preferred_ai_session.model,
             ai_selected_effort: preferred_ai_session.effort,
@@ -559,6 +560,7 @@ impl DiffViewer {
             ai_composer_skill_completion_selected_ix: 0,
             ai_composer_skill_completion_dismissed_token: None,
             ai_composer_skill_completion_scroll_handle: ScrollHandle::default(),
+            ai_composer_completion_sync_key: None,
             ai_worktree_base_branch_picker_state,
             ai_composer_input_state,
             ai_review_mode_active: false,
@@ -712,16 +714,13 @@ impl DiffViewer {
         .detach();
 
         let ai_composer_state = view.ai_composer_input_state.clone();
-        cx.observe(&ai_composer_state, |this, _, cx| {
-            this.sync_ai_composer_completion_menus(cx);
-        })
-        .detach();
         cx.subscribe(&ai_composer_state, |this, _, event, cx| {
             if matches!(event, InputEvent::Change) {
                 this.sync_ai_visible_composer_prompt_to_draft(cx);
                 this.ai_composer_file_completion_dismissed_token = None;
                 this.ai_composer_slash_command_dismissed_token = None;
                 this.ai_composer_skill_completion_dismissed_token = None;
+                this.sync_ai_composer_completion_menus(cx);
             }
             if matches!(event, InputEvent::Blur) {
                 this.ai_composer_file_completion_menu = None;

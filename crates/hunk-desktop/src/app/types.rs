@@ -202,6 +202,22 @@ struct AiValidatedPrompt {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct AiComposerCompletionSyncKey {
+    prompt: String,
+    cursor: usize,
+    session_settings_locked: bool,
+    skills_generation: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+struct AiResolvedCurrentState {
+    current_thread_id: Option<String>,
+    current_thread_workspace_root: Option<PathBuf>,
+    workspace_root: Option<PathBuf>,
+    workspace_key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AiPromptSkillReference {
     pub(crate) name: String,
     pub(crate) path: PathBuf,

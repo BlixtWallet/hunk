@@ -150,6 +150,93 @@
     }
 
     #[test]
+    fn snapshot_thread_change_detection_ignores_item_only_updates() {
+        let mut previous = AiState::default();
+        previous.threads.insert(
+            "thread-a".to_string(),
+            ThreadSummary {
+                id: "thread-a".to_string(),
+                cwd: "/repo".to_string(),
+                title: Some("Thread".to_string()),
+                status: ThreadLifecycleStatus::Active,
+                created_at: 1,
+                updated_at: 2,
+                last_sequence: 3,
+            },
+        );
+
+        let next = previous.clone();
+
+        assert!(!ai_snapshot_threads_changed(&previous, &next));
+        assert!(!ai_snapshot_removed_thread_ids(&previous, &next));
+        assert!(!ai_snapshot_removed_retainable_terminal_threads(
+            &previous, &next
+        ));
+    }
+
+    #[test]
+    fn snapshot_thread_change_detection_flags_removed_threads() {
+        let mut previous = AiState::default();
+        previous.threads.insert(
+            "thread-a".to_string(),
+            ThreadSummary {
+                id: "thread-a".to_string(),
+                cwd: "/repo".to_string(),
+                title: Some("Thread".to_string()),
+                status: ThreadLifecycleStatus::Active,
+                created_at: 1,
+                updated_at: 2,
+                last_sequence: 3,
+            },
+        );
+
+        let next = AiState::default();
+
+        assert!(ai_snapshot_threads_changed(&previous, &next));
+        assert!(ai_snapshot_removed_thread_ids(&previous, &next));
+        assert!(ai_snapshot_removed_retainable_terminal_threads(
+            &previous, &next
+        ));
+    }
+
+    #[test]
+    fn snapshot_terminal_retainable_detection_flags_archived_threads() {
+        let mut previous = AiState::default();
+        previous.threads.insert(
+            "thread-a".to_string(),
+            ThreadSummary {
+                id: "thread-a".to_string(),
+                cwd: "/repo".to_string(),
+                title: Some("Thread".to_string()),
+                status: ThreadLifecycleStatus::Active,
+                created_at: 1,
+                updated_at: 2,
+                last_sequence: 3,
+            },
+        );
+
+        let mut next = previous.clone();
+        next.threads.insert(
+            "thread-a".to_string(),
+            ThreadSummary {
+                id: "thread-a".to_string(),
+                cwd: "/repo".to_string(),
+                title: Some("Thread".to_string()),
+                status: ThreadLifecycleStatus::Archived,
+                created_at: 1,
+                updated_at: 4,
+                last_sequence: 5,
+            },
+        );
+
+        assert!(ai_snapshot_threads_changed(&previous, &next));
+        assert!(!ai_snapshot_removed_thread_ids(&previous, &next));
+        assert!(ai_snapshot_removed_retainable_terminal_threads(
+            &previous, &next
+        ));
+    }
+
+    #[test]
     fn workspace_draft_preserves_empty_selection_even_with_active_thread() {
         let mut state = AiState::default();
         state.threads.insert(

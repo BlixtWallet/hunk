@@ -60,6 +60,9 @@ mod ai_tests {
     use super::seed_ai_workspace_preferences;
     use super::selected_git_workspace_review_compare_selection_ids;
     use super::update_persisted_review_compare_selection;
+    use super::ai_snapshot_removed_retainable_terminal_threads;
+    use super::ai_snapshot_removed_thread_ids;
+    use super::ai_snapshot_threads_changed;
     use super::should_follow_timeline_output;
     use super::should_reset_ai_timeline_measurements;
     use super::should_scroll_timeline_to_bottom_on_new_activity;

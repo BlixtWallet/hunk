@@ -293,6 +293,13 @@ impl DiffViewer {
     }
 
     pub(super) fn ai_prune_terminal_threads(&mut self, reason: &str, cx: &mut Context<Self>) {
+        if self.ai_terminal_runtime.is_none()
+            && self.ai_hidden_terminal_runtimes.is_empty()
+            && self.ai_terminal_states_by_thread.is_empty()
+        {
+            return;
+        }
+
         let mut retained_thread_ids = ai_retainable_terminal_thread_ids(
             &self.ai_state_snapshot,
             self.ai_workspace_states

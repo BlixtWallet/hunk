@@ -145,6 +145,10 @@ impl DiffViewer {
         self.ai_models.clear();
         self.ai_experimental_features.clear();
         self.ai_collaboration_modes.clear();
+        if !self.ai_skills.is_empty() {
+            self.ai_skills_generation = self.ai_skills_generation.saturating_add(1);
+            self.ai_composer_completion_sync_key = None;
+        }
         self.ai_skills.clear();
         self.ai_composer_skill_completion_menu = None;
         self.ai_composer_skill_completion_selected_ix = 0;
