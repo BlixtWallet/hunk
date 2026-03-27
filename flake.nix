@@ -108,6 +108,19 @@
                 export PATH="$PATH:$HOME/.cargo/bin"
               fi
 
+              if [ "$(uname -s)" = "Linux" ]; then
+                # Ubuntu/Nix hybrid setups keep proprietary NVIDIA userspace libs
+                # outside the Nix store, so expose common host driver locations.
+                for host_lib_dir in /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu /usr/lib64; do
+                  if [ -d "$host_lib_dir" ]; then
+                    case ":$LD_LIBRARY_PATH:" in
+                      *":$host_lib_dir:"*) ;;
+                      *) export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$host_lib_dir" ;;
+                    esac
+                  fi
+                done
+              fi
+
               if [ "$(uname -s)" = "Darwin" ]; then
                 sdkroot="$(xcrun --sdk macosx --show-sdk-path)"
                 export SDKROOT="$sdkroot"
