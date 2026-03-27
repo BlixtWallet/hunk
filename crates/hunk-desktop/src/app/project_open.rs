@@ -96,7 +96,7 @@ pub(crate) fn open_path_in_project_target(path: &Path, target: ProjectOpenTarget
 
     #[cfg(target_os = "windows")]
     {
-        return open_path_in_target_windows(path, target);
+        open_path_in_target_windows(path, target)
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -113,7 +113,7 @@ fn is_project_open_target_available(target: ProjectOpenTargetId) -> bool {
 
     #[cfg(target_os = "windows")]
     {
-        return resolve_windows_launch_command(target).is_some();
+        resolve_windows_launch_command(target).is_some()
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -426,13 +426,13 @@ fn executable_candidates_for_command(command: &str) -> Vec<PathBuf> {
             return vec![path];
         }
 
-        return path_exts
+        path_exts
             .into_iter()
             .map(|extension| {
                 let normalized = extension.trim_start_matches('.');
                 PathBuf::from(format!("{command}.{normalized}"))
             })
-            .collect();
+            .collect()
     }
 
     #[cfg(not(target_os = "windows"))]

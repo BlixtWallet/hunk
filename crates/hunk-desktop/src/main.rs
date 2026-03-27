@@ -42,6 +42,7 @@ fn run_with_platform_stack_workaround() -> Result<()> {
 }
 
 fn run_app() -> Result<()> {
+    ensure_hidden_windows_console();
     let config = load_startup_config();
     if let Err(error) = terminal_env::maybe_hydrate_app_environment(&config) {
         eprintln!("failed to hydrate terminal environment: {error:#}");
@@ -70,6 +71,30 @@ fn run_app() -> Result<()> {
 
     app::run()
 }
+
+#[cfg(target_os = "windows")]
+fn ensure_hidden_windows_console() {
+    use windows_sys::Win32::System::Console::{AllocConsole, GetConsoleWindow};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindow};
+
+    unsafe {
+        if !GetConsoleWindow().is_null() {
+            return;
+        }
+
+        if AllocConsole() == 0 {
+            return;
+        }
+
+        let console_window = GetConsoleWindow();
+        if !console_window.is_null() {
+            ShowWindow(console_window, SW_HIDE);
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ensure_hidden_windows_console() {}
 
 fn load_startup_config() -> AppConfig {
     ConfigStore::new()
