@@ -30,10 +30,17 @@ impl DiffViewer {
             return Err("Another workspace action is in progress.".to_string());
         }
 
-        let Some(thread_id) = self.current_ai_thread_id() else {
+        let Some(thread_id) = self
+            .ai_selected_thread_id
+            .clone()
+            .or_else(|| self.current_ai_thread_id())
+        else {
             return Err(format!("Select a thread before {action_description}."));
         };
-        let Some(repo_root) = self.ai_workspace_cwd() else {
+        let Some(repo_root) = self
+            .ai_thread_workspace_root(thread_id.as_str())
+            .or_else(|| self.ai_workspace_cwd())
+        else {
             return Err(format!("Open a workspace before {action_description}."));
         };
         let Some(start_mode) = self.ai_thread_start_mode(thread_id.as_str()) else {
@@ -42,11 +49,14 @@ impl DiffViewer {
             ));
         };
 
-        let branch_name = self
-            .workspace_targets
-            .iter()
-            .find(|target| target.root == repo_root)
-            .map(|target| target.branch_name.clone())
+        let branch_name = workspace_branch_name_for_root(
+            repo_root.as_path(),
+            &self.workspace_targets,
+            self.workspace_project_states
+                .values()
+                .map(|state| state.workspace_targets.as_slice()),
+            &self.state.git_workflow_cache_by_repo,
+        )
             .unwrap_or_else(|| {
                 self.primary_checked_out_branch_name()
                     .unwrap_or(self.branch_name.as_str())
@@ -76,20 +86,27 @@ impl DiffViewer {
     }
 
     pub(super) fn ai_current_managed_worktree_target(&self) -> Option<WorkspaceTargetSummary> {
-        let thread_id = self.current_ai_thread_id()?;
+        let thread_id = self
+            .ai_selected_thread_id
+            .clone()
+            .or_else(|| self.current_ai_thread_id())?;
         if self.ai_thread_start_mode(thread_id.as_str()) != Some(AiNewThreadStartMode::Worktree) {
             return None;
         }
 
         let workspace_root = self.ai_thread_workspace_root(thread_id.as_str())?;
-        self.workspace_targets
-            .iter()
-            .find(|target| {
-                target.root == workspace_root
-                    && target.kind == hunk_git::worktree::WorkspaceTargetKind::LinkedWorktree
-                    && target.managed
-            })
-            .cloned()
+        workspace_target_summary_for_root(
+            workspace_root.as_path(),
+            &self.workspace_targets,
+            self.workspace_project_states
+                .values()
+                .map(|state| state.workspace_targets.as_slice()),
+        )
+        .filter(|target| {
+            target.kind == hunk_git::worktree::WorkspaceTargetKind::LinkedWorktree
+                && target.managed
+        })
+        .cloned()
     }
 
     fn ai_current_managed_worktree_delete_context(

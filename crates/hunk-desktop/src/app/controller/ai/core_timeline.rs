@@ -389,15 +389,18 @@ impl DiffViewer {
                 == Some(AiNewThreadStartMode::Worktree)
             {
                 selected_workspace_root.as_deref().and_then(|workspace_root| {
-                    self.workspace_targets
-                        .iter()
-                        .find(|target| {
-                            target.root.as_path() == workspace_root
-                                && target.kind
-                                    == hunk_git::worktree::WorkspaceTargetKind::LinkedWorktree
-                                && target.managed
-                        })
-                        .cloned()
+                    workspace_target_summary_for_root(
+                        workspace_root,
+                        &self.workspace_targets,
+                        self.workspace_project_states
+                            .values()
+                            .map(|state| state.workspace_targets.as_slice()),
+                    )
+                    .filter(|target| {
+                        target.kind == hunk_git::worktree::WorkspaceTargetKind::LinkedWorktree
+                            && target.managed
+                    })
+                    .cloned()
                 })
             } else {
                 None

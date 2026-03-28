@@ -1244,6 +1244,24 @@ where
         })
 }
 
+fn workspace_branch_name_for_root<'a, I>(
+    workspace_root: &std::path::Path,
+    current_workspace_targets: &'a [WorkspaceTargetSummary],
+    other_workspace_targets: I,
+    workflow_cache_by_repo: &std::collections::BTreeMap<String, CachedWorkflowState>,
+) -> Option<String>
+where
+    I: IntoIterator<Item = &'a [WorkspaceTargetSummary]>,
+{
+    workspace_target_summary_for_root(
+        workspace_root,
+        current_workspace_targets,
+        other_workspace_targets,
+    )
+    .map(|target| target.branch_name.clone())
+    .or_else(|| cached_workspace_branch_name_for_root(workspace_root, workflow_cache_by_repo))
+}
+
 fn cached_workspace_branch_name_for_root(
     workspace_root: &std::path::Path,
     workflow_cache_by_repo: &std::collections::BTreeMap<String, CachedWorkflowState>,

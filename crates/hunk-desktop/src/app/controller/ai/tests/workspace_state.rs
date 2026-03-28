@@ -170,6 +170,67 @@
     }
 
     #[test]
+    fn workspace_branch_name_for_root_checks_other_open_projects() {
+        let current_workspace_targets = vec![workspace_target(
+            "repo-a",
+            WorkspaceTargetKind::PrimaryCheckout,
+            "/repo-a",
+            "Repo A",
+        )];
+        let mut other_project_targets = vec![workspace_target(
+            "repo-b",
+            WorkspaceTargetKind::PrimaryCheckout,
+            "/repo-b",
+            "Repo B",
+        )];
+        other_project_targets[0].branch_name = "feature/project-b".to_string();
+
+        assert_eq!(
+            workspace_branch_name_for_root(
+                std::path::Path::new("/repo-b"),
+                &current_workspace_targets,
+                [other_project_targets.as_slice()],
+                &BTreeMap::default(),
+            )
+            .as_deref(),
+            Some("feature/project-b")
+        );
+    }
+
+    #[test]
+    fn workspace_branch_name_for_root_falls_back_to_cached_workflow_state() {
+        let workflow_cache = [(
+            "/repo-b".to_string(),
+            CachedWorkflowState {
+                root: Some(PathBuf::from("/repo-b")),
+                branch_name: "main".to_string(),
+                branches: vec![CachedLocalBranchState {
+                    name: "feature/project-b".to_string(),
+                    is_current: false,
+                    tip_unix_time: None,
+                    attached_workspace_target_id: Some("worktree:task-1".to_string()),
+                    attached_workspace_target_root: Some(PathBuf::from("/repo-b/worktrees/task-1")),
+                    attached_workspace_target_label: Some("task-1".to_string()),
+                }],
+                ..CachedWorkflowState::default()
+            },
+        )]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(
+            workspace_branch_name_for_root(
+                std::path::Path::new("/repo-b/worktrees/task-1"),
+                &[],
+                std::iter::empty::<&[WorkspaceTargetSummary]>(),
+                &workflow_cache,
+            )
+            .as_deref(),
+            Some("feature/project-b")
+        );
+    }
+
+    #[test]
     fn apply_ai_snapshot_to_workspace_state_selects_active_thread_for_pending_draft() {
         let mut workspace_state = AiWorkspaceState {
             new_thread_draft_active: true,
