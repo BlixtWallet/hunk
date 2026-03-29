@@ -1,4 +1,56 @@
 impl DiffViewer {
+    fn render_linux_client_title_bar(&self, cx: &mut Context<Self>) -> AnyElement {
+        let menu_bar = self.in_app_menu_bar.clone();
+        let is_dark = cx.theme().mode.is_dark();
+
+        TitleBar::new()
+            .child(
+                h_flex()
+                    .w_full()
+                    .h_full()
+                    .items_center()
+                    .gap_3()
+                    .pr_2()
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .items_center()
+                            .flex_shrink_0()
+                            .child(
+                                div()
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded(px(6.0))
+                                    .bg(hunk_blend(
+                                        cx.theme().title_bar,
+                                        cx.theme().accent,
+                                        is_dark,
+                                        0.18,
+                                        0.10,
+                                    ))
+                                    .border_1()
+                                    .border_color(hunk_opacity(
+                                        cx.theme().border,
+                                        is_dark,
+                                        0.72,
+                                        0.52,
+                                    ))
+                                    .text_xs()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .child("Hunk"),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .when_some(menu_bar, |this, menu_bar| this.child(menu_bar)),
+                    ),
+            )
+            .into_any_element()
+    }
+
     fn render_in_app_menu_bar(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(menu_bar) = self.in_app_menu_bar.clone() else {
             return div().into_any_element();
@@ -400,6 +452,8 @@ impl Render for DiffViewer {
         }
         let ai_selected = self.workspace_view_mode == WorkspaceViewMode::Ai;
         let ai_view_state = ai_selected.then(|| self.visible_ai_frame_state());
+        let show_linux_client_title_bar =
+            cfg!(target_os = "linux") && matches!(window.window_decorations(), Decorations::Client { .. });
         let element = v_flex()
             .size_full()
             .relative()
@@ -434,7 +488,10 @@ impl Render for DiffViewer {
             .on_action(cx.listener(Self::open_settings_action))
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .when(!cfg!(target_os = "macos"), |this| {
+            .when(show_linux_client_title_bar, |this| {
+                this.child(self.render_linux_client_title_bar(cx))
+            })
+            .when(!cfg!(target_os = "macos") && !show_linux_client_title_bar, |this| {
                 this.child(self.render_in_app_menu_bar(cx))
             })
             .child(self.render_toolbar(ai_view_state.as_ref(), cx))
