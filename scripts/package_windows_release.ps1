@@ -133,8 +133,9 @@ function Get-WindowsMsiFileNames {
         }
 
         $fileName = $record.StringData(1)
-        if ($fileName -like "*|*") {
-            $fileName = $fileName.Split("|")[-1]
+        $shortNameSeparator = [char]124
+        if ($fileName.Contains($shortNameSeparator)) {
+            $fileName = $fileName.Substring($fileName.LastIndexOf($shortNameSeparator) + 1)
         }
         [void]$fileNames.Add($fileName)
     }
