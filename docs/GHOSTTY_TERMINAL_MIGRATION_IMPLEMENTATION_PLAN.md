@@ -17,7 +17,7 @@
 
 This document defines the implementation plan for migrating Hunk's terminal backend from:
 
-- `portable-pty` + `alacritty_terminal` + Hunk-owned terminal protocol glue
+- `portable-pty` + the legacy VT backend + Hunk-owned terminal protocol glue
 
 to:
 
@@ -65,7 +65,7 @@ This plan complements:
 - `docs/AI_TERMINAL_SUPPORT_PLAN.md`
 - `docs/TERMINAL_SHELL_COMPATIBILITY_IMPLEMENTATION_PLAN.md`
 
-This document supersedes the VT backend direction in `docs/AI_TERMINAL_SUPPORT_PLAN.md`, which currently names `alacritty_terminal` as the next-phase VT engine.
+This document supersedes the earlier VT backend direction in `docs/AI_TERMINAL_SUPPORT_PLAN.md`.
 
 ## Why This Migration Is Different
 
@@ -90,7 +90,7 @@ The migration must account for these facts:
 
 ## Goals
 
-- Replace `alacritty_terminal` with `libghostty-vt`.
+- Replace the legacy VT backend with `libghostty-vt`.
 - Replace Hunk-owned terminal input/protocol encoding with Ghostty-backed encoding.
 - Keep `portable-pty` as the cross-platform PTY host.
 - Preserve the current GPUI terminal surface long enough to reduce migration risk.
@@ -110,9 +110,9 @@ The migration must account for these facts:
 
 ### Hunk Backend Before Migration
 
-- `crates/hunk-terminal/Cargo.toml` depended on `alacritty_terminal` and `portable-pty`.
+- `crates/hunk-terminal/Cargo.toml` depended on the legacy VT engine and `portable-pty`.
 - `crates/hunk-terminal/src/session.rs` owns PTY spawn, child lifecycle, terminal event threads, and VT mutation.
-- `crates/hunk-terminal/src/vt.rs` owns the Alacritty-backed screen model and snapshot conversion.
+- `crates/hunk-terminal/src/vt.rs` owned the legacy screen model and snapshot conversion.
 - `crates/hunk-desktop/src/app/controller/ai/terminal_protocol.rs` owns key, paste, focus, and mouse reporting logic.
 - `crates/hunk-desktop/src/app/render/ai_helpers/terminal_surface.rs` paints Hunk snapshots into GPUI.
 
@@ -249,9 +249,9 @@ A forked `libghostty-rs` that Hunk can depend on during the rewrite.
 ### TODO
 
 - [x] Refactor `crates/hunk-terminal/src/session.rs` into smaller modules without changing behavior.
-- [x] Move snapshot types out of the current Alacritty-specific file into `src/snapshot.rs`.
+- [x] Move snapshot types out of the old backend-specific file into `src/snapshot.rs`.
 - [x] Introduce a backend-agnostic terminal engine interface inside `crates/hunk-terminal`.
-- [x] Keep the current Alacritty-backed code only as temporary migration scaffolding inside the branch.
+- [x] Keep the current legacy backend code only as temporary migration scaffolding inside the branch.
 - [x] Move PTY hosting code into its own module so the backend swap does not touch PTY concerns.
 - [x] Keep the public `spawn_terminal_session` API stable so `hunk-desktop` does not need to change yet.
 
@@ -286,7 +286,7 @@ A Ghostty-backed engine exists in `hunk-terminal` and can replace the old engine
   - `TerminalModeSnapshot`
 - [x] Support the same scrollback semantics Hunk currently exposes to the GPUI layer.
 - [x] Support transcript accumulation for fallback/error states exactly as today.
-- [x] Keep the existing Alacritty-backed code compiling only until the Ghostty adapter is complete.
+- [x] Keep the existing legacy backend code compiling only until the Ghostty adapter is complete.
 
 ### Files To Touch
 
@@ -461,22 +461,22 @@ Ghostty is the only terminal VT backend in Hunk.
 
 ### TODO
 
-- [x] Remove the Alacritty backend implementation.
-- [x] Remove the `alacritty_terminal` dependency from `crates/hunk-terminal/Cargo.toml`.
+- [x] Remove the legacy backend implementation.
+- [x] Remove the legacy VT dependency from `crates/hunk-terminal/Cargo.toml`.
 - [x] Remove obsolete translation code and dead compatibility helpers.
-- [x] Update docs that still mention `alacritty_terminal` as Hunk's VT engine.
+- [x] Update docs that still mention the legacy VT engine as Hunk's backend.
 - [x] Keep `portable-pty` in place.
 
 ### Files To Delete Or Simplify
 
 - `crates/hunk-terminal/src/vt.rs` in its current form
-- Alacritty-specific backend code introduced during the transition
+- legacy backend code introduced during the transition
 - any dead code in `crates/hunk-desktop/src/app/controller/ai/terminal_protocol.rs`
 
 ### Exit Criteria
 
 - Hunk's terminal backend is Ghostty-based only.
-- No user-facing terminal behavior depends on Alacritty-specific code anymore.
+- No user-facing terminal behavior depends on legacy-backend-specific code anymore.
 
 ## Risk Register
 
@@ -527,12 +527,12 @@ Mitigation:
 
 1. Harden the fork and make Hunk depend on a pinned fork commit.
 2. Refactor `hunk-terminal` into backend-friendly modules.
-3. Add Ghostty snapshot translation while keeping Alacritty code only as temporary branch scaffolding.
+3. Add Ghostty snapshot translation while keeping legacy backend code only as temporary branch scaffolding.
 4. Refactor to the actor-thread ownership model.
 5. Move terminal input encoding into `hunk-terminal`, and move mouse encoding fully into the actor-backed Ghostty path.
 6. Switch Hunk to the Ghostty backend in the migration branch.
 7. Run the parity and validation pass.
-8. Delete the Alacritty backend.
+8. Delete the legacy backend.
 
 ## Immediate Next Task
 
@@ -545,7 +545,7 @@ Concretely:
 
 - pin the fork in Hunk
 - refactor `hunk-terminal` into backend-friendly modules
-- keep the current Alacritty path working
+- keep the current legacy backend path working
 - create the seam where Ghostty can be added without disturbing `hunk-desktop`
 
 That is the highest-leverage starting point because it reduces migration risk without yet forcing a user-visible cutover.

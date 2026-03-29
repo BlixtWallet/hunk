@@ -230,9 +230,13 @@ fn collect_events_until_exit(
     let mut events = Vec::new();
     while Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(Instant::now());
-        let event = event_rx
-            .recv_timeout(remaining.min(Duration::from_millis(250)))
-            .expect("expected terminal event before timeout");
+        let event = match event_rx.recv_timeout(remaining.min(Duration::from_millis(250))) {
+            Ok(event) => event,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("terminal event channel disconnected before exit")
+            }
+        };
         let exited = matches!(event, TerminalEvent::Exit { .. });
         events.push(event);
         if exited {
