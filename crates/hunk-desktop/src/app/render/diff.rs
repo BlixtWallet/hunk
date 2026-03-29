@@ -14,7 +14,7 @@ impl Render for DiffSplitDrag {
 }
 
 impl DiffViewer {
-    fn render_diff(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_diff(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if self.repo_discovery_failed {
             return self.render_open_project_empty_state(cx);
         }
@@ -93,7 +93,7 @@ impl DiffViewer {
                                         new_label.clone(),
                                         cx,
                                     ))
-                                    .child(self.render_review_editor_preview(cx)),
+                                    .child(self.render_review_editor_preview(window, cx)),
                             )
                             .when_some(layout, |this, layout| {
                                 this.child(self.render_diff_split_handle(layout, cx))
@@ -360,64 +360,6 @@ impl DiffViewer {
                     ),
             )
             .into_any_element()
-    }
-
-    fn render_visible_file_banner(
-        &self,
-        visible_row: usize,
-        top_offset: gpui::Pixels,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let Some((header_row_ix, path, status)) = self.visible_file_header(visible_row) else {
-            return div().w_full().h(px(0.)).into_any_element();
-        };
-
-        if visible_row == header_row_ix && top_offset.is_zero() {
-            return div().w_full().h(px(0.)).into_any_element();
-        }
-
-        let stats = self
-            .active_diff_file_line_stats()
-            .get(path.as_str())
-            .copied()
-            .unwrap_or_default();
-        self.render_sticky_file_status_banner_row(header_row_ix, path.as_str(), status, stats, cx)
-    }
-
-    fn visible_file_header(&self, visible_row: usize) -> Option<(usize, String, FileStatus)> {
-        if self.diff_rows.is_empty() {
-            return None;
-        }
-
-        let capped = visible_row.min(self.diff_rows.len().saturating_sub(1));
-
-        if self.diff_row_metadata.len() == self.diff_rows.len() {
-            let header_ix = self
-                .diff_visible_file_header_lookup
-                .get(capped)
-                .copied()
-                .flatten()?;
-            let meta = self.diff_row_metadata.get(header_ix)?;
-            if meta.kind == DiffStreamRowKind::EmptyState {
-                return None;
-            }
-            let path = meta.file_path.clone()?;
-            let status = meta
-                .file_status
-                .or_else(|| self.status_for_path(path.as_str()))
-                .unwrap_or(FileStatus::Unknown);
-            return Some((header_ix, path, status));
-        }
-
-        let header_ix = self
-            .diff_visible_file_header_lookup
-            .get(capped)
-            .copied()
-            .flatten()?;
-        self.file_row_ranges
-            .iter()
-            .find(|range| range.start_row == header_ix)
-            .map(|range| (range.start_row, range.path.clone(), range.status))
     }
 
     fn diff_column_labels(&self) -> (String, String) {

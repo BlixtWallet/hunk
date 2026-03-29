@@ -68,11 +68,15 @@ impl DiffViewer {
             .into_any_element()
     }
 
-    fn render_diff_workspace_screen(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_diff_workspace_screen(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         div()
             .size_full()
             .child(if self.sidebar_collapsed {
-                self.render_diff(cx).into_any_element()
+                self.render_diff(window, cx).into_any_element()
             } else {
                 h_resizable("hunk-diff-workspace")
                     .child(
@@ -81,7 +85,7 @@ impl DiffViewer {
                             .size_range(px(240.0)..px(520.0))
                             .child(self.render_tree(cx)),
                     )
-                    .child(resizable_panel().child(self.render_diff(cx)))
+                    .child(resizable_panel().child(self.render_diff(window, cx)))
                     .into_any_element()
             })
             .into_any_element()
@@ -502,7 +506,7 @@ impl Render for DiffViewer {
                     .min_h_0()
                     .child(match self.workspace_view_mode {
                         WorkspaceViewMode::Files => self.render_file_workspace_screen(window, cx),
-                        WorkspaceViewMode::Diff => self.render_diff_workspace_screen(cx),
+                        WorkspaceViewMode::Diff => self.render_diff_workspace_screen(window, cx),
                         WorkspaceViewMode::GitWorkspace => self.render_git_workspace_screen(cx),
                         WorkspaceViewMode::Ai => {
                             self.render_ai_workspace_screen(ai_view_state.clone(), cx)

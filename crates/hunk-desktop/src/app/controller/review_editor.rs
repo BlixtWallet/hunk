@@ -1,3 +1,5 @@
+const REVIEW_EDITOR_SAVE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(250);
+
 impl DiffViewer {
     fn next_review_editor_epoch(&mut self) -> usize {
         self.review_editor_session.load_epoch =
@@ -5,9 +7,23 @@ impl DiffViewer {
         self.review_editor_session.load_epoch
     }
 
+    fn next_review_editor_save_epoch(&mut self) -> usize {
+        self.review_editor_session.save_epoch =
+            self.review_editor_session.save_epoch.saturating_add(1);
+        self.review_editor_session.save_epoch
+    }
+
+    fn cancel_review_editor_save_task(&mut self) {
+        let previous_task =
+            std::mem::replace(&mut self.review_editor_session.save_task, Task::ready(()));
+        drop(previous_task);
+    }
+
     fn clear_review_editor_session(&mut self) {
         self.next_review_editor_epoch();
+        self.next_review_editor_save_epoch();
         self.review_editor_session.loading = false;
+        self.review_editor_session.save_loading = false;
         self.review_editor_session.error = None;
         self.review_editor_session.path = None;
         self.review_editor_session.left_source_id = None;
@@ -15,6 +31,8 @@ impl DiffViewer {
         self.review_editor_session.left_present = false;
         self.review_editor_session.right_present = false;
         self.review_editor_session.load_task = Task::ready(());
+        self.review_editor_session.save_task = Task::ready(());
+        self.review_editor_session.last_saved_text = None;
         self.review_editor_session.left_editor.borrow_mut().clear();
         self.review_editor_session.right_editor.borrow_mut().clear();
     }
@@ -22,6 +40,154 @@ impl DiffViewer {
     fn review_editor_rows_for_path(&self, path: &str) -> Option<&[SideBySideRow]> {
         let range = self.file_row_ranges.iter().find(|range| range.path == path)?;
         self.diff_rows.get(range.start_row..range.end_row)
+    }
+
+    fn sync_review_editor_viewports_from_right(&mut self) {
+        let first_visible_row = self.review_editor_session.right_editor.borrow().first_visible_row();
+        self.review_editor_session
+            .left_editor
+            .borrow_mut()
+            .set_first_visible_row(first_visible_row);
+    }
+
+    fn current_review_editor_text(&self) -> anyhow::Result<String> {
+        self.review_editor_session
+            .right_editor
+            .borrow()
+            .current_text()
+            .ok_or_else(|| anyhow::anyhow!("no active review editor buffer"))
+    }
+
+    fn schedule_review_editor_save(&mut self, cx: &mut Context<Self>) {
+        let Some(repo_root) = self.project_path.clone() else {
+            return;
+        };
+        let Some(path) = self.review_editor_session.path.clone() else {
+            return;
+        };
+        let Ok(current_text) = self.current_review_editor_text() else {
+            return;
+        };
+        if self
+            .review_editor_session
+            .last_saved_text
+            .as_deref()
+            .is_some_and(|saved| saved == current_text.as_str())
+        {
+            return;
+        }
+
+        let text_to_write = current_text.clone();
+        let saved_text = current_text;
+        let path_for_write = path.clone();
+        let status_path = path.clone();
+        let save_epoch = self.next_review_editor_save_epoch();
+        self.cancel_review_editor_save_task();
+        self.review_editor_session.save_loading = true;
+        self.review_editor_session.save_task = cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(REVIEW_EDITOR_SAVE_DEBOUNCE)
+                .await;
+            let result = cx.background_executor().spawn(async move {
+                save_file_editor_document(&repo_root, path_for_write.as_str(), text_to_write.as_str())
+            });
+            let result = result.await;
+
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |this, cx| {
+                    if save_epoch != this.review_editor_session.save_epoch {
+                        return;
+                    }
+
+                    this.review_editor_session.save_loading = false;
+                    match result {
+                        Ok(()) => {
+                            this.review_editor_session.last_saved_text = Some(saved_text.clone());
+                            this.review_editor_session.right_editor.borrow_mut().mark_saved();
+                            this.git_status_message = Some(format!("Saved {}", status_path));
+                            this.request_snapshot_refresh(cx);
+                        }
+                        Err(err) => {
+                            this.git_status_message =
+                                Some(format!("Save failed for {}: {err:#}", status_path));
+                        }
+                    }
+
+                    cx.notify();
+                });
+            }
+        });
+    }
+
+    pub(super) fn review_editor_copy_selection(&self, cx: &mut Context<Self>) -> bool {
+        let Some(text) = self.review_editor_session.right_editor.borrow().copy_selection_text() else {
+            return false;
+        };
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        true
+    }
+
+    pub(super) fn review_editor_cut_selection(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(text) = self.review_editor_session.right_editor.borrow_mut().cut_selection_text() else {
+            return false;
+        };
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        self.sync_review_editor_viewports_from_right();
+        self.schedule_review_editor_save(cx);
+        cx.notify();
+        true
+    }
+
+    pub(super) fn review_editor_paste_from_clipboard(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            return false;
+        };
+        if !self
+            .review_editor_session
+            .right_editor
+            .borrow_mut()
+            .paste_text(text.as_str())
+        {
+            return false;
+        }
+        self.sync_review_editor_viewports_from_right();
+        self.schedule_review_editor_save(cx);
+        cx.notify();
+        true
+    }
+
+    pub(super) fn review_editor_handle_keystroke(
+        &mut self,
+        keystroke: &gpui::Keystroke,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self
+            .review_editor_session
+            .right_editor
+            .borrow_mut()
+            .handle_keystroke(keystroke)
+        {
+            return false;
+        }
+        self.sync_review_editor_viewports_from_right();
+        self.schedule_review_editor_save(cx);
+        cx.notify();
+        true
+    }
+
+    pub(super) fn review_editor_scroll_lines(
+        &mut self,
+        line_count: usize,
+        direction: crate::app::native_files_editor::ScrollDirection,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        self.review_editor_session
+            .right_editor
+            .borrow_mut()
+            .scroll_lines(line_count, direction);
+        self.sync_review_editor_viewports_from_right();
+        cx.notify();
+        true
     }
 
     fn request_review_editor_reload(&mut self, force: bool, cx: &mut Context<Self>) {
@@ -67,9 +233,10 @@ impl DiffViewer {
         self.review_editor_session.left_source_id = left_source_id.clone();
         self.review_editor_session.right_source_id = right_source_id.clone();
         self.review_editor_session.load_task = cx.spawn(async move |this, cx| {
+            let project_root_for_load = project_root.clone();
             let result = cx.background_executor().spawn(async move {
                 load_compare_file_document(
-                    &project_root,
+                    &project_root_for_load,
                     &left_source,
                     &right_source,
                     path.as_str(),
@@ -107,7 +274,10 @@ impl DiffViewer {
                                 Ok(()) => {
                                     this.review_editor_session.left_present = document.left_present;
                                     this.review_editor_session.right_present = document.right_present;
+                                    this.review_editor_session.save_loading = false;
                                     this.review_editor_session.error = None;
+                                    this.review_editor_session.last_saved_text =
+                                        Some(document.right_text.clone());
                                     this.review_editor_session
                                         .left_editor
                                         .borrow_mut()
@@ -116,6 +286,7 @@ impl DiffViewer {
                                         .right_editor
                                         .borrow_mut()
                                         .set_manual_overlays(overlays.1);
+                                    this.sync_review_editor_viewports_from_right();
                                 }
                                 Err(err) => {
                                     this.review_editor_session.error = Some(format!(
@@ -123,6 +294,8 @@ impl DiffViewer {
                                     ));
                                     this.review_editor_session.left_present = false;
                                     this.review_editor_session.right_present = false;
+                                    this.review_editor_session.save_loading = false;
+                                    this.review_editor_session.last_saved_text = None;
                                     this.review_editor_session.left_editor.borrow_mut().clear();
                                     this.review_editor_session.right_editor.borrow_mut().clear();
                                 }
@@ -133,6 +306,8 @@ impl DiffViewer {
                                 Some(format!("Review editor preview unavailable: {err:#}"));
                             this.review_editor_session.left_present = false;
                             this.review_editor_session.right_present = false;
+                            this.review_editor_session.save_loading = false;
+                            this.review_editor_session.last_saved_text = None;
                             this.review_editor_session.left_editor.borrow_mut().clear();
                             this.review_editor_session.right_editor.borrow_mut().clear();
                         }

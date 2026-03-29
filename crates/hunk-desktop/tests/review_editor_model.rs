@@ -1,8 +1,54 @@
+extern crate self as hunk_domain;
+extern crate self as hunk_editor;
+
+pub mod diff {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum DiffCellKind {
+        None,
+        Added,
+        Removed,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum DiffRowKind {
+        Code,
+        Meta,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct DiffCell {
+        pub line: Option<u32>,
+        pub text: String,
+        pub kind: DiffCellKind,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct SideBySideRow {
+        pub kind: DiffRowKind,
+        pub left: DiffCell,
+        pub right: DiffCell,
+        pub text: String,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum OverlayKind {
+    DiffAddition,
+    DiffDeletion,
+    DiffModification,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverlayDescriptor {
+    pub line: usize,
+    pub kind: OverlayKind,
+    pub message: Option<String>,
+}
+
 #[path = "../src/app/review_editor_model.rs"]
 mod review_editor_model;
 
-use hunk_domain::diff::{DiffCell, DiffCellKind, DiffRowKind, SideBySideRow};
-use hunk_editor::OverlayKind;
+use diff::{DiffCell, DiffCellKind, DiffRowKind, SideBySideRow};
 use review_editor_model::build_review_editor_overlays;
 
 #[test]
@@ -48,4 +94,45 @@ fn review_editor_overlays_mark_modified_and_added_lines() {
     assert_eq!(right[0].kind, OverlayKind::DiffModification);
     assert_eq!(right[1].line, 8);
     assert_eq!(right[1].kind, OverlayKind::DiffAddition);
+}
+
+#[test]
+fn review_editor_overlays_mark_removed_only_lines_on_left() {
+    let rows = vec![
+        SideBySideRow {
+            kind: DiffRowKind::Meta,
+            left: DiffCell {
+                line: Some(1),
+                text: "@@".to_string(),
+                kind: DiffCellKind::None,
+            },
+            right: DiffCell {
+                line: Some(1),
+                text: "@@".to_string(),
+                kind: DiffCellKind::None,
+            },
+            text: String::new(),
+        },
+        SideBySideRow {
+            kind: DiffRowKind::Code,
+            left: DiffCell {
+                line: Some(12),
+                text: "deleted".to_string(),
+                kind: DiffCellKind::Removed,
+            },
+            right: DiffCell {
+                line: None,
+                text: String::new(),
+                kind: DiffCellKind::None,
+            },
+            text: String::new(),
+        },
+    ];
+
+    let (left, right) = build_review_editor_overlays(&rows);
+
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].line, 11);
+    assert_eq!(left[0].kind, OverlayKind::DiffDeletion);
+    assert!(right.is_empty());
 }

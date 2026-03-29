@@ -654,6 +654,7 @@ impl DiffViewer {
             focus_handle: cx.focus_handle(),
             repo_tree_focus_handle: cx.focus_handle(),
             files_editor_focus_handle: cx.focus_handle(),
+            review_editor_focus_handle: cx.focus_handle(),
             selection_anchor_row: None,
             selection_head_row: None,
             drag_selecting_rows: false,

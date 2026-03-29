@@ -1339,6 +1339,7 @@ struct DiffViewer {
     focus_handle: FocusHandle,
     repo_tree_focus_handle: FocusHandle,
     files_editor_focus_handle: FocusHandle,
+    review_editor_focus_handle: FocusHandle,
     selection_anchor_row: Option<usize>,
     selection_head_row: Option<usize>,
     drag_selecting_rows: bool,

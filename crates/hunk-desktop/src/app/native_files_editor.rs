@@ -296,6 +296,22 @@ impl FilesEditor {
         })
     }
 
+    pub(crate) fn first_visible_row(&self) -> usize {
+        self.editor.viewport().first_visible_row
+    }
+
+    pub(crate) fn set_first_visible_row(&mut self, first_visible_row: usize) {
+        let snapshot = self.editor.display_snapshot();
+        let max_first_row = snapshot
+            .total_display_rows
+            .saturating_sub(snapshot.viewport.visible_row_count);
+        self.editor.apply(EditorCommand::SetViewport(Viewport {
+            first_visible_row: first_visible_row.min(max_first_row),
+            visible_row_count: snapshot.viewport.visible_row_count,
+            horizontal_offset: 0,
+        }));
+    }
+
     pub(crate) fn mark_saved(&mut self) {
         self.editor.apply(EditorCommand::MarkSaved);
     }
