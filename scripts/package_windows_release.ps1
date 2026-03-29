@@ -105,7 +105,7 @@ function Stage-WindowsPackagerSidecars {
         $destination = Join-Path $stageDir $sidecar.Name
         Copy-Item -Path $sidecar.FullName -Destination $destination -Force
         [void]$fileNames.Add($sidecar.Name)
-        Write-Host "Staging Windows runtime sidecar $($sidecar.Name) from $($sidecar.FullName)"
+        Write-Host ("Staging Windows runtime sidecar " + $sidecar.Name + " from " + $sidecar.FullName)
     }
 
     return @{
@@ -208,15 +208,16 @@ function Invoke-CargoPackagerWithManifestOverride {
     if ($WindowsSidecarResourcePath) {
         $normalizedSidecarPath = $WindowsSidecarResourcePath.Replace('\', '/')
         $cargoTomlBeforeResourceRewrite = $updatedCargoToml
-        $updatedCargoToml = [regex]::Replace(
-            $updatedCargoToml,
-            '(?m)^resources\s*=\s*\[\s*"../../assets/codex-runtime"\s*\]\s*$',
-            @"
+        $windowsResourcesReplacement = @"
 resources = [
   "../../assets/codex-runtime",
   { src = "$normalizedSidecarPath", target = "." },
 ]
-"@,
+"@
+        $updatedCargoToml = [regex]::Replace(
+            $updatedCargoToml,
+            '(?m)^resources\s*=\s*\[\s*"../../assets/codex-runtime"\s*\]\s*$',
+            $windowsResourcesReplacement,
             1
         )
 
@@ -318,7 +319,7 @@ if (-not $bundleMsi) {
     if (Test-Path $packagerOutDir) {
         Write-Host "Packager output under ${packagerOutDir}:"
         Get-ChildItem -Path $packagerOutDir -Recurse | ForEach-Object {
-            Write-Host " - $($_.FullName)"
+            Write-Host (" - " + $_.FullName)
         }
     }
     throw "Expected cargo-packager to produce an MSI under $packagerOutDir"
