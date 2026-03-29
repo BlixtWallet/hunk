@@ -38,6 +38,140 @@ function Test-WindowsCodexRuntimeBundle {
     }
 }
 
+function Get-WindowsRuntimeSidecarDlls {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TargetDir,
+        [Parameter(Mandatory = $true)]
+        [string]$TargetTriple
+    )
+
+    $releaseDir = Join-Path $TargetDir "$TargetTriple/release"
+    if (-not (Test-Path $releaseDir -PathType Container)) {
+        throw "Missing Windows release directory: $releaseDir"
+    }
+
+    $sidecarMap = @{}
+
+    Get-ChildItem -Path $releaseDir -Filter "*.dll" -File -ErrorAction SilentlyContinue |
+        Sort-Object Name |
+        ForEach-Object {
+            $sidecarMap[$_.Name.ToLowerInvariant()] = $_.FullName
+        }
+
+    $buildDir = Join-Path $releaseDir "build"
+    if (Test-Path $buildDir -PathType Container) {
+        Get-ChildItem -Path $buildDir -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Extension -ieq ".dll" -and $_.FullName -match '[\\/]+ghostty-install[\\/]+(?:bin|lib)[\\/]'
+            } |
+            Sort-Object FullName |
+            ForEach-Object {
+                $key = $_.Name.ToLowerInvariant()
+                if (-not $sidecarMap.ContainsKey($key)) {
+                    $sidecarMap[$key] = $_.FullName
+                }
+            }
+    }
+
+    return @(
+        $sidecarMap.GetEnumerator() |
+            Sort-Object Name |
+            ForEach-Object { Get-Item -LiteralPath $_.Value }
+    )
+}
+
+function Stage-WindowsPackagerSidecars {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TargetDir,
+        [Parameter(Mandatory = $true)]
+        [string]$TargetTriple
+    )
+
+    $sidecars = @(Get-WindowsRuntimeSidecarDlls -TargetDir $TargetDir -TargetTriple $TargetTriple)
+    if (-not ($sidecars | Where-Object { $_.Name -ieq "ghostty-vt.dll" })) {
+        throw "Failed to locate ghostty-vt.dll in the Windows build output; cannot build a self-contained MSI"
+    }
+
+    $stageDir = Join-Path $TargetDir "windows-packager-sidecars"
+    if (Test-Path $stageDir) {
+        Remove-Item -Path $stageDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+
+    $fileNames = New-Object System.Collections.Generic.List[string]
+    foreach ($sidecar in $sidecars) {
+        $destination = Join-Path $stageDir $sidecar.Name
+        Copy-Item -Path $sidecar.FullName -Destination $destination -Force
+        [void]$fileNames.Add($sidecar.Name)
+        Write-Host ("Staging Windows runtime sidecar " + $sidecar.Name + " from " + $sidecar.FullName)
+    }
+
+    return @{
+        Directory = $stageDir
+        FileNames = @($fileNames)
+    }
+}
+
+function Get-WindowsMsiFileNames {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$MsiPath
+    )
+
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $database = $installer.OpenDatabase($MsiPath, 0)
+    $fileQuery = 'SELECT `FileName` FROM `File`'
+    $view = $database.OpenView($fileQuery)
+    $view.Execute()
+
+    $fileNames = New-Object System.Collections.Generic.List[string]
+    while ($true) {
+        $record = $view.Fetch()
+        if (-not $record) {
+            break
+        }
+
+        $fileName = $record.StringData(1)
+        $shortNameSeparator = [char]124
+        if ($fileName.Contains($shortNameSeparator)) {
+            $fileName = $fileName.Substring($fileName.LastIndexOf($shortNameSeparator) + 1)
+        }
+        [void]$fileNames.Add($fileName)
+    }
+
+    return @($fileNames)
+}
+
+function Assert-WindowsMsiContainsFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$MsiPath,
+        [string[]]$ExpectedFileNames
+    )
+
+    if (-not $ExpectedFileNames -or $ExpectedFileNames.Count -eq 0) {
+        return
+    }
+
+    $actualFileNames = @(Get-WindowsMsiFileNames -MsiPath $MsiPath)
+    $missing = @(
+        $ExpectedFileNames |
+            Sort-Object -Unique |
+            Where-Object { $actualFileNames -notcontains $_ }
+    )
+
+    if ($missing.Count -gt 0) {
+        $missingList = $missing -join ", "
+        throw "Windows MSI is missing expected files: $missingList"
+    }
+
+    $validatedFileNames = @($ExpectedFileNames | Sort-Object -Unique)
+    $validatedFileList = $validatedFileNames -join ", "
+    Write-Host "Validated Windows MSI payload includes: $validatedFileList"
+}
+
 function Invoke-CargoPackagerWithManifestOverride {
     param(
         [Parameter(Mandatory = $true)]
@@ -53,21 +187,36 @@ function Invoke-CargoPackagerWithManifestOverride {
         [Parameter(Mandatory = $true)]
         [string]$WorkingDirectory,
         [Parameter(Mandatory = $true)]
-        [string]$PackagerOutDir
+        [string]$PackagerOutDir,
+        [string]$WindowsSidecarResourcePath
     )
 
     $originalCargoToml = Get-Content $CargoTomlPath -Raw
     $updatedCargoToml = $originalCargoToml
     if ($WindowsPackagerVersion -ne $OriginalVersion) {
-        $updatedCargoToml = [regex]::Replace(
-            $updatedCargoToml,
-            '(?ms)^(\[package\]\s.*?^version = ")([^"]+)(")',
-            ('${1}' + $WindowsPackagerVersion + '${3}'),
-            1
-        )
+        $versionPattern = '(?ms)^(\[package\]\s.*?^version = ")([^"]+)(")'
+        $versionReplacement = '${1}' + $WindowsPackagerVersion + '${3}'
+        $updatedCargoToml = [regex]::Replace($updatedCargoToml, $versionPattern, $versionReplacement, 1)
 
         if ($updatedCargoToml -eq $originalCargoToml) {
             throw "Failed to rewrite [package] version in $CargoTomlPath"
+        }
+    }
+
+    if ($WindowsSidecarResourcePath) {
+        $normalizedSidecarPath = $WindowsSidecarResourcePath.Replace('\', '/')
+        $cargoTomlBeforeResourceRewrite = $updatedCargoToml
+        $windowsResourcesReplacement = @(
+            "resources = [",
+            '  "../../assets/codex-runtime",',
+            "  { src = ""$normalizedSidecarPath"", target = ""."" },",
+            "]"
+        ) -join "`n"
+        $resourcePattern = '(?m)^resources\s*=\s*\[\s*"../../assets/codex-runtime"\s*\]\s*$'
+        $updatedCargoToml = [regex]::Replace($updatedCargoToml, $resourcePattern, $windowsResourcesReplacement, 1)
+
+        if ($updatedCargoToml -eq $cargoTomlBeforeResourceRewrite) {
+            throw "Failed to inject Windows sidecar DLL resources into $CargoTomlPath"
         }
     }
 
@@ -122,6 +271,9 @@ $versionLabel = if ($env:HUNK_RELEASE_VERSION) {
     [regex]::Match($versionLine.Line, '^version = "(.*)"$').Groups[1].Value
 }
 $windowsPackagerVersion = Get-WindowsPackagerVersion -Version $versionLabel
+$windowsSidecarBundle = $null
+$windowsSidecarResourcePath = $null
+$windowsSidecarFileNames = @()
 
 Push-Location $rootDir
 try {
@@ -133,6 +285,11 @@ try {
     & $validateBundleScript -RootDir $rootDir
     Write-Host "Building Windows release binary..."
     cargo build -p hunk-desktop --release --target $targetTriple --locked
+    $windowsSidecarBundle = Stage-WindowsPackagerSidecars -TargetDir $targetDir -TargetTriple $targetTriple
+    if ($windowsSidecarBundle.Directory) {
+        $windowsSidecarResourcePath = [System.IO.Path]::GetRelativePath($desktopCrateDir, $windowsSidecarBundle.Directory)
+        $windowsSidecarFileNames = @($windowsSidecarBundle.FileNames)
+    }
     Write-Host "Building Windows MSI package..."
     Invoke-CargoPackagerWithManifestOverride `
         -CargoTomlPath $cargoTomlPath `
@@ -141,7 +298,8 @@ try {
         -WindowsPackagerVersion $windowsPackagerVersion `
         -TargetTriple $targetTriple `
         -WorkingDirectory $desktopCrateDir `
-        -PackagerOutDir $packagerOutDir
+        -PackagerOutDir $packagerOutDir `
+        -WindowsSidecarResourcePath $windowsSidecarResourcePath
     & $validateBundleScript -RootDir $rootDir -PackagerOutDir $packagerOutDir
 } finally {
     Pop-Location
@@ -155,13 +313,14 @@ if (-not $bundleMsi) {
     if (Test-Path $packagerOutDir) {
         Write-Host "Packager output under ${packagerOutDir}:"
         Get-ChildItem -Path $packagerOutDir -Recurse | ForEach-Object {
-            Write-Host " - $($_.FullName)"
+            Write-Host (" - " + $_.FullName)
         }
     }
     throw "Expected cargo-packager to produce an MSI under $packagerOutDir"
 }
 
 New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+Assert-WindowsMsiContainsFiles -MsiPath $bundleMsi.FullName -ExpectedFileNames $windowsSidecarFileNames
 Copy-Item -Path $bundleMsi.FullName -Destination $releaseMsiPath -Force
 
 Write-Host "Created Windows release artifact at $releaseMsiPath"

@@ -186,11 +186,37 @@ should_bundle_linux_library() {
   esac
 }
 
+linux_dependency_ld_library_path() {
+  local build_dir="$TARGET_DIR/$TARGET_TRIPLE/release/build"
+  local extra_path="${HUNK_LINUX_EXTRA_LIBRARY_PATH:-}"
+
+  if [[ -d "$build_dir" ]]; then
+    local discovered_paths=""
+    while IFS= read -r discovered_dir; do
+      [[ -n "$discovered_dir" ]] || continue
+      discovered_paths="${discovered_paths:+$discovered_paths:}$discovered_dir"
+    done < <(find "$build_dir" -type d -path '*/out/ghostty-install/lib' | sort -u)
+
+    if [[ -n "$discovered_paths" ]]; then
+      extra_path="${extra_path:+$extra_path:}$discovered_paths"
+    fi
+  fi
+
+  printf '%s\n' "$extra_path"
+}
+
 list_linux_runtime_dependencies() {
   local target_path="$1"
   local ldd_output
+  local extra_library_path
 
-  ldd_output="$(ldd "$target_path")"
+  extra_library_path="$(linux_dependency_ld_library_path)"
+
+  if [[ -n "$extra_library_path" ]]; then
+    ldd_output="$(env LD_LIBRARY_PATH="${extra_library_path}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$target_path")"
+  else
+    ldd_output="$(ldd "$target_path")"
+  fi
   if grep -Fq "not found" <<<"$ldd_output"; then
     echo "error: unresolved Linux runtime dependencies for $target_path" >&2
     echo "$ldd_output" >&2
@@ -391,6 +417,11 @@ write_linux_rpm_spec() {
 
   {
     printf '%%global _build_id_links none\n'
+    # The bundled release binary and vendored private shared libraries are
+    # already packaged as final ELF artifacts. Fedora/Red Hat's brp-strip
+    # step can fail on patched vendored libraries such as libghostty-vt, so
+    # skip that post-processing for this private app bundle.
+    printf '%%global __brp_strip %%{nil}\n'
     printf 'Name:           %s\n' "$PACKAGE_NAME"
     printf 'Version:        %s\n' "$RPM_VERSION"
     printf 'Release:        %s\n' "$PACKAGE_RELEASE"

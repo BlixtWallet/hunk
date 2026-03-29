@@ -73,6 +73,7 @@
               [
                 rustToolchain
                 just
+                zig
                 openssl
                 pkgconf
               ]

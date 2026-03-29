@@ -37,43 +37,36 @@ impl DiffViewer {
     }
 
     fn files_store_visible_terminal_state_for_project(&mut self, project_key: Option<&str>) {
-        let Some(project_key) = project_key else {
-            return;
-        };
-        self.files_terminal_states_by_project.insert(
-            project_key.to_string(),
-            self.files_capture_visible_terminal_state(),
+        let state = self.files_capture_visible_terminal_state();
+        store_visible_terminal_state(
+            &mut self.files_terminal_states_by_project,
+            project_key,
+            state,
         );
     }
 
     fn files_restore_visible_terminal_state_for_project(&mut self, project_key: Option<&str>) {
-        let state = project_key
-            .and_then(|project_key| self.files_terminal_states_by_project.get(project_key).cloned())
-            .unwrap_or_default();
+        let state =
+            restore_visible_terminal_state(&self.files_terminal_states_by_project, project_key);
         self.files_apply_visible_terminal_state(state);
     }
 
     fn files_park_visible_terminal_runtime_for_project(&mut self, project_key: Option<&str>) {
-        let Some(project_key) = project_key else {
-            return;
-        };
-        let Some(runtime) = self.files_terminal_runtime.take() else {
-            return;
-        };
-        let event_task = std::mem::replace(&mut self.files_terminal_event_task, Task::ready(()));
-        self.files_hidden_terminal_runtimes.insert(
-            project_key.to_string(),
-            FilesHiddenTerminalRuntimeHandle { runtime, event_task },
+        park_visible_terminal_runtime(
+            project_key,
+            &mut self.files_terminal_runtime,
+            &mut self.files_terminal_event_task,
+            &mut self.files_hidden_terminal_runtimes,
         );
     }
 
     fn files_promote_hidden_terminal_runtime_for_project(&mut self, project_key: &str) -> bool {
-        let Some(hidden) = self.files_hidden_terminal_runtimes.remove(project_key) else {
-            return false;
-        };
-        self.files_terminal_runtime = Some(hidden.runtime);
-        self.files_terminal_event_task = hidden.event_task;
-        true
+        promote_hidden_terminal_runtime(
+            project_key,
+            &mut self.files_terminal_runtime,
+            &mut self.files_terminal_event_task,
+            &mut self.files_hidden_terminal_runtimes,
+        )
     }
 
     pub(super) fn files_handle_project_change(
@@ -416,12 +409,12 @@ impl DiffViewer {
         }
 
         let point = AiTerminalGridPoint { line, column };
-        let Some(bytes) =
-            ai_terminal_mouse_button_bytes(point, event.button, event.modifiers, true, mode)
+        let Some(input) =
+            ai_terminal_mouse_button_input(point, event.button, event.modifiers, true, mode)
         else {
             return false;
         };
-        self.files_write_terminal_bytes(bytes.as_slice(), cx)
+        self.files_write_terminal_pointer_input(input, cx)
     }
 
     pub(super) fn files_terminal_surface_mouse_move(
@@ -433,12 +426,12 @@ impl DiffViewer {
     ) -> bool {
         let mode = self.files_terminal_session.screen.as_ref().map(|screen| screen.mode);
         let point = AiTerminalGridPoint { line, column };
-        let Some(bytes) =
-            ai_terminal_mouse_move_bytes(point, event.pressed_button, event.modifiers, mode)
+        let Some(input) =
+            ai_terminal_mouse_move_input(point, event.pressed_button, event.modifiers, mode)
         else {
             return false;
         };
-        self.files_write_terminal_bytes(bytes.as_slice(), cx)
+        self.files_write_terminal_pointer_input(input, cx)
     }
 
     pub(super) fn files_terminal_surface_mouse_up(
@@ -450,12 +443,12 @@ impl DiffViewer {
     ) -> bool {
         let mode = self.files_terminal_session.screen.as_ref().map(|screen| screen.mode);
         let point = AiTerminalGridPoint { line, column };
-        let Some(bytes) =
-            ai_terminal_mouse_button_bytes(point, event.button, event.modifiers, false, mode)
+        let Some(input) =
+            ai_terminal_mouse_button_input(point, event.button, event.modifiers, false, mode)
         else {
             return false;
         };
-        self.files_write_terminal_bytes(bytes.as_slice(), cx)
+        self.files_write_terminal_pointer_input(input, cx)
     }
 
     pub(super) fn files_terminal_surface_key_down(
@@ -495,10 +488,10 @@ impl DiffViewer {
             return self.files_paste_terminal_from_clipboard(cx);
         }
 
-        let Some(bytes) = ai_terminal_input_bytes_for_keystroke(keystroke, terminal_mode) else {
+        let Some(input) = ai_terminal_key_input_for_keystroke(keystroke, terminal_mode) else {
             return false;
         };
-        self.files_write_terminal_bytes(bytes.as_slice(), cx)
+        self.files_write_terminal_key_input(input, cx)
     }
 
     fn files_terminal_dispatch_synthesized_keystroke(
@@ -619,33 +612,21 @@ impl DiffViewer {
         }
 
         let line_height = px(16.0);
-        let Some((direction, line_count)) =
-            crate::app::native_files_editor::scroll_direction_and_count(event, line_height)
-        else {
+        let Some(scroll_lines) = ai_terminal_scroll_lines_from_event(event, line_height) else {
             return false;
-        };
-
-        let delta = match direction {
-            crate::app::native_files_editor::ScrollDirection::Forward => -(line_count as i32),
-            crate::app::native_files_editor::ScrollDirection::Backward => line_count as i32,
         };
 
         let mode = self.files_terminal_session.screen.as_ref().map(|screen| screen.mode);
         let point = AiTerminalGridPoint { line, column };
-        if let Some(reports) = ai_terminal_mouse_scroll_bytes(point, delta, event.modifiers, mode)
-        {
-            return self.files_write_terminal_report_chunks(reports, cx);
-        }
-
-        if let Some(bytes) = ai_terminal_alt_scroll_bytes(delta, mode) {
-            return self.files_write_terminal_bytes(bytes.as_slice(), cx);
-        }
-
-        if mode.is_some_and(|mode| mode.alt_screen) {
+        if let Some(input) = ai_terminal_wheel_input(point, scroll_lines, event.modifiers) {
+            let fallback_scroll =
+                ai_terminal_viewport_scroll_for_wheel_delta(scroll_lines, mode);
+            return self.files_write_terminal_wheel_input(input, fallback_scroll, cx);
+        } else if mode.is_some_and(|mode| mode.alt_screen) {
             return true;
         }
 
-        self.files_scroll_terminal_viewport(TerminalScroll::Delta(delta), cx)
+        self.files_scroll_terminal_viewport(TerminalScroll::Delta(-scroll_lines), cx)
     }
 
     pub(super) fn files_scroll_terminal_to_bottom_action(&mut self, cx: &mut Context<Self>) {
@@ -743,18 +724,19 @@ impl DiffViewer {
         true
     }
 
-    fn files_write_terminal_bytes(&mut self, bytes: &[u8], cx: &mut Context<Self>) -> bool {
+    fn files_write_terminal_pointer_input(
+        &mut self,
+        input: hunk_terminal::TerminalPointerInput,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if !self.files_terminal_is_running() {
             return false;
-        }
-        if bytes.contains(&b'\r') || bytes.contains(&b'\n') {
-            self.files_temporarily_suppress_terminal_cursor(cx);
         }
         let Some(runtime) = self.files_terminal_runtime.as_ref() else {
             return false;
         };
 
-        if let Err(error) = runtime.handle.write_input(bytes) {
+        if let Err(error) = runtime.handle.write_pointer_input(input) {
             self.files_terminal_session.status_message = Some(error.to_string());
             self.files_terminal_session.status = AiTerminalSessionStatus::Failed;
             cx.notify();
@@ -765,27 +747,68 @@ impl DiffViewer {
         true
     }
 
-    fn files_write_terminal_report_chunks(
+    fn files_write_terminal_wheel_input(
         &mut self,
-        reports: Vec<Vec<u8>>,
+        input: hunk_terminal::TerminalWheelInput,
+        fallback_scroll: Option<TerminalScroll>,
         cx: &mut Context<Self>,
     ) -> bool {
-        let mut handled = false;
-        for report in reports {
-            handled = self.files_write_terminal_bytes(report.as_slice(), cx) || handled;
-            if self.files_terminal_session.status == AiTerminalSessionStatus::Failed {
-                break;
+        if !self.files_terminal_is_running() {
+            return false;
+        }
+        let Some(runtime) = self.files_terminal_runtime.as_ref() else {
+            return false;
+        };
+
+        match runtime.handle.write_wheel_input(input, fallback_scroll) {
+            Ok(()) => {
+                self.files_terminal_session.status_message = None;
+                true
+            }
+            Err(error) => {
+                self.files_terminal_session.status_message = Some(error.to_string());
+                self.files_terminal_session.status = AiTerminalSessionStatus::Failed;
+                cx.notify();
+                true
             }
         }
-        handled
+    }
+
+    fn files_write_terminal_key_input(
+        &mut self,
+        input: hunk_terminal::TerminalKeyInput,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.files_terminal_is_running() {
+            return false;
+        }
+        let Some(runtime) = self.files_terminal_runtime.as_ref() else {
+            return false;
+        };
+
+        if let Err(error) = runtime.handle.write_key_input(input) {
+            self.files_terminal_session.status_message = Some(error.to_string());
+            self.files_terminal_session.status = AiTerminalSessionStatus::Failed;
+            cx.notify();
+            return true;
+        }
+
+        self.files_terminal_session.status_message = None;
+        true
     }
 
     fn files_report_terminal_focus_change(&mut self, focused: bool, cx: &mut Context<Self>) {
-        let mode = self.files_terminal_session.screen.as_ref().map(|screen| screen.mode);
-        let Some(bytes) = ai_terminal_focus_bytes(focused, mode) else {
+        if !self.files_terminal_is_running() {
+            return;
+        }
+        let Some(runtime) = self.files_terminal_runtime.as_ref() else {
             return;
         };
-        let _ = self.files_write_terminal_bytes(bytes, cx);
+        if let Err(error) = runtime.handle.report_focus(focused) {
+            self.files_terminal_session.status_message = Some(error.to_string());
+            self.files_terminal_session.status = AiTerminalSessionStatus::Failed;
+            cx.notify();
+        }
     }
 
     fn files_paste_terminal_from_clipboard(&mut self, cx: &mut Context<Self>) -> bool {
@@ -812,13 +835,24 @@ impl DiffViewer {
     }
 
     fn files_paste_terminal_text(&mut self, text: &str, cx: &mut Context<Self>) -> bool {
-        let bracketed_paste = self
-            .files_terminal_session
-            .screen
-            .as_ref()
-            .is_some_and(|screen| screen.mode.bracketed_paste);
-        let bytes = ai_terminal_paste_bytes(text, bracketed_paste);
-        self.files_write_terminal_bytes(bytes.as_slice(), cx)
+        if !self.files_terminal_is_running() {
+            return false;
+        }
+        if text.contains(['\r', '\n']) {
+            self.files_temporarily_suppress_terminal_cursor(cx);
+        }
+        let Some(runtime) = self.files_terminal_runtime.as_ref() else {
+            return false;
+        };
+        if let Err(error) = runtime.handle.write_paste(text) {
+            self.files_terminal_session.status_message = Some(error.to_string());
+            self.files_terminal_session.status = AiTerminalSessionStatus::Failed;
+            cx.notify();
+            return true;
+        }
+
+        self.files_terminal_session.status_message = None;
+        true
     }
 
     pub(super) fn files_run_command_in_terminal(

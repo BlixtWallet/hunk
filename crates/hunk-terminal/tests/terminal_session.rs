@@ -5,7 +5,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hunk_terminal::{
-    TerminalEvent, TerminalScreenSnapshot, TerminalScroll, TerminalSpawnRequest,
+    TerminalColorSnapshot, TerminalCursorShapeSnapshot, TerminalDamageSnapshot, TerminalEvent,
+    TerminalNamedColorSnapshot, TerminalScreenSnapshot, TerminalScroll, TerminalSpawnRequest,
     spawn_terminal_session,
 };
 
@@ -100,8 +101,95 @@ fn terminal_session_supports_scrollback_after_output() {
         panic!("expected a screen event");
     };
     assert!(screen.display_offset > 0);
+    assert_eq!(
+        screen.cells.iter().map(|cell| cell.line).min(),
+        Some(-(screen.display_offset as i32)),
+    );
+    if let TerminalDamageSnapshot::Partial(lines) = &screen.damage {
+        assert!(
+            lines
+                .iter()
+                .all(|line| line.line >= -(screen.display_offset as i32))
+        );
+    }
 
     handle.kill().expect("kill should succeed");
+}
+
+#[test]
+fn terminal_session_maps_named_colors_from_vt_output() {
+    let request =
+        TerminalSpawnRequest::new(repo_root(), "printf '\\033[31mR\\033[0m\\n'".to_string())
+            .with_shell_program(test_shell_program());
+    let (_handle, event_rx) =
+        spawn_terminal_session(request).expect("terminal session should start");
+
+    let events = collect_events_until_exit(&event_rx);
+    let screen = screen_matching(&events, |screen| {
+        screen.cells.iter().any(|cell| {
+            cell.character == 'R'
+                && cell.fg == TerminalColorSnapshot::Named(TerminalNamedColorSnapshot::Red)
+        })
+    })
+    .expect("expected screen snapshot containing a red cell");
+
+    let cell = screen
+        .cells
+        .iter()
+        .find(|cell| cell.character == 'R')
+        .expect("expected rendered red cell");
+    assert_eq!(
+        cell.fg,
+        TerminalColorSnapshot::Named(TerminalNamedColorSnapshot::Red)
+    );
+}
+
+#[test]
+fn terminal_session_maps_cursor_shape_sequences() {
+    assert_cursor_shape_for_command("printf '\\033[4 q'", TerminalCursorShapeSnapshot::Underline);
+    assert_cursor_shape_for_command("printf '\\033[6 q'", TerminalCursorShapeSnapshot::Beam);
+}
+
+#[test]
+fn terminal_session_preserves_zero_width_marks_and_wide_cells() {
+    let request = TerminalSpawnRequest::new(
+        repo_root(),
+        "printf 'e\\314\\201\\345\\245\\275\\n'".to_string(),
+    )
+    .with_shell_program(test_shell_program());
+    let (_handle, event_rx) =
+        spawn_terminal_session(request).expect("terminal session should start");
+
+    let events = collect_events_until_exit(&event_rx);
+    let screen = screen_matching(&events, |screen| {
+        screen
+            .cells
+            .iter()
+            .any(|cell| cell.character == 'e' && cell.zerowidth == vec!['\u{301}'])
+            && screen
+                .cells
+                .iter()
+                .any(|cell| cell.character == '好' && cell.flags == 0b0000_0000_0010_0000)
+            && screen
+                .cells
+                .iter()
+                .any(|cell| cell.character == ' ' && cell.flags == 0b0000_0000_0100_0000)
+    })
+    .expect("expected screen snapshot containing combining and wide cells");
+
+    let combining = screen
+        .cells
+        .iter()
+        .find(|cell| cell.character == 'e')
+        .expect("expected base cell with combining mark");
+    assert_eq!(combining.zerowidth, vec!['\u{301}']);
+
+    let wide = screen
+        .cells
+        .iter()
+        .find(|cell| cell.character == '好')
+        .expect("expected wide glyph cell");
+    assert_eq!(wide.flags, 0b0000_0000_0010_0000);
 }
 
 #[test]
@@ -154,9 +242,13 @@ fn collect_events_until_exit(
     let mut events = Vec::new();
     while Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(Instant::now());
-        let event = event_rx
-            .recv_timeout(remaining.min(Duration::from_millis(250)))
-            .expect("expected terminal event before timeout");
+        let event = match event_rx.recv_timeout(remaining.min(Duration::from_millis(250))) {
+            Ok(event) => event,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("terminal event channel disconnected before exit")
+            }
+        };
         let exited = matches!(event, TerminalEvent::Exit { .. });
         events.push(event);
         if exited {
@@ -197,6 +289,29 @@ fn test_shell_program() -> &'static str {
     } else {
         "/bin/bash"
     }
+}
+
+fn screen_matching(
+    events: &[TerminalEvent],
+    predicate: impl Fn(&TerminalScreenSnapshot) -> bool,
+) -> Option<Arc<TerminalScreenSnapshot>> {
+    events.iter().find_map(|event| match event {
+        TerminalEvent::Screen(screen) if predicate(screen) => Some(screen.clone()),
+        _ => None,
+    })
+}
+
+fn assert_cursor_shape_for_command(command: &str, expected: TerminalCursorShapeSnapshot) {
+    let request = TerminalSpawnRequest::new(repo_root(), command.to_string())
+        .with_shell_program(test_shell_program());
+    let (_handle, event_rx) =
+        spawn_terminal_session(request).expect("terminal session should start");
+
+    let events = collect_events_until_exit(&event_rx);
+    assert!(
+        screen_matching(&events, |screen| screen.cursor.shape == expected).is_some(),
+        "expected cursor shape {expected:?}",
+    );
 }
 
 fn screen_text(screen: &Arc<TerminalScreenSnapshot>) -> String {
