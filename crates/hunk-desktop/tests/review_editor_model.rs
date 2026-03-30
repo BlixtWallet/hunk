@@ -49,7 +49,7 @@ pub struct OverlayDescriptor {
 mod review_editor_model;
 
 use diff::{DiffCell, DiffCellKind, DiffRowKind, SideBySideRow};
-use review_editor_model::build_review_editor_overlays;
+use review_editor_model::{build_review_editor_overlays, build_review_editor_overlays_from_texts};
 
 #[test]
 fn review_editor_overlays_mark_modified_and_added_lines() {
@@ -135,4 +135,34 @@ fn review_editor_overlays_mark_removed_only_lines_on_left() {
     assert_eq!(left[0].line, 11);
     assert_eq!(left[0].kind, OverlayKind::DiffDeletion);
     assert!(right.is_empty());
+}
+
+#[test]
+fn text_overlays_pair_changed_blocks_as_modifications() {
+    let left = "alpha\nbeta\ngamma\n";
+    let right = "alpha\nbeta changed\ngamma\n";
+
+    let (left_overlays, right_overlays) = build_review_editor_overlays_from_texts(left, right);
+
+    assert_eq!(left_overlays.len(), 1);
+    assert_eq!(left_overlays[0].line, 1);
+    assert_eq!(left_overlays[0].kind, OverlayKind::DiffModification);
+    assert_eq!(right_overlays.len(), 1);
+    assert_eq!(right_overlays[0].line, 1);
+    assert_eq!(right_overlays[0].kind, OverlayKind::DiffModification);
+}
+
+#[test]
+fn text_overlays_mark_insertions_and_deletions() {
+    let left = "alpha\nbeta\ngamma\n";
+    let right = "alpha\ninserted\nbeta\n";
+
+    let (left_overlays, right_overlays) = build_review_editor_overlays_from_texts(left, right);
+
+    assert_eq!(left_overlays.len(), 1);
+    assert_eq!(left_overlays[0].line, 2);
+    assert_eq!(left_overlays[0].kind, OverlayKind::DiffDeletion);
+    assert_eq!(right_overlays.len(), 1);
+    assert_eq!(right_overlays[0].line, 1);
+    assert_eq!(right_overlays[0].kind, OverlayKind::DiffAddition);
 }

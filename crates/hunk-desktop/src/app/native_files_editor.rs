@@ -249,6 +249,37 @@ impl FilesEditor {
         Ok(())
     }
 
+    pub(crate) fn sync_document(
+        &mut self,
+        path: &Path,
+        contents: &str,
+        mark_saved: bool,
+    ) -> Result<()> {
+        if self.active_path.as_deref() != Some(path) {
+            self.open_document(path, contents)?;
+            if mark_saved {
+                self.mark_saved();
+            }
+            return Ok(());
+        }
+
+        let state = self.current_view_state();
+        self.editor
+            .apply(EditorCommand::ReplaceAll(contents.to_string()));
+        self.pointer_selection = None;
+        self.fold_candidates.clear();
+        self.clear_syntax_highlights();
+        self.visible_highlight_cache = None;
+        self.row_syntax_cache = None;
+        self.semantic_highlight_revision = self.semantic_highlight_revision.saturating_add(1);
+        self.refresh_syntax_state()?;
+        self.restore_view_state_snapshot(state);
+        if mark_saved {
+            self.mark_saved();
+        }
+        Ok(())
+    }
+
     pub(crate) fn clear(&mut self) {
         self.active_path = None;
         self.view_state_by_path.clear();
@@ -524,36 +555,61 @@ impl FilesEditor {
         let Some(path) = self.active_path.clone() else {
             return;
         };
-        self.view_state_by_path.insert(
-            path,
-            FilesEditorViewState {
-                selection: self.editor.selection(),
-                viewport: self.editor.viewport(),
-                folded_regions: self.editor.folded_regions().to_vec(),
-                soft_wrap: self.soft_wrap_enabled(),
-                show_whitespace: self.show_whitespace(),
-            },
-        );
+        self.view_state_by_path
+            .insert(path, self.current_view_state());
     }
 
     fn restore_view_state(&mut self, path: &Path) {
         let Some(state) = self.view_state_by_path.get(path).cloned() else {
             return;
         };
-        self.editor
-            .apply(EditorCommand::SetViewport(state.viewport));
-        self.editor
-            .apply(EditorCommand::SetSelection(state.selection));
+        self.restore_view_state_snapshot(state);
+    }
+
+    fn current_view_state(&self) -> FilesEditorViewState {
+        FilesEditorViewState {
+            selection: self.editor.selection(),
+            viewport: self.editor.viewport(),
+            folded_regions: self.editor.folded_regions().to_vec(),
+            soft_wrap: self.soft_wrap_enabled(),
+            show_whitespace: self.show_whitespace(),
+        }
+    }
+
+    fn restore_view_state_snapshot(&mut self, state: FilesEditorViewState) {
+        let snapshot = self.editor.buffer().snapshot();
+        let selection = Selection::new(
+            clamp_text_position(&snapshot, state.selection.anchor),
+            clamp_text_position(&snapshot, state.selection.head),
+        );
+        self.editor.apply(EditorCommand::SetSelection(selection));
         self.editor
             .apply(EditorCommand::SetShowWhitespace(state.show_whitespace));
         self.editor
             .apply(EditorCommand::SetWrapWidth(state.soft_wrap.then_some(80)));
+
+        let max_line = snapshot.line_count().saturating_sub(1);
         for region in state.folded_regions {
-            self.editor.apply(EditorCommand::FoldLines {
-                start_line: region.start_line,
-                end_line: region.end_line,
-            });
+            let start_line = region.start_line.min(max_line);
+            let end_line = region.end_line.min(max_line);
+            if end_line > start_line {
+                self.editor.apply(EditorCommand::FoldLines {
+                    start_line,
+                    end_line,
+                });
+            }
         }
+
+        let display_snapshot = self.editor.display_snapshot();
+        let visible_row_count = state.viewport.visible_row_count.max(1);
+        let max_first_row = display_snapshot
+            .total_display_rows
+            .saturating_sub(visible_row_count);
+        self.editor.apply(EditorCommand::SetViewport(Viewport {
+            first_visible_row: state.viewport.first_visible_row.min(max_first_row),
+            visible_row_count,
+            horizontal_offset: state.viewport.horizontal_offset,
+        }));
     }
 
     #[cfg(test)]
@@ -977,6 +1033,30 @@ impl FilesEditor {
             .as_ref()
             .map(|cache| cache.byte_range.clone())
     }
+}
+
+fn clamp_text_position(snapshot: &hunk_text::TextSnapshot, position: TextPosition) -> TextPosition {
+    let max_line = snapshot.line_count().saturating_sub(1);
+    let line = position.line.min(max_line);
+    let max_column = line_char_len(snapshot, line);
+    TextPosition::new(line, position.column.min(max_column))
+}
+
+fn line_char_len(snapshot: &hunk_text::TextSnapshot, line: usize) -> usize {
+    let Ok(start) = snapshot.line_to_byte(line) else {
+        return 0;
+    };
+    let end = if line + 1 < snapshot.line_count() {
+        snapshot
+            .line_to_byte(line + 1)
+            .unwrap_or(snapshot.byte_len())
+    } else {
+        snapshot.byte_len()
+    };
+    let Ok(text) = snapshot.slice(start..end) else {
+        return 0;
+    };
+    text.trim_end_matches(['\n', '\r']).chars().count()
 }
 
 fn default_soft_wrap_for_path(path: &Path) -> bool {

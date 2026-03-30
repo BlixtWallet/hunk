@@ -298,6 +298,69 @@ fn reopening_same_file_restores_fold_and_view_toggles() {
 }
 
 #[test]
+fn syncing_same_file_preserves_selection_and_viewport() {
+    let mut editor = FilesEditor::new();
+    let path = PathBuf::from("example.rs");
+    let original = "one\ntwo\nthree\nfour\nfive\nsix\n";
+    editor
+        .open_document(path.as_path(), original)
+        .expect("document should open");
+    editor.set_selection_for_test(Selection::new(
+        TextPosition::new(4, 1),
+        TextPosition::new(4, 3),
+    ));
+    editor.set_viewport_for_test(Viewport {
+        first_visible_row: 3,
+        visible_row_count: 4,
+        horizontal_offset: 0,
+    });
+
+    editor
+        .sync_document(
+            path.as_path(),
+            "one\ntwo updated\nthree\nfour\nfive\nsix\n",
+            true,
+        )
+        .expect("document should sync");
+
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::new(TextPosition::new(4, 1), TextPosition::new(4, 3))
+    );
+    assert_eq!(editor.viewport_for_test().first_visible_row, 3);
+    assert!(!editor.is_dirty());
+}
+
+#[test]
+fn syncing_same_file_clamps_selection_when_new_text_is_shorter() {
+    let mut editor = FilesEditor::new();
+    let path = PathBuf::from("example.rs");
+    editor
+        .open_document(path.as_path(), "one\ntwo\nthree\nfour\n")
+        .expect("document should open");
+    editor.set_selection_for_test(Selection::new(
+        TextPosition::new(3, 2),
+        TextPosition::new(3, 4),
+    ));
+    editor.set_viewport_for_test(Viewport {
+        first_visible_row: 3,
+        visible_row_count: 4,
+        horizontal_offset: 0,
+    });
+
+    editor
+        .sync_document(path.as_path(), "short\nend\n", true)
+        .expect("document should sync");
+
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::new(TextPosition::new(2, 0), TextPosition::new(2, 0))
+    );
+    assert_eq!(editor.viewport_for_test().first_visible_row, 0);
+    assert!(!editor.is_dirty());
+}
+
+#[test]
 fn language_intelligence_requests_and_diagnostics_flow_through_native_editor() {
     let mut editor = FilesEditor::new();
     let path = PathBuf::from("example.rs");

@@ -37,9 +37,22 @@ impl DiffViewer {
         self.review_editor_session.right_editor.borrow_mut().clear();
     }
 
-    fn review_editor_rows_for_path(&self, path: &str) -> Option<&[SideBySideRow]> {
-        let range = self.file_row_ranges.iter().find(|range| range.path == path)?;
-        self.diff_rows.get(range.start_row..range.end_row)
+    fn refresh_review_editor_live_overlays(&mut self) {
+        let Some(left_text) = self.review_editor_session.left_editor.borrow().current_text() else {
+            return;
+        };
+        let Some(right_text) = self.review_editor_session.right_editor.borrow().current_text() else {
+            return;
+        };
+        let overlays = build_review_editor_overlays_from_texts(left_text.as_str(), right_text.as_str());
+        self.review_editor_session
+            .left_editor
+            .borrow_mut()
+            .set_manual_overlays(overlays.0);
+        self.review_editor_session
+            .right_editor
+            .borrow_mut()
+            .set_manual_overlays(overlays.1);
     }
 
     fn sync_review_editor_viewports_from_right(&mut self) {
@@ -105,7 +118,7 @@ impl DiffViewer {
                             this.review_editor_session.last_saved_text = Some(saved_text.clone());
                             this.review_editor_session.right_editor.borrow_mut().mark_saved();
                             this.git_status_message = Some(format!("Saved {}", status_path));
-                            this.request_snapshot_refresh(cx);
+                            this.request_snapshot_refresh_workflow_only(false, cx);
                         }
                         Err(err) => {
                             this.git_status_message =
@@ -133,6 +146,7 @@ impl DiffViewer {
         };
         cx.write_to_clipboard(ClipboardItem::new_string(text));
         self.sync_review_editor_viewports_from_right();
+        self.refresh_review_editor_live_overlays();
         self.schedule_review_editor_save(cx);
         cx.notify();
         true
@@ -151,6 +165,7 @@ impl DiffViewer {
             return false;
         }
         self.sync_review_editor_viewports_from_right();
+        self.refresh_review_editor_live_overlays();
         self.schedule_review_editor_save(cx);
         cx.notify();
         true
@@ -170,6 +185,7 @@ impl DiffViewer {
             return false;
         }
         self.sync_review_editor_viewports_from_right();
+        self.refresh_review_editor_live_overlays();
         self.schedule_review_editor_save(cx);
         cx.notify();
         true
@@ -255,37 +271,37 @@ impl DiffViewer {
                         Ok(document) => {
                             let path = document.path.clone();
                             let absolute_path = project_root.join(path.as_str());
-                            let overlays = this
-                                .review_editor_rows_for_path(path.as_str())
-                                .map(build_review_editor_overlays)
-                                .unwrap_or_default();
+                            let preserve_dirty_right = this.review_editor_session.path.as_deref()
+                                == Some(path.as_str())
+                                && this.review_editor_session.right_editor.borrow().is_dirty();
                             let left_result = this
                                 .review_editor_session
                                 .left_editor
                                 .borrow_mut()
-                                .open_document(&absolute_path, document.left_text.as_str());
-                            let right_result = this
-                                .review_editor_session
-                                .right_editor
-                                .borrow_mut()
-                                .open_document(&absolute_path, document.right_text.as_str());
+                                .sync_document(&absolute_path, document.left_text.as_str(), true);
+                            let right_result = if preserve_dirty_right {
+                                Ok(())
+                            } else {
+                                this.review_editor_session
+                                    .right_editor
+                                    .borrow_mut()
+                                    .sync_document(&absolute_path, document.right_text.as_str(), true)
+                            };
 
                             match left_result.and(right_result) {
                                 Ok(()) => {
                                     this.review_editor_session.left_present = document.left_present;
-                                    this.review_editor_session.right_present = document.right_present;
-                                    this.review_editor_session.save_loading = false;
+                                    this.review_editor_session.right_present =
+                                        document.right_present || preserve_dirty_right;
+                                    if !preserve_dirty_right {
+                                        this.review_editor_session.save_loading = false;
+                                    }
                                     this.review_editor_session.error = None;
-                                    this.review_editor_session.last_saved_text =
-                                        Some(document.right_text.clone());
-                                    this.review_editor_session
-                                        .left_editor
-                                        .borrow_mut()
-                                        .set_manual_overlays(overlays.0);
-                                    this.review_editor_session
-                                        .right_editor
-                                        .borrow_mut()
-                                        .set_manual_overlays(overlays.1);
+                                    if !preserve_dirty_right {
+                                        this.review_editor_session.last_saved_text =
+                                            Some(document.right_text.clone());
+                                    }
+                                    this.refresh_review_editor_live_overlays();
                                     this.sync_review_editor_viewports_from_right();
                                 }
                                 Err(err) => {

@@ -2,9 +2,29 @@
 
 ## Status
 
-Proposed follow-on plan for the next stage of diff-viewer work.
+Active implementation plan. Phases 1 through 4 are complete. Phase 5 is the next execution phase.
 
 This document extends the work in `docs/DIFF_VIEW_QUALITY_TODO.md`. That roadmap improved the current custom diff renderer substantially, but it intentionally stopped short of editor-backed diffing and inline editing. This plan covers the work required to reach Zed-level quality.
+
+## Progress Snapshot
+
+As of 2026-03-29:
+
+- Phase 1 is complete:
+  - Review refreshes no longer replace the live diff surface with loading rows.
+  - Viewport restoration uses stable row anchoring and explicit navigation intent.
+- Phase 2 is complete:
+  - AI handoff opens Review on `workspace HEAD -> workspace working tree`.
+  - Branch review remains available as an explicit compare choice.
+- Phase 3 is complete:
+  - Syntax highlighting is primed for the initially visible diff window instead of waiting for scroll-driven prefetch.
+- Phase 4 is complete:
+  - Review now uses the editor-backed surface by default.
+  - The legacy custom row-list Review renderer was removed instead of kept behind a flag.
+- Phase 5 is next:
+  - finish editing parity work on top of the new editor-backed Review surface
+  - harden diff recomputation after edits
+  - restore comment affordances and anchoring on the new surface
 
 ## Goal
 
@@ -32,10 +52,10 @@ Build a diff viewer that matches the quality bar of Zed's diff experience for:
 
 ## Current Gaps
 
-- The current Review refresh path replaces the live diff with temporary loading rows. That destroys scroll state and causes visible jumps during agent-driven edits.
-- The current AI-to-Review handoff intentionally chooses `base branch -> workspace target` compare sources, which is wrong for the "show me the current working tree only" flow after earlier branch commits were already pushed.
-- The current diff renderer falls back to plain segments until async row-segment prefetch catches up, so syntax highlighting can appear late.
-- The current diff surface is a custom row list, not an editor-backed view. That makes inline editing, durable viewport anchoring, and syntax correctness harder than they should be.
+- The editor-backed Review surface is live, but diff recomputation after in-place edits still needs to be hardened so cursor, selection, and pane alignment remain stable.
+- Review comments still need a first-class editor-backed anchoring model instead of assumptions inherited from the old row-based surface.
+- Multi-file Review parity is incomplete. The new surface needs stronger file-to-file and hunk-to-hunk navigation semantics.
+- Phase 0 instrumentation is still incomplete, so performance work is harder to evaluate than it should be.
 
 ## Architectural Decision
 
@@ -86,7 +106,7 @@ A phase is only complete when all of the following are true:
   - workspace target working tree
   - workspace target HEAD snapshot
 - Review comments stay enabled only on the default review pair for v1.
-- The legacy custom row renderer can either be deleted or kept only as a fallback until the new surface has parity.
+- The legacy custom row renderer has been removed. Future work should improve the editor-backed path directly instead of adding fallback complexity.
 
 ## Phase 0: Contract, Baseline, and Instrumentation
 
@@ -128,18 +148,20 @@ A phase is only complete when all of the following are true:
 
 ## Phase 1: Stabilize The Current Review Surface
 
+Status: Complete
+
 ### TODO
 
-- [ ] Stop replacing the live diff with temporary loading rows for normal refreshes.
-- [ ] Keep the existing diff visible while refresh is in flight and render loading state in chrome or overlay only.
-- [ ] Introduce a `DiffViewportAnchor` that stores:
+- [x] Stop replacing the live diff with temporary loading rows for normal refreshes.
+- [x] Keep the existing diff visible while refresh is in flight and render loading state in chrome or overlay only.
+- [x] Introduce a `DiffViewportAnchor` that stores:
   - stable row id
   - side if needed
   - intra-row pixel offset
-- [ ] Restore viewport from stable anchors after refresh instead of relying only on `ListState.logical_scroll_top()`.
-- [ ] Replace unconditional `scroll_selected_after_reload = true` behavior with an explicit navigation intent model.
-- [ ] Only auto-scroll when the user explicitly changed file/hunk focus or when there is no prior viewport to preserve.
-- [ ] Preserve selected file and visible-file banner state across refresh.
+- [x] Restore viewport from stable anchors after refresh instead of relying only on `ListState.logical_scroll_top()`.
+- [x] Replace unconditional `scroll_selected_after_reload = true` behavior with an explicit navigation intent model.
+- [x] Only auto-scroll when the user explicitly changed file/hunk focus or when there is no prior viewport to preserve.
+- [x] Preserve selected file and visible-file banner state across refresh.
 
 ### Likely Files
 
@@ -157,18 +179,20 @@ A phase is only complete when all of the following are true:
 
 ## Phase 2: Fix Review Compare Semantics And AI Handoff
 
+Status: Complete
+
 ### TODO
 
-- [ ] Extend `crates/hunk-git` compare-source modeling to represent workspace HEAD snapshots separately from workspace working trees.
-- [ ] Replace the current implicit "base branch vs workspace target" assumption for AI review entry.
-- [ ] Make AI inline diff handoff open:
+- [x] Extend `crates/hunk-git` compare-source modeling to represent workspace HEAD snapshots separately from workspace working trees.
+- [x] Replace the current implicit "base branch vs workspace target" assumption for AI review entry.
+- [x] Make AI inline diff handoff open:
   - `left = workspace target HEAD snapshot`
   - `right = workspace target working tree`
-- [ ] Keep an explicit user action for branch review:
+- [x] Keep an explicit user action for branch review:
   - `left = resolved base branch`
   - `right = workspace target`
-- [ ] Update persisted compare selection behavior so manual branch-review choices do not override the AI worktree-review default for the next AI handoff.
-- [ ] Audit Review comments gating to ensure the default comment-enabled pair still makes sense after the new source types are added.
+- [x] Update persisted compare selection behavior so manual branch-review choices do not override the AI worktree-review default for the next AI handoff.
+- [x] Audit Review comments gating to ensure the default comment-enabled pair still makes sense after the new source types are added.
 
 ### Likely Files
 
@@ -185,14 +209,16 @@ A phase is only complete when all of the following are true:
 
 ## Phase 3: Fix First-Paint Syntax Highlighting In The Current Renderer
 
+Status: Complete
+
 ### TODO
 
-- [ ] Prime visible-row segment caches immediately after diff load.
-- [ ] Compute at least `SyntaxOnly` segments for the initially visible window before the user scrolls.
-- [ ] Keep async upgrade to `Detailed` segments for idle time or nearby rows.
-- [ ] Remove any dependency on FPS idle sampling as the first opportunity for syntax paint.
-- [ ] Add a bounded overscan strategy for visible highlight computation, similar to the file editor.
-- [ ] Ensure highlight invalidation is tied to stable diff revisions, not just scroll movement.
+- [x] Prime visible-row segment caches immediately after diff load.
+- [x] Compute at least `SyntaxOnly` segments for the initially visible window before the user scrolls.
+- [x] Keep async upgrade to `Detailed` segments for idle time or nearby rows.
+- [x] Remove any dependency on FPS idle sampling as the first opportunity for syntax paint.
+- [x] Add a bounded overscan strategy for visible highlight computation, similar to the file editor.
+- [x] Ensure highlight invalidation is tied to stable diff revisions, not just scroll movement.
 
 ### Likely Files
 
@@ -200,7 +226,7 @@ A phase is only complete when all of the following are true:
 - `crates/hunk-desktop/src/app/controller/fps.rs`
 - `crates/hunk-desktop/src/app/data.rs`
 - `crates/hunk-desktop/src/app/data_segments.rs`
-- `crates/hunk-desktop/src/app/render/diff_rows.rs`
+- `crates/hunk-desktop/src/app/diff_segment_prefetch.rs`
 
 ### Acceptance Criteria
 
@@ -209,28 +235,30 @@ A phase is only complete when all of the following are true:
 
 ## Phase 4: Editor-Backed Diff Foundation
 
+Status: Complete
+
 ### TODO
 
-- [ ] Define the editor-backed Review surface abstraction in desktop code.
-- [ ] Decide the smallest viable ownership boundary:
+- [x] Define the editor-backed Review surface abstraction in desktop code.
+- [x] Decide the smallest viable ownership boundary:
   - keep the first implementation in `crates/hunk-desktop`
   - extract shared logic later only if duplication appears
-- [ ] Build a diff document model that maps compare snapshots into editor-friendly excerpts instead of only `SideBySideRow`s.
-- [ ] Represent per-file diff state with:
+- [x] Build a diff document model that maps compare snapshots into editor-friendly excerpts instead of only `SideBySideRow`s.
+- [x] Represent per-file diff state with:
   - left/base text
   - right/working text
   - hunk ranges
   - file identity and status
-- [ ] Reuse `hunk_language` highlighting and `hunk_editor` display state rather than inventing a second editing pipeline.
+- [x] Reuse `hunk_language` highlighting and `hunk_editor` display state rather than inventing a second editing pipeline.
 - [ ] Define how Review comments anchor to editor-backed hunks and lines.
-- [ ] Define migration strategy:
-  - feature flag or parallel implementation path
-  - safe fallback to legacy renderer during rollout
+- [x] Define migration strategy:
+  - direct cutover to the editor-backed Review surface
+  - remove the legacy renderer instead of carrying a fallback path
 
 ### Likely Files
 
 - `crates/hunk-desktop/src/app/native_files_editor.rs`
-- `crates/hunk-desktop/src/app/render/file_editor_surface.rs`
+- `crates/hunk-desktop/src/app/render/review_editor_surface.rs`
 - `crates/hunk-editor/src/lib.rs`
 - `crates/hunk-text/src/*`
 - `crates/hunk-git/src/compare.rs`
@@ -239,35 +267,44 @@ A phase is only complete when all of the following are true:
 
 - The codebase has a clear editor-backed Review abstraction that can host diff excerpts without depending on the legacy row list.
 
-## Phase 5: Editable Single-File Diff MVP
+## Phase 5: Editing Parity, Recompute Stability, And Comment Affordances
+
+Status: Next phase
 
 ### TODO
 
-- [ ] Implement a single-file editor-backed diff view with:
+- [x] Implement an editor-backed diff view with:
   - read-only left side
   - editable right side
   - synchronized vertical scroll
   - diff overlays
   - syntax highlighting on both sides
-- [ ] Recalculate diff hunks after right-side edits with debouncing.
-- [ ] Preserve cursor and viewport during diff recomputation.
-- [ ] Ensure save/reload behavior respects the active workspace target.
-- [ ] Add comment affordances to the editor-backed hunk surface.
+- [ ] Audit and harden the diff recomputation lifecycle after right-side edits.
+- [ ] Recalculate diff hunks after right-side edits with debouncing that coalesces bursts of typing.
+- [ ] Preserve cursor, selection, and viewport anchors during diff recomputation, not just during external refresh.
+- [ ] Keep left/right pane alignment stable when edits shift hunk boundaries or file height.
+- [ ] Verify save/reload behavior against:
+  - active workspace target switches
+  - branch switches
+  - external file changes while Review is visible
+- [ ] Add comment affordances and durable editor-line anchoring to the editor-backed hunk surface.
 - [ ] Keep diagnostics disabled unless explicitly reintroduced later.
+- [ ] Add regression tests for editor-backed editing, recomputation, and comment-anchor stability.
 
 ### Likely Files
 
 - `crates/hunk-desktop/src/app/native_files_editor.rs`
-- `crates/hunk-desktop/src/app/render/file_editor_surface.rs`
-- `crates/hunk-desktop/src/app/controller/editor.rs`
+- `crates/hunk-desktop/src/app/controller/review_editor.rs`
+- `crates/hunk-desktop/src/app/render/review_editor_surface.rs`
 - `crates/hunk-desktop/src/app/controller/review_compare.rs`
 - `crates/hunk-desktop/src/app/render/diff.rs`
 
 ### Acceptance Criteria
 
-- A modified file in Review can be edited inline.
-- Diff overlays and syntax highlighting stay correct after edits.
-- Refreshing the diff does not lose cursor or viewport unnecessarily.
+- A modified file in Review can be edited inline without losing cursor or viewport during normal typing.
+- Diff overlays and syntax highlighting stay correct after debounced recomputation.
+- Comment affordances work on the editor-backed surface with stable line anchoring.
+- External refreshes and local edits share one consistent state model instead of fighting each other.
 
 ## Phase 6: Multi-File Review Workspace
 
@@ -304,7 +341,7 @@ A phase is only complete when all of the following are true:
 
 - [ ] Profile large-diff behavior after the editor-backed migration.
 - [ ] Verify no interactive path exceeds the frame budget in ordinary scrolling and navigation.
-- [ ] Remove legacy row-renderer code once parity is reached, or explicitly mark it as fallback-only.
+- [x] Remove legacy row-renderer code once parity is reached.
 - [ ] Add regression tests for:
   - refresh while visible
   - AI handoff semantics
