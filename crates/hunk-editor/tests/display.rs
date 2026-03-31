@@ -1,5 +1,6 @@
 use hunk_editor::{
-    DisplayRowKind, EditorCommand, EditorState, OverlayDescriptor, OverlayKind, Viewport,
+    DisplayRowKind, EditorCommand, EditorState, OverlayDescriptor, OverlayKind, SpacerDescriptor,
+    Viewport,
 };
 use hunk_text::{BufferId, TextBuffer, TextPosition};
 
@@ -225,4 +226,60 @@ fn search_query_changes_invalidate_cached_display_rows() {
     editor.apply(EditorCommand::SetSearchQuery(Some("alpha".to_string())));
     let after = editor.display_snapshot();
     assert_eq!(after.visible_rows[0].search_highlights.len(), 2);
+}
+
+#[test]
+fn spacer_rows_are_inserted_before_lines_and_at_eof() {
+    let mut editor = sample_editor("aaa\nbbb\nccc");
+    editor.apply(EditorCommand::SetViewport(Viewport {
+        first_visible_row: 0,
+        visible_row_count: 10,
+        horizontal_offset: 0,
+    }));
+    editor.apply(EditorCommand::SetSpacers(vec![
+        SpacerDescriptor {
+            before_line: 1,
+            row_count: 2,
+        },
+        SpacerDescriptor {
+            before_line: 3,
+            row_count: 1,
+        },
+    ]));
+
+    let display = editor.display_snapshot();
+    assert_eq!(display.total_display_rows, 6);
+    assert_eq!(display.visible_rows[0].text, "aaa");
+    assert!(matches!(
+        display.visible_rows[1].kind,
+        DisplayRowKind::Spacer
+    ));
+    assert!(matches!(
+        display.visible_rows[2].kind,
+        DisplayRowKind::Spacer
+    ));
+    assert_eq!(display.visible_rows[3].text, "bbb");
+    assert_eq!(display.visible_rows[4].text, "ccc");
+    assert!(matches!(
+        display.visible_rows[5].kind,
+        DisplayRowKind::Spacer
+    ));
+}
+
+#[test]
+fn move_vertical_skips_spacer_rows() {
+    let mut editor = sample_editor("aaa\nbbb\nccc");
+    editor.apply(EditorCommand::SetSpacers(vec![SpacerDescriptor {
+        before_line: 1,
+        row_count: 2,
+    }]));
+    editor.apply(EditorCommand::SetSelection(hunk_text::Selection::caret(
+        TextPosition::new(0, 1),
+    )));
+
+    editor.apply(EditorCommand::MoveDown);
+    assert_eq!(editor.status_snapshot().cursor_line, 2);
+
+    editor.apply(EditorCommand::MoveUp);
+    assert_eq!(editor.status_snapshot().cursor_line, 1);
 }

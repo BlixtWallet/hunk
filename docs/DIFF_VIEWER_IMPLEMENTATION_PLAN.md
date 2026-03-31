@@ -28,6 +28,8 @@ As of 2026-03-30:
 - Phase 5 is complete:
   - Review now recomputes a live presentation model from left/right text instead of relying only on full-file overlays.
   - Unchanged regions are folded down to placeholder rows around active diff hunks, so the selected-file Review surface behaves like a diff excerpt view instead of mirroring the entire file on both sides.
+  - Zed-style companion spacer rows are inserted on the opposite pane for additions and deletions, so unchanged lines stay vertically paired across the split.
+  - Review line pairing now uses a hunk-stable diff pass instead of a naive full-file LCS, so repetitive Rust blocks do not smear separate edits into one oversized excerpt.
   - Inline comments remain editor-backed and anchored from live text.
   - Diff recomputation after editing is debounced and coalesced instead of running on every keystroke.
   - Left/right pane alignment follows mapped source lines instead of raw display-row coincidence.
@@ -301,6 +303,7 @@ Status: Complete
   - external file changes while Review is visible
 - [x] Add comment affordances and durable editor-line anchoring to the editor-backed hunk surface.
 - [x] Collapse unchanged regions to editor fold placeholders around live diff hunks so the selected Review file renders as excerpts instead of two full-file mirrors.
+- [x] Insert companion spacer rows for opposite-side additions and deletions so unchanged lines remain vertically aligned across the split, matching Zed’s diff layout model.
 - [x] Keep diagnostics disabled unless explicitly reintroduced later.
 - [x] Add regression tests for editor-backed editing, recomputation, and comment-anchor stability.
 

@@ -354,7 +354,7 @@ pub(super) fn paint_line_number(
     layout: &EditorLayout,
     params: LineNumberPaintParams,
 ) {
-    let label = if row.start_column == 0 {
+    let label = if row.start_column == 0 && !matches!(row.kind, DisplayRowKind::Spacer) {
         format!("{}", row.source_line + 1)
     } else {
         String::new()
@@ -397,7 +397,7 @@ pub(super) fn paint_fold_marker(
     foldable: bool,
     folded: bool,
 ) {
-    if row.start_column != 0 || !foldable {
+    if row.start_column != 0 || !foldable || matches!(row.kind, DisplayRowKind::Spacer) {
         return;
     }
 
@@ -427,6 +427,10 @@ pub(super) fn selection_range_for_row(
     row: &DisplayRow,
     selection: hunk_text::Selection,
 ) -> Option<Range<usize>> {
+    if matches!(row.kind, DisplayRowKind::Spacer) {
+        return None;
+    }
+
     let selection = selection.range();
     if selection.is_empty()
         || row.source_line < selection.start.line
@@ -601,6 +605,9 @@ pub(super) fn paint_scope_highlight(
     let Some(scope) = active_scope else {
         return;
     };
+    if matches!(row.kind, DisplayRowKind::Spacer) {
+        return;
+    }
     if row.source_line < scope.start_line || row.source_line > scope.end_line {
         return;
     }
@@ -625,6 +632,9 @@ pub(super) fn paint_matching_brackets(
     let Some((left, right)) = matching_brackets else {
         return;
     };
+    if matches!(row.kind, DisplayRowKind::Spacer) {
+        return;
+    }
 
     for position in [left, right] {
         if position.line != row.source_line
@@ -653,7 +663,8 @@ pub(super) fn paint_cursor(
     color: Hsla,
 ) {
     if let Some(row) = rows.iter().find(|row| {
-        row.source_line == caret.line
+        !matches!(row.kind, DisplayRowKind::Spacer)
+            && row.source_line == caret.line
             && row.raw_start_column <= caret.column
             && caret.column <= row.raw_end_column
     }) {

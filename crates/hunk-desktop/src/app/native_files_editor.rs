@@ -16,6 +16,8 @@ use hunk_language::{
 use hunk_text::{BufferId, Selection, TextBuffer, TextPosition};
 use tracing::error;
 
+#[path = "native_files_editor_diff.rs"]
+mod diff_impl;
 #[path = "native_files_editor_element.rs"]
 mod element_impl;
 #[path = "native_files_editor_input.rs"]

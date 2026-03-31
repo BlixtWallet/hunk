@@ -1,7 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use hunk_domain::diff::{DiffCellKind, DiffRowKind, SideBySideRow};
-use hunk_editor::{FoldRegion, OverlayDescriptor, OverlayKind};
+use hunk_editor::{FoldRegion, OverlayDescriptor, OverlayKind, SpacerDescriptor};
 
 const MAX_LINE_LCS_MATRIX_CELLS: usize = 200_000;
 
@@ -11,6 +11,8 @@ pub(crate) struct ReviewEditorPresentation {
     pub right_overlays: Vec<OverlayDescriptor>,
     pub left_folds: Vec<FoldRegion>,
     pub right_folds: Vec<FoldRegion>,
+    pub left_spacers: Vec<SpacerDescriptor>,
+    pub right_spacers: Vec<SpacerDescriptor>,
     pub right_hunk_lines: Vec<usize>,
     pub right_to_left_line_map: Vec<Option<usize>>,
 }
@@ -100,16 +102,13 @@ pub(crate) fn build_review_editor_presentation_from_texts(
     let right_lines = text_lines(right_text);
     let mut left = BTreeMap::new();
     let mut right = BTreeMap::new();
+    let mut left_spacers = BTreeMap::new();
+    let mut right_spacers = BTreeMap::new();
     let mut left_changed_lines = BTreeSet::new();
     let mut right_changed_lines = BTreeSet::new();
     let mut right_to_left_line_map = vec![None; right_lines.len()];
 
-    let matrix_cells = left_lines.len().saturating_mul(right_lines.len());
-    let ops = if matrix_cells <= MAX_LINE_LCS_MATRIX_CELLS {
-        build_line_diff_ops(&left_lines, &right_lines)
-    } else {
-        build_coarse_line_diff_ops(&left_lines, &right_lines)
-    };
+    let ops = build_line_diff_ops(&left_lines, &right_lines);
 
     let mut left_line = 0usize;
     let mut right_line = 0usize;
@@ -160,6 +159,14 @@ pub(crate) fn build_review_editor_presentation_from_texts(
                         right_to_left_line_map[right_ix] = None;
                     }
                 }
+                if deleted_count > inserted_count {
+                    *right_spacers
+                        .entry(right_line + inserted_count)
+                        .or_insert(0) += deleted_count - inserted_count;
+                } else if inserted_count > deleted_count {
+                    *left_spacers.entry(left_line + deleted_count).or_insert(0) +=
+                        inserted_count - deleted_count;
+                }
 
                 left_line = left_line.saturating_add(deleted_count);
                 right_line = right_line.saturating_add(inserted_count);
@@ -178,6 +185,7 @@ pub(crate) fn build_review_editor_presentation_from_texts(
                         right_to_left_line_map[right_ix] = None;
                     }
                 }
+                *left_spacers.entry(left_line).or_insert(0) += inserted_count;
                 right_line = right_line.saturating_add(inserted_count);
             }
         }
@@ -205,6 +213,8 @@ pub(crate) fn build_review_editor_presentation_from_texts(
             context_radius,
             pinned_right_line,
         ),
+        left_spacers: spacers_from_entries(left_spacers),
+        right_spacers: spacers_from_entries(right_spacers),
         right_hunk_lines: right_hunk_lines(&right_changed_lines),
         right_to_left_line_map,
     }
@@ -253,6 +263,17 @@ fn overlays_from_entries(entries: BTreeMap<usize, OverlayKind>) -> Vec<OverlayDe
             line,
             kind,
             message: None,
+        })
+        .collect()
+}
+
+fn spacers_from_entries(entries: BTreeMap<usize, usize>) -> Vec<SpacerDescriptor> {
+    entries
+        .into_iter()
+        .filter(|(_, row_count)| *row_count > 0)
+        .map(|(before_line, row_count)| SpacerDescriptor {
+            before_line,
+            row_count,
         })
         .collect()
 }
@@ -404,6 +425,47 @@ fn text_lines(text: &str) -> Vec<&str> {
 }
 
 fn build_line_diff_ops(left_lines: &[&str], right_lines: &[&str]) -> Vec<LineDiffOp> {
+    if left_lines.is_empty() {
+        return std::iter::repeat_n(LineDiffOp::Insert, right_lines.len()).collect();
+    }
+    if right_lines.is_empty() {
+        return std::iter::repeat_n(LineDiffOp::Delete, left_lines.len()).collect();
+    }
+
+    let anchors = patience_anchor_pairs(left_lines, right_lines);
+    if anchors.is_empty() {
+        return build_fallback_line_diff_ops(left_lines, right_lines);
+    }
+
+    let mut ops = Vec::new();
+    let mut left_start = 0usize;
+    let mut right_start = 0usize;
+    for (left_anchor, right_anchor) in anchors {
+        ops.extend(build_line_diff_ops(
+            &left_lines[left_start..left_anchor],
+            &right_lines[right_start..right_anchor],
+        ));
+        ops.push(LineDiffOp::Equal);
+        left_start = left_anchor.saturating_add(1);
+        right_start = right_anchor.saturating_add(1);
+    }
+    ops.extend(build_line_diff_ops(
+        &left_lines[left_start..],
+        &right_lines[right_start..],
+    ));
+    ops
+}
+
+fn build_fallback_line_diff_ops(left_lines: &[&str], right_lines: &[&str]) -> Vec<LineDiffOp> {
+    let matrix_cells = left_lines.len().saturating_mul(right_lines.len());
+    if matrix_cells <= MAX_LINE_LCS_MATRIX_CELLS {
+        build_lcs_line_diff_ops(left_lines, right_lines)
+    } else {
+        build_coarse_line_diff_ops(left_lines, right_lines)
+    }
+}
+
+fn build_lcs_line_diff_ops(left_lines: &[&str], right_lines: &[&str]) -> Vec<LineDiffOp> {
     let left_len = left_lines.len();
     let right_len = right_lines.len();
     let mut lcs = vec![0usize; (left_len + 1).saturating_mul(right_len + 1)];
@@ -455,6 +517,72 @@ fn build_line_diff_ops(left_lines: &[&str], right_lines: &[&str]) -> Vec<LineDif
     ops
 }
 
+fn patience_anchor_pairs(left_lines: &[&str], right_lines: &[&str]) -> Vec<(usize, usize)> {
+    let left_unique = unique_line_indices(left_lines);
+    let right_unique = unique_line_indices(right_lines);
+    let pairs = left_lines
+        .iter()
+        .enumerate()
+        .filter_map(|(left_ix, line)| {
+            (left_unique.get(line) == Some(&left_ix))
+                .then_some(
+                    right_unique
+                        .get(line)
+                        .copied()
+                        .map(|right_ix| (left_ix, right_ix)),
+                )
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    longest_increasing_right_sequence(&pairs)
+}
+
+fn unique_line_indices<'a>(lines: &[&'a str]) -> HashMap<&'a str, usize> {
+    let mut counts = HashMap::new();
+    for (ix, line) in lines.iter().copied().enumerate() {
+        counts
+            .entry(line)
+            .and_modify(|(count, _)| *count += 1)
+            .or_insert((1usize, ix));
+    }
+
+    counts
+        .into_iter()
+        .filter_map(|(line, (count, ix))| (count == 1).then_some((line, ix)))
+        .collect()
+}
+
+fn longest_increasing_right_sequence(pairs: &[(usize, usize)]) -> Vec<(usize, usize)> {
+    if pairs.is_empty() {
+        return Vec::new();
+    }
+
+    let mut tails = Vec::<usize>::new();
+    let mut previous = vec![None; pairs.len()];
+    for (pair_ix, &(_, right_ix)) in pairs.iter().enumerate() {
+        let tail_ix = tails
+            .binary_search_by_key(&right_ix, |tail| pairs[*tail].1)
+            .unwrap_or_else(|ix| ix);
+        if tail_ix > 0 {
+            previous[pair_ix] = tails.get(tail_ix - 1).copied();
+        }
+        if tail_ix == tails.len() {
+            tails.push(pair_ix);
+        } else {
+            tails[tail_ix] = pair_ix;
+        }
+    }
+
+    let mut lis = Vec::new();
+    let mut cursor = tails.last().copied();
+    while let Some(pair_ix) = cursor {
+        lis.push(pairs[pair_ix]);
+        cursor = previous[pair_ix];
+    }
+    lis.reverse();
+    lis
+}
+
 fn build_coarse_line_diff_ops(left_lines: &[&str], right_lines: &[&str]) -> Vec<LineDiffOp> {
     let mut prefix_len = 0usize;
     while prefix_len < left_lines.len()
@@ -487,12 +615,7 @@ fn build_coarse_line_diff_ops(left_lines: &[&str], right_lines: &[&str]) -> Vec<
 fn build_right_line_entries(left_text: &str, right_text: &str) -> Vec<RightLineEntry> {
     let left_lines = text_lines(left_text);
     let right_lines = text_lines(right_text);
-    let matrix_cells = left_lines.len().saturating_mul(right_lines.len());
-    let ops = if matrix_cells <= MAX_LINE_LCS_MATRIX_CELLS {
-        build_line_diff_ops(&left_lines, &right_lines)
-    } else {
-        build_coarse_line_diff_ops(&left_lines, &right_lines)
-    };
+    let ops = build_line_diff_ops(&left_lines, &right_lines);
 
     let mut entries = Vec::new();
     let mut left_line = 1u32;

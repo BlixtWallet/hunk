@@ -69,6 +69,14 @@ impl DiffViewer {
         self.review_editor_session
             .left_editor
             .borrow_mut()
+            .set_manual_spacers(presentation.left_spacers);
+        self.review_editor_session
+            .right_editor
+            .borrow_mut()
+            .set_manual_spacers(presentation.right_spacers);
+        self.review_editor_session
+            .left_editor
+            .borrow_mut()
             .set_manual_overlays(presentation.left_overlays);
         self.review_editor_session
             .right_editor

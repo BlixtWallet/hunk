@@ -3,7 +3,7 @@
 mod native_files_editor;
 
 use gpui::Keystroke;
-use hunk_editor::{FoldRegion, Viewport};
+use hunk_editor::{FoldRegion, SpacerDescriptor, Viewport};
 use hunk_language::{CompletionTriggerKind, Diagnostic, DiagnosticSeverity};
 use hunk_text::{Selection, TextPosition, TextRange};
 use native_files_editor::FilesEditor;
@@ -251,6 +251,30 @@ fn reopening_same_file_restores_selection_and_viewport() {
         Selection::new(TextPosition::new(4, 1), TextPosition::new(4, 3))
     );
     assert_eq!(editor.viewport_for_test().first_visible_row, 3);
+}
+
+#[test]
+fn manual_spacers_render_blank_alignment_rows() {
+    let mut editor = FilesEditor::new();
+    let path = PathBuf::from("example.rs");
+    editor
+        .open_document(path.as_path(), "aaa\nbbb\nccc\n")
+        .expect("document should open");
+    editor.set_manual_spacers(vec![SpacerDescriptor {
+        before_line: 1,
+        row_count: 2,
+    }]);
+
+    let display = editor.display_snapshot_for_test(40, 10);
+    assert!(matches!(
+        display.visible_rows[1].kind,
+        hunk_editor::DisplayRowKind::Spacer
+    ));
+    assert!(matches!(
+        display.visible_rows[2].kind,
+        hunk_editor::DisplayRowKind::Spacer
+    ));
+    assert_eq!(display.visible_rows[3].text, "bbb");
 }
 
 #[test]

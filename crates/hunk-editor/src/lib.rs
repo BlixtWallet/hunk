@@ -4,8 +4,8 @@ use std::cell::RefCell;
 use std::cmp::min;
 
 use display::{
-    ExpandedLine, VisualRow, build_fold_placeholder, line_text, overlays_for_line,
-    project_search_matches, search_matches_for_line,
+    ExpandedLine, VisualRow, adjacent_navigable_row_index, build_fold_placeholder, line_text,
+    overlays_for_line, project_search_matches, push_spacer_rows, search_matches_for_line,
 };
 use hunk_language::{
     CompletionRequest, DefinitionRequest, Diagnostic, HoverRequest, LanguageId, ParseStatus,
@@ -84,10 +84,17 @@ impl FoldRegion {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpacerDescriptor {
+    pub before_line: usize,
+    pub row_count: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DisplayRowKind {
     Text,
     FoldPlaceholder { hidden_line_count: usize },
+    Spacer,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,6 +152,7 @@ pub enum EditorCommand {
     SetParseStatus(ParseStatus),
     SetSearchQuery(Option<String>),
     SetOverlays(Vec<OverlayDescriptor>),
+    SetSpacers(Vec<SpacerDescriptor>),
     SetDiagnostics(Vec<Diagnostic>),
     SetSemanticTokens(Vec<SemanticToken>),
     FoldLines { start_line: usize, end_line: usize },
@@ -199,6 +207,7 @@ pub struct EditorState {
     folded_regions: Vec<FoldRegion>,
     search_query: Option<String>,
     overlays: Vec<OverlayDescriptor>,
+    spacers: Vec<SpacerDescriptor>,
     diagnostics: Vec<Diagnostic>,
     semantic_tokens: Vec<SemanticToken>,
     pending_hover_request: Option<HoverRequest>,
@@ -233,6 +242,7 @@ impl EditorState {
             folded_regions: Vec::new(),
             search_query: None,
             overlays: Vec::new(),
+            spacers: Vec::new(),
             diagnostics: Vec::new(),
             semantic_tokens: Vec::new(),
             pending_hover_request: None,
@@ -417,6 +427,14 @@ impl EditorState {
             EditorCommand::SetOverlays(overlays) => {
                 if self.overlays != overlays {
                     self.overlays = overlays;
+                    self.invalidate_display_cache();
+                }
+            }
+            EditorCommand::SetSpacers(mut spacers) => {
+                spacers.retain(|spacer| spacer.row_count > 0);
+                spacers.sort_by_key(|spacer| spacer.before_line);
+                if self.spacers != spacers {
+                    self.spacers = spacers;
                     self.invalidate_display_cache();
                 }
             }
@@ -749,23 +767,17 @@ impl EditorState {
             return false;
         };
 
-        let next_row_index = if direction < 0 {
-            current_row_index.checked_sub(1)
-        } else if current_row_index + 1 < rows.len() {
-            Some(current_row_index + 1)
-        } else {
-            None
-        };
-        let Some(next_row_index) = next_row_index else {
-            return false;
-        };
-
         let current_row = &rows[current_row_index];
         let current_display_column =
             self.display_column_for_position(current_row, self.primary_selection.head);
         let target_display_column = self
             .preferred_display_column
             .unwrap_or(current_display_column);
+        let Some(next_row_index) =
+            adjacent_navigable_row_index(&rows, current_row_index, direction)
+        else {
+            return false;
+        };
         let next_row = &rows[next_row_index];
         let target_column = min(
             next_row.end_column.saturating_sub(next_row.start_column),
@@ -787,7 +799,8 @@ impl EditorState {
 
     fn row_index_for_position(&self, rows: &[VisualRow], position: TextPosition) -> Option<usize> {
         rows.iter().position(|row| {
-            row.source_line == position.line
+            !matches!(row.kind, DisplayRowKind::Spacer)
+                && row.source_line == position.line
                 && row.start_column <= row.expanded_line.raw_to_display_column(position.column)
                 && row.expanded_line.raw_to_display_column(position.column) <= row.end_column
         })
@@ -847,7 +860,22 @@ impl EditorState {
         let mut row_index = 0;
         let mut rows = Vec::new();
         let mut line = 0;
+        let mut spacer_ix = 0;
         while line < snapshot.line_count() {
+            while let Some(spacer) = self
+                .spacers
+                .get(spacer_ix)
+                .filter(|spacer| spacer.before_line == line)
+            {
+                push_spacer_rows(
+                    &mut rows,
+                    &mut row_index,
+                    line,
+                    spacer.row_count,
+                    self.tab_width,
+                );
+                spacer_ix += 1;
+            }
             if let Some(region) = self.fold_region_starting_at(line) {
                 let expanded_line = ExpandedLine::from_line(
                     line_text(&snapshot, line),
@@ -936,6 +964,16 @@ impl EditorState {
                 start_column = end_column;
             }
             line += 1;
+        }
+        while let Some(spacer) = self.spacers.get(spacer_ix) {
+            push_spacer_rows(
+                &mut rows,
+                &mut row_index,
+                snapshot.line_count().saturating_sub(1),
+                spacer.row_count,
+                self.tab_width,
+            );
+            spacer_ix += 1;
         }
 
         if rows.is_empty() {

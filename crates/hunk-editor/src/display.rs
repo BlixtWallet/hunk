@@ -153,6 +153,54 @@ impl VisualRow {
     }
 }
 
+pub(crate) fn push_spacer_rows(
+    rows: &mut Vec<VisualRow>,
+    row_index: &mut usize,
+    source_line: usize,
+    row_count: usize,
+    tab_width: usize,
+) {
+    for _ in 0..row_count {
+        rows.push(VisualRow {
+            row_index: *row_index,
+            kind: DisplayRowKind::Spacer,
+            source_line,
+            raw_start_column: 0,
+            raw_end_column: 0,
+            raw_column_offsets: vec![0],
+            start_column: 0,
+            end_column: 0,
+            text: String::new(),
+            is_wrapped: false,
+            whitespace_markers: Vec::new(),
+            search_highlights: Vec::new(),
+            overlays: Vec::new(),
+            expanded_line: ExpandedLine::from_line(String::new(), tab_width, false),
+        });
+        *row_index += 1;
+    }
+}
+
+pub(crate) fn adjacent_navigable_row_index(
+    rows: &[VisualRow],
+    row_index: usize,
+    direction: isize,
+) -> Option<usize> {
+    let mut next_row_index = row_index;
+    loop {
+        next_row_index = if direction < 0 {
+            next_row_index.checked_sub(1)?
+        } else if next_row_index + 1 < rows.len() {
+            next_row_index + 1
+        } else {
+            return None;
+        };
+        if !matches!(rows[next_row_index].kind, DisplayRowKind::Spacer) {
+            return Some(next_row_index);
+        }
+    }
+}
+
 pub(crate) fn build_fold_placeholder(prefix: &str, region: FoldRegion) -> String {
     let hidden_line_count = region.end_line - region.start_line;
     if prefix.is_empty() {

@@ -60,6 +60,12 @@ impl FoldRegion {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpacerDescriptor {
+    pub before_line: usize,
+    pub row_count: usize,
+}
+
 #[path = "../src/app/review_editor_model.rs"]
 mod review_editor_model;
 
@@ -252,6 +258,116 @@ fn presentation_tracks_hunk_lines_and_right_to_left_mapping() {
         presentation.right_to_left_line_map,
         vec![Some(0), Some(1), None, Some(2), Some(3), Some(4)]
     );
+}
+
+#[test]
+fn presentation_adds_companion_spacers_for_insertions_and_deletions() {
+    let left = "aaa\nbbb\nccc\nddd\nddd\nddd\neee\n";
+    let right = "aaa\nddd\nddd\nddd\nXXX\nYYY\nZZZ\neee\n";
+
+    let presentation = build_review_editor_presentation_from_texts(left, right, 3, None);
+
+    assert_eq!(
+        presentation.left_spacers,
+        vec![SpacerDescriptor {
+            before_line: 6,
+            row_count: 3,
+        }]
+    );
+    assert_eq!(
+        presentation.right_spacers,
+        vec![SpacerDescriptor {
+            before_line: 1,
+            row_count: 2,
+        }]
+    );
+}
+
+#[test]
+fn presentation_places_eof_spacers_for_trailing_insertions() {
+    let left = "alpha\nbeta\n";
+    let right = "alpha\nbeta\ngamma\n";
+
+    let presentation = build_review_editor_presentation_from_texts(left, right, 1, None);
+
+    assert_eq!(
+        presentation.left_spacers,
+        vec![SpacerDescriptor {
+            before_line: 2,
+            row_count: 1,
+        }]
+    );
+    assert!(presentation.right_spacers.is_empty());
+}
+
+#[test]
+fn presentation_keeps_repetitive_mixed_edit_blocks_as_separate_hunks() {
+    let left = r#"fn paint_line_number() {
+    let label = if row.start_column == 0 {
+        format!("{}", row.source_line + 1)
+    } else {
+        String::new()
+    };
+}
+
+fn paint_fold_marker() {
+    if row.start_column != 0 || !foldable {
+        return;
+    }
+}
+
+fn selection_range_for_row() -> Option<Range<usize>> {
+    let selection = selection.range();
+    if selection.is_empty()
+        || row.source_line < selection.start.line
+        || row.source_line > selection.end.line
+    {
+        return None;
+    }
+    Some(0..0)
+}
+"#;
+    let right = r#"fn paint_line_number() {
+    let label = if row.start_column == 0 && !matches!(row.kind, DisplayRowKind::Spacer) {
+        format!("{}", row.source_line + 1)
+    } else {
+        String::new()
+    };
+}
+
+fn paint_fold_marker() {
+    if row.start_column != 0 || !foldable || matches!(row.kind, DisplayRowKind::Spacer) {
+        return;
+    }
+}
+
+fn selection_range_for_row() -> Option<Range<usize>> {
+    if matches!(row.kind, DisplayRowKind::Spacer) {
+        return None;
+    }
+
+    let selection = selection.range();
+    if selection.is_empty()
+        || row.source_line < selection.start.line
+        || row.source_line > selection.end.line
+    {
+        return None;
+    }
+    Some(0..0)
+}
+"#;
+
+    let presentation = build_review_editor_presentation_from_texts(left, right, 1, None);
+
+    assert_eq!(presentation.right_hunk_lines, vec![1, 9, 15]);
+    assert_eq!(
+        presentation.left_spacers,
+        vec![SpacerDescriptor {
+            before_line: 15,
+            row_count: 4,
+        }]
+    );
+    assert!(presentation.right_spacers.is_empty());
 }
 
 #[test]

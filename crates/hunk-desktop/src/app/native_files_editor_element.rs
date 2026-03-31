@@ -201,7 +201,9 @@ impl Element for FilesEditorElement {
             let mut row_origin = content_origin;
             for row in &layout.display_snapshot.visible_rows {
                 paint_scope_highlight(window, row, row_origin, layout, self.palette, active_scope);
-                if row.source_line == current_line {
+                if row.source_line == current_line
+                    && !matches!(row.kind, hunk_editor::DisplayRowKind::Spacer)
+                {
                     window.paint_quad(fill(
                         Bounds {
                             origin: point(bounds.origin.x, row_origin.y),
