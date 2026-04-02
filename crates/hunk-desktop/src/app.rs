@@ -173,6 +173,7 @@ mod project_picker;
 mod refresh_policy;
 mod review_compare_picker;
 mod review_editor_model;
+mod review_preview_model;
 mod workspace_target_picker;
 
 include!("app/types.rs");
@@ -1038,6 +1039,7 @@ struct WorkspaceProjectState {
     review_files: Vec<ChangedFile>,
     review_file_status_by_path: BTreeMap<String, FileStatus>,
     review_file_line_stats: BTreeMap<String, LineStats>,
+    review_preview_sections: BTreeMap<String, review_preview_model::ReviewPreviewSection>,
     review_overall_line_stats: LineStats,
     review_compare_loading: bool,
     review_compare_error: Option<String>,
@@ -1066,6 +1068,7 @@ struct WorkspaceProjectState {
     selection_anchor_row: Option<usize>,
     selection_head_row: Option<usize>,
     last_visible_row_start: Option<usize>,
+    last_review_visible_file_range: Option<(usize, usize)>,
     last_diff_scroll_offset: Option<gpui::Point<gpui::Pixels>>,
 }
 
@@ -1298,10 +1301,12 @@ struct DiffViewer {
     review_files: Vec<ChangedFile>,
     review_file_status_by_path: BTreeMap<String, FileStatus>,
     review_file_line_stats: BTreeMap<String, LineStats>,
+    review_preview_sections: BTreeMap<String, review_preview_model::ReviewPreviewSection>,
     review_overall_line_stats: LineStats,
     review_compare_loading: bool,
     review_compare_error: Option<String>,
-    review_editor_session: ReviewEditorSession,
+    review_editor_sessions: BTreeMap<String, ReviewEditorFileSession>,
+    review_editor_list_state: ListState,
     overall_line_stats: LineStats,
     refresh_epoch: usize,
     auto_refresh_unmodified_streak: u32,
@@ -1344,8 +1349,10 @@ struct DiffViewer {
     drag_selecting_rows: bool,
     diff_reload_scroll_behavior: DiffReloadScrollBehavior,
     last_visible_row_start: Option<usize>,
+    last_review_visible_file_range: Option<(usize, usize)>,
     last_diff_scroll_offset: Option<gpui::Point<gpui::Pixels>>,
     last_scroll_activity_at: Instant,
+    last_review_slow_render_logged_at: Option<Instant>,
     segment_prefetch_anchor_row: Option<usize>,
     segment_prefetch_epoch: usize,
     segment_prefetch_task: Task<()>,

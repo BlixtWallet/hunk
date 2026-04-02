@@ -71,6 +71,7 @@ include!("git_ops.rs");
 include!("recent_commits.rs");
 include!("review_compare.rs");
 include!("review_editor.rs");
+include!("review_editor_workspace.rs");
 include!("workspace_mode.rs");
 include!("terminal_runtime_store.rs");
 include!("ai.rs");

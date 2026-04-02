@@ -609,9 +609,11 @@ impl DiffViewer {
         self.review_files.clear();
         self.review_file_status_by_path.clear();
         self.review_file_line_stats.clear();
+        self.review_preview_sections.clear();
         self.review_overall_line_stats = LineStats::default();
         self.selected_path = None;
         self.selected_status = None;
+        self.last_review_visible_file_range = None;
         self.comments_cache.clear();
         self.comment_miss_streaks.clear();
         self.reset_comment_row_match_cache();
@@ -641,8 +643,6 @@ impl DiffViewer {
 
         self.review_compare_loading = true;
         self.review_compare_error = None;
-        self.review_editor_session.loading = true;
-        self.review_editor_session.error = None;
         self.patch_loading = false;
         if self.diff_rows.is_empty() {
             self.reset_diff_surface_rows(vec![message_row(
@@ -714,6 +714,7 @@ impl DiffViewer {
         stream: DiffStream,
         cx: &mut Context<Self>,
     ) {
+        let apply_started_at = Instant::now();
         self.review_compare_error = None;
         self.review_files = snapshot.files;
         self.review_file_status_by_path = self
@@ -726,7 +727,10 @@ impl DiffViewer {
         self.collapsed_files
             .retain(|path| self.review_files.iter().any(|file| file.path == *path));
 
+        let legacy_surface_started_at = Instant::now();
         let _ = self.apply_loaded_diff_surface_stream(stream);
+        let legacy_surface_elapsed = legacy_surface_started_at.elapsed();
+        self.rebuild_review_preview_sections();
 
         let has_selection = self
             .selected_path
@@ -739,7 +743,10 @@ impl DiffViewer {
             .selected_path
             .as_deref()
             .and_then(|selected| self.status_for_path(selected));
-        self.request_review_editor_reload(true, cx);
+        self.last_review_visible_file_range = None;
+        let workspace_reload_started_at = Instant::now();
+        self.request_review_editor_workspace_reload(true, cx);
+        let workspace_reload_elapsed = workspace_reload_started_at.elapsed();
         self.refresh_comments_cache_from_store();
         self.rebuild_comment_row_match_cache();
         if self.review_comments_enabled() {
@@ -747,12 +754,18 @@ impl DiffViewer {
         }
 
         if self.diff_reload_scroll_behavior == DiffReloadScrollBehavior::RevealSelectedFile {
-            self.scroll_selected_file_to_top();
             self.diff_reload_scroll_behavior = DiffReloadScrollBehavior::PreserveViewport;
         }
-        self.prime_diff_surface_visible_state(cx);
 
         self.request_repo_tree_reload(cx);
+        debug!(
+            files = self.review_files.len(),
+            selected_path = self.selected_path.as_deref().unwrap_or("none"),
+            legacy_surface_ms = legacy_surface_elapsed.as_millis(),
+            editor_prefetch_ms = workspace_reload_elapsed.as_millis(),
+            total_apply_ms = apply_started_at.elapsed().as_millis(),
+            "review compare stream applied"
+        );
         cx.notify();
     }
 

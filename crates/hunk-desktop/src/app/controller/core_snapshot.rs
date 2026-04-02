@@ -94,12 +94,14 @@ impl DiffViewer {
         self.review_files.clear();
         self.review_file_status_by_path.clear();
         self.review_file_line_stats.clear();
+        self.review_preview_sections.clear();
         self.review_overall_line_stats = LineStats::default();
         self.review_compare_loading = false;
         self.review_compare_error = None;
         self.last_commit_subject = None;
         self.selected_path = None;
         self.selected_status = None;
+        self.last_review_visible_file_range = None;
         self.overall_line_stats = LineStats::default();
         self.comments_cache.clear();
         self.comment_miss_streaks.clear();

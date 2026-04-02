@@ -4,21 +4,7 @@ impl DiffViewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        if self.review_editor_session.loading && self.review_editor_session.path.is_none() {
-            return v_flex()
-                .flex_1()
-                .items_center()
-                .justify_center()
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("Loading editor preview..."),
-                )
-                .into_any_element();
-        }
-
-        if let Some(error) = self.review_editor_session.error.clone() {
+        if let Some(error) = self.review_compare_error.clone() {
             return v_flex()
                 .flex_1()
                 .items_center()
@@ -28,7 +14,7 @@ impl DiffViewer {
                 .into_any_element();
         }
 
-        if self.review_editor_session.path.is_none() {
+        if self.review_compare_loading && self.review_files.is_empty() {
             return v_flex()
                 .flex_1()
                 .items_center()
@@ -37,7 +23,21 @@ impl DiffViewer {
                     div()
                         .text_sm()
                         .text_color(cx.theme().muted_foreground)
-                        .child("Select a reviewed file to open the editor preview."),
+                        .child("Loading compared files..."),
+                )
+                .into_any_element();
+        }
+
+        if self.review_files.is_empty() {
+            return v_flex()
+                .flex_1()
+                .items_center()
+                .justify_center()
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("No compared files."),
                 )
                 .into_any_element();
         }
@@ -46,26 +46,88 @@ impl DiffViewer {
         let layout = self.diff_column_layout();
         let editor_font_size = cx.theme().mono_font_size * 1.2;
         let view = cx.entity();
-        let loading = self.review_editor_session.loading;
-        let presentation_loading = self.review_editor_session.presentation_loading;
         let is_review_editor_focused = self.review_editor_focus_handle.is_focused(window);
-        let save_loading = self.review_editor_session.save_loading;
-        let selected_path = self.review_editor_session.path.clone().unwrap_or_default();
-        let selected_file_index = self
-            .review_files
-            .iter()
-            .position(|file| file.path == selected_path)
-            .map(|ix| ix + 1)
-            .unwrap_or(1);
-        let total_files = self.review_files.len().max(1);
-        let hunk_count = self.review_editor_session.right_hunk_lines.len();
-        let (status_label, status_color) =
-            change_status_label_color(self.selected_status.unwrap_or(FileStatus::Unknown), cx);
+        let total_files = self.review_files.len();
+        let list_state = self.review_editor_list_state.clone();
+        let review_list = list(list_state.clone(), {
+            cx.processor(move |this, ix: usize, window, cx| {
+                let Some(file) = this.review_files.get(ix).cloned() else {
+                    return div().w_full().h(px(0.0)).into_any_element();
+                };
+                this.render_review_editor_section(
+                    file,
+                    ix,
+                    total_files,
+                    layout,
+                    editor_font_size,
+                    is_dark,
+                    is_review_editor_focused,
+                    window,
+                    cx,
+                )
+            })
+        })
+        .size_full()
+        .with_sizing_behavior(ListSizingBehavior::Auto);
 
         v_flex()
             .flex_1()
             .min_h_0()
             .items_stretch()
+            .track_focus(&self.review_editor_focus_handle)
+            .key_context("ReviewEditor DiffWorkspace")
+            .on_action(cx.listener(Self::review_editor_copy_action))
+            .on_action(cx.listener(Self::review_editor_cut_action))
+            .on_action(cx.listener(Self::review_editor_paste_action))
+            .on_action(cx.listener(Self::review_editor_move_up_action))
+            .on_action(cx.listener(Self::review_editor_move_down_action))
+            .on_action(cx.listener(Self::review_editor_move_left_action))
+            .on_action(cx.listener(Self::review_editor_move_right_action))
+            .on_action(cx.listener(Self::review_editor_select_up_action))
+            .on_action(cx.listener(Self::review_editor_select_down_action))
+            .on_action(cx.listener(Self::review_editor_select_left_action))
+            .on_action(cx.listener(Self::review_editor_select_right_action))
+            .on_action(cx.listener(Self::review_editor_move_to_beginning_of_line_action))
+            .on_action(cx.listener(Self::review_editor_move_to_end_of_line_action))
+            .on_action(cx.listener(Self::review_editor_move_to_beginning_of_document_action))
+            .on_action(cx.listener(Self::review_editor_move_to_end_of_document_action))
+            .on_action(cx.listener(Self::review_editor_select_to_beginning_of_line_action))
+            .on_action(cx.listener(Self::review_editor_select_to_end_of_line_action))
+            .on_action(cx.listener(Self::review_editor_select_to_beginning_of_document_action))
+            .on_action(cx.listener(Self::review_editor_select_to_end_of_document_action))
+            .on_action(cx.listener(Self::review_editor_move_to_previous_word_start_action))
+            .on_action(cx.listener(Self::review_editor_move_to_next_word_end_action))
+            .on_action(cx.listener(Self::review_editor_select_to_previous_word_start_action))
+            .on_action(cx.listener(Self::review_editor_select_to_next_word_end_action))
+            .on_action(cx.listener(Self::review_editor_page_up_action))
+            .on_action(cx.listener(Self::review_editor_page_down_action))
+            .on_mouse_down(MouseButton::Left, {
+                let view = view.clone();
+                move |_, window, cx| {
+                    view.update(cx, |this, cx| {
+                        this.review_editor_focus_handle.focus(window, cx);
+                    });
+                }
+            })
+            .on_key_down({
+                let view = view.clone();
+                move |event, window, cx| {
+                    let handled = view.update(cx, |this, cx| {
+                        if !this.review_editor_focus_handle.is_focused(window)
+                            || is_desktop_clipboard_shortcut(&event.keystroke)
+                        {
+                            return false;
+                        }
+                        if uses_review_editor_action_dispatch(&event.keystroke) {
+                            return false;
+                        }
+                        this.review_editor_handle_keystroke(&event.keystroke, cx)
+                    });
+                    if handled {
+                        cx.stop_propagation();
+                    }
+                }
+            })
             .child(
                 h_flex()
                     .w_full()
@@ -84,29 +146,11 @@ impl DiffViewer {
                         0.08,
                     ))
                     .child(
-                        h_flex()
-                            .items_center()
-                            .gap_2()
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .px_1p5()
-                                    .py_0p5()
-                                    .rounded(px(6.0))
-                                    .bg(hunk_opacity(status_color, is_dark, 0.20, 0.12))
-                                    .text_xs()
-                                    .font_semibold()
-                                    .text_color(status_color)
-                                    .child(status_label),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_family(cx.theme().mono_font_family.clone())
-                                    .text_color(cx.theme().foreground)
-                                    .truncate()
-                                    .child(selected_path),
-                            ),
+                        div()
+                            .text_sm()
+                            .font_family(cx.theme().mono_font_family.clone())
+                            .text_color(cx.theme().foreground)
+                            .child("Continuous Review"),
                     )
                     .child(
                         h_flex()
@@ -114,139 +158,562 @@ impl DiffViewer {
                             .gap_3()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child(format!("{selected_file_index}/{total_files} files"))
-                            .child(format!("{hunk_count} hunks")),
+                            .child(format!("{total_files} files"))
+                            .child(format!(
+                                "{} -> {}",
+                                self.review_compare_source_label(self.review_left_source_id.as_deref()),
+                                self.review_compare_source_label(self.review_right_source_id.as_deref())
+                            )),
                     ),
             )
             .child(
-                h_flex()
+                div()
                     .flex_1()
                     .min_h_0()
-                    .items_stretch()
                     .relative()
-            .child(
-                self.render_review_editor_side(
-                    "review-editor-left",
-                    self.review_editor_session.left_editor.clone(),
-                    self.review_editor_session.left_present,
-                    "Missing in base",
-                    editor_font_size,
-                    is_dark,
-                    layout.map(|layout| layout.left_panel_width),
-                    false,
-                    false,
-                    cx,
-                ),
-            )
-            .child(
-                self.render_review_editor_side(
-                    "review-editor-right",
-                    self.review_editor_session.right_editor.clone(),
-                    self.review_editor_session.right_present,
-                    "Missing in compare",
-                    editor_font_size,
-                    is_dark,
-                    layout.map(|layout| layout.right_panel_width),
-                    is_review_editor_focused,
-                    true,
-                    cx,
-                ),
-            )
-            .track_focus(&self.review_editor_focus_handle)
-            .key_context("ReviewEditor DiffWorkspace")
-            .on_mouse_down(MouseButton::Left, {
-                let view = view.clone();
-                move |_, window, cx| {
-                    view.update(cx, |this, cx| {
-                        this.review_editor_focus_handle.focus(window, cx);
-                    });
-                }
-            })
-            .on_key_down({
-                let view = view.clone();
-                move |event, window, cx| {
-                    let handled = view.update(cx, |this, cx| {
-                        if !this.review_editor_focus_handle.is_focused(window) {
-                            return false;
-                        }
-
-                        if is_desktop_clipboard_shortcut(&event.keystroke) {
-                            return match event.keystroke.key.as_str() {
-                                "c" => this.review_editor_copy_selection(cx),
-                                "x" => this.review_editor_cut_selection(cx),
-                                "v" => this.review_editor_paste_from_clipboard(cx),
-                                _ => false,
-                            };
-                        }
-
-                        this.review_editor_handle_keystroke(&event.keystroke, cx)
-                    });
-                    if handled {
-                        cx.stop_propagation();
-                    }
-                }
-            })
-            .when(loading || presentation_loading || save_loading, |this| {
-                this.child(
-                    h_flex()
-                        .absolute()
-                        .top_2()
-                        .right_3()
-                        .gap_2()
-                        .when(loading, |this| {
-                            this.child(
-                                div()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded(px(6.0))
-                                    .bg(hunk_opacity(cx.theme().warning, is_dark, 0.18, 0.14))
-                                    .text_xs()
-                                    .text_color(cx.theme().warning)
-                                    .child("Refreshing..."),
-                            )
-                        })
-                        .when(presentation_loading, |this| {
-                            this.child(
-                                div()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded(px(6.0))
-                                    .bg(hunk_opacity(cx.theme().accent, is_dark, 0.18, 0.14))
-                                    .text_xs()
-                                    .text_color(cx.theme().accent)
-                                    .child("Updating diff..."),
-                            )
-                        })
-                        .when(save_loading, |this| {
-                            this.child(
-                                div()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded(px(6.0))
-                                    .bg(hunk_opacity(cx.theme().accent, is_dark, 0.18, 0.14))
-                                    .text_xs()
-                                    .text_color(cx.theme().accent)
-                                    .child("Saving..."),
-                            )
-                        }),
-                )
-            })
+                    .child(review_list)
+                    .child(
+                        div()
+                            .absolute()
+                            .top_0()
+                            .right_0()
+                            .bottom_0()
+                            .w(px(16.0))
+                            .child(
+                                Scrollbar::vertical(&list_state)
+                                    .scrollbar_show(ScrollbarShow::Always),
+                            ),
+                    ),
             )
             .into_any_element()
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn render_review_editor_section(
+        &self,
+        file: ChangedFile,
+        index: usize,
+        total_files: usize,
+        layout: Option<DiffColumnLayout>,
+        editor_font_size: gpui::Pixels,
+        is_dark: bool,
+        is_review_editor_focused: bool,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let is_active = self.selected_path.as_deref() == Some(file.path.as_str());
+        let (status_label, status_color) = change_status_label_color(file.status, cx);
+        let line_stats = self
+            .review_file_line_stats
+            .get(file.path.as_str())
+            .copied()
+            .unwrap_or_default();
+        let preview_section = self
+            .review_preview_section(file.path.as_str())
+            .cloned()
+            .unwrap_or_default();
+        let preview_hunk_count = self.review_preview_hunk_count(file.path.as_str());
+        let border_color = if is_active {
+            hunk_opacity(cx.theme().accent, is_dark, 0.82, 0.62)
+        } else {
+            hunk_opacity(cx.theme().border, is_dark, 0.86, 0.72)
+        };
+
+        let session_loading = self.review_editor_session(file.path.as_str()).is_some_and(|session| {
+            session.loading || session.presentation_loading || session.save_loading
+        });
+        let session_error = self
+            .review_editor_session(file.path.as_str())
+            .and_then(|session| session.error.clone());
+        let content_loaded = self.review_editor_session(file.path.as_str()).is_some_and(|session| {
+            session.left_source_id == self.review_left_source_id
+                && session.right_source_id == self.review_right_source_id
+                && !session.loading
+                && session.error.is_none()
+        });
+
+        if !is_active || !content_loaded {
+            return self.render_review_preview_section(
+                file,
+                index,
+                total_files,
+                status_label,
+                status_color,
+                border_color,
+                is_active,
+                preview_section,
+                preview_hunk_count,
+                line_stats,
+                session_loading,
+                session_error,
+                is_dark,
+                cx,
+            );
+        }
+
+        let Some(session) = self.review_editor_session(file.path.as_str()) else {
+            return div().into_any_element();
+        };
+        let editor_height = self.review_editor_section_height(file.path.as_str(), editor_font_size);
+        let hunk_count = session.right_hunk_lines.len();
+
+        v_flex()
+            .id(("review-editor-section", index))
+            .w_full()
+            .pb_3()
+            .child(
+                v_flex()
+                    .w_full()
+                    .rounded(px(10.0))
+                    .border_1()
+                    .border_color(border_color)
+                    .bg(hunk_blend(
+                        cx.theme().background,
+                        cx.theme().muted,
+                        is_dark,
+                        0.10,
+                        0.04,
+                    ))
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .items_center()
+                            .justify_between()
+                            .gap_3()
+                            .px_3()
+                            .py_2()
+                            .border_b_1()
+                            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.82, 0.68))
+                            .on_mouse_down(MouseButton::Left, {
+                                let view = cx.entity();
+                                let path = file.path.clone();
+                                move |_, window, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.review_editor_activate_path(path.clone(), Some(window), cx);
+                                    });
+                                }
+                            })
+                            .child(
+                                h_flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .min_w_0()
+                                    .child(
+                                        div()
+                                            .px_1p5()
+                                            .py_0p5()
+                                            .rounded(px(6.0))
+                                            .bg(hunk_opacity(status_color, is_dark, 0.20, 0.12))
+                                            .text_xs()
+                                            .font_semibold()
+                                            .text_color(status_color)
+                                            .child(status_label),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_family(cx.theme().mono_font_family.clone())
+                                            .text_color(cx.theme().foreground)
+                                            .truncate()
+                                            .child(file.path.clone()),
+                                    ),
+                            )
+                            .child(
+                                h_flex()
+                                    .items_center()
+                                    .gap_3()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(format!("{}/{} files", index + 1, total_files))
+                                    .child(format!("{hunk_count} hunks")),
+                            ),
+                    )
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .items_stretch()
+                            .relative()
+                            .h(editor_height)
+                            .min_h(editor_height)
+                            .max_h(editor_height)
+                            .child(
+                                self.render_review_editor_side(
+                                    file.path.clone(),
+                                    "review-editor-left",
+                                    session.left_editor.clone(),
+                                    content_loaded && !session.left_present,
+                                    "Missing in base",
+                                    editor_font_size,
+                                    is_dark,
+                                    layout.map(|layout| layout.left_panel_width),
+                                    false,
+                                    false,
+                                    editor_height,
+                                    cx,
+                                ),
+                            )
+                            .child(
+                                self.render_review_editor_side(
+                                    file.path.clone(),
+                                    "review-editor-right",
+                                    session.right_editor.clone(),
+                                    content_loaded && !session.right_present,
+                                    "Missing in compare",
+                                    editor_font_size,
+                                    is_dark,
+                                    layout.map(|layout| layout.right_panel_width),
+                                    is_review_editor_focused && is_active,
+                                    true,
+                                    editor_height,
+                                    cx,
+                                ),
+                            )
+                            .when(
+                                session.loading
+                                    || session.presentation_loading
+                                    || session.save_loading,
+                                |this| {
+                                    this.child(
+                                        h_flex()
+                                            .absolute()
+                                            .top_2()
+                                            .right_3()
+                                            .gap_2()
+                                            .when(session.loading, |this| {
+                                                this.child(
+                                                    div()
+                                                        .px_2()
+                                                        .py_1()
+                                                        .rounded(px(6.0))
+                                                        .bg(hunk_opacity(
+                                                            cx.theme().warning,
+                                                            is_dark,
+                                                            0.18,
+                                                            0.14,
+                                                        ))
+                                                        .text_xs()
+                                                        .text_color(cx.theme().warning)
+                                                        .child("Refreshing..."),
+                                                )
+                                            })
+                                            .when(session.presentation_loading, |this| {
+                                                this.child(
+                                                    div()
+                                                        .px_2()
+                                                        .py_1()
+                                                        .rounded(px(6.0))
+                                                        .bg(hunk_opacity(
+                                                            cx.theme().accent,
+                                                            is_dark,
+                                                            0.18,
+                                                            0.14,
+                                                        ))
+                                                        .text_xs()
+                                                        .text_color(cx.theme().accent)
+                                                        .child("Updating diff..."),
+                                                )
+                                            })
+                                            .when(session.save_loading, |this| {
+                                                this.child(
+                                                    div()
+                                                        .px_2()
+                                                        .py_1()
+                                                        .rounded(px(6.0))
+                                                        .bg(hunk_opacity(
+                                                            cx.theme().accent,
+                                                            is_dark,
+                                                            0.18,
+                                                            0.14,
+                                                        ))
+                                                        .text_xs()
+                                                        .text_color(cx.theme().accent)
+                                                        .child("Saving..."),
+                                                )
+                                            }),
+                                    )
+                                },
+                            )
+                            .when_some(session.error.clone(), |this, error| {
+                                this.child(
+                                    v_flex()
+                                        .absolute()
+                                        .inset_0()
+                                        .items_center()
+                                        .justify_center()
+                                        .bg(hunk_opacity(
+                                            cx.theme().background,
+                                            is_dark,
+                                            0.86,
+                                            0.90,
+                                        ))
+                                        .child(
+                                            div()
+                                                .max_w(px(520.0))
+                                                .px_4()
+                                                .text_sm()
+                                                .text_color(cx.theme().danger)
+                                                .child(error),
+                                        ),
+                                )
+                            }),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_review_preview_section(
+        &self,
+        file: ChangedFile,
+        index: usize,
+        total_files: usize,
+        status_label: &'static str,
+        status_color: Hsla,
+        border_color: Hsla,
+        is_active: bool,
+        preview_section: crate::app::review_preview_model::ReviewPreviewSection,
+        hunk_count: usize,
+        line_stats: LineStats,
+        editor_loading: bool,
+        editor_error: Option<String>,
+        is_dark: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let preview_rows = self.render_review_preview_rows(&preview_section, cx);
+        let preview_rows_empty = preview_rows.is_empty();
+        let preview_truncated = preview_section.truncated();
+        v_flex()
+            .id(("review-editor-section", index))
+            .w_full()
+            .pb_3()
+            .child(
+                v_flex()
+                    .w_full()
+                    .rounded(px(10.0))
+                    .border_1()
+                    .border_color(border_color)
+                    .bg(hunk_blend(
+                        cx.theme().background,
+                        cx.theme().muted,
+                        is_dark,
+                        0.10,
+                        0.04,
+                    ))
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .items_center()
+                            .justify_between()
+                            .gap_3()
+                            .px_3()
+                            .py_2()
+                            .border_b_1()
+                            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.82, 0.68))
+                            .on_mouse_down(MouseButton::Left, {
+                                let view = cx.entity();
+                                let path = file.path.clone();
+                                move |_, window, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.review_editor_activate_path(path.clone(), Some(window), cx);
+                                    });
+                                }
+                            })
+                            .child(
+                                h_flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .min_w_0()
+                                    .child(
+                                        div()
+                                            .px_1p5()
+                                            .py_0p5()
+                                            .rounded(px(6.0))
+                                            .bg(hunk_opacity(status_color, is_dark, 0.20, 0.12))
+                                            .text_xs()
+                                            .font_semibold()
+                                            .text_color(status_color)
+                                            .child(status_label),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_family(cx.theme().mono_font_family.clone())
+                                            .text_color(cx.theme().foreground)
+                                            .truncate()
+                                            .child(file.path),
+                                    ),
+                            )
+                            .child(
+                                h_flex()
+                                    .items_center()
+                                    .gap_3()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(format!("{}/{} files", index + 1, total_files))
+                                    .child(format!("{hunk_count} hunks"))
+                                    .child(self.render_line_stats("diff", line_stats, cx))
+                                    .when(is_active && editor_loading, |this| {
+                                        this.child(
+                                            div()
+                                                .px_2()
+                                                .py_1()
+                                                .rounded(px(6.0))
+                                                .bg(hunk_opacity(
+                                                    cx.theme().warning,
+                                                    is_dark,
+                                                    0.18,
+                                                    0.14,
+                                                ))
+                                                .text_xs()
+                                                .text_color(cx.theme().warning)
+                                                .child("Preparing editor..."),
+                                        )
+                                    })
+                                    .when_some(editor_error.as_ref(), |this, _| {
+                                        this.child(
+                                            div()
+                                                .px_2()
+                                                .py_1()
+                                                .rounded(px(6.0))
+                                                .bg(hunk_opacity(
+                                                    cx.theme().danger,
+                                                    is_dark,
+                                                    0.18,
+                                                    0.14,
+                                                ))
+                                                .text_xs()
+                                                .text_color(cx.theme().danger)
+                                                .child("Editor unavailable"),
+                                        )
+                                    }),
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .w_full()
+                            .children(preview_rows)
+                            .when(preview_rows_empty, |this| {
+                                this.child(
+                                    h_flex()
+                                        .w_full()
+                                        .min_h(px(120.0))
+                                        .items_center()
+                                        .justify_center()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child("No diff preview available for this file."),
+                                        ),
+                                )
+                            })
+                            .when_some(editor_error, |this, error| {
+                                this.child(
+                                    div()
+                                        .w_full()
+                                        .px_3()
+                                        .py_2()
+                                        .border_t_1()
+                                        .border_color(hunk_opacity(
+                                            cx.theme().border,
+                                            is_dark,
+                                            0.82,
+                                            0.68,
+                                        ))
+                                        .bg(hunk_opacity(
+                                            cx.theme().danger,
+                                            is_dark,
+                                            0.08,
+                                            0.05,
+                                        ))
+                                        .text_xs()
+                                        .text_color(cx.theme().danger)
+                                        .child(error),
+                                )
+                            })
+                            .when(preview_truncated, |this| {
+                                this.child(
+                                    h_flex()
+                                        .w_full()
+                                        .items_center()
+                                        .justify_between()
+                                        .gap_3()
+                                        .px_3()
+                                        .py_2()
+                                        .border_t_1()
+                                        .border_color(hunk_opacity(
+                                            cx.theme().border,
+                                            is_dark,
+                                            0.82,
+                                            0.68,
+                                        ))
+                                        .bg(hunk_opacity(
+                                            cx.theme().muted,
+                                            is_dark,
+                                            0.18,
+                                            0.10,
+                                        ))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child(format!(
+                                                    "Showing {} of {} rows across {} of {} hunks.",
+                                                    preview_section.rendered_row_count,
+                                                    preview_section.total_row_count,
+                                                    preview_section.rendered_hunk_count,
+                                                    preview_section.total_hunk_count,
+                                                )),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child(format!(
+                                                    "{} rows and {} hunks hidden. Select to open the full editable diff.",
+                                                    preview_section.hidden_row_count(),
+                                                    preview_section.hidden_hunk_count(),
+                                                )),
+                                        ),
+                                )
+                            }),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn review_editor_section_height(
+        &self,
+        path: &str,
+        editor_font_size: gpui::Pixels,
+    ) -> gpui::Pixels {
+        let line_height = (editor_font_size * 1.45).max(px(14.0));
+        let Some(session) = self.review_editor_session(path) else {
+            return line_height * 8.;
+        };
+        let row_count = session
+            .left_editor
+            .borrow()
+            .display_row_count()
+            .max(session.right_editor.borrow().display_row_count())
+            .max(1);
+        line_height * row_count as f32 + px(2.0)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn render_review_editor_side(
         &self,
-        element_id: &'static str,
+        path: String,
+        _element_id_prefix: &'static str,
         editor: crate::app::native_files_editor::SharedFilesEditor,
-        present: bool,
+        show_missing_badge: bool,
         missing_message: &'static str,
         editor_font_size: gpui::Pixels,
         is_dark: bool,
         width: Option<gpui::Pixels>,
         is_focused: bool,
         editable: bool,
+        height: gpui::Pixels,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let editor_chrome = crate::app::theme::hunk_editor_chrome_colors(cx.theme(), is_dark);
@@ -257,9 +724,33 @@ impl DiffViewer {
             line_height: gpui::relative(1.45),
             ..Default::default()
         };
+        let view = cx.entity();
         let element = crate::app::native_files_editor::FilesEditorElement::new(
             editor.clone(),
-            |_, _, _, _| {},
+            {
+                let path = path.clone();
+                move |target, position, window, cx| {
+                    if !editable {
+                        return;
+                    }
+                    view.update(cx, |this, cx| {
+                        this.review_editor_activate_path(path.clone(), Some(window), cx);
+                        this.open_workspace_text_context_menu(
+                            WorkspaceTextContextMenuTarget::ReviewEditor(
+                                ReviewEditorContextMenuTarget {
+                                    path: path.clone(),
+                                    can_cut: target.can_cut,
+                                    can_copy: target.can_copy,
+                                    can_paste: target.can_paste,
+                                    can_select_all: target.can_select_all,
+                                },
+                            ),
+                            position,
+                            cx,
+                        );
+                    });
+                }
+            },
             is_focused,
             text_style,
             crate::app::native_files_editor::FilesEditorPalette {
@@ -288,60 +779,60 @@ impl DiffViewer {
 
         v_flex()
             .flex_1()
-            .min_h_0()
-            .h_full()
+            .min_h(height)
+            .max_h(height)
+            .h(height)
             .items_stretch()
             .relative()
             .when_some(width, |this, width| {
                 this.w(width).min_w(width).max_w(width).flex_none()
             })
             .bg(editor_chrome.background)
-            .on_scroll_wheel({
+            .on_mouse_down(MouseButton::Left, {
                 let view = cx.entity();
-                move |event, _, cx| {
-                    let line_height = (editor_font_size * 1.45).max(px(14.0));
-                    let Some((direction, line_count)) =
-                        crate::app::native_files_editor::scroll_direction_and_count(event, line_height)
-                    else {
-                        return;
-                    };
-                    let handled = view.update(cx, |this, cx| {
-                        this.review_editor_scroll_lines(line_count, direction, cx)
+                let path = path.clone();
+                move |_, window, cx| {
+                    view.update(cx, |this, cx| {
+                        this.review_editor_activate_path(path.clone(), Some(window), cx);
                     });
-                    if handled {
-                        cx.stop_propagation();
-                    }
                 }
             })
             .child(
                 div()
-                    .id(element_id)
-                    .flex_1()
-                    .min_h_0()
-                    .h_full()
+                    .h(height)
+                    .min_h(height)
+                    .max_h(height)
                     .child(element),
             )
-            .when(!present, |this| {
+            .when(show_missing_badge, |this| {
                 this.child(
                     div()
                         .absolute()
                         .top_2()
                         .right_2()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded(px(6.0))
-                                    .bg(crate::app::theme::hunk_opacity(
-                                        editor_chrome.line_number,
-                                        is_dark,
-                                        0.14,
-                                        0.10,
-                                    ))
+                        .px_2()
+                        .py_1()
+                        .rounded(px(6.0))
+                        .bg(crate::app::theme::hunk_opacity(
+                            editor_chrome.line_number,
+                            is_dark,
+                            0.14,
+                            0.10,
+                        ))
                         .text_xs()
                         .text_color(editor_chrome.line_number)
                         .child(missing_message),
                 )
             })
             .when(editable, |this| {
+                let is_comment_editor_open =
+                    self.active_review_editor_comment_line.is_some()
+                        && self.selected_path.as_deref() == Some(path.as_str());
+                let note_id = self
+                    .review_files
+                    .iter()
+                    .position(|file| file.path == path)
+                    .unwrap_or(0);
                 this.child(
                     h_flex()
                         .absolute()
@@ -366,24 +857,29 @@ impl DiffViewer {
                         )
                         .when(self.review_editor_supports_comments(), |this| {
                             let view = cx.entity();
+                            let path = path.clone();
                             this.child(
-                                Button::new("review-editor-note")
+                                Button::new(("review-editor-note", note_id))
                                     .compact()
                                     .outline()
                                     .rounded(px(6.0))
                                     .label("Note")
                                     .on_click(move |_, window, cx| {
                                         view.update(cx, |this, cx| {
+                                            this.review_editor_activate_path(
+                                                path.clone(),
+                                                Some(window),
+                                                cx,
+                                            );
                                             this.open_review_editor_comment_editor(window, cx);
                                         });
                                     }),
                             )
                         }),
                 )
-                .when(
-                    self.active_review_editor_comment_line.is_some(),
-                    |this| this.child(self.render_review_editor_comment_editor(cx)),
-                )
+                .when(is_comment_editor_open, |this| {
+                    this.child(self.render_review_editor_comment_editor(cx))
+                })
             })
             .into_any_element()
     }
@@ -398,7 +894,7 @@ impl DiffViewer {
         let file_path = anchor
             .as_ref()
             .map(|anchor| anchor.file_path.clone())
-            .or_else(|| self.review_editor_session.path.clone())
+            .or_else(|| self.active_review_editor_path().map(ToOwned::to_owned))
             .unwrap_or_else(|| "file".to_string());
         let line_hint = anchor.as_ref().map_or_else(
             || "old - | new -".to_string(),
@@ -497,5 +993,18 @@ impl DiffViewer {
                 )
             })
             .into_any_element()
+    }
+}
+
+fn uses_review_editor_action_dispatch(keystroke: &Keystroke) -> bool {
+    match keystroke.key.as_str() {
+        "up" | "down" | "left" | "right" | "home" | "end" => true,
+        "pageup" | "pagedown" => {
+            !keystroke.modifiers.shift
+                && !keystroke.modifiers.alt
+                && !keystroke.modifiers.control
+                && !keystroke.modifiers.platform
+        }
+        _ => false,
     }
 }

@@ -108,8 +108,8 @@ impl FileEditorTab {
     }
 }
 
-struct ReviewEditorSession {
-    path: Option<String>,
+struct ReviewEditorFileSession {
+    path: String,
     left_source_id: Option<String>,
     right_source_id: Option<String>,
     left_present: bool,
@@ -132,10 +132,10 @@ struct ReviewEditorSession {
     right_editor: native_files_editor::SharedFilesEditor,
 }
 
-impl ReviewEditorSession {
-    fn new() -> Self {
+impl ReviewEditorFileSession {
+    fn new(path: String) -> Self {
         Self {
-            path: None,
+            path,
             left_source_id: None,
             right_source_id: None,
             left_present: false,
@@ -176,6 +176,7 @@ struct WorkspaceTextContextMenuState {
 #[derive(Debug, Clone)]
 enum WorkspaceTextContextMenuTarget {
     FilesEditor(FilesEditorContextMenuTarget),
+    ReviewEditor(ReviewEditorContextMenuTarget),
     SelectableText(SelectableTextContextMenuTarget),
     Terminal(TerminalContextMenuTarget),
     #[allow(dead_code)]
@@ -184,6 +185,15 @@ enum WorkspaceTextContextMenuTarget {
 
 #[derive(Debug, Clone)]
 struct FilesEditorContextMenuTarget {
+    can_cut: bool,
+    can_copy: bool,
+    can_paste: bool,
+    can_select_all: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ReviewEditorContextMenuTarget {
+    path: String,
     can_cut: bool,
     can_copy: bool,
     can_paste: bool,

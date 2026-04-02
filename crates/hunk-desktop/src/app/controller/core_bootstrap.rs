@@ -615,10 +615,12 @@ impl DiffViewer {
             review_files: Vec::new(),
             review_file_status_by_path: BTreeMap::new(),
             review_file_line_stats: BTreeMap::new(),
+            review_preview_sections: BTreeMap::new(),
             review_overall_line_stats: LineStats::default(),
             review_compare_loading: false,
             review_compare_error: None,
-            review_editor_session: ReviewEditorSession::new(),
+            review_editor_sessions: BTreeMap::new(),
+            review_editor_list_state: ListState::new(0, ListAlignment::Top, px(420.0)),
             overall_line_stats: LineStats::default(),
             refresh_epoch: 0,
             auto_refresh_unmodified_streak: 0,
@@ -661,8 +663,10 @@ impl DiffViewer {
             drag_selecting_rows: false,
             diff_reload_scroll_behavior: DiffReloadScrollBehavior::RevealSelectedFile,
             last_visible_row_start: None,
+            last_review_visible_file_range: None,
             last_diff_scroll_offset: None,
             last_scroll_activity_at: Instant::now(),
+            last_review_slow_render_logged_at: None,
             segment_prefetch_anchor_row: None,
             segment_prefetch_epoch: 0,
             segment_prefetch_task: Task::ready(()),
@@ -955,6 +959,26 @@ impl DiffViewer {
                         if this.ai_timeline_follow_output != previous_follow_output {
                             cx.notify();
                         }
+                    });
+                });
+            }
+        });
+
+        self.review_editor_list_state.set_scroll_handler({
+            let weak_view = weak_view.clone();
+            move |event, _, cx| {
+                let visible_range = event.visible_range.clone();
+                let weak_view = weak_view.clone();
+                cx.defer(move |cx| {
+                    let Some(view) = weak_view.upgrade() else {
+                        return;
+                    };
+                    view.update(cx, |this, cx| {
+                        this.request_review_preview_segment_prefetch_for_visible_files(
+                            visible_range,
+                            false,
+                            cx,
+                        );
                     });
                 });
             }

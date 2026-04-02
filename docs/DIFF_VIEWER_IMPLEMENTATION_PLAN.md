@@ -27,20 +27,25 @@ As of 2026-03-30:
   - The legacy custom row-list Review renderer was removed instead of kept behind a flag.
 - Phase 5 is complete:
   - Review now recomputes a live presentation model from left/right text instead of relying only on full-file overlays.
-  - Unchanged regions are folded down to placeholder rows around active diff hunks, so the selected-file Review surface behaves like a diff excerpt view instead of mirroring the entire file on both sides.
+  - Unchanged regions are folded down to placeholder rows around active diff hunks, so the Review surface behaves like a diff excerpt view instead of mirroring the entire file on both sides.
   - Zed-style companion spacer rows are inserted on the opposite pane for additions and deletions, so unchanged lines stay vertically paired across the split.
   - Review line pairing now uses a hunk-stable diff pass instead of a naive full-file LCS, so repetitive Rust blocks do not smear separate edits into one oversized excerpt.
   - Inline comments remain editor-backed and anchored from live text.
-  - Diff recomputation after editing is debounced and coalesced instead of running on every keystroke.
+  - Typing in Review no longer forces visible diff recomputation or loading chrome on every keystroke; presentation refresh is tied to save and compare reload paths.
   - Left/right pane alignment follows mapped source lines instead of raw display-row coincidence.
   - Comment jumps and reloads resolve against editor lines, not only the legacy row anchor cache.
 - Phase 6 is complete:
+  - Review is now a continuous multi-file workspace with one scrollable diff surface across all changed files.
+  - Non-active files render through the lightweight diff-stream preview path, while only the active file mounts the editor-backed paired surface.
   - Review file and hunk navigation now run against the editor-backed presentation model.
-  - The selected Review file has sticky identity chrome with file status, file index, and hunk count.
-  - Sidebar/tree integration remains intact while the active Review surface stays editor-backed.
+  - Each Review file section has sticky identity chrome with file status, file index, and hunk count.
+  - Sidebar/tree integration remains intact while the active Review section stays editor-backed.
+  - Review right-click context menus and core keyboard editing/navigation actions now match the Files editor surface.
+  - The selected file editor loads lazily and asynchronously after Review first paint instead of blocking tab entry.
 - Phase 7 is complete:
-  - legacy row-renderer Review code remains removed
-  - regression coverage exists for presentation metadata, folded excerpt behavior, source-line viewport mapping, and editor-backed navigation helpers
+  - legacy whole-Review row-list rendering remains removed
+  - regression coverage exists for presentation metadata, folded excerpt behavior, source-line viewport mapping, editor-backed navigation helpers, and manual spacer-row alignment
+  - Review compare apply now emits stage timing logs for the legacy diff-surface apply and editor prefetch stages, so remaining tab-entry stalls can be diagnosed from logs
   - final workspace validation passes with build, clippy, and tests
 
 ## Goal
@@ -109,18 +114,19 @@ A phase is only complete when all of the following are true:
 
 ## Target End State
 
-- Review tab uses an editor-backed diff surface with:
-  - read-only left side
-  - editable right side
-  - synchronized vertical navigation
+- Review tab uses a hybrid diff surface with:
+  - a lightweight continuous multi-file preview path for all files
+  - an editor-backed paired diff for the active file
+  - read-only left side and editable right side for the active file
+  - synchronized vertical navigation inside the active file
   - diff-hunk overlays and controls
-  - per-file excerpts and sticky file identity
+  - continuous multi-file scrolling with per-file excerpts and sticky file identity
 - Compare sources can represent:
   - branch snapshot
   - workspace target working tree
   - workspace target HEAD snapshot
 - Review comments stay enabled only on the default review pair for v1.
-- The legacy custom row renderer has been removed. Future work should improve the editor-backed path directly instead of adding fallback complexity.
+- The legacy custom row renderer is no longer the primary Review surface. Future work should improve the hybrid Review path directly instead of restoring eager per-file editor mounting.
 
 ## Phase 0: Contract, Baseline, and Instrumentation
 
@@ -295,6 +301,7 @@ Status: Complete
   - syntax highlighting on both sides
 - [x] Audit and harden the diff recomputation lifecycle after right-side edits.
 - [x] Recalculate diff hunks after right-side edits with debouncing that coalesces bursts of typing.
+- [x] Remove edit-time loading churn so typing does not visibly reload diff presentation before save.
 - [x] Preserve cursor, selection, and viewport anchors during diff recomputation, not just during external refresh.
 - [x] Keep left/right pane alignment stable when edits shift hunk boundaries or file height.
 - [x] Verify save/reload behavior against:
@@ -318,7 +325,8 @@ Status: Complete
 ### Acceptance Criteria
 
 - A modified file in Review can be edited inline without losing cursor or viewport during normal typing.
-- Diff overlays and syntax highlighting stay correct after debounced recomputation.
+- Typing in Review does not trigger visible diff loading chrome before save.
+- Diff overlays and syntax highlighting stay correct after save-driven recomputation.
 - Comment affordances work on the editor-backed surface with stable line anchoring.
 - External refreshes and local edits share one consistent state model instead of fighting each other.
 
@@ -328,7 +336,8 @@ Status: Complete
 
 ### TODO
 
-- [x] Replace the custom multi-file Review list with an editor-backed Review surface.
+- [x] Replace the custom multi-file Review list with a continuous Review workspace.
+- [x] Replace the selected-file Review preview with a continuous multi-file workspace that scrolls through all changed files.
 - [x] Add per-file excerpts and sticky file boundaries.
 - [x] Keep file-to-file navigation parity with the current Review tab:
   - next file
@@ -339,6 +348,10 @@ Status: Complete
 - [x] Preserve sidebar and tree integration with the new Review surface.
 - [x] Ensure compare-source switching rebinds the editor-backed Review state safely.
 - [x] Keep commentability limited to the default review pair in v1.
+- [x] Bring Review context-menu and keyboard editing/navigation behavior up to Files editor parity.
+- [x] Avoid eagerly opening every file in the comparison.
+- [x] Keep non-active files on the lightweight diff-stream preview path and mount the editor-backed surface only for the active file.
+- [x] Keep syntax segment prefetch tied to the visible review window without using visible-range editor loads.
 
 ### Likely Files
 
@@ -350,8 +363,10 @@ Status: Complete
 
 ### Acceptance Criteria
 
-- Review behaves like a multi-file diff editor instead of a painted row list.
+- Review behaves like a continuous multi-file diff workspace instead of a selected-file preview.
 - File and hunk navigation stay fast and predictable on large patches.
+- Entering the Review tab does not synchronously open every compared file before first paint.
+- Scrolling through non-active files does not mount editor sessions for every visible file.
 
 ## Phase 7: Performance Hardening, Cleanup, And Rollout
 
@@ -376,7 +391,7 @@ Status: Complete
 
 ### Acceptance Criteria
 
-- The editor-backed Review surface is the default path.
+- The hybrid Review surface is the default path.
 - The major failure modes from the old Review renderer are covered by regression tests.
 - Build, clippy, and full tests pass at the end of the implementation track.
 
@@ -425,7 +440,10 @@ This project is complete when:
 - Review no longer jumps during live refresh.
 - AI inline diff handoff opens the correct current-worktree comparison by default.
 - The Review tab supports inline editing in the modified content.
+- Typing in Review does not force visible diff reloads before save.
+- Review supports continuous scrolling across all changed files.
+- Review right-click and core editor shortcuts behave like the Files editor surface.
 - Syntax highlighting is visible on first paint.
-- The editor-backed Review surface is fast enough to replace the legacy renderer as the default path.
+- The hybrid Review surface is fast enough to replace the legacy renderer as the default path.
 
 Status: satisfied.

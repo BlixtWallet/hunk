@@ -1,8 +1,10 @@
 use super::data::{RepoTreeNodeKind, is_markdown_path};
 use super::theme::*;
 use super::*;
+use crate::app::data::DiffSegmentQuality;
 use crate::app::markdown_links::{MarkdownLinkRange, markdown_inline_text_and_link_ranges};
 use gpui::{Hsla, fill, size};
+use gpui_component::Colorize as _;
 use gpui_component::Disableable as _;
 use gpui_component::Sizable as _;
 use gpui_component::animation::cubic_bezier;
@@ -47,6 +49,7 @@ include!("context_menu.rs");
 include!("file_editor.rs");
 include!("file_editor_surface.rs");
 include!("review_helpers.rs");
+include!("review_diff_preview.rs");
 include!("review_editor_surface.rs");
 include!("file_quick_open.rs");
 include!("ai_loading.rs");

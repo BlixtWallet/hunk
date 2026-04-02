@@ -31,6 +31,13 @@ impl DiffViewer {
                         && let Some(visible_row) = this.last_visible_row_start
                     {
                         this.request_visible_row_segment_prefetch(visible_row, true, cx);
+                        if let Some((start_ix, end_ix)) = this.last_review_visible_file_range {
+                            this.request_review_preview_segment_prefetch_for_visible_files(
+                                start_ix..end_ix,
+                                true,
+                                cx,
+                            );
+                        }
                     }
 
                     if this.workspace_view_mode == WorkspaceViewMode::Ai {

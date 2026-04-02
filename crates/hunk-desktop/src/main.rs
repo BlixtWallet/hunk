@@ -48,11 +48,7 @@ fn run_app() -> Result<()> {
         eprintln!("failed to hydrate terminal environment: {error:#}");
     }
 
-    let default_log_level = if cfg!(debug_assertions) {
-        LevelFilter::DEBUG
-    } else {
-        LevelFilter::INFO
-    };
+    let default_log_level = startup_default_log_level();
     let env_filter = EnvFilter::builder()
         .with_default_directive(default_log_level.into())
         .from_env_lossy()
@@ -95,6 +91,26 @@ fn ensure_hidden_windows_console() {
 
 #[cfg(not(target_os = "windows"))]
 fn ensure_hidden_windows_console() {}
+
+fn startup_default_log_level() -> LevelFilter {
+    if env_var_is_truthy("HUNK_DEBUG_LOGS") || cfg!(debug_assertions) {
+        LevelFilter::DEBUG
+    } else {
+        LevelFilter::INFO
+    }
+}
+
+fn env_var_is_truthy(name: &str) -> bool {
+    std::env::var_os(name)
+        .and_then(|value| value.into_string().ok())
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
 
 fn load_startup_config() -> AppConfig {
     ConfigStore::new()

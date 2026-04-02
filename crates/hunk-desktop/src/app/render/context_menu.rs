@@ -49,52 +49,10 @@ impl DiffViewer {
         let mut items = Vec::new();
         match target {
             WorkspaceTextContextMenuTarget::FilesEditor(target) => {
-                items.push(
-                    self.render_workspace_text_context_menu_item("Cut", target.can_cut, {
-                        let view = view.clone();
-                        move |cx| {
-                            view.update(cx, |this, cx| {
-                                this.workspace_text_context_menu_cut(cx);
-                            });
-                        }
-                    }, cx),
-                );
-                items.push(
-                    self.render_workspace_text_context_menu_item("Copy", target.can_copy, {
-                        let view = view.clone();
-                        move |cx| {
-                            view.update(cx, |this, cx| {
-                                this.workspace_text_context_menu_copy(cx);
-                            });
-                        }
-                    }, cx),
-                );
-                items.push(
-                    self.render_workspace_text_context_menu_item("Paste", target.can_paste, {
-                        let view = view.clone();
-                        move |cx| {
-                            view.update(cx, |this, cx| {
-                                this.workspace_text_context_menu_paste(cx);
-                            });
-                        }
-                    }, cx),
-                );
-                items.push(div().h(px(1.0)).mx_1().bg(cx.theme().border).into_any_element());
-                items.push(
-                    self.render_workspace_text_context_menu_item(
-                        "Select All",
-                        target.can_select_all,
-                        {
-                            let view = view.clone();
-                            move |cx| {
-                                view.update(cx, |this, cx| {
-                                    this.workspace_text_context_menu_select_all(cx);
-                                });
-                            }
-                        },
-                        cx,
-                    ),
-                );
+                items.extend(self.render_files_like_context_menu_entries(view.clone(), target.can_cut, target.can_copy, target.can_paste, target.can_select_all, cx));
+            }
+            WorkspaceTextContextMenuTarget::ReviewEditor(target) => {
+                items.extend(self.render_files_like_context_menu_entries(view.clone(), target.can_cut, target.can_copy, target.can_paste, target.can_select_all, cx));
             }
             WorkspaceTextContextMenuTarget::SelectableText(target) => {
                 items.push(
@@ -210,6 +168,51 @@ impl DiffViewer {
             }
         }
         items
+    }
+
+    fn render_files_like_context_menu_entries(
+        &self,
+        view: Entity<Self>,
+        can_cut: bool,
+        can_copy: bool,
+        can_paste: bool,
+        can_select_all: bool,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        vec![
+            self.render_workspace_text_context_menu_item("Cut", can_cut, {
+                let view = view.clone();
+                move |cx| {
+                    view.update(cx, |this, cx| {
+                        this.workspace_text_context_menu_cut(cx);
+                    });
+                }
+            }, cx),
+            self.render_workspace_text_context_menu_item("Copy", can_copy, {
+                let view = view.clone();
+                move |cx| {
+                    view.update(cx, |this, cx| {
+                        this.workspace_text_context_menu_copy(cx);
+                    });
+                }
+            }, cx),
+            self.render_workspace_text_context_menu_item("Paste", can_paste, {
+                let view = view.clone();
+                move |cx| {
+                    view.update(cx, |this, cx| {
+                        this.workspace_text_context_menu_paste(cx);
+                    });
+                }
+            }, cx),
+            div().h(px(1.0)).mx_1().bg(cx.theme().border).into_any_element(),
+            self.render_workspace_text_context_menu_item("Select All", can_select_all, {
+                move |cx| {
+                    view.update(cx, |this, cx| {
+                        this.workspace_text_context_menu_select_all(cx);
+                    });
+                }
+            }, cx),
+        ]
     }
 
     fn render_workspace_text_context_menu_item(

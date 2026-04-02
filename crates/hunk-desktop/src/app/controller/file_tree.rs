@@ -200,6 +200,11 @@ impl DiffViewer {
                 self.clear_editor_state(cx);
             }
         } else if mode == WorkspaceViewMode::Diff {
+            debug!(
+                review_files = self.review_files.len(),
+                selected_path = self.selected_path.as_deref().unwrap_or("none"),
+                "switching to review workspace"
+            );
             self.selected_path = review_mode_selected_path(
                 self.selected_path.as_deref(),
                 &self.review_files,
@@ -208,7 +213,8 @@ impl DiffViewer {
                 .selected_path
                 .as_deref()
                 .and_then(|selected| self.status_for_path(selected));
-            self.request_review_editor_reload(true, cx);
+            self.sync_review_editor_sessions_to_files();
+            self.request_review_editor_reload(false, cx);
             self.request_repo_tree_reload(cx);
             self.diff_reload_scroll_behavior = DiffReloadScrollBehavior::RevealSelectedFile;
             self.request_selected_diff_reload(cx);
@@ -246,7 +252,9 @@ impl DiffViewer {
         if self.workspace_view_mode == WorkspaceViewMode::Files {
             self.request_file_editor_reload(path, cx);
         } else {
-            self.review_editor_session.pending_target_right_line = None;
+            if let Some(session) = self.review_editor_session_mut(path.as_str()) {
+                session.pending_target_right_line = None;
+            }
             self.request_review_editor_reload(true, cx);
             self.scroll_to_file_start(&path);
             self.last_visible_row_start = None;

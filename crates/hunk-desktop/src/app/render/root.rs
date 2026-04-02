@@ -531,8 +531,48 @@ impl Render for DiffViewer {
             .children(Root::render_dialog_layer(window, cx))
             .children(Root::render_notification_layer(window, cx))
             .into_any_element();
+        let render_elapsed = render_started_at.elapsed();
+        if self.workspace_view_mode == WorkspaceViewMode::Diff
+            && self.last_scroll_activity_at.elapsed() < AUTO_REFRESH_SCROLL_DEBOUNCE
+            && render_elapsed > Duration::from_millis(8)
+        {
+            let should_log = self
+                .last_review_slow_render_logged_at
+                .is_none_or(|logged_at| logged_at.elapsed() >= Duration::from_secs(1));
+            if should_log {
+                self.last_review_slow_render_logged_at = Some(Instant::now());
+                let (visible_files, visible_preview_rows, active_file_visible) = self
+                    .last_review_visible_file_range
+                    .map(|(start_ix, end_ix)| {
+                        let visible_files = end_ix.saturating_sub(start_ix);
+                        let visible_preview_rows = self.review_files[start_ix..end_ix]
+                            .iter()
+                            .filter_map(|file| self.review_preview_sections.get(file.path.as_str()))
+                            .map(|section| section.rendered_row_count)
+                            .sum::<usize>();
+                        let active_file_visible = self
+                            .selected_path
+                            .as_deref()
+                            .is_some_and(|selected_path| {
+                                self.review_files[start_ix..end_ix]
+                                    .iter()
+                                    .any(|file| file.path == selected_path)
+                            });
+                        (visible_files, visible_preview_rows, active_file_visible)
+                    })
+                    .unwrap_or((0, 0, false));
+                tracing::debug!(
+                    render_ms = render_elapsed.as_secs_f64() * 1000.0,
+                    visible_files,
+                    visible_preview_rows,
+                    active_file_visible,
+                    fps = self.fps,
+                    "slow review render"
+                );
+            }
+        }
         if ai_selected {
-            self.record_ai_app_render_timing(render_started_at.elapsed());
+            self.record_ai_app_render_timing(render_elapsed);
         }
         element
     }

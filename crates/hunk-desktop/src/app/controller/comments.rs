@@ -258,7 +258,7 @@ impl DiffViewer {
     pub(super) fn review_editor_supports_comments(&self) -> bool {
         self.review_comments_enabled()
             && self.workspace_view_mode == WorkspaceViewMode::Diff
-            && self.review_editor_session.path.is_some()
+            && self.active_review_editor_session().is_some()
     }
 
     pub(super) fn close_comments_preview(&mut self, cx: &mut Context<Self>) {
@@ -353,7 +353,10 @@ impl DiffViewer {
             cx.notify();
             return;
         }
-        let Some(selection) = self.review_editor_session.right_editor.borrow().selection() else {
+        let Some(selection) = self
+            .active_review_editor_session()
+            .and_then(|session| session.right_editor.borrow().selection())
+        else {
             return;
         };
         self.active_comment_editor_row = None;
@@ -733,7 +736,7 @@ impl DiffViewer {
             .map(|file| file.status);
 
         if self.workspace_view_mode == WorkspaceViewMode::Diff {
-            if self.review_editor_session.path.as_deref() == Some(comment.file_path.as_str()) {
+            if self.active_review_editor_path() == Some(comment.file_path.as_str()) {
                 if let Some(target_line) = editor_target_line
                     && self.jump_review_editor_to_line(target_line, cx)
                 {
@@ -745,7 +748,9 @@ impl DiffViewer {
                 self.comments_preview_open = false;
                 self.selected_path = Some(comment.file_path.clone());
                 self.selected_status = Some(status);
-                self.review_editor_session.pending_target_right_line = editor_target_line;
+                if let Some(session) = self.review_editor_session_mut(comment.file_path.as_str()) {
+                    session.pending_target_right_line = editor_target_line;
+                }
                 self.request_review_editor_reload(true, cx);
                 self.comment_status_message =
                     Some("Jumped to comment file in Review.".to_string());
@@ -926,9 +931,10 @@ impl DiffViewer {
         if !self.review_editor_supports_comments() {
             return None;
         }
-        let file_path = self.review_editor_session.path.clone()?;
-        let left_text = self.review_editor_session.left_editor.borrow().current_text()?;
-        let right_text = self.review_editor_session.right_editor.borrow().current_text()?;
+        let session = self.active_review_editor_session()?;
+        let file_path = session.path.clone();
+        let left_text = session.left_editor.borrow().current_text()?;
+        let right_text = session.right_editor.borrow().current_text()?;
         let line_anchor = build_review_editor_right_line_anchor_from_texts(
             left_text.as_str(),
             right_text.as_str(),

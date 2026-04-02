@@ -54,6 +54,15 @@ impl DiffViewer {
                 };
                 cx.write_to_clipboard(ClipboardItem::new_string(selection_text));
             }
+            WorkspaceTextContextMenuTarget::ReviewEditor(target) => {
+                let Some(text) = self
+                    .review_editor_session(target.path.as_str())
+                    .and_then(|session| session.right_editor.borrow().copy_selection_text())
+                else {
+                    return;
+                };
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+            }
             WorkspaceTextContextMenuTarget::DiffRows(_) => {
                 let Some(selection_text) = self.selected_rows_as_text() else {
                     return;
@@ -69,18 +78,40 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) {
         let Some(WorkspaceTextContextMenuState {
-            target: WorkspaceTextContextMenuTarget::FilesEditor(_),
+            target:
+                WorkspaceTextContextMenuTarget::FilesEditor(_)
+                | WorkspaceTextContextMenuTarget::ReviewEditor(_),
             ..
         }) = self.workspace_text_context_menu.as_ref()
         else {
             return;
         };
-        let Some(text) = self.files_editor.borrow_mut().cut_selection_text() else {
+        let cut_text = match self.workspace_text_context_menu.as_ref().map(|state| &state.target) {
+            Some(WorkspaceTextContextMenuTarget::FilesEditor(_)) => {
+                let text = self.files_editor.borrow_mut().cut_selection_text();
+                if text.is_some() {
+                    self.sync_editor_dirty_from_input(cx);
+                }
+                text
+            }
+            Some(WorkspaceTextContextMenuTarget::ReviewEditor(target)) => {
+                let path = target.path.clone();
+                let text = self
+                    .review_editor_session_mut(path.as_str())
+                    .and_then(|session| session.right_editor.borrow_mut().cut_selection_text());
+                if text.is_some() {
+                    self.schedule_review_editor_save_for_path(path.as_str(), cx);
+                }
+                text
+            }
+            _ => None,
+        };
+        let Some(text) = cut_text else {
             return;
         };
         cx.write_to_clipboard(ClipboardItem::new_string(text));
-        self.sync_editor_dirty_from_input(cx);
         self.close_workspace_text_context_menu(cx);
+        cx.notify();
     }
 
     pub(super) fn workspace_text_context_menu_paste(
@@ -100,6 +131,18 @@ impl DiffViewer {
                 } else {
                     return;
                 }
+            }
+            WorkspaceTextContextMenuTarget::ReviewEditor(target) => {
+                let path = target.path.clone();
+                let pasted = self
+                    .review_editor_session_mut(path.as_str())
+                    .is_some_and(|session| {
+                        session.right_editor.borrow_mut().paste_text(text.as_str())
+                    });
+                if !pasted {
+                    return;
+                }
+                self.schedule_review_editor_save_for_path(path.as_str(), cx);
             }
             WorkspaceTextContextMenuTarget::Terminal(target) => {
                 let pasted = match target.kind {
@@ -131,6 +174,16 @@ impl DiffViewer {
                 }
                 self.sync_editor_dirty_from_input(cx);
             }
+            WorkspaceTextContextMenuTarget::ReviewEditor(target) => {
+                let selected = self
+                    .review_editor_session_mut(target.path.as_str())
+                    .is_some_and(|session| {
+                        session.right_editor.borrow_mut().select_all_action()
+                    });
+                if !selected {
+                    return;
+                }
+            }
             WorkspaceTextContextMenuTarget::SelectableText(target) => {
                 if !self.ai_select_all_text_for_surfaces(
                     target.row_id.as_str(),
@@ -158,6 +211,7 @@ impl DiffViewer {
             }
         }
         self.close_workspace_text_context_menu(cx);
+        cx.notify();
     }
 
     pub(super) fn workspace_text_context_menu_clear_terminal(

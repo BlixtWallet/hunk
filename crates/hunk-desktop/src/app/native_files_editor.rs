@@ -343,6 +343,13 @@ impl FilesEditor {
             .map(|row| row.source_line)
     }
 
+    pub(crate) fn display_row_count(&self) -> usize {
+        if self.active_path.is_none() {
+            return 1;
+        }
+        self.editor.display_snapshot().total_display_rows.max(1)
+    }
+
     pub(crate) fn set_first_visible_source_line(&mut self, source_line: usize) {
         let Some(first_visible_row) = self.editor.display_row_for_source_line(source_line) else {
             return;

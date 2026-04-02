@@ -3,6 +3,10 @@ impl DiffViewer {
         ListState::new(0, ListAlignment::Top, px(360.0))
     }
 
+    fn empty_review_editor_list_state() -> ListState {
+        ListState::new(0, ListAlignment::Top, px(420.0))
+    }
+
     fn empty_workspace_project_state() -> WorkspaceProjectState {
         WorkspaceProjectState {
             repo_root: None,
@@ -41,6 +45,7 @@ impl DiffViewer {
             review_files: Vec::new(),
             review_file_status_by_path: BTreeMap::new(),
             review_file_line_stats: BTreeMap::new(),
+            review_preview_sections: BTreeMap::new(),
             review_overall_line_stats: LineStats::default(),
             review_compare_loading: false,
             review_compare_error: None,
@@ -69,6 +74,7 @@ impl DiffViewer {
             selection_anchor_row: None,
             selection_head_row: None,
             last_visible_row_start: None,
+            last_review_visible_file_range: None,
             last_diff_scroll_offset: None,
         }
     }
@@ -154,6 +160,7 @@ impl DiffViewer {
             review_files: std::mem::take(&mut self.review_files),
             review_file_status_by_path: std::mem::take(&mut self.review_file_status_by_path),
             review_file_line_stats: std::mem::take(&mut self.review_file_line_stats),
+            review_preview_sections: std::mem::take(&mut self.review_preview_sections),
             review_overall_line_stats: self.review_overall_line_stats,
             review_compare_loading: self.review_compare_loading,
             review_compare_error: self.review_compare_error.take(),
@@ -185,6 +192,7 @@ impl DiffViewer {
             selection_anchor_row: self.selection_anchor_row.take(),
             selection_head_row: self.selection_head_row.take(),
             last_visible_row_start: self.last_visible_row_start.take(),
+            last_review_visible_file_range: self.last_review_visible_file_range.take(),
             last_diff_scroll_offset: self.last_diff_scroll_offset.take(),
         }
     }
@@ -206,7 +214,8 @@ impl DiffViewer {
         self.workspace_target_switch_loading = false;
         self.review_compare_loading = false;
         self.review_compare_error = None;
-        self.review_editor_session = ReviewEditorSession::new();
+        self.review_editor_sessions.clear();
+        self.review_editor_list_state = Self::empty_review_editor_list_state();
         self.repo_root = state.repo_root;
         self.workspace_targets = state.workspace_targets;
         self.active_workspace_target_id = state.active_workspace_target_id;
@@ -243,6 +252,7 @@ impl DiffViewer {
         self.review_files = state.review_files;
         self.review_file_status_by_path = state.review_file_status_by_path;
         self.review_file_line_stats = state.review_file_line_stats;
+        self.review_preview_sections = state.review_preview_sections;
         self.review_overall_line_stats = state.review_overall_line_stats;
         self.review_compare_loading = state.review_compare_loading;
         self.review_compare_error = state.review_compare_error;
@@ -271,6 +281,7 @@ impl DiffViewer {
         self.selection_anchor_row = state.selection_anchor_row;
         self.selection_head_row = state.selection_head_row;
         self.last_visible_row_start = state.last_visible_row_start;
+        self.last_review_visible_file_range = state.last_review_visible_file_range;
         self.last_diff_scroll_offset = state.last_diff_scroll_offset;
 
         self.snapshot_loading = false;

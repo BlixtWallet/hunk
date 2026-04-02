@@ -195,7 +195,7 @@ impl DiffViewer {
 
     fn select_hunk_relative(&mut self, direction: isize, cx: &mut Context<Self>) {
         if self.workspace_view_mode == WorkspaceViewMode::Diff
-            && self.review_editor_session.path.is_some()
+            && self.active_review_editor_session().is_some()
             && self.navigate_review_editor_hunk_relative(direction, cx)
         {
             return;
@@ -228,10 +228,15 @@ impl DiffViewer {
                 .unwrap_or(0);
             let max_ix = self.review_files.len().saturating_sub(1) as isize;
             let target_ix = (current_ix as isize + direction).clamp(0, max_ix) as usize;
-            let file = &self.review_files[target_ix];
-            self.selected_path = Some(file.path.clone());
-            self.selected_status = Some(file.status);
-            self.review_editor_session.pending_target_right_line = None;
+            let (path, status) = {
+                let file = &self.review_files[target_ix];
+                (file.path.clone(), file.status)
+            };
+            self.selected_path = Some(path.clone());
+            self.selected_status = Some(status);
+            if let Some(session) = self.review_editor_session_mut(path.as_str()) {
+                session.pending_target_right_line = None;
+            }
             self.request_review_editor_reload(true, cx);
             cx.notify();
             return;
@@ -294,10 +299,10 @@ impl DiffViewer {
         }
         if self.review_editor_focus_handle.is_focused(window)
             && self
-                .review_editor_session
-                .right_editor
-                .borrow_mut()
-                .move_vertical_action(true, false)
+                .active_review_editor_session_mut()
+                .is_some_and(|session| {
+                    session.right_editor.borrow_mut().move_vertical_action(true, false)
+                })
         {
             self.sync_review_editor_viewports_from_right();
             cx.notify();
@@ -317,10 +322,13 @@ impl DiffViewer {
         }
         if self.review_editor_focus_handle.is_focused(window)
             && self
-                .review_editor_session
-                .right_editor
-                .borrow_mut()
-                .move_vertical_action(false, false)
+                .active_review_editor_session_mut()
+                .is_some_and(|session| {
+                    session
+                        .right_editor
+                        .borrow_mut()
+                        .move_vertical_action(false, false)
+                })
         {
             self.sync_review_editor_viewports_from_right();
             cx.notify();
@@ -340,10 +348,10 @@ impl DiffViewer {
         }
         if self.review_editor_focus_handle.is_focused(window)
             && self
-                .review_editor_session
-                .right_editor
-                .borrow_mut()
-                .move_vertical_action(true, true)
+                .active_review_editor_session_mut()
+                .is_some_and(|session| {
+                    session.right_editor.borrow_mut().move_vertical_action(true, true)
+                })
         {
             self.sync_review_editor_viewports_from_right();
             cx.notify();
@@ -363,10 +371,13 @@ impl DiffViewer {
         }
         if self.review_editor_focus_handle.is_focused(window)
             && self
-                .review_editor_session
-                .right_editor
-                .borrow_mut()
-                .move_vertical_action(false, true)
+                .active_review_editor_session_mut()
+                .is_some_and(|session| {
+                    session
+                        .right_editor
+                        .borrow_mut()
+                        .move_vertical_action(false, true)
+                })
         {
             self.sync_review_editor_viewports_from_right();
             cx.notify();
@@ -422,10 +433,8 @@ impl DiffViewer {
         }
         if self.review_editor_focus_handle.is_focused(window)
             && self
-                .review_editor_session
-                .right_editor
-                .borrow_mut()
-                .select_all_action()
+                .active_review_editor_session_mut()
+                .is_some_and(|session| session.right_editor.borrow_mut().select_all_action())
         {
             self.sync_review_editor_viewports_from_right();
             cx.notify();
