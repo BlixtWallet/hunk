@@ -44,13 +44,14 @@ impl DiffViewer {
     }
 
     fn clamp_selection_to_rows(&mut self) {
-        if self.diff_rows.is_empty() {
+        let row_count = self.active_diff_row_count();
+        if row_count == 0 {
             self.selection_anchor_row = None;
             self.selection_head_row = None;
             return;
         }
 
-        let max_ix = self.diff_rows.len().saturating_sub(1);
+        let max_ix = row_count.saturating_sub(1);
         self.selection_anchor_row = self.selection_anchor_row.map(|ix| ix.min(max_ix));
         self.selection_head_row = self.selection_head_row.map(|ix| ix.min(max_ix));
     }
@@ -102,13 +103,14 @@ impl DiffViewer {
     }
 
     fn select_row(&mut self, row_ix: usize, extend_selection: bool, cx: &mut Context<Self>) {
-        if self.diff_rows.is_empty() {
+        let row_count = self.active_diff_row_count();
+        if row_count == 0 {
             self.selection_anchor_row = None;
             self.selection_head_row = None;
             return;
         }
 
-        let target_ix = row_ix.min(self.diff_rows.len().saturating_sub(1));
+        let target_ix = row_ix.min(row_count.saturating_sub(1));
         if extend_selection && self.selection_anchor_row.is_some() {
             self.selection_head_row = Some(target_ix);
         } else {
@@ -141,7 +143,7 @@ impl DiffViewer {
         self.open_workspace_text_context_menu(
             WorkspaceTextContextMenuTarget::DiffRows(DiffRowsContextMenuTarget {
                 can_copy: self.selected_row_range().is_some(),
-                can_select_all: !self.diff_rows.is_empty(),
+                can_select_all: self.active_diff_row_count() > 0,
             }),
             position,
             cx,
@@ -154,9 +156,13 @@ impl DiffViewer {
         extend_selection: bool,
         cx: &mut Context<Self>,
     ) {
+        let row_count = self.active_diff_row_count();
+        if row_count == 0 {
+            return;
+        }
         self.select_row(row_ix, extend_selection, cx);
         self.diff_list_state.scroll_to(ListOffset {
-            item_ix: row_ix.min(self.diff_rows.len().saturating_sub(1)),
+            item_ix: row_ix.min(row_count.saturating_sub(1)),
             offset_in_item: px(0.),
         });
         self.last_diff_scroll_offset = None;
@@ -164,11 +170,12 @@ impl DiffViewer {
     }
 
     fn move_selection_by(&mut self, delta: isize, extend_selection: bool, cx: &mut Context<Self>) {
-        if self.diff_rows.is_empty() {
+        let row_count = self.active_diff_row_count();
+        if row_count == 0 {
             return;
         }
 
-        let max_ix = self.diff_rows.len().saturating_sub(1) as isize;
+        let max_ix = row_count.saturating_sub(1) as isize;
         let base_ix = self
             .selection_head_row
             .map(|ix| ix as isize)
@@ -178,17 +185,19 @@ impl DiffViewer {
     }
 
     fn select_all_rows(&mut self, cx: &mut Context<Self>) {
-        if self.diff_rows.is_empty() {
+        let row_count = self.active_diff_row_count();
+        if row_count == 0 {
             return;
         }
 
         self.selection_anchor_row = Some(0);
-        self.selection_head_row = Some(self.diff_rows.len().saturating_sub(1));
+        self.selection_head_row = Some(row_count.saturating_sub(1));
         cx.notify();
     }
 
     fn select_hunk_relative(&mut self, direction: isize, cx: &mut Context<Self>) {
-        if self.diff_rows.is_empty() {
+        let row_count = self.active_diff_row_count();
+        if row_count == 0 {
             return;
         }
 
@@ -199,7 +208,7 @@ impl DiffViewer {
             let start_ix = self
                 .selection_head_row
                 .unwrap_or(self.diff_list_state.logical_scroll_top().item_ix)
-                .min(self.diff_rows.len().saturating_sub(1));
+                .min(row_count.saturating_sub(1));
             let hunk_rows = session
                 .hunk_ranges()
                 .iter()
@@ -230,10 +239,11 @@ impl DiffViewer {
         let start_ix = self
             .selection_head_row
             .unwrap_or(self.diff_list_state.logical_scroll_top().item_ix)
-            .min(self.diff_rows.len().saturating_sub(1));
+            .min(row_count.saturating_sub(1));
 
-        let target = find_wrapped_hunk_target(self.diff_rows.len(), start_ix, direction, |ix| {
-            self.diff_rows[ix].kind == DiffRowKind::HunkHeader
+        let target = find_wrapped_hunk_target(row_count, start_ix, direction, |ix| {
+            self.active_diff_row(ix)
+                .is_some_and(|row| row.kind == DiffRowKind::HunkHeader)
         });
 
         if let Some(target_ix) = target {
@@ -291,13 +301,16 @@ impl DiffViewer {
 
     fn selected_rows_as_text(&self) -> Option<String> {
         let (start, end) = self.selected_row_range()?;
-        if self.diff_rows.is_empty() {
+        let row_count = self.active_diff_row_count();
+        if row_count == 0 {
             return None;
         }
 
         let mut lines = Vec::new();
-        for row_ix in start..=end.min(self.diff_rows.len().saturating_sub(1)) {
-            let row = &self.diff_rows[row_ix];
+        for row_ix in start..=end.min(row_count.saturating_sub(1)) {
+            let Some(row) = self.active_diff_row(row_ix) else {
+                continue;
+            };
             lines.extend(Self::row_diff_lines(row));
         }
 

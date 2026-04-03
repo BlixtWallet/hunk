@@ -154,7 +154,7 @@ Zed analogue:
 
 ### Phase 4: Move Diff Metadata Onto Workspace Coordinates
 
-Status: Not started
+Status: In progress
 
 Targets:
 
@@ -165,9 +165,14 @@ Targets:
 Tasks:
 
 - [ ] Move comment anchors from file-local assumptions to workspace row/file mappings.
-- [ ] Move hunk navigation to workspace coordinates.
+- [x] Move hunk navigation to workspace coordinates.
 - [ ] Move diff selection and reveal logic off `selected_path`-driven row lists.
 - [ ] Keep a stable file-path mapping for actions that still need file scope.
+
+Current state:
+- Review visible-row segment prefetch now upgrades the shared workspace session cache instead of the legacy `diff_row_segment_cache`.
+- Review comment anchor building, row-context collection, and row selection/clamping now use active row/session accessors instead of directly indexing `diff_rows`.
+- The remaining gap is that selection state, comments UI state, and the scroll surface are still hosted by the flat diff list instead of one editor-native multi-file surface.
 
 ### Phase 5: Unify Syntax, Folding, Search, And Visible-Range Work
 

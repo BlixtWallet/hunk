@@ -31,8 +31,9 @@ impl DiffViewer {
 
     fn rebuild_comment_row_match_cache(&mut self) {
         self.comment_row_matches.clear();
-        self.comment_open_row_counts = vec![0; self.diff_rows.len()];
-        if self.diff_rows.is_empty() || self.comments_cache.is_empty() {
+        let row_count = self.active_diff_row_count();
+        self.comment_open_row_counts = vec![0; row_count];
+        if row_count == 0 || self.comments_cache.is_empty() {
             return;
         }
         let (row_anchor_index, rows_by_path) = self.build_comment_row_anchor_index();
@@ -59,7 +60,7 @@ impl DiffViewer {
         let mut row_anchor_index = BTreeMap::new();
         let mut rows_by_path = BTreeMap::<String, Vec<usize>>::new();
 
-        for row_ix in 0..self.diff_rows.len() {
+        for row_ix in 0..self.active_diff_row_count() {
             if let Some(anchor) = self.build_row_comment_anchor(row_ix) {
                 rows_by_path
                     .entry(anchor.file_path.clone())
@@ -98,13 +99,14 @@ impl DiffViewer {
     }
 
     fn clamp_comment_rows_to_diff(&mut self) {
-        if self.diff_rows.is_empty() {
+        let row_count = self.active_diff_row_count();
+        if row_count == 0 {
             self.hovered_comment_row = None;
             self.active_comment_editor_row = None;
             return;
         }
 
-        let max_ix = self.diff_rows.len().saturating_sub(1);
+        let max_ix = row_count.saturating_sub(1);
         self.hovered_comment_row = self.hovered_comment_row.map(|ix| ix.min(max_ix));
         self.active_comment_editor_row = self.active_comment_editor_row.map(|ix| ix.min(max_ix));
     }
@@ -266,17 +268,14 @@ impl DiffViewer {
         if !self.review_comments_enabled() {
             return false;
         }
-        let Some(row) = self.diff_rows.get(row_ix) else {
+        let Some(row) = self.active_diff_row(row_ix) else {
             return false;
         };
         if !matches!(row.kind, DiffRowKind::Code | DiffRowKind::Meta | DiffRowKind::Empty) {
             return false;
         }
-        if self.diff_row_metadata.len() != self.diff_rows.len() {
-            return false;
-        }
 
-        self.diff_row_metadata.get(row_ix).is_some_and(|meta| {
+        self.active_diff_row_metadata(row_ix).is_some_and(|meta| {
             matches!(
                 meta.kind,
                 DiffStreamRowKind::CoreCode | DiffStreamRowKind::CoreMeta | DiffStreamRowKind::CoreEmpty
@@ -380,8 +379,7 @@ impl DiffViewer {
             old_line: anchor.old_line,
             new_line: anchor.new_line,
             row_stable_id: self
-                .diff_row_metadata
-                .get(row_ix)
+                .active_diff_row_metadata(row_ix)
                 .map(|row| row.stable_id),
             hunk_header: anchor.hunk_header,
             line_text: anchor.line_text,
@@ -720,7 +718,7 @@ impl DiffViewer {
         if !self.row_supports_comments(row_ix) {
             return None;
         }
-        let row = self.diff_rows.get(row_ix)?;
+        let row = self.active_diff_row(row_ix)?;
         let file_path = self.row_file_path(row_ix)?;
         let hunk_header = self.row_hunk_header(row_ix);
         let line_text = Self::row_diff_lines(row).join("\n");
@@ -761,7 +759,8 @@ impl DiffViewer {
     }
 
     fn collect_row_context(&self, row_ix: usize, before: bool) -> String {
-        if self.diff_rows.is_empty() {
+        let row_count = self.active_diff_row_count();
+        if row_count == 0 {
             return String::new();
         }
         let anchor_path = self.row_file_path(row_ix);
@@ -773,13 +772,13 @@ impl DiffViewer {
             let start = row_ix.saturating_add(1);
             let end = start
                 .saturating_add(COMMENT_CONTEXT_RADIUS_ROWS)
-                .min(self.diff_rows.len());
+                .min(row_count);
             start..end
         };
 
         let mut lines = Vec::new();
         for ix in range {
-            if let Some(row) = self.diff_rows.get(ix) {
+            if let Some(row) = self.active_diff_row(ix) {
                 if anchor_path.is_some() && self.row_file_path(ix) != anchor_path {
                     continue;
                 }

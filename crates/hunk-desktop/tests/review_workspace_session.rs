@@ -1,6 +1,15 @@
 mod app {
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+    pub enum DiffSegmentQuality {
+        #[default]
+        Plain,
+        Detailed,
+    }
+
     #[derive(Debug, Clone, Default)]
-    pub struct DiffRowSegmentCache;
+    pub struct DiffRowSegmentCache {
+        pub quality: DiffSegmentQuality,
+    }
 
     #[derive(Debug, Clone)]
     #[allow(dead_code)]
@@ -146,9 +155,24 @@ fn review_workspace_session_can_attach_render_rows() {
     };
 
     let rows = parse_patch_side_by_side(patch);
+    let stream = app::data::DiffStream {
+        rows: rows.clone(),
+        row_metadata: vec![
+            app::DiffStreamRowMeta { stable_id: 1 },
+            app::DiffStreamRowMeta { stable_id: 2 },
+            app::DiffStreamRowMeta { stable_id: 3 },
+        ],
+        row_segments: vec![
+            None,
+            Some(app::DiffRowSegmentCache {
+                quality: app::DiffSegmentQuality::Detailed,
+            }),
+            None,
+        ],
+    };
     let session = ReviewWorkspaceSession::from_compare_snapshot(&snapshot, &BTreeSet::new())
         .expect("workspace session should build")
-        .with_test_render_rows(rows.clone());
+        .with_render_stream(&stream);
 
     assert_eq!(session.row_count(), rows.len());
     assert_eq!(
@@ -161,6 +185,43 @@ fn review_workspace_session_can_attach_render_rows() {
             .map(|row| row.kind),
         rows.last().map(|row| row.kind)
     );
+}
+
+#[test]
+fn review_workspace_session_prefers_higher_quality_segment_upgrades() {
+    let snapshot = CompareSnapshot {
+        files: vec![changed_file("src/main.rs", FileStatus::Modified)],
+        file_line_stats: BTreeMap::new(),
+        overall_line_stats: LineStats::default(),
+        patches_by_path: BTreeMap::from([("src/main.rs".to_string(), String::new())]),
+    };
+    let stream = app::data::DiffStream {
+        rows: Vec::new(),
+        row_metadata: Vec::new(),
+        row_segments: vec![Some(app::DiffRowSegmentCache {
+            quality: app::DiffSegmentQuality::Plain,
+        })],
+    };
+    let mut session = ReviewWorkspaceSession::from_compare_snapshot(&snapshot, &BTreeSet::new())
+        .expect("workspace session should build")
+        .with_render_stream(&stream);
+
+    assert!(session.set_row_segment_cache_if_better(
+        0,
+        app::DiffRowSegmentCache {
+            quality: app::DiffSegmentQuality::Detailed,
+        },
+    ));
+    assert_eq!(
+        session.row_segment_cache(0).map(|cache| cache.quality),
+        Some(app::DiffSegmentQuality::Detailed)
+    );
+    assert!(!session.set_row_segment_cache_if_better(
+        0,
+        app::DiffRowSegmentCache {
+            quality: app::DiffSegmentQuality::Plain,
+        },
+    ));
 }
 
 #[test]

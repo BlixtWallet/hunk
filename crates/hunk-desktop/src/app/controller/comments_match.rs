@@ -7,17 +7,21 @@ pub(super) enum FileAnchorReconcileState {
 
 impl DiffViewer {
     pub(super) fn file_anchor_reconcile_state(&self, file_path: &str) -> FileAnchorReconcileState {
-        if self.diff_row_metadata.len() != self.diff_rows.len() {
+        let row_count = self.active_diff_row_count();
+        if self.workspace_view_mode != WorkspaceViewMode::Diff && self.diff_row_metadata.len() != row_count
+        {
             return FileAnchorReconcileState::Deferred;
         }
 
         let mut has_anchor_rows = false;
         let mut saw_rows_for_file = false;
-        for row in self
-            .diff_row_metadata
-            .iter()
-            .filter(|row| row.file_path.as_deref() == Some(file_path))
-        {
+        for row_ix in 0..row_count {
+            let Some(row) = self.active_diff_row_metadata(row_ix) else {
+                return FileAnchorReconcileState::Deferred;
+            };
+            if row.file_path.as_deref() != Some(file_path) {
+                continue;
+            }
             saw_rows_for_file = true;
             match row.kind {
                 DiffStreamRowKind::CoreCode
@@ -247,7 +251,7 @@ impl DiffViewer {
         if self.row_file_path(row_ix).as_deref() != Some(comment.file_path.as_str()) {
             return false;
         }
-        let Some(row) = self.diff_rows.get(row_ix) else {
+        let Some(row) = self.active_diff_row(row_ix) else {
             return false;
         };
 
@@ -279,10 +283,9 @@ impl DiffViewer {
             return session.path_at_surface_row(row_ix).map(ToString::to_string);
         }
 
-        if self.diff_row_metadata.len() == self.diff_rows.len() {
+        if self.diff_row_metadata.len() == self.active_diff_row_count() {
             return self
-                .diff_row_metadata
-                .get(row_ix)
+                .active_diff_row_metadata(row_ix)
                 .and_then(|row| row.file_path.clone());
         }
         None
@@ -302,6 +305,6 @@ impl DiffViewer {
             .get(row_ix)
             .copied()
             .flatten()?;
-        self.diff_rows.get(hunk_ix).map(|row| row.text.clone())
+        self.active_diff_row(hunk_ix).map(|row| row.text.clone())
     }
 }

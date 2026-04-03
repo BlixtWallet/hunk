@@ -227,15 +227,27 @@ impl ReviewWorkspaceSession {
         self.row_segments.get(row_ix).and_then(Option::as_ref)
     }
 
-    pub(crate) fn layout(&self) -> &WorkspaceLayout {
-        &self.layout
+    pub(crate) fn set_row_segment_cache_if_better(
+        &mut self,
+        row_ix: usize,
+        row_cache: DiffRowSegmentCache,
+    ) -> bool {
+        let Some(slot) = self.row_segments.get_mut(row_ix) else {
+            return false;
+        };
+        let should_replace = slot
+            .as_ref()
+            .map(|cached| row_cache.quality > cached.quality)
+            .unwrap_or(true);
+        if should_replace {
+            *slot = Some(row_cache);
+            return true;
+        }
+        false
     }
 
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn with_test_render_rows(mut self, rows: Vec<SideBySideRow>) -> Self {
-        self.rows = rows;
-        self
+    pub(crate) fn layout(&self) -> &WorkspaceLayout {
+        &self.layout
     }
 }
 

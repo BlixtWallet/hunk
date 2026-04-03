@@ -97,12 +97,15 @@ impl DiffViewer {
         force_upgrade: bool,
         cx: &mut Context<Self>,
     ) {
-        if self.diff_rows.is_empty() {
+        let row_count = self.active_diff_row_count();
+        if row_count == 0 {
             return;
         }
 
-        if self.diff_row_segment_cache.len() != self.diff_rows.len() {
-            self.diff_row_segment_cache.resize(self.diff_rows.len(), None);
+        if self.workspace_view_mode != WorkspaceViewMode::Diff
+            && self.diff_row_segment_cache.len() != row_count
+        {
+            self.diff_row_segment_cache.resize(row_count, None);
         }
 
         if !force_upgrade
@@ -116,7 +119,7 @@ impl DiffViewer {
         let start = visible_row.saturating_sub(DIFF_SEGMENT_PREFETCH_RADIUS_ROWS);
         let end = visible_row
             .saturating_add(DIFF_SEGMENT_PREFETCH_RADIUS_ROWS.saturating_add(1))
-            .min(self.diff_rows.len());
+            .min(row_count);
 
         let batch_limit = if force_upgrade {
             end.saturating_sub(start)
@@ -130,7 +133,7 @@ impl DiffViewer {
                 break;
             }
 
-            let Some(row) = self.diff_rows.get(row_ix) else {
+            let Some(row) = self.active_diff_row(row_ix) else {
                 continue;
             };
             if row.kind != DiffRowKind::Code {
@@ -138,20 +141,17 @@ impl DiffViewer {
             }
 
             let file_path = self
-                .diff_row_metadata
-                .get(row_ix)
+                .active_diff_row_metadata(row_ix)
                 .and_then(|meta| meta.file_path.clone());
             let base_quality = file_path
                 .as_deref()
-                .and_then(|path| self.file_line_stats.get(path).copied())
+                .and_then(|path| self.active_diff_file_line_stats().get(path).copied())
                 .map(base_segment_quality_for_file)
                 .unwrap_or(DiffSegmentQuality::Detailed);
             let target_quality = effective_segment_quality(base_quality, recently_scrolling);
 
             if self
-                .diff_row_segment_cache
-                .get(row_ix)
-                .and_then(Option::as_ref)
+                .active_diff_row_segment_cache(row_ix)
                 .is_some_and(|cache| cache.quality >= target_quality)
             {
                 continue;
@@ -213,8 +213,16 @@ impl DiffViewer {
                     }
 
                     let mut inserted = false;
+                    let update_review_session = this.workspace_view_mode == WorkspaceViewMode::Diff
+                        && this.review_workspace_session.is_some();
                     for (row_ix, row_cache) in computed_rows {
-                        if let Some(slot) = this.diff_row_segment_cache.get_mut(row_ix) {
+                        if update_review_session {
+                            if let Some(session) = this.review_workspace_session.as_mut()
+                                && session.set_row_segment_cache_if_better(row_ix, row_cache)
+                            {
+                                inserted = true;
+                            }
+                        } else if let Some(slot) = this.diff_row_segment_cache.get_mut(row_ix) {
                             let should_replace = slot
                                 .as_ref()
                                 .map(|cached: &DiffRowSegmentCache| row_cache.quality > cached.quality)
