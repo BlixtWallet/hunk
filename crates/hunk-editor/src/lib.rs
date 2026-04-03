@@ -1,4 +1,5 @@
 mod display;
+mod workspace;
 
 use std::cell::RefCell;
 use std::cmp::min;
@@ -12,6 +13,11 @@ use hunk_language::{
     SemanticToken,
 };
 use hunk_text::{Selection, TextBuffer, TextPosition, Transaction};
+pub use workspace::{
+    WorkspaceDocument, WorkspaceDocumentId, WorkspaceExcerptId, WorkspaceExcerptKind,
+    WorkspaceExcerptLayout, WorkspaceExcerptSpec, WorkspaceLayout, WorkspaceLayoutError,
+    WorkspaceRowKind, WorkspaceRowLocation,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Viewport {
