@@ -185,9 +185,9 @@ impl DiffViewer {
                 let is_selected = this.is_row_selected(ix);
 
                 match row.kind {
-                    DiffRowKind::Code => this.render_code_row(ix, row, is_selected, cx),
+                    DiffRowKind::Code => this.render_code_row(ix, row, is_selected, None, cx),
                     DiffRowKind::HunkHeader | DiffRowKind::Meta | DiffRowKind::Empty => {
-                        this.render_meta_row(ix, row, is_selected, cx)
+                        this.render_meta_row(ix, row, is_selected, None, cx)
                     }
                 }
             })
@@ -261,16 +261,23 @@ impl DiffViewer {
         viewport_section: &review_workspace_session::ReviewWorkspaceViewportSection,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let rows = (viewport_section.visible_row_range.start..viewport_section.visible_row_range.end)
-            .filter_map(|row_ix| {
-            let row = self.active_diff_row(row_ix)?;
+        debug_assert_eq!(
+            viewport_section.rows.len(),
+            viewport_section.visible_row_range.len(),
+            "review viewport rows should match the visible row range"
+        );
+        let rows = viewport_section.rows.iter().map(|viewport_row| {
+            let row_ix = viewport_row.row_index;
+            let row = &viewport_row.row;
             let is_selected = self.is_row_selected(row_ix);
-            Some(match row.kind {
-                DiffRowKind::Code => self.render_code_row(row_ix, row, is_selected, cx),
-                DiffRowKind::HunkHeader | DiffRowKind::Meta | DiffRowKind::Empty => {
-                    self.render_meta_row(row_ix, row, is_selected, cx)
+            match row.kind {
+                DiffRowKind::Code => {
+                    self.render_code_row(row_ix, row, is_selected, Some(viewport_row), cx)
                 }
-            })
+                DiffRowKind::HunkHeader | DiffRowKind::Meta | DiffRowKind::Empty => {
+                    self.render_meta_row(row_ix, row, is_selected, Some(viewport_row), cx)
+                }
+            }
         });
 
         v_flex()

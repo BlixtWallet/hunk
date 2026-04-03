@@ -151,6 +151,7 @@ Current state:
 - Review visible-range bookkeeping now follows the active excerpt section window for the normal surface path, so idle syntax/prefetch work no longer keys off the legacy flat-list top-row assumptions.
 - Review surface geometry is now owned by `ReviewWorkspaceSession`: section pixel ranges, row top offsets, and visible viewport windowing are computed once from the shared session instead of being spread across `diff.rs` and controller scroll heuristics.
 - Review workspace sessions now also build explicit viewport snapshots for the visible section window, so the Diff render path consumes session-owned section/range/spacer geometry instead of recomputing that math inline.
+- Review workspace viewport snapshots now also carry the visible row payload and syntax/cache data for each visible section, so the surface consumes session-prepared row state instead of re-querying controller-owned row caches while painting.
 - Visible Review section rendering now also follows that shared geometry: the workspace surface only builds viewport-intersecting rows within each visible excerpt section, with session-owned spacer offsets keeping the overall surface stable instead of rendering whole hunks at once.
 - Review comment editing no longer forces Diff back onto the legacy flat list; the composer is now rendered as an overlay anchored from shared Review surface geometry, so the workspace surface stays active while editing comments.
 - Sticky file headers, hunk navigation, and comment hunk lookup in Review now read from that shared session.

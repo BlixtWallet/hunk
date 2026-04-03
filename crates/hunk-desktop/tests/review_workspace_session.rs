@@ -500,6 +500,10 @@ fn review_workspace_session_builds_viewport_snapshot_from_shared_geometry() {
     let session = ReviewWorkspaceSession::from_compare_snapshot(&snapshot, &BTreeSet::new())
         .expect("workspace session should build")
         .with_render_stream(&stream);
+    let expected_first_visible = session
+        .section_visible_row_range(0, 0, REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX * 2, 1)
+        .expect("first section visible rows");
+    let expected_first_visible_rows = expected_first_visible.clone().collect::<Vec<_>>();
 
     let viewport =
         session.build_viewport_snapshot(0, REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX * 2, 1, 1);
@@ -513,9 +517,7 @@ fn review_workspace_session_builds_viewport_snapshot_from_shared_geometry() {
     assert_eq!(viewport.sections[0].pixel_range.start, 0);
     assert_eq!(
         viewport.sections[0].visible_row_range,
-        session
-            .section_visible_row_range(0, 0, REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX * 2, 1)
-            .expect("first section visible rows"),
+        expected_first_visible,
     );
     assert_eq!(
         viewport.sections[0].top_spacer_height_px,
@@ -525,6 +527,30 @@ fn review_workspace_session_builds_viewport_snapshot_from_shared_geometry() {
             .saturating_sub(viewport.sections[0].pixel_range.start),
     );
     assert!(viewport.sections[0].bottom_spacer_height_px > 0);
+    assert_eq!(
+        viewport.sections[0]
+            .rows
+            .iter()
+            .map(|row| row.row_index)
+            .collect::<Vec<_>>(),
+        expected_first_visible_rows,
+    );
+    assert_eq!(
+        viewport.sections[0].rows[0].row.kind,
+        session
+            .row(viewport.sections[0].rows[0].row_index)
+            .expect("row should exist")
+            .kind,
+    );
+    assert_eq!(
+        viewport.sections[0].rows[0]
+            .metadata
+            .as_ref()
+            .map(|meta| meta.stable_id),
+        session
+            .row_metadata(viewport.sections[0].rows[0].row_index)
+            .map(|meta| meta.stable_id),
+    );
 }
 
 #[test]

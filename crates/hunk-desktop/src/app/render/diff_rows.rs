@@ -12,9 +12,14 @@ impl DiffViewer {
         ix: usize,
         row: &SideBySideRow,
         is_selected: bool,
+        viewport_row: Option<&review_workspace_session::ReviewWorkspaceViewportRow>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        if let Some(meta) = self.active_diff_row_metadata(ix)
+        let row_metadata = viewport_row
+            .and_then(|row| row.metadata.as_ref())
+            .or_else(|| self.active_diff_row_metadata(ix));
+
+        if let Some(meta) = row_metadata
             && meta.kind == DiffStreamRowKind::FileHeader
             && let (Some(path), Some(status)) = (meta.file_path.as_deref(), meta.file_status)
         {
@@ -166,6 +171,7 @@ impl DiffViewer {
         ix: usize,
         row_data: &SideBySideRow,
         is_selected: bool,
+        viewport_row: Option<&review_workspace_session::ReviewWorkspaceViewportRow>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let stable_row_id = self.diff_row_stable_id(ix);
@@ -218,6 +224,7 @@ impl DiffViewer {
                     peer_kind: row_data.right.kind,
                     panel_width: layout.map(|layout| layout.left_panel_width),
                 },
+                viewport_row,
                 cx,
             ))
             .child(self.render_diff_cell(
@@ -230,6 +237,7 @@ impl DiffViewer {
                     peer_kind: row_data.left.kind,
                     panel_width: layout.map(|layout| layout.right_panel_width),
                 },
+                viewport_row,
                 cx,
             ))
             .child(self.render_row_comment_affordance(ix, cx));
@@ -266,6 +274,7 @@ impl DiffViewer {
         row_stable_id: u64,
         row_is_selected: bool,
         spec: DiffCellRenderSpec<'_>,
+        viewport_row: Option<&review_workspace_session::ReviewWorkspaceViewportRow>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let side = spec.side;
@@ -341,7 +350,9 @@ impl DiffViewer {
         }
 
         let line_number = cell.line.map(|line| line.to_string()).unwrap_or_default();
-        let cached_row_segments = self.active_diff_row_segment_cache(spec.row_ix);
+        let cached_row_segments = viewport_row
+            .and_then(|row| row.segment_cache.as_ref())
+            .or_else(|| self.active_diff_row_segment_cache(spec.row_ix));
         let segment_cache = if side == "left" {
             cached_row_segments.map(|segments| &segments.left)
         } else {

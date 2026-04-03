@@ -71,16 +71,25 @@ pub(crate) struct ReviewWorkspaceSection {
     pub(crate) hunk_header: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) struct ReviewWorkspaceViewportSection {
     pub(crate) section_index: usize,
     pub(crate) pixel_range: Range<usize>,
     pub(crate) visible_row_range: Range<usize>,
     pub(crate) top_spacer_height_px: usize,
     pub(crate) bottom_spacer_height_px: usize,
+    pub(crate) rows: Vec<ReviewWorkspaceViewportRow>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
+pub(crate) struct ReviewWorkspaceViewportRow {
+    pub(crate) row_index: usize,
+    pub(crate) row: SideBySideRow,
+    pub(crate) metadata: Option<DiffStreamRowMeta>,
+    pub(crate) segment_cache: Option<DiffRowSegmentCache>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct ReviewWorkspaceViewportSnapshot {
     pub(crate) total_surface_height_px: usize,
     pub(crate) sections: Vec<ReviewWorkspaceViewportSection>,
@@ -367,12 +376,24 @@ impl ReviewWorkspaceSession {
                 self.row_boundary_offset_px(visible_row_range.end)
                     .unwrap_or(pixel_range.end),
             );
+            let rows = visible_row_range
+                .clone()
+                .filter_map(|row_index| {
+                    Some(ReviewWorkspaceViewportRow {
+                        row_index,
+                        row: self.row(row_index)?.clone(),
+                        metadata: self.row_metadata(row_index).cloned(),
+                        segment_cache: self.row_segment_cache(row_index).cloned(),
+                    })
+                })
+                .collect();
             sections.push(ReviewWorkspaceViewportSection {
                 section_index: section_ix,
                 pixel_range,
                 visible_row_range,
                 top_spacer_height_px,
                 bottom_spacer_height_px,
+                rows,
             });
         }
 
