@@ -6,6 +6,7 @@ mod app {
     use hunk_git::git::FileStatus;
 
     #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+    #[allow(dead_code)]
     pub enum DiffSegmentQuality {
         #[default]
         Plain,
@@ -51,6 +52,8 @@ mod app {
             pub row_metadata: Vec<DiffStreamRowMeta>,
             pub row_segments: Vec<Option<DiffRowSegmentCache>>,
         }
+
+        pub use super::DiffStreamRowKind;
     }
 
     pub mod native_files_editor {

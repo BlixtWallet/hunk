@@ -14,7 +14,7 @@ use hunk_git::compare::CompareSnapshot;
 use hunk_git::git::FileStatus;
 use hunk_text::BufferId;
 
-use crate::app::data::DiffStream;
+use crate::app::data::{DiffStream, DiffStreamRowKind};
 use crate::app::native_files_editor::WorkspaceEditorSession;
 use crate::app::{DiffRowSegmentCache, DiffStreamRowMeta};
 
