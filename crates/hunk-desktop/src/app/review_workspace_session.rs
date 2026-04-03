@@ -133,6 +133,7 @@ impl ReviewWorkspaceViewportSnapshot {
         Some(self.sections.first()?.pixel_range.start..self.sections.last()?.pixel_range.end)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn row_by_index(&self, row_index: usize) -> Option<&ReviewWorkspaceViewportRow> {
         self.sections
             .iter()

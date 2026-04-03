@@ -1,27 +1,12 @@
 #[derive(Clone)]
-enum ReviewWorkspacePaintedRowKind {
-    FileHeader {
-        paint: Box<ReviewWorkspaceFileHeaderPaint>,
-    },
-    Code {
-        left: Box<ReviewWorkspaceCodeRowCellPaint>,
-        right: Box<ReviewWorkspaceCodeRowCellPaint>,
-    },
-    Meta(ReviewWorkspaceMetaRowPaint),
-}
-
-#[derive(Clone)]
-struct ReviewWorkspacePaintedRow {
-    row_index: usize,
-    kind: ReviewWorkspacePaintedRowKind,
-}
-
-#[derive(Clone)]
 struct ReviewWorkspaceViewportElement {
     view: Entity<DiffViewer>,
     viewport: std::rc::Rc<review_workspace_session::ReviewWorkspaceViewportSnapshot>,
     viewport_origin_px: usize,
-    rows: std::rc::Rc<Vec<ReviewWorkspacePaintedRow>>,
+    selected_row_range: Option<(usize, usize)>,
+    layout: Option<DiffColumnLayout>,
+    left_line_number_width: f32,
+    right_line_number_width: f32,
     center_divider: gpui::Hsla,
     mono_font_family: SharedString,
 }
@@ -29,26 +14,6 @@ struct ReviewWorkspaceViewportElement {
 #[derive(Clone)]
 struct ReviewWorkspaceSectionLayout {
     hitbox: gpui::Hitbox,
-}
-
-impl ReviewWorkspaceViewportElement {
-    fn new(
-        view: Entity<DiffViewer>,
-        viewport: review_workspace_session::ReviewWorkspaceViewportSnapshot,
-        viewport_origin_px: usize,
-        rows: Vec<ReviewWorkspacePaintedRow>,
-        center_divider: gpui::Hsla,
-        mono_font_family: SharedString,
-    ) -> Self {
-        Self {
-            view,
-            viewport: std::rc::Rc::new(viewport),
-            viewport_origin_px,
-            rows: std::rc::Rc::new(rows),
-            center_divider,
-            mono_font_family,
-        }
-    }
 }
 
 impl IntoElement for ReviewWorkspaceViewportElement {
@@ -121,8 +86,7 @@ impl Element for ReviewWorkspaceViewportElement {
                 viewport_origin_px,
                 event.position,
                 hitbox.bounds.origin,
-            )
-            else {
+            ) else {
                 return;
             };
             view.update(cx, |this, cx| match event.button {
@@ -150,8 +114,7 @@ impl Element for ReviewWorkspaceViewportElement {
                 viewport_origin_px,
                 event.position,
                 hitbox.bounds.origin,
-            )
-            else {
+            ) else {
                 return;
             };
             view.update(cx, |this, cx| {
@@ -172,10 +135,12 @@ impl Element for ReviewWorkspaceViewportElement {
         });
 
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
-            for row in self.rows.iter() {
-                let Some(viewport_row) = self.viewport.row_by_index(row.row_index) else {
-                    continue;
-                };
+            for viewport_row in self
+                .viewport
+                .sections
+                .iter()
+                .flat_map(|section| section.rows.iter())
+            {
                 let row_bounds = Bounds {
                     origin: point(
                         bounds.origin.x,
@@ -189,33 +154,86 @@ impl Element for ReviewWorkspaceViewportElement {
                     ),
                     size: gpui::size(bounds.size.width, px(viewport_row.height_px as f32)),
                 };
-                match &row.kind {
-                    ReviewWorkspacePaintedRowKind::FileHeader { paint } => {
-                        paint_review_workspace_file_header_row(
-                            window,
-                            cx,
-                            row_bounds,
-                            paint,
-                            self.mono_font_family.clone(),
+                let is_selected = review_workspace_row_is_selected(
+                    self.selected_row_range,
+                    viewport_row.row_index,
+                );
+
+                if viewport_row.stream_kind == DiffStreamRowKind::FileHeader {
+                    let Some(path) = viewport_row.file_path.as_deref() else {
+                        continue;
+                    };
+                    let status = viewport_row.file_status.unwrap_or(FileStatus::Unknown);
+                    let stats = viewport_row.file_line_stats.unwrap_or_default();
+                    let paint = build_review_workspace_file_header_paint(
+                        cx.theme(),
+                        path,
+                        status,
+                        stats,
+                        is_selected,
+                    );
+                    paint_review_workspace_file_header_row(
+                        window,
+                        cx,
+                        row_bounds,
+                        &paint,
+                        self.mono_font_family.clone(),
+                    );
+                    continue;
+                }
+
+                match viewport_row.row_kind {
+                    DiffRowKind::Code => {
+                        let left = build_review_workspace_code_row_cell_paint(
+                            cx.theme(),
+                            self.left_line_number_width,
+                            viewport_row.stable_id,
+                            is_selected,
+                            DiffCellRenderSpec {
+                                side: "left",
+                                line: viewport_row.left_line,
+                                cell_kind: viewport_row.left_cell_kind,
+                                peer_kind: viewport_row.right_cell_kind,
+                                panel_width: self.layout.map(|layout| layout.left_panel_width),
+                            },
+                            viewport_row,
                         );
-                    }
-                    ReviewWorkspacePaintedRowKind::Code { left, right } => {
+                        let right = build_review_workspace_code_row_cell_paint(
+                            cx.theme(),
+                            self.right_line_number_width,
+                            viewport_row.stable_id,
+                            is_selected,
+                            DiffCellRenderSpec {
+                                side: "right",
+                                line: viewport_row.right_line,
+                                cell_kind: viewport_row.right_cell_kind,
+                                peer_kind: viewport_row.left_cell_kind,
+                                panel_width: self.layout.map(|layout| layout.right_panel_width),
+                            },
+                            viewport_row,
+                        );
                         paint_review_workspace_code_row(
                             window,
                             cx,
                             row_bounds,
-                            left,
-                            right,
+                            &left,
+                            &right,
                             self.center_divider,
                             self.mono_font_family.clone(),
                         );
                     }
-                    ReviewWorkspacePaintedRowKind::Meta(meta) => {
+                    DiffRowKind::HunkHeader | DiffRowKind::Meta | DiffRowKind::Empty => {
+                        let meta = build_review_workspace_meta_row_paint(
+                            cx.theme(),
+                            viewport_row.row_kind,
+                            &viewport_row.text,
+                            is_selected,
+                        );
                         paint_review_workspace_meta_row(
                             window,
                             cx,
                             row_bounds,
-                            meta,
+                            &meta,
                             self.mono_font_family.clone(),
                         );
                     }
@@ -223,6 +241,14 @@ impl Element for ReviewWorkspaceViewportElement {
             }
         });
     }
+}
+
+fn review_workspace_row_is_selected(
+    selected_row_range: Option<(usize, usize)>,
+    row_index: usize,
+) -> bool {
+    selected_row_range
+        .is_some_and(|(start, end)| row_index >= start && row_index <= end)
 }
 
 fn review_workspace_row_at_position(
@@ -238,87 +264,6 @@ fn review_workspace_row_at_position(
 }
 
 impl DiffViewer {
-    fn build_review_workspace_viewport_painted_rows(
-        &self,
-        viewport: &review_workspace_session::ReviewWorkspaceViewportSnapshot,
-        layout: Option<DiffColumnLayout>,
-        cx: &mut Context<Self>,
-    ) -> Vec<ReviewWorkspacePaintedRow> {
-        viewport
-            .sections
-            .iter()
-            .flat_map(|viewport_section| viewport_section.rows.iter())
-            .filter_map(|viewport_row| {
-                let row_ix = viewport_row.row_index;
-                let is_selected = self.is_row_selected(row_ix);
-                let kind = if viewport_row.stream_kind == DiffStreamRowKind::FileHeader {
-                    let path = viewport_row.file_path.as_deref()?;
-                    let status = viewport_row.file_status.unwrap_or(FileStatus::Unknown);
-                    let stats = viewport_row.file_line_stats.unwrap_or_default();
-                    ReviewWorkspacePaintedRowKind::FileHeader {
-                        paint: Box::new(self.build_review_workspace_file_header_paint(
-                            path,
-                            status,
-                            stats,
-                            is_selected,
-                            cx,
-                        )),
-                    }
-                } else {
-                    match viewport_row.row_kind {
-                        DiffRowKind::Code => {
-                            let stable_row_id = viewport_row.stable_id;
-                            let left = self.build_review_workspace_code_row_cell(
-                                stable_row_id,
-                                is_selected,
-                                DiffCellRenderSpec {
-                                    side: "left",
-                                    line: viewport_row.left_line,
-                                    cell_kind: viewport_row.left_cell_kind,
-                                    peer_kind: viewport_row.right_cell_kind,
-                                    panel_width: layout.map(|layout| layout.left_panel_width),
-                                },
-                                viewport_row,
-                                cx,
-                            );
-                            let right = self.build_review_workspace_code_row_cell(
-                                stable_row_id,
-                                is_selected,
-                                DiffCellRenderSpec {
-                                    side: "right",
-                                    line: viewport_row.right_line,
-                                    cell_kind: viewport_row.right_cell_kind,
-                                    peer_kind: viewport_row.left_cell_kind,
-                                    panel_width: layout.map(|layout| layout.right_panel_width),
-                                },
-                                viewport_row,
-                                cx,
-                            );
-                            ReviewWorkspacePaintedRowKind::Code {
-                                left: Box::new(left),
-                                right: Box::new(right),
-                            }
-                        }
-                        DiffRowKind::HunkHeader | DiffRowKind::Meta | DiffRowKind::Empty => {
-                            ReviewWorkspacePaintedRowKind::Meta(
-                                self.build_review_workspace_meta_row_paint(
-                                    viewport_row.row_kind,
-                                    &viewport_row.text,
-                                    is_selected,
-                                    cx,
-                                ),
-                            )
-                        }
-                    }
-                };
-                Some(ReviewWorkspacePaintedRow {
-                    row_index: row_ix,
-                    kind,
-                })
-            })
-            .collect()
-    }
-
     fn render_review_workspace_viewport_element(
         &self,
         viewport: &review_workspace_session::ReviewWorkspaceViewportSnapshot,
@@ -326,20 +271,18 @@ impl DiffViewer {
         layout: Option<DiffColumnLayout>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let painted_rows = self.build_review_workspace_viewport_painted_rows(
-            viewport,
-            layout,
-            cx,
-        );
         let chrome = hunk_diff_chrome(cx.theme(), cx.theme().mode.is_dark());
-        ReviewWorkspaceViewportElement::new(
-            cx.entity(),
-            viewport.clone(),
+        ReviewWorkspaceViewportElement {
+            view: cx.entity(),
+            viewport: std::rc::Rc::new(viewport.clone()),
             viewport_origin_px,
-            painted_rows,
-            chrome.center_divider,
-            cx.theme().mono_font_family.clone(),
-        )
+            selected_row_range: self.selected_row_range(),
+            layout,
+            left_line_number_width: self.review_surface.diff_left_line_number_width,
+            right_line_number_width: self.review_surface.diff_right_line_number_width,
+            center_divider: chrome.center_divider,
+            mono_font_family: cx.theme().mono_font_family.clone(),
+        }
         .into_any_element()
     }
 }

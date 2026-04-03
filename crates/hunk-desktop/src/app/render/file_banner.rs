@@ -23,6 +23,39 @@ struct ReviewWorkspaceFileHeaderPaint {
     stats_changed_color: gpui::Hsla,
 }
 
+fn build_review_workspace_file_header_paint(
+    theme: &Theme,
+    path: &str,
+    status: FileStatus,
+    stats: LineStats,
+    is_selected: bool,
+) -> ReviewWorkspaceFileHeaderPaint {
+    let is_dark = theme.mode.is_dark();
+    let chrome = hunk_diff_chrome(theme, is_dark);
+    let colors = hunk_file_status_banner(theme, status, is_dark, is_selected);
+    let line_stats = hunk_line_stats(theme, is_dark);
+
+    ReviewWorkspaceFileHeaderPaint {
+        row_background: colors.row_background,
+        row_divider: chrome.row_divider,
+        accent_strip: colors.accent_strip,
+        badge_background: colors.badge_background,
+        badge_border: colors.badge_border,
+        badge_label: SharedString::from(colors.label),
+        badge_text_color: theme.foreground,
+        path: SharedString::from(path.to_string()),
+        path_text_color: theme.foreground,
+        stats_label: SharedString::from("file"),
+        stats_label_color: theme.muted_foreground,
+        stats_added: SharedString::from(format!("+{}", stats.added)),
+        stats_added_color: line_stats.added,
+        stats_removed: SharedString::from(format!("-{}", stats.removed)),
+        stats_removed_color: line_stats.removed,
+        stats_changed: SharedString::from(format!("chg {}", stats.changed())),
+        stats_changed_color: line_stats.changed,
+    }
+}
+
 impl DiffViewer {
     fn review_view_file_shortcut_label(&self) -> Option<String> {
         let shortcuts = self.config.keyboard_shortcuts.view_current_review_file.as_slice();
@@ -68,40 +101,6 @@ impl DiffViewer {
                 });
             })
             .into_any_element()
-    }
-
-    fn build_review_workspace_file_header_paint(
-        &self,
-        path: &str,
-        status: FileStatus,
-        stats: LineStats,
-        is_selected: bool,
-        cx: &mut Context<Self>,
-    ) -> ReviewWorkspaceFileHeaderPaint {
-        let is_dark = cx.theme().mode.is_dark();
-        let chrome = hunk_diff_chrome(cx.theme(), is_dark);
-        let colors = hunk_file_status_banner(cx.theme(), status, is_dark, is_selected);
-        let line_stats = hunk_line_stats(cx.theme(), is_dark);
-
-        ReviewWorkspaceFileHeaderPaint {
-            row_background: colors.row_background,
-            row_divider: chrome.row_divider,
-            accent_strip: colors.accent_strip,
-            badge_background: colors.badge_background,
-            badge_border: colors.badge_border,
-            badge_label: SharedString::from(colors.label),
-            badge_text_color: cx.theme().foreground,
-            path: SharedString::from(path.to_string()),
-            path_text_color: cx.theme().foreground,
-            stats_label: SharedString::from("file"),
-            stats_label_color: cx.theme().muted_foreground,
-            stats_added: SharedString::from(format!("+{}", stats.added)),
-            stats_added_color: line_stats.added,
-            stats_removed: SharedString::from(format!("-{}", stats.removed)),
-            stats_removed_color: line_stats.removed,
-            stats_changed: SharedString::from(format!("chg {}", stats.changed())),
-            stats_changed_color: line_stats.changed,
-        }
     }
 
     fn render_review_workspace_file_header_controls_overlay(

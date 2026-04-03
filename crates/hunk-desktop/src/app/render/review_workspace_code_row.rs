@@ -291,194 +291,173 @@ fn paint_review_workspace_meta_row(
     );
 }
 
-impl DiffViewer {
-    fn build_review_workspace_code_row_cell(
-        &self,
-        row_stable_id: u64,
-        row_is_selected: bool,
-        spec: DiffCellRenderSpec,
-        viewport_row: &review_workspace_session::ReviewWorkspaceViewportRow,
-        cx: &mut Context<Self>,
-    ) -> ReviewWorkspaceCodeRowCellPaint {
-        let side = spec.side;
-        let cell_kind = spec.cell_kind;
-        let peer_kind = spec.peer_kind;
-        let is_dark = cx.theme().mode.is_dark();
-        let chrome = hunk_diff_chrome(cx.theme(), is_dark);
-        let dark_add_tint: gpui::Hsla = gpui::rgb(0x2e4736).into();
-        let dark_remove_tint: gpui::Hsla = gpui::rgb(0x4a3038).into();
-        let dark_add_accent: gpui::Hsla = gpui::rgb(0x8fcea0).into();
-        let dark_remove_accent: gpui::Hsla = gpui::rgb(0xeea9b4).into();
+fn build_review_workspace_code_row_cell_paint(
+    theme: &Theme,
+    line_number_width: f32,
+    row_stable_id: u64,
+    row_is_selected: bool,
+    spec: DiffCellRenderSpec,
+    viewport_row: &review_workspace_session::ReviewWorkspaceViewportRow,
+) -> ReviewWorkspaceCodeRowCellPaint {
+    let side = spec.side;
+    let cell_kind = spec.cell_kind;
+    let peer_kind = spec.peer_kind;
+    let is_dark = theme.mode.is_dark();
+    let chrome = hunk_diff_chrome(theme, is_dark);
+    let dark_add_tint: gpui::Hsla = gpui::rgb(0x2e4736).into();
+    let dark_remove_tint: gpui::Hsla = gpui::rgb(0x4a3038).into();
+    let dark_add_accent: gpui::Hsla = gpui::rgb(0x8fcea0).into();
+    let dark_remove_accent: gpui::Hsla = gpui::rgb(0xeea9b4).into();
 
-        let (mut background, marker_color, line_color, text_color, marker) =
-            match (cell_kind, peer_kind) {
-                (DiffCellKind::Added, _) => (
-                    hunk_pick(
-                        is_dark,
-                        cx.theme().background.blend(dark_add_tint.opacity(0.62)),
-                        hunk_blend(cx.theme().background, cx.theme().success, is_dark, 0.24, 0.11),
-                    ),
-                    hunk_pick(is_dark, dark_add_accent, cx.theme().success.darken(0.18)),
-                    hunk_pick(
-                        is_dark,
-                        dark_add_accent.lighten(0.08),
-                        cx.theme().success.darken(0.16),
-                    ),
-                    cx.theme().foreground,
-                    "+",
+    let (mut background, marker_color, line_color, text_color, marker) =
+        match (cell_kind, peer_kind) {
+            (DiffCellKind::Added, _) => (
+                hunk_pick(
+                    is_dark,
+                    theme.background.blend(dark_add_tint.opacity(0.62)),
+                    hunk_blend(theme.background, theme.success, is_dark, 0.24, 0.11),
                 ),
-                (DiffCellKind::Removed, _) => (
-                    hunk_pick(
-                        is_dark,
-                        cx.theme().background.blend(dark_remove_tint.opacity(0.62)),
-                        hunk_blend(cx.theme().background, cx.theme().danger, is_dark, 0.24, 0.11),
-                    ),
-                    hunk_pick(is_dark, dark_remove_accent, cx.theme().danger.darken(0.18)),
-                    hunk_pick(
-                        is_dark,
-                        dark_remove_accent.lighten(0.06),
-                        cx.theme().danger.darken(0.16),
-                    ),
-                    cx.theme().foreground,
-                    "-",
+                hunk_pick(is_dark, dark_add_accent, theme.success.darken(0.18)),
+                hunk_pick(
+                    is_dark,
+                    dark_add_accent.lighten(0.08),
+                    theme.success.darken(0.16),
                 ),
-                (DiffCellKind::Context, _) => (
-                    cx.theme().background,
-                    hunk_tone(cx.theme().muted_foreground, is_dark, 0.14, 0.10),
-                    hunk_tone(cx.theme().muted_foreground, is_dark, 0.18, 0.12),
-                    cx.theme().foreground,
-                    "",
+                theme.foreground,
+                "+",
+            ),
+            (DiffCellKind::Removed, _) => (
+                hunk_pick(
+                    is_dark,
+                    theme.background.blend(dark_remove_tint.opacity(0.62)),
+                    hunk_blend(theme.background, theme.danger, is_dark, 0.24, 0.11),
                 ),
-                (DiffCellKind::None, _) => (
-                    cx.theme().background,
-                    hunk_tone(cx.theme().muted_foreground, is_dark, 0.14, 0.10),
-                    hunk_tone(cx.theme().muted_foreground, is_dark, 0.18, 0.12),
-                    hunk_tone(cx.theme().muted_foreground, is_dark, 0.08, 0.06),
-                    "",
+                hunk_pick(is_dark, dark_remove_accent, theme.danger.darken(0.18)),
+                hunk_pick(
+                    is_dark,
+                    dark_remove_accent.lighten(0.06),
+                    theme.danger.darken(0.16),
                 ),
-            };
-        if matches!(cell_kind, DiffCellKind::Context | DiffCellKind::None)
-            && row_stable_id.is_multiple_of(2)
-        {
-            background = hunk_blend(background, cx.theme().muted, is_dark, 0.06, 0.10);
-        }
-        if row_is_selected {
-            background = hunk_blend(background, cx.theme().primary, is_dark, 0.22, 0.13);
-        }
-
-        let segments = if side == "left" {
-            viewport_row.left_segments.clone()
-        } else {
-            viewport_row.right_segments.clone()
+                theme.foreground,
+                "-",
+            ),
+            (DiffCellKind::Context, _) => (
+                theme.background,
+                hunk_tone(theme.muted_foreground, is_dark, 0.14, 0.10),
+                hunk_tone(theme.muted_foreground, is_dark, 0.18, 0.12),
+                theme.foreground,
+                "",
+            ),
+            (DiffCellKind::None, _) => (
+                theme.background,
+                hunk_tone(theme.muted_foreground, is_dark, 0.14, 0.10),
+                hunk_tone(theme.muted_foreground, is_dark, 0.18, 0.12),
+                hunk_tone(theme.muted_foreground, is_dark, 0.08, 0.06),
+                "",
+            ),
         };
-
-        let mut gutter_background = match cell_kind {
-            DiffCellKind::Added => {
-                hunk_blend(chrome.gutter_background, cx.theme().success, is_dark, 0.12, 0.07)
-            }
-            DiffCellKind::Removed => {
-                hunk_blend(chrome.gutter_background, cx.theme().danger, is_dark, 0.12, 0.07)
-            }
-            DiffCellKind::None => chrome.empty_gutter_background,
-            DiffCellKind::Context => chrome.gutter_background,
-        };
-        if row_is_selected {
-            gutter_background =
-                hunk_blend(gutter_background, cx.theme().primary, is_dark, 0.14, 0.10);
-        }
-
-        ReviewWorkspaceCodeRowCellPaint {
-            panel_width: spec.panel_width,
-            line_number_width: if side == "left" {
-                self.review_surface.diff_left_line_number_width
-            } else {
-                self.review_surface.diff_right_line_number_width
-            },
-            background,
-            gutter_background,
-            gutter_divider: chrome.gutter_divider,
-            text_color,
-            line_color,
-            marker_color,
-            marker: SharedString::from(marker),
-            line_number: SharedString::from(spec.line.map(|line| line.to_string()).unwrap_or_default()),
-            segments,
-        }
+    if matches!(cell_kind, DiffCellKind::Context | DiffCellKind::None)
+        && row_stable_id.is_multiple_of(2)
+    {
+        background = hunk_blend(background, theme.muted, is_dark, 0.06, 0.10);
+    }
+    if row_is_selected {
+        background = hunk_blend(background, theme.primary, is_dark, 0.22, 0.13);
     }
 
-    fn build_review_workspace_meta_row_paint(
-        &self,
-        row_kind: DiffRowKind,
-        row_text: &str,
-        is_selected: bool,
-        cx: &mut Context<Self>,
-    ) -> ReviewWorkspaceMetaRowPaint {
-        let is_dark = cx.theme().mode.is_dark();
+    let segments = if side == "left" {
+        viewport_row.left_segments.clone()
+    } else {
+        viewport_row.right_segments.clone()
+    };
 
-        let (background, foreground, accent) = match row_kind {
-            DiffRowKind::HunkHeader => (
-                if is_selected {
-                    hunk_opacity(cx.theme().primary, is_dark, 0.34, 0.18)
-                } else {
-                    hunk_opacity(cx.theme().muted, is_dark, 0.26, 0.40)
-                },
-                cx.theme().primary_foreground,
-                cx.theme().primary,
-            ),
-            DiffRowKind::Meta => {
-                let line = row_text;
-                if line.starts_with("new file mode") || line.starts_with("+++ b/") {
-                    (
-                        hunk_blend(cx.theme().background, cx.theme().success, is_dark, 0.22, 0.12),
-                        hunk_tone(cx.theme().success, is_dark, 0.45, 0.10),
-                        cx.theme().success,
-                    )
-                } else if line.starts_with("deleted file mode") || line.starts_with("--- a/") {
-                    (
-                        hunk_blend(cx.theme().background, cx.theme().danger, is_dark, 0.22, 0.12),
-                        hunk_tone(cx.theme().danger, is_dark, 0.45, 0.10),
-                        cx.theme().danger,
-                    )
-                } else if line.starts_with("diff --git") {
-                    (
-                        hunk_blend(cx.theme().background, cx.theme().accent, is_dark, 0.18, 0.10),
-                        cx.theme().foreground,
-                        cx.theme().accent,
-                    )
-                } else {
-                    (
-                        cx.theme().muted,
-                        cx.theme().muted_foreground,
-                        cx.theme().border,
-                    )
-                }
-            }
-            DiffRowKind::Empty => (
-                cx.theme().background,
-                cx.theme().muted_foreground,
-                cx.theme().border,
-            ),
-            DiffRowKind::Code => (
-                cx.theme().background,
-                cx.theme().foreground,
-                cx.theme().border,
-            ),
-        };
-        let background = if row_kind == DiffRowKind::HunkHeader {
-            background
-        } else if is_selected {
-            hunk_blend(background, cx.theme().primary, is_dark, 0.24, 0.14)
-        } else {
-            background
-        };
-
-        ReviewWorkspaceMetaRowPaint {
-            kind: row_kind,
-            text: row_text.to_string().into(),
-            background,
-            foreground,
-            accent,
-            border: hunk_opacity(cx.theme().border, is_dark, 0.82, 0.70),
+    let mut gutter_background = match cell_kind {
+        DiffCellKind::Added => {
+            hunk_blend(chrome.gutter_background, theme.success, is_dark, 0.12, 0.07)
         }
+        DiffCellKind::Removed => {
+            hunk_blend(chrome.gutter_background, theme.danger, is_dark, 0.12, 0.07)
+        }
+        DiffCellKind::None => chrome.empty_gutter_background,
+        DiffCellKind::Context => chrome.gutter_background,
+    };
+    if row_is_selected {
+        gutter_background = hunk_blend(gutter_background, theme.primary, is_dark, 0.14, 0.10);
+    }
+
+    ReviewWorkspaceCodeRowCellPaint {
+        panel_width: spec.panel_width,
+        line_number_width,
+        background,
+        gutter_background,
+        gutter_divider: chrome.gutter_divider,
+        text_color,
+        line_color,
+        marker_color,
+        marker: SharedString::from(marker),
+        line_number: SharedString::from(spec.line.map(|line| line.to_string()).unwrap_or_default()),
+        segments,
+    }
+}
+
+fn build_review_workspace_meta_row_paint(
+    theme: &Theme,
+    row_kind: DiffRowKind,
+    row_text: &str,
+    is_selected: bool,
+) -> ReviewWorkspaceMetaRowPaint {
+    let is_dark = theme.mode.is_dark();
+
+    let (background, foreground, accent) = match row_kind {
+        DiffRowKind::HunkHeader => (
+            if is_selected {
+                hunk_opacity(theme.primary, is_dark, 0.34, 0.18)
+            } else {
+                hunk_opacity(theme.muted, is_dark, 0.26, 0.40)
+            },
+            theme.primary_foreground,
+            theme.primary,
+        ),
+        DiffRowKind::Meta => {
+            if row_text.starts_with("new file mode") || row_text.starts_with("+++ b/") {
+                (
+                    hunk_blend(theme.background, theme.success, is_dark, 0.22, 0.12),
+                    hunk_tone(theme.success, is_dark, 0.45, 0.10),
+                    theme.success,
+                )
+            } else if row_text.starts_with("deleted file mode") || row_text.starts_with("--- a/") {
+                (
+                    hunk_blend(theme.background, theme.danger, is_dark, 0.22, 0.12),
+                    hunk_tone(theme.danger, is_dark, 0.45, 0.10),
+                    theme.danger,
+                )
+            } else if row_text.starts_with("diff --git") {
+                (
+                    hunk_blend(theme.background, theme.accent, is_dark, 0.18, 0.10),
+                    theme.foreground,
+                    theme.accent,
+                )
+            } else {
+                (theme.muted, theme.muted_foreground, theme.border)
+            }
+        }
+        DiffRowKind::Empty => (theme.background, theme.muted_foreground, theme.border),
+        DiffRowKind::Code => (theme.background, theme.foreground, theme.border),
+    };
+    let background = if row_kind == DiffRowKind::HunkHeader {
+        background
+    } else if is_selected {
+        hunk_blend(background, theme.primary, is_dark, 0.24, 0.14)
+    } else {
+        background
+    };
+
+    ReviewWorkspaceMetaRowPaint {
+        kind: row_kind,
+        text: row_text.to_string().into(),
+        background,
+        foreground,
+        accent,
+        border: hunk_opacity(theme.border, is_dark, 0.82, 0.70),
     }
 }
