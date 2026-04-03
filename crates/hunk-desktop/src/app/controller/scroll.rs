@@ -446,8 +446,7 @@ impl DiffViewer {
         self.invalidate_segment_prefetch();
         self.review_surface.clear_legacy_diff_row_lookups();
         self.file_row_ranges.clear();
-        self.selection_anchor_row = None;
-        self.selection_head_row = None;
+        self.review_surface.clear_row_selection();
         self.drag_selecting_rows = false;
         self.sync_diff_list_state();
         self.recompute_diff_layout();

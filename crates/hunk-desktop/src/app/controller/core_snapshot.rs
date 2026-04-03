@@ -103,7 +103,8 @@ impl DiffViewer {
         self.review_workspace_session = None;
         self.review_workspace_editor_session = None;
         self.review_loaded_snapshot_fingerprint = None;
-        self.review_last_selected_path = None;
+        self.review_surface.selected_path = None;
+        self.review_surface.clear_row_selection();
         self.last_commit_subject = None;
         self.selected_path = None;
         self.selected_status = None;

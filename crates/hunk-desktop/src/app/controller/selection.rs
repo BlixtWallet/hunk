@@ -51,19 +51,20 @@ impl DiffViewer {
     fn clamp_selection_to_rows(&mut self) {
         let row_count = self.active_diff_row_count();
         if row_count == 0 {
-            self.selection_anchor_row = None;
-            self.selection_head_row = None;
+            self.review_surface.clear_row_selection();
             return;
         }
 
         let max_ix = row_count.saturating_sub(1);
-        self.selection_anchor_row = self.selection_anchor_row.map(|ix| ix.min(max_ix));
-        self.selection_head_row = self.selection_head_row.map(|ix| ix.min(max_ix));
+        self.review_surface.selection_anchor_row =
+            self.review_surface.selection_anchor_row.map(|ix| ix.min(max_ix));
+        self.review_surface.selection_head_row =
+            self.review_surface.selection_head_row.map(|ix| ix.min(max_ix));
     }
 
     pub(super) fn selected_row_range(&self) -> Option<(usize, usize)> {
-        let anchor = self.selection_anchor_row?;
-        let head = self.selection_head_row?;
+        let anchor = self.review_surface.selection_anchor_row?;
+        let head = self.review_surface.selection_head_row?;
         Some((anchor.min(head), anchor.max(head)))
     }
 
@@ -110,17 +111,16 @@ impl DiffViewer {
     fn select_row(&mut self, row_ix: usize, extend_selection: bool, cx: &mut Context<Self>) {
         let row_count = self.active_diff_row_count();
         if row_count == 0 {
-            self.selection_anchor_row = None;
-            self.selection_head_row = None;
+            self.review_surface.clear_row_selection();
             return;
         }
 
         let target_ix = row_ix.min(row_count.saturating_sub(1));
-        if extend_selection && self.selection_anchor_row.is_some() {
-            self.selection_head_row = Some(target_ix);
+        if extend_selection && self.review_surface.selection_anchor_row.is_some() {
+            self.review_surface.selection_head_row = Some(target_ix);
         } else {
-            self.selection_anchor_row = Some(target_ix);
-            self.selection_head_row = Some(target_ix);
+            self.review_surface.selection_anchor_row = Some(target_ix);
+            self.review_surface.selection_head_row = Some(target_ix);
         }
 
         if let Some((path, status)) = self.selected_file_from_row_metadata(target_ix)
@@ -197,6 +197,7 @@ impl DiffViewer {
 
         let max_ix = row_count.saturating_sub(1) as isize;
         let base_ix = self
+            .review_surface
             .selection_head_row
             .map(|ix| ix as isize)
             .or_else(|| self.current_review_surface_top_row().map(|ix| ix as isize))
@@ -211,8 +212,8 @@ impl DiffViewer {
             return;
         }
 
-        self.selection_anchor_row = Some(0);
-        self.selection_head_row = Some(row_count.saturating_sub(1));
+        self.review_surface.selection_anchor_row = Some(0);
+        self.review_surface.selection_head_row = Some(row_count.saturating_sub(1));
         cx.notify();
     }
 
@@ -227,6 +228,7 @@ impl DiffViewer {
             && !session.hunk_ranges().is_empty()
         {
             let start_ix = self
+                .review_surface
                 .selection_head_row
                 .or_else(|| self.current_review_surface_top_row())
                 .unwrap_or(0)
@@ -259,6 +261,7 @@ impl DiffViewer {
         }
 
         let start_ix = self
+            .review_surface
             .selection_head_row
             .or_else(|| self.current_review_surface_top_row())
             .unwrap_or(0)

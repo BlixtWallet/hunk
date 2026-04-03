@@ -51,7 +51,6 @@ impl DiffViewer {
             review_workspace_session: None,
             review_workspace_editor_session: None,
             review_loaded_snapshot_fingerprint: None,
-            review_last_selected_path: None,
             overall_line_stats: LineStats::default(),
             last_git_workspace_fingerprint: None,
             recent_commits_loading: false,
@@ -74,8 +73,6 @@ impl DiffViewer {
             editor_markdown_preview_revision: 0,
             editor_markdown_preview: false,
             editor_search_visible: false,
-            selection_anchor_row: None,
-            selection_head_row: None,
         }
     }
 
@@ -197,7 +194,6 @@ impl DiffViewer {
             review_workspace_session: self.review_workspace_session.take(),
             review_workspace_editor_session: self.review_workspace_editor_session.take(),
             review_loaded_snapshot_fingerprint: self.review_loaded_snapshot_fingerprint.take(),
-            review_last_selected_path: self.review_last_selected_path.take(),
             overall_line_stats: self.overall_line_stats,
             last_git_workspace_fingerprint: self.last_git_workspace_fingerprint.take(),
             recent_commits_loading: self.recent_commits_loading,
@@ -223,8 +219,6 @@ impl DiffViewer {
             editor_markdown_preview_revision: self.editor_markdown_preview_revision,
             editor_markdown_preview: self.editor_markdown_preview,
             editor_search_visible: self.editor_search_visible,
-            selection_anchor_row: self.selection_anchor_row.take(),
-            selection_head_row: self.selection_head_row.take(),
         }
     }
 
@@ -288,7 +282,6 @@ impl DiffViewer {
         self.review_workspace_session = state.review_workspace_session;
         self.review_workspace_editor_session = state.review_workspace_editor_session;
         self.review_loaded_snapshot_fingerprint = state.review_loaded_snapshot_fingerprint;
-        self.review_last_selected_path = state.review_last_selected_path;
         self.overall_line_stats = state.overall_line_stats;
         self.last_git_workspace_fingerprint = state.last_git_workspace_fingerprint;
         self.recent_commits_loading = state.recent_commits_loading;
@@ -311,8 +304,6 @@ impl DiffViewer {
         self.editor_markdown_preview_revision = state.editor_markdown_preview_revision;
         self.editor_markdown_preview = state.editor_markdown_preview;
         self.editor_search_visible = state.editor_search_visible;
-        self.selection_anchor_row = state.selection_anchor_row;
-        self.selection_head_row = state.selection_head_row;
 
         self.snapshot_loading = false;
         self.snapshot_active_request = None;

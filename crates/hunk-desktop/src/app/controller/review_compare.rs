@@ -190,7 +190,7 @@ impl DiffViewer {
         path: Option<String>,
         status: Option<FileStatus>,
     ) {
-        self.review_last_selected_path = path.clone();
+        self.review_surface.selected_path = path.clone();
         if let Some(path) = path.as_deref() {
             self.activate_review_workspace_editor_path(path);
         }
@@ -203,7 +203,7 @@ impl DiffViewer {
         };
         let activated = session.activate_path(std::path::Path::new(path));
         if activated {
-            self.review_last_selected_path = Some(path.to_string());
+            self.review_surface.selected_path = Some(path.to_string());
             self.sync_review_workspace_side_editor_path(path);
         }
         activated
@@ -216,7 +216,7 @@ impl DiffViewer {
             return None;
         }
         let max_ix = row_count.saturating_sub(1);
-        self.selection_head_row
+        self.review_surface.selection_head_row
             .or_else(|| {
                 self.review_surface
                     .last_surface_snapshot
@@ -238,7 +238,7 @@ impl DiffViewer {
                 end_row: range.end_row,
             })
             .or_else(|| {
-                self.review_last_selected_path
+                self.review_surface.selected_path
                     .as_deref()
                     .and_then(|path| self.active_diff_file_range_for_path(path))
             })
@@ -258,12 +258,12 @@ impl DiffViewer {
                 None,
                 self.current_review_file_range().map(|range| range.path).as_deref(),
                 self.current_review_editor_session_path().as_deref(),
-                self.review_last_selected_path.as_deref(),
+                self.review_surface.selected_path.as_deref(),
                 session,
             );
         }
 
-        self.review_last_selected_path.clone()
+        self.review_surface.selected_path.clone()
     }
 
     pub(crate) fn should_reuse_loaded_review_compare(&self) -> bool {
@@ -876,7 +876,8 @@ impl DiffViewer {
         self.review_loaded_right_source_id = None;
         self.review_loaded_collapsed_files.clear();
         self.review_loaded_snapshot_fingerprint = None;
-        self.review_last_selected_path = None;
+        self.review_surface.selected_path = None;
+        self.review_surface.clear_row_selection();
         self.review_files.clear();
         self.review_file_status_by_path.clear();
         self.review_file_line_stats.clear();
@@ -907,7 +908,7 @@ impl DiffViewer {
             self.review_compare_loading = false;
             self.review_compare_error = None;
             self.review_surface.status_message = None;
-            self.review_last_selected_path = self.current_review_path();
+            self.review_surface.selected_path = self.current_review_path();
             self.sync_review_workspace_editor_active_path();
             self.prime_diff_surface_visible_state(false, cx);
             cx.notify();
@@ -1055,7 +1056,7 @@ impl DiffViewer {
 
         let preferred_selected_path = self
             .current_review_editor_session_path()
-            .or_else(|| self.review_last_selected_path.clone());
+            .or_else(|| self.review_surface.selected_path.clone());
         let has_selection = preferred_selected_path
             .as_ref()
             .is_some_and(|path| self.active_diff_contains_path(path.as_str()));

@@ -1046,7 +1046,6 @@ struct WorkspaceProjectState {
     review_workspace_session: Option<review_workspace_session::ReviewWorkspaceSession>,
     review_workspace_editor_session: Option<native_files_editor::WorkspaceEditorSession>,
     review_loaded_snapshot_fingerprint: Option<RepoSnapshotFingerprint>,
-    review_last_selected_path: Option<String>,
     overall_line_stats: LineStats,
     last_git_workspace_fingerprint: Option<RepoSnapshotFingerprint>,
     recent_commits_loading: bool,
@@ -1069,12 +1068,13 @@ struct WorkspaceProjectState {
     editor_markdown_preview_revision: usize,
     editor_markdown_preview: bool,
     editor_search_visible: bool,
-    selection_anchor_row: Option<usize>,
-    selection_head_row: Option<usize>,
 }
 
 struct ReviewWorkspaceSurfaceState {
     status_message: Option<String>,
+    selected_path: Option<String>,
+    selection_anchor_row: Option<usize>,
+    selection_head_row: Option<usize>,
     left_files_editor: Option<native_files_editor::SharedFilesEditor>,
     right_files_editor: Option<native_files_editor::SharedFilesEditor>,
     diff_visible_file_header_lookup: Vec<Option<usize>>,
@@ -1098,6 +1098,9 @@ impl ReviewWorkspaceSurfaceState {
     fn new() -> Self {
         Self {
             status_message: None,
+            selected_path: None,
+            selection_anchor_row: None,
+            selection_head_row: None,
             left_files_editor: None,
             right_files_editor: None,
             diff_visible_file_header_lookup: Vec::new(),
@@ -1125,6 +1128,11 @@ impl ReviewWorkspaceSurfaceState {
 
     fn clear_workspace_surface_snapshot(&mut self) {
         self.last_surface_snapshot = None;
+    }
+
+    fn clear_row_selection(&mut self) {
+        self.selection_anchor_row = None;
+        self.selection_head_row = None;
     }
 }
 
@@ -1358,7 +1366,6 @@ struct DiffViewer {
     review_workspace_session: Option<review_workspace_session::ReviewWorkspaceSession>,
     review_workspace_editor_session: Option<native_files_editor::WorkspaceEditorSession>,
     review_loaded_snapshot_fingerprint: Option<RepoSnapshotFingerprint>,
-    review_last_selected_path: Option<String>,
     overall_line_stats: LineStats,
     refresh_epoch: usize,
     auto_refresh_unmodified_streak: u32,
@@ -1395,8 +1402,6 @@ struct DiffViewer {
     focus_handle: FocusHandle,
     repo_tree_focus_handle: FocusHandle,
     files_editor_focus_handle: FocusHandle,
-    selection_anchor_row: Option<usize>,
-    selection_head_row: Option<usize>,
     drag_selecting_rows: bool,
     scroll_selected_after_reload: bool,
     last_scroll_activity_at: Instant,
