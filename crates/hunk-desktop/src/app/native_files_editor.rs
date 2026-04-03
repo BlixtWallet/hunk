@@ -28,6 +28,8 @@ pub(crate) mod paint;
 mod workspace_buffers_impl;
 #[path = "native_files_editor_workspace_display.rs"]
 mod workspace_display_impl;
+#[path = "native_files_editor_workspace_search.rs"]
+mod workspace_search_impl;
 #[path = "native_files_editor_workspace.rs"]
 mod workspace_session;
 
@@ -337,18 +339,23 @@ impl FilesEditor {
     }
 
     pub(crate) fn search_match_count(&self) -> usize {
-        self.search_query
-            .as_ref()
-            .map(|query| self.editor.buffer().snapshot().find_all(query).len())
-            .unwrap_or(0)
+        let Some(query) = self.search_query.as_ref() else {
+            return 0;
+        };
+        self.workspace_search_matches(query)
+            .map(|matches| matches.len())
+            .unwrap_or_else(|| self.editor.buffer().snapshot().find_all(query).len())
     }
 
     pub(crate) fn select_next_search_match(&mut self, forward: bool) -> bool {
-        let Some(query) = self.search_query.as_ref() else {
+        let Some(query) = self.search_query.clone() else {
             return false;
         };
+        if let Some(matches) = self.workspace_search_matches(query.as_str()) {
+            return self.select_next_workspace_search_match(&matches, forward);
+        }
         let snapshot = self.editor.buffer().snapshot();
-        let matches = snapshot.find_all(query);
+        let matches = snapshot.find_all(query.as_str());
         if matches.is_empty() {
             return false;
         }

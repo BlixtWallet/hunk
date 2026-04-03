@@ -493,6 +493,129 @@ fn search_navigation_selects_next_match() {
 }
 
 #[test]
+fn workspace_search_counts_matches_across_layout_documents() {
+    let mut editor = FilesEditor::new();
+    let main_document_id = WorkspaceDocumentId::new(1);
+    let lib_document_id = WorkspaceDocumentId::new(2);
+    let layout = WorkspaceLayout::new(
+        vec![
+            WorkspaceDocument::new(main_document_id, "src/main.rs", BufferId::new(11), 3),
+            WorkspaceDocument::new(lib_document_id, "src/lib.rs", BufferId::new(21), 3),
+        ],
+        vec![
+            WorkspaceExcerptSpec::new(
+                WorkspaceExcerptId::new(1),
+                main_document_id,
+                WorkspaceExcerptKind::FullFile,
+                0..3,
+            ),
+            WorkspaceExcerptSpec::new(
+                WorkspaceExcerptId::new(2),
+                lib_document_id,
+                WorkspaceExcerptKind::FullFile,
+                0..3,
+            ),
+        ],
+        1,
+    )
+    .expect("workspace layout should build");
+
+    editor
+        .open_workspace_layout_documents(
+            layout,
+            vec![
+                (
+                    PathBuf::from("src/main.rs"),
+                    "alpha\nneedle in main\n".to_string(),
+                ),
+                (
+                    PathBuf::from("src/lib.rs"),
+                    "needle in lib\nomega\n".to_string(),
+                ),
+            ],
+            Some(Path::new("src/main.rs")),
+        )
+        .expect("workspace layout documents should open");
+
+    editor.set_search_query(Some("needle"));
+    assert_eq!(editor.search_match_count(), 2);
+}
+
+#[test]
+fn workspace_search_navigation_moves_across_layout_documents() {
+    let mut editor = FilesEditor::new();
+    let main_document_id = WorkspaceDocumentId::new(1);
+    let lib_document_id = WorkspaceDocumentId::new(2);
+    let layout = WorkspaceLayout::new(
+        vec![
+            WorkspaceDocument::new(main_document_id, "src/main.rs", BufferId::new(11), 3),
+            WorkspaceDocument::new(lib_document_id, "src/lib.rs", BufferId::new(21), 3),
+        ],
+        vec![
+            WorkspaceExcerptSpec::new(
+                WorkspaceExcerptId::new(1),
+                main_document_id,
+                WorkspaceExcerptKind::FullFile,
+                0..3,
+            ),
+            WorkspaceExcerptSpec::new(
+                WorkspaceExcerptId::new(2),
+                lib_document_id,
+                WorkspaceExcerptKind::FullFile,
+                0..3,
+            ),
+        ],
+        1,
+    )
+    .expect("workspace layout should build");
+
+    editor
+        .open_workspace_layout_documents(
+            layout,
+            vec![
+                (
+                    PathBuf::from("src/main.rs"),
+                    "alpha\nneedle in main\n".to_string(),
+                ),
+                (
+                    PathBuf::from("src/lib.rs"),
+                    "needle in lib\nomega\n".to_string(),
+                ),
+            ],
+            Some(Path::new("src/main.rs")),
+        )
+        .expect("workspace layout documents should open");
+
+    editor.set_search_query(Some("needle"));
+
+    assert!(editor.select_next_search_match(true));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::new(TextPosition::new(1, 0), TextPosition::new(1, 6))
+    );
+
+    assert!(editor.select_next_search_match(true));
+    assert_eq!(
+        editor.current_text().as_deref(),
+        Some("needle in lib\nomega\n")
+    );
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::new(TextPosition::new(0, 0), TextPosition::new(0, 6))
+    );
+
+    assert!(editor.select_next_search_match(false));
+    assert_eq!(
+        editor.current_text().as_deref(),
+        Some("alpha\nneedle in main\n")
+    );
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::new(TextPosition::new(1, 0), TextPosition::new(1, 6))
+    );
+}
+
+#[test]
 fn reopening_same_file_restores_fold_and_view_toggles() {
     let mut editor = FilesEditor::new();
     let path = PathBuf::from("example.rs");
