@@ -94,6 +94,15 @@ impl WorkspaceEditorSession {
         self.activate_document(document_id)
     }
 
+    pub(crate) fn activate_excerpt(&mut self, excerpt_id: WorkspaceExcerptId) -> bool {
+        let Some(excerpt) = self.layout.excerpt(excerpt_id) else {
+            return false;
+        };
+        self.active_document_id = Some(excerpt.spec.document_id);
+        self.active_excerpt_id = Some(excerpt_id);
+        true
+    }
+
     fn sync_id_counters_from_layout(&mut self) {
         self.next_document_id = self
             .layout
@@ -149,7 +158,6 @@ impl WorkspaceEditorSession {
         self.active_document_id
     }
 
-    #[cfg(test)]
     pub(crate) fn active_excerpt_id(&self) -> Option<WorkspaceExcerptId> {
         self.active_excerpt_id
     }

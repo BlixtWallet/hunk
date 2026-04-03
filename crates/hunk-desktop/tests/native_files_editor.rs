@@ -616,6 +616,90 @@ fn workspace_search_navigation_moves_across_layout_documents() {
 }
 
 #[test]
+fn workspace_search_navigation_follows_excerpt_order_within_one_document() {
+    let mut editor = FilesEditor::new();
+    let main_document_id = WorkspaceDocumentId::new(1);
+    let helper_document_id = WorkspaceDocumentId::new(2);
+    let layout = WorkspaceLayout::new(
+        vec![
+            WorkspaceDocument::new(main_document_id, "src/main.rs", BufferId::new(11), 6),
+            WorkspaceDocument::new(helper_document_id, "src/helper.rs", BufferId::new(21), 3),
+        ],
+        vec![
+            WorkspaceExcerptSpec::new(
+                WorkspaceExcerptId::new(1),
+                main_document_id,
+                WorkspaceExcerptKind::DiffHunk,
+                0..2,
+            ),
+            WorkspaceExcerptSpec::new(
+                WorkspaceExcerptId::new(2),
+                main_document_id,
+                WorkspaceExcerptKind::DiffHunk,
+                3..5,
+            ),
+            WorkspaceExcerptSpec::new(
+                WorkspaceExcerptId::new(3),
+                helper_document_id,
+                WorkspaceExcerptKind::FullFile,
+                0..2,
+            ),
+        ],
+        1,
+    )
+    .expect("workspace layout should build");
+
+    editor
+        .open_workspace_layout_documents(
+            layout,
+            vec![
+                (
+                    PathBuf::from("src/main.rs"),
+                    "alpha\nneedle one\nbeta\nneedle two\ngamma\n".to_string(),
+                ),
+                (
+                    PathBuf::from("src/helper.rs"),
+                    "needle helper\nomega\n".to_string(),
+                ),
+            ],
+            Some(Path::new("src/main.rs")),
+        )
+        .expect("workspace layout documents should open");
+
+    editor.set_search_query(Some("needle"));
+
+    assert!(editor.select_next_search_match(true));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::new(TextPosition::new(1, 0), TextPosition::new(1, 6))
+    );
+    assert_eq!(
+        editor.active_workspace_excerpt_id_for_test(),
+        Some(WorkspaceExcerptId::new(1))
+    );
+
+    assert!(editor.select_next_search_match(true));
+    assert_eq!(
+        editor.selection_for_test(),
+        Selection::new(TextPosition::new(3, 0), TextPosition::new(3, 6))
+    );
+    assert_eq!(
+        editor.active_workspace_excerpt_id_for_test(),
+        Some(WorkspaceExcerptId::new(2))
+    );
+
+    assert!(editor.select_next_search_match(true));
+    assert_eq!(
+        editor.current_text().as_deref(),
+        Some("needle helper\nomega\n")
+    );
+    assert_eq!(
+        editor.active_workspace_excerpt_id_for_test(),
+        Some(WorkspaceExcerptId::new(3))
+    );
+}
+
+#[test]
 fn reopening_same_file_restores_fold_and_view_toggles() {
     let mut editor = FilesEditor::new();
     let path = PathBuf::from("example.rs");

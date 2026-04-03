@@ -261,6 +261,7 @@ Current state:
 - Diff-mode compare rebuilds, file-to-file navigation, visible-row selection sync, and no-session review path selection now preserve the Review workspace/editor session’s active path or `review_last_selected_path` before falling back to the mirrored top-level `selected_path`.
 - Diff mode no longer persists duplicate `file_row_ranges` or visible header lookup vectors when a Review workspace session exists; those file-range and header queries are now expected to resolve from the shared session instead of cached flat-row state.
 - FilesEditor workspace layouts now also search across excerpt/document order instead of only the active buffer, which moves another default editor behavior closer to Zed’s multibuffer `Editor` model for both Files and Diff surfaces.
+- FilesEditor workspace search/navigation now also follows excerpt order within the shared layout instead of collapsing everything to one result stream per document, which moves search behavior closer to Zed’s multibuffer excerpt model and closes part of the remaining search-across-excerpts gap.
 
 ### Phase 6: Persist Editor Entities Across Tab Switches
 

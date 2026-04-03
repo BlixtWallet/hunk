@@ -4,14 +4,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 use hunk_editor::{
-    Viewport, WorkspaceDisplaySnapshot, WorkspaceDocumentId, WorkspaceLayout,
+    Viewport, WorkspaceDisplaySnapshot, WorkspaceDocumentId, WorkspaceExcerptId, WorkspaceLayout,
     build_workspace_display_snapshot,
 };
 use hunk_text::TextSnapshot;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WorkspaceSearchMatch {
+    pub(crate) excerpt_id: WorkspaceExcerptId,
     pub(crate) document_id: WorkspaceDocumentId,
+    pub(crate) surface_order: usize,
     pub(crate) byte_range: Range<usize>,
 }
 
@@ -61,7 +63,7 @@ pub(crate) fn find_workspace_search_matches(
 
     let mut matches = Vec::new();
     let mut seen = BTreeSet::new();
-    for excerpt in layout.excerpts() {
+    for (surface_order, excerpt) in layout.excerpts().iter().enumerate() {
         let Some(snapshot) = document_snapshots.get(&excerpt.spec.document_id) else {
             continue;
         };
@@ -90,7 +92,9 @@ pub(crate) fn find_workspace_search_matches(
             let match_end = match_start + query.len();
             if seen.insert((excerpt.spec.document_id, match_start, match_end)) {
                 matches.push(WorkspaceSearchMatch {
+                    excerpt_id: excerpt.spec.id,
                     document_id: excerpt.spec.document_id,
+                    surface_order,
                     byte_range: match_start..match_end,
                 });
             }

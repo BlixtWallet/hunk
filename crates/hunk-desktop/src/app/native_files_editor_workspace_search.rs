@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use hunk_editor::EditorCommand;
-use hunk_editor::WorkspaceDocumentId;
+use hunk_editor::{WorkspaceDocumentId, WorkspaceExcerptId};
 use hunk_text::{Selection, TextPosition};
 
 #[allow(clippy::duplicate_mod)]
@@ -17,6 +17,7 @@ use super::FilesEditor;
 pub(super) struct WorkspaceSearchTarget {
     path: PathBuf,
     document_id: WorkspaceDocumentId,
+    excerpt_id: WorkspaceExcerptId,
     surface_order: usize,
     byte_range: std::ops::Range<usize>,
     start: TextPosition,
@@ -44,16 +45,6 @@ impl FilesEditor {
             })
             .collect::<BTreeMap<_, _>>();
 
-        let document_surface_order = layout.excerpts().iter().enumerate().fold(
-            BTreeMap::new(),
-            |mut orders, (surface_order, excerpt)| {
-                orders
-                    .entry(excerpt.spec.document_id)
-                    .or_insert(surface_order);
-                orders
-            },
-        );
-
         Some(
             find_workspace_search_matches(layout, query, &document_snapshots)
                 .into_iter()
@@ -65,7 +56,8 @@ impl FilesEditor {
                     Some(WorkspaceSearchTarget {
                         path: document.path.clone(),
                         document_id: candidate.document_id,
-                        surface_order: *document_surface_order.get(&candidate.document_id)?,
+                        excerpt_id: candidate.excerpt_id,
+                        surface_order: candidate.surface_order,
                         byte_range: candidate.byte_range,
                         start,
                         end,
@@ -88,6 +80,7 @@ impl FilesEditor {
         {
             return false;
         }
+        self.workspace_session.activate_excerpt(target.excerpt_id);
         self.editor
             .apply(EditorCommand::SetSelection(Selection::new(
                 target.start,
@@ -106,33 +99,44 @@ impl FilesEditor {
         }
 
         let current_path = self.active_path()?;
-        let current_doc_id = self
-            .workspace_session
-            .layout()?
+        let layout = self.workspace_session.layout()?;
+        let current_doc_id = layout
             .documents()
             .iter()
             .find(|document| document.path.as_path() == current_path)?
             .id;
-        let current_surface_order = self
-            .workspace_session
-            .layout()?
-            .excerpts()
-            .iter()
-            .enumerate()
-            .find_map(|(surface_order, excerpt)| {
-                (excerpt.spec.document_id == current_doc_id).then_some(surface_order)
-            })?;
         let snapshot = self.editor.buffer().snapshot();
         let selection = self.editor.selection().range();
         let caret_start = snapshot.position_to_byte(selection.start).ok()?;
         let caret_end = snapshot.position_to_byte(selection.end).ok()?;
+        let current_excerpt_id = layout
+            .excerpts()
+            .iter()
+            .find_map(|excerpt| {
+                (excerpt.spec.document_id == current_doc_id
+                    && excerpt.spec.line_range.contains(&selection.start.line))
+                .then_some(excerpt.spec.id)
+            })
+            .or_else(|| self.workspace_session.active_excerpt_id());
+        let current_surface_order = current_excerpt_id
+            .and_then(|excerpt_id| {
+                layout
+                    .excerpts()
+                    .iter()
+                    .enumerate()
+                    .find_map(|(surface_order, excerpt)| {
+                        (excerpt.spec.id == excerpt_id).then_some(surface_order)
+                    })
+            })
+            .unwrap_or(0);
 
         if forward {
             matches
                 .iter()
                 .find(|target| {
                     target.surface_order > current_surface_order
-                        || (target.document_id == current_doc_id
+                        || (Some(target.excerpt_id) == current_excerpt_id
+                            && target.document_id == current_doc_id
                             && target.byte_range.start > caret_end)
                 })
                 .or_else(|| matches.first())
@@ -143,7 +147,8 @@ impl FilesEditor {
                 .rev()
                 .find(|target| {
                     target.surface_order < current_surface_order
-                        || (target.document_id == current_doc_id
+                        || (Some(target.excerpt_id) == current_excerpt_id
+                            && target.document_id == current_doc_id
                             && target.byte_range.end < caret_start)
                 })
                 .or_else(|| matches.last())
