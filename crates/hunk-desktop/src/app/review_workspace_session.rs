@@ -111,6 +111,8 @@ pub(crate) struct ReviewWorkspaceViewportRow {
     pub(crate) file_path: Option<String>,
     pub(crate) file_status: Option<FileStatus>,
     pub(crate) file_line_stats: Option<LineStats>,
+    pub(crate) file_is_collapsed: bool,
+    pub(crate) can_view_file: bool,
     pub(crate) show_comment_affordance: bool,
     pub(crate) open_comment_count: usize,
     pub(crate) text: String,
@@ -165,7 +167,6 @@ pub(crate) struct ReviewWorkspaceSurfaceSnapshot {
     pub(crate) scroll_top_px: usize,
     pub(crate) viewport_height_px: usize,
     pub(crate) viewport: ReviewWorkspaceViewportSnapshot,
-    pub(crate) overlays: Vec<ReviewWorkspaceSurfaceOverlay>,
     pub(crate) sticky_file_header: Option<ReviewWorkspaceVisibleFileHeader>,
     pub(crate) active_comment_editor_overlay: Option<ReviewWorkspaceFloatingOverlay>,
     pub(crate) visible_state: ReviewWorkspaceVisibleState,
@@ -176,20 +177,9 @@ pub(crate) struct ReviewWorkspaceSurfaceOptions {
     pub(crate) comment_affordance_rows: BTreeSet<usize>,
     pub(crate) comment_open_counts_by_row: BTreeMap<usize, usize>,
     pub(crate) active_comment_editor_row: Option<usize>,
+    pub(crate) collapsed_paths: BTreeSet<String>,
+    pub(crate) view_file_enabled_paths: BTreeSet<String>,
     pub(crate) search_highlight_columns_by_row: BTreeMap<usize, Vec<Range<usize>>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ReviewWorkspaceSurfaceOverlayKind {
-    FileHeaderControls { path: String, status: FileStatus },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReviewWorkspaceSurfaceOverlay {
-    pub(crate) row_index: usize,
-    pub(crate) top_px: usize,
-    pub(crate) height_px: usize,
-    pub(crate) kind: ReviewWorkspaceSurfaceOverlayKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -603,6 +593,12 @@ impl ReviewWorkspaceSession {
                                 .as_deref()
                                 .and_then(|path| self.status_for_path(path))
                         });
+                    let file_is_collapsed = file_path
+                        .as_deref()
+                        .is_some_and(|path| options.collapsed_paths.contains(path));
+                    let can_view_file = file_path
+                        .as_deref()
+                        .is_some_and(|path| options.view_file_enabled_paths.contains(path));
                     let row_segment_cache = self.row_segment_cache(row_index);
                     let surface_top_px = self
                         .row_top_offset_px(row_index)
@@ -631,6 +627,8 @@ impl ReviewWorkspaceSession {
                             .and_then(|path| self.file_line_stats.get(path).copied()),
                         file_path,
                         file_status,
+                        file_is_collapsed,
+                        can_view_file,
                         show_comment_affordance: options
                             .comment_affordance_rows
                             .contains(&row_index),
@@ -689,27 +687,6 @@ impl ReviewWorkspaceSession {
             let header = self.visible_file_header_at_surface_row(top_row)?;
             (header.row_index != top_row).then_some(header)
         });
-        let overlays = viewport
-            .sections
-            .iter()
-            .flat_map(|section| section.rows.iter())
-            .filter_map(|row| {
-                if row.stream_kind == DiffStreamRowKind::FileHeader
-                    && let (Some(path), Some(status)) = (row.file_path.as_ref(), row.file_status)
-                {
-                    return Some(ReviewWorkspaceSurfaceOverlay {
-                        row_index: row.row_index,
-                        top_px: row.surface_top_px,
-                        height_px: row.height_px,
-                        kind: ReviewWorkspaceSurfaceOverlayKind::FileHeaderControls {
-                            path: path.clone(),
-                            status,
-                        },
-                    });
-                }
-                None
-            })
-            .collect();
         let active_comment_editor_overlay =
             options.active_comment_editor_row.and_then(|row_index| {
                 let row_top_px = self.row_top_offset_px(row_index)?;
@@ -727,7 +704,6 @@ impl ReviewWorkspaceSession {
             scroll_top_px,
             viewport_height_px,
             viewport,
-            overlays,
             sticky_file_header,
             active_comment_editor_overlay,
             visible_state,

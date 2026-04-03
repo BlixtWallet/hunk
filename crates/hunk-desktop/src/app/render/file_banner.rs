@@ -21,6 +21,13 @@ struct ReviewWorkspaceFileHeaderPaint {
     stats_removed_color: gpui::Hsla,
     stats_changed: SharedString,
     stats_changed_color: gpui::Hsla,
+    collapse_label: SharedString,
+    collapse_text_color: gpui::Hsla,
+    control_background: gpui::Hsla,
+    control_border: gpui::Hsla,
+    view_label: SharedString,
+    view_text_color: gpui::Hsla,
+    view_background: gpui::Hsla,
 }
 
 fn build_review_workspace_file_header_paint(
@@ -29,6 +36,8 @@ fn build_review_workspace_file_header_paint(
     status: FileStatus,
     stats: LineStats,
     is_selected: bool,
+    is_collapsed: bool,
+    can_view_file: bool,
 ) -> ReviewWorkspaceFileHeaderPaint {
     let is_dark = theme.mode.is_dark();
     let chrome = hunk_diff_chrome(theme, is_dark);
@@ -53,6 +62,21 @@ fn build_review_workspace_file_header_paint(
         stats_removed_color: line_stats.removed,
         stats_changed: SharedString::from(format!("chg {}", stats.changed())),
         stats_changed_color: line_stats.changed,
+        collapse_label: SharedString::from(if is_collapsed { ">" } else { "v" }),
+        collapse_text_color: colors.arrow,
+        control_background: hunk_blend(theme.background, theme.muted, is_dark, 0.18, 0.12),
+        control_border: hunk_opacity(theme.border, is_dark, 0.88, 0.72),
+        view_label: SharedString::from("View File"),
+        view_text_color: if can_view_file {
+            theme.foreground
+        } else {
+            hunk_opacity(theme.muted_foreground, is_dark, 0.80, 0.92)
+        },
+        view_background: if can_view_file {
+            hunk_blend(theme.background, theme.muted, is_dark, 0.18, 0.12)
+        } else {
+            hunk_blend(theme.background, theme.muted, is_dark, 0.10, 0.06)
+        },
     }
 }
 
@@ -102,59 +126,39 @@ impl DiffViewer {
             })
             .into_any_element()
     }
+}
 
-    fn render_review_workspace_file_header_controls_overlay(
-        &self,
-        row_ix: usize,
-        path: &str,
-        status: FileStatus,
-        is_selected: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let view = cx.entity();
-        let stable_row_id = self.diff_row_stable_id(row_ix);
-        let is_dark = cx.theme().mode.is_dark();
-        let path = path.to_string();
-        let is_collapsed = self.collapsed_files.contains(path.as_str());
-        let colors = hunk_file_status_banner(cx.theme(), status, is_dark, is_selected);
+#[derive(Clone, Copy)]
+struct ReviewWorkspaceFileHeaderControlsLayout {
+    collapse_bounds: Bounds<Pixels>,
+    view_bounds: Bounds<Pixels>,
+}
 
-        h_flex()
-            .size_full()
-            .items_center()
-            .justify_between()
-            .px_3()
-            .child({
-                let view = view.clone();
-                let path = path.clone();
-                Button::new(("toggle-file-collapse-surface", stable_row_id))
-                    .ghost()
-                    .compact()
-                    .icon(
-                        Icon::new(if is_collapsed {
-                            IconName::ChevronRight
-                        } else {
-                            IconName::ChevronDown
-                        })
-                        .size(px(14.0)),
-                    )
-                    .min_w(px(22.0))
-                    .h(px(22.0))
-                    .text_color(colors.arrow)
-                    .on_click(move |_, _, cx| {
-                        cx.stop_propagation();
-                        view.update(cx, |this, cx| {
-                            this.toggle_file_collapsed(path.clone(), cx);
-                        });
-                    })
-            })
-            .child(self.render_review_view_file_button(
-                ("diff-file-view-surface", stable_row_id),
-                path.as_str(),
-                status,
-                view,
-                cx,
-            ))
-            .into_any_element()
+fn review_workspace_file_header_controls_layout(
+    bounds: Bounds<Pixels>,
+) -> ReviewWorkspaceFileHeaderControlsLayout {
+    let left_padding = px(12.0);
+    let right_padding = px(12.0);
+    let collapse_width = px(22.0);
+    let collapse_height = px(22.0);
+    let view_width = px(72.0);
+    let view_height = px(22.0);
+
+    ReviewWorkspaceFileHeaderControlsLayout {
+        collapse_bounds: Bounds {
+            origin: point(
+                bounds.origin.x + left_padding,
+                bounds.origin.y + ((bounds.size.height - collapse_height) / 2.).max(Pixels::ZERO),
+            ),
+            size: gpui::size(collapse_width, collapse_height),
+        },
+        view_bounds: Bounds {
+            origin: point(
+                bounds.origin.x + bounds.size.width - right_padding - view_width,
+                bounds.origin.y + ((bounds.size.height - view_height) / 2.).max(Pixels::ZERO),
+            ),
+            size: gpui::size(view_width, view_height),
+        },
     }
 }
 
@@ -164,6 +168,7 @@ fn paint_review_workspace_file_header_row(
     bounds: Bounds<Pixels>,
     paint: &ReviewWorkspaceFileHeaderPaint,
     mono_font_family: SharedString,
+    ui_font_family: SharedString,
 ) {
     let left_padding = px(12.0);
     let collapse_button_reserve = px(30.0);
@@ -287,5 +292,74 @@ fn paint_review_workspace_file_header_row(
         window.with_content_mask(Some(ContentMask { bounds: path_bounds }), |window| {
             paint_editor_line(window, cx, &path_shape, point(path_x, text_y), line_height);
         });
+
+        let controls = review_workspace_file_header_controls_layout(bounds);
+        window.paint_quad(gpui::fill(controls.collapse_bounds, paint.control_background));
+        paint_review_workspace_outline(window, controls.collapse_bounds, paint.control_border);
+        window.paint_quad(gpui::fill(controls.view_bounds, paint.view_background));
+        paint_review_workspace_outline(window, controls.view_bounds, paint.control_border);
+
+        let control_text_style = gpui::TextStyle {
+            color: paint.view_text_color,
+            font_family: ui_font_family.clone(),
+            font_size: px(11.0).into(),
+            line_height: gpui::relative(1.35),
+            ..Default::default()
+        };
+        let control_font = control_text_style.font();
+        let control_font_size = control_text_style.font_size.to_pixels(window.rem_size());
+        let control_line_height = control_text_style.line_height_in_pixels(window.rem_size());
+
+        let collapse_runs = vec![single_color_text_run(
+            paint.collapse_label.len(),
+            paint.collapse_text_color,
+            control_font.clone(),
+        )];
+        let collapse_shape = shape_editor_line(
+            window,
+            paint.collapse_label.clone(),
+            control_font_size,
+            &collapse_runs,
+        );
+        paint_editor_line(
+            window,
+            cx,
+            &collapse_shape,
+            point(
+                controls.collapse_bounds.origin.x
+                    + ((controls.collapse_bounds.size.width - collapse_shape.width()) / 2.)
+                        .max(Pixels::ZERO),
+                controls.collapse_bounds.origin.y
+                    + ((controls.collapse_bounds.size.height - control_line_height) / 2.)
+                        .max(Pixels::ZERO),
+            ),
+            control_line_height,
+        );
+
+        let view_runs = vec![single_color_text_run(
+            paint.view_label.len(),
+            paint.view_text_color,
+            control_font,
+        )];
+        let view_shape = shape_editor_line(
+            window,
+            paint.view_label.clone(),
+            control_font_size,
+            &view_runs,
+        );
+        paint_editor_line(
+            window,
+            cx,
+            &view_shape,
+            point(
+                controls.view_bounds.origin.x
+                    + ((controls.view_bounds.size.width - view_shape.width()) / 2.)
+                        .max(Pixels::ZERO),
+                controls.view_bounds.origin.y
+                    + ((controls.view_bounds.size.height - control_line_height) / 2.)
+                        .max(Pixels::ZERO),
+            ),
+            control_line_height,
+        );
     });
 }

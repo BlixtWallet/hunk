@@ -146,7 +146,7 @@ use hunk_git::git::{ChangedFile, FileStatus, LineStats};
 use review_workspace_session::{
     REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX, REVIEW_SURFACE_HUNK_DIVIDER_HEIGHT_PX,
     ReviewWorkspaceEditorSide, ReviewWorkspaceSegmentPrefetchRequest, ReviewWorkspaceSession,
-    ReviewWorkspaceSurfaceOptions, ReviewWorkspaceSurfaceOverlayKind,
+    ReviewWorkspaceSurfaceOptions,
 };
 
 fn changed_file(path: &str, status: FileStatus) -> ChangedFile {
@@ -1146,17 +1146,12 @@ fn review_workspace_session_surface_snapshot_builds_sparse_overlays_from_surface
             comment_affordance_rows: BTreeSet::from([comment_row]),
             comment_open_counts_by_row: BTreeMap::from([(comment_row, 1)]),
             active_comment_editor_row: Some(comment_row),
+            collapsed_paths: BTreeSet::from(["src/main.rs".to_string()]),
+            view_file_enabled_paths: BTreeSet::from(["src/main.rs".to_string()]),
             search_highlight_columns_by_row: BTreeMap::new(),
         },
     );
 
-    assert!(surface.overlays.iter().any(|overlay| {
-        overlay.row_index == 0
-            && matches!(
-                overlay.kind,
-                ReviewWorkspaceSurfaceOverlayKind::FileHeaderControls { .. }
-            )
-    }));
     assert_eq!(
         surface
             .active_comment_editor_overlay
@@ -1164,6 +1159,11 @@ fn review_workspace_session_surface_snapshot_builds_sparse_overlays_from_surface
             .map(|overlay| overlay.row_index),
         Some(comment_row)
     );
+    assert!(surface.viewport.row_by_index(0).is_some_and(|row| {
+        row.stream_kind == app::DiffStreamRowKind::FileHeader
+            && row.file_is_collapsed
+            && row.can_view_file
+    }));
     assert!(
         surface
             .viewport

@@ -285,35 +285,7 @@ impl DiffViewer {
                 cx,
             ))
             .into_any_element();
-
-        let sparse_overlays = surface
-            .overlays
-            .iter()
-            .map(|overlay| match &overlay.kind {
-                review_workspace_session::ReviewWorkspaceSurfaceOverlayKind::FileHeaderControls {
-                    path,
-                    status,
-                } => div()
-                    .absolute()
-                    .top(px(overlay.top_px as f32))
-                    .left_0()
-                    .right_0()
-                    .h(px(overlay.height_px as f32))
-                    .child(self.render_review_workspace_file_header_controls_overlay(
-                        overlay.row_index,
-                        path.as_str(),
-                        *status,
-                        self.is_row_selected(overlay.row_index),
-                        cx,
-                    ))
-                    .into_any_element(),
-            })
-            .collect::<Vec<_>>();
-
         vec![painted_surface]
-            .into_iter()
-            .chain(sparse_overlays)
-            .collect()
     }
 
     fn render_review_workspace_sections_scroller(

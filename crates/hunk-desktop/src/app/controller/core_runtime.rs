@@ -28,6 +28,20 @@ impl DiffViewer {
         if let Some(row_ix) = active_comment_editor_row {
             comment_affordance_rows.insert(row_ix);
         }
+        let view_file_enabled_paths = self
+            .review_workspace_session
+            .as_ref()
+            .map(|session| {
+                session
+                    .file_ranges()
+                    .iter()
+                    .filter(|range| {
+                        self.can_open_file_in_files_workspace(range.path.as_str(), range.status)
+                    })
+                    .map(|range| range.path.clone())
+                    .collect::<BTreeSet<_>>()
+            })
+            .unwrap_or_default();
 
         let search_highlight_columns_by_row = self
             .review_workspace_session
@@ -43,6 +57,8 @@ impl DiffViewer {
             comment_affordance_rows,
             comment_open_counts_by_row,
             active_comment_editor_row,
+            collapsed_paths: self.collapsed_files.clone(),
+            view_file_enabled_paths,
             search_highlight_columns_by_row,
         }
     }

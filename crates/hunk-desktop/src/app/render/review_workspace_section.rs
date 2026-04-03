@@ -106,6 +106,32 @@ impl Element for ReviewWorkspaceViewportElement {
                 hitbox.bounds.origin,
                 hitbox.bounds.size.width,
             );
+            if viewport_row.stream_kind == DiffStreamRowKind::FileHeader
+                && matches!(
+                    event.button,
+                    gpui::MouseButton::Left | gpui::MouseButton::Middle
+                )
+                && let (Some(path), Some(status)) =
+                    (viewport_row.file_path.as_ref(), viewport_row.file_status)
+            {
+                let controls = review_workspace_file_header_controls_layout(row_bounds);
+                if controls.collapse_bounds.contains(&event.position) {
+                    let path = path.clone();
+                    view.update(cx, |this, cx| {
+                        this.toggle_file_collapsed(path, cx);
+                        cx.stop_propagation();
+                    });
+                    return;
+                }
+                if controls.view_bounds.contains(&event.position) && viewport_row.can_view_file {
+                    let path = path.clone();
+                    view.update(cx, |this, cx| {
+                        let _ = this.open_file_in_files_workspace(path, status, window, cx);
+                        cx.stop_propagation();
+                    });
+                    return;
+                }
+            }
             if let Some(comment_layout) = review_workspace_comment_affordance_layout(
                 row_bounds,
                 viewport_row.show_comment_affordance,
@@ -203,6 +229,8 @@ impl Element for ReviewWorkspaceViewportElement {
                         status,
                         stats,
                         is_selected,
+                        viewport_row.file_is_collapsed,
+                        viewport_row.can_view_file,
                     );
                     paint_review_workspace_file_header_row(
                         window,
@@ -210,6 +238,7 @@ impl Element for ReviewWorkspaceViewportElement {
                         row_bounds,
                         &paint,
                         self.mono_font_family.clone(),
+                        self.ui_font_family.clone(),
                     );
                     continue;
                 }
