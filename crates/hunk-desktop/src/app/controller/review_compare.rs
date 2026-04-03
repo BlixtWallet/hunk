@@ -587,6 +587,15 @@ impl DiffViewer {
         self.review_left_source_id == default_left && self.review_right_source_id == default_right
     }
 
+    pub(crate) fn review_compare_cache_matches_current_inputs(&self) -> bool {
+        self.review_loaded_snapshot_fingerprint.is_some()
+            && !self.review_compare_loading
+            && self.review_compare_error.is_none()
+            && self.review_loaded_left_source_id == self.review_left_source_id
+            && self.review_loaded_right_source_id == self.review_right_source_id
+            && self.review_loaded_snapshot_fingerprint == self.last_snapshot_fingerprint
+    }
+
     pub(crate) fn review_compare_reset_available(&self) -> bool {
         !self.review_compare_sources.is_empty() && !self.active_review_compare_is_default_pair()
     }
@@ -606,6 +615,9 @@ impl DiffViewer {
         self.clear_review_editor_session();
         self.review_compare_loading = false;
         self.review_compare_error = None;
+        self.review_loaded_left_source_id = None;
+        self.review_loaded_right_source_id = None;
+        self.review_loaded_snapshot_fingerprint = None;
         self.review_files.clear();
         self.review_file_status_by_path.clear();
         self.review_file_line_stats.clear();
@@ -717,6 +729,9 @@ impl DiffViewer {
         let apply_started_at = Instant::now();
         self.review_compare_error = None;
         self.review_files = snapshot.files;
+        self.review_loaded_left_source_id = self.review_left_source_id.clone();
+        self.review_loaded_right_source_id = self.review_right_source_id.clone();
+        self.review_loaded_snapshot_fingerprint = self.last_snapshot_fingerprint.clone();
         self.review_file_status_by_path = self
             .review_files
             .iter()

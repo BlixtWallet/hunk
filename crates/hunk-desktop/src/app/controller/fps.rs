@@ -37,7 +37,13 @@ impl DiffViewer {
                                 true,
                                 cx,
                             );
+                            this.request_review_editor_prefetch_for_visible_files(
+                                start_ix..end_ix,
+                                1,
+                                cx,
+                            );
                         }
+                        this.prune_review_editor_sessions_after_scroll_settles();
                     }
 
                     if this.workspace_view_mode == WorkspaceViewMode::Ai {

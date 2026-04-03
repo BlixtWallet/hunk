@@ -128,6 +128,7 @@ struct ReviewEditorFileSession {
     right_hunk_lines: Vec<usize>,
     right_to_left_line_map: Vec<Option<usize>>,
     pending_target_right_line: Option<usize>,
+    last_touched_at: Instant,
     left_editor: native_files_editor::SharedFilesEditor,
     right_editor: native_files_editor::SharedFilesEditor,
 }
@@ -154,6 +155,7 @@ impl ReviewEditorFileSession {
             right_hunk_lines: Vec::new(),
             right_to_left_line_map: Vec::new(),
             pending_target_right_line: None,
+            last_touched_at: Instant::now(),
             left_editor: Rc::new(RefCell::new(crate::app::native_files_editor::FilesEditor::new())),
             right_editor: Rc::new(RefCell::new(crate::app::native_files_editor::FilesEditor::new())),
         }

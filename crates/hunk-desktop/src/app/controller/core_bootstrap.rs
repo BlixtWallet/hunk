@@ -619,7 +619,11 @@ impl DiffViewer {
             review_overall_line_stats: LineStats::default(),
             review_compare_loading: false,
             review_compare_error: None,
+            review_loaded_left_source_id: None,
+            review_loaded_right_source_id: None,
+            review_loaded_snapshot_fingerprint: None,
             review_editor_sessions: BTreeMap::new(),
+            review_editor_evicted_paths: BTreeSet::new(),
             review_editor_list_state: ListState::new(0, ListAlignment::Top, px(420.0)),
             overall_line_stats: LineStats::default(),
             refresh_epoch: 0,
@@ -975,8 +979,14 @@ impl DiffViewer {
                     };
                     view.update(cx, |this, cx| {
                         this.request_review_preview_segment_prefetch_for_visible_files(
-                            visible_range,
+                            visible_range.clone(),
                             false,
+                            cx,
+                        );
+                        this.update_review_visible_file_range(visible_range.clone());
+                        this.request_review_editor_prefetch_for_visible_files(
+                            visible_range,
+                            1,
                             cx,
                         );
                     });

@@ -74,9 +74,6 @@ pub(crate) struct HunkPendingMessageColors {
 pub(crate) struct HunkDiffChromeColors {
     pub row_divider: Hsla,
     pub center_divider: Hsla,
-    pub gutter_divider: Hsla,
-    pub gutter_background: Hsla,
-    pub empty_gutter_background: Hsla,
     pub column_header_background: Hsla,
     pub column_header_badge_background: Hsla,
 }
@@ -229,9 +226,6 @@ pub(crate) fn hunk_diff_chrome(theme: &Theme, is_dark: bool) -> HunkDiffChromeCo
     HunkDiffChromeColors {
         row_divider: hunk_opacity(theme.border, is_dark, 0.74, 0.58),
         center_divider: hunk_opacity(theme.border, is_dark, 0.88, 0.72),
-        gutter_divider: hunk_opacity(theme.border, is_dark, 0.66, 0.54),
-        gutter_background: hunk_blend(theme.title_bar, theme.muted, is_dark, 0.24, 0.48),
-        empty_gutter_background: hunk_blend(theme.sidebar, theme.muted, is_dark, 0.18, 0.38),
         column_header_background: hunk_blend(theme.title_bar, theme.muted, is_dark, 0.10, 0.22),
         column_header_badge_background: hunk_opacity(theme.muted, is_dark, 0.28, 0.42),
     }

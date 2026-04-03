@@ -832,13 +832,13 @@ impl DiffViewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.editor_markdown_preview || !self.files_editor_focus_handle.is_focused(window) {
+        if self.editor_markdown_preview {
             return;
         }
-        let Some(text) = self.files_editor.borrow().copy_selection_text() else {
-            return;
-        };
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        let focus_handle = self.files_editor_focus_handle.clone();
+        let _ = self.workspace_editor_copy_via(window, &focus_handle, cx, |this| {
+            this.files_editor.borrow().copy_selection_text()
+        });
     }
 
     pub(super) fn files_editor_cut_action(
@@ -847,15 +847,20 @@ impl DiffViewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.editor_markdown_preview || !self.files_editor_focus_handle.is_focused(window) {
+        if self.editor_markdown_preview {
             return;
         }
-        let Some(text) = self.files_editor.borrow_mut().cut_selection_text() else {
-            return;
-        };
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
-        self.sync_editor_dirty_from_input(cx);
-        cx.notify();
+        let focus_handle = self.files_editor_focus_handle.clone();
+        let _ = self.workspace_editor_cut_via(
+            window,
+            &focus_handle,
+            cx,
+            |this| this.files_editor.borrow_mut().cut_selection_text(),
+            |this, cx| {
+                this.sync_editor_dirty_from_input(cx);
+                cx.notify();
+            },
+        );
     }
 
     pub(super) fn files_editor_paste_action(
@@ -864,16 +869,20 @@ impl DiffViewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.editor_markdown_preview || !self.files_editor_focus_handle.is_focused(window) {
+        if self.editor_markdown_preview {
             return;
         }
-        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
-            return;
-        };
-        if self.files_editor.borrow_mut().paste_text(text.as_str()) {
-            self.sync_editor_dirty_from_input(cx);
-            cx.notify();
-        }
+        let focus_handle = self.files_editor_focus_handle.clone();
+        let _ = self.workspace_editor_paste_via(
+            window,
+            &focus_handle,
+            cx,
+            |this, text| this.files_editor.borrow_mut().paste_text(text),
+            |this, cx| {
+                this.sync_editor_dirty_from_input(cx);
+                cx.notify();
+            },
+        );
     }
 
     pub(super) fn files_editor_move_up_action(
@@ -1124,13 +1133,20 @@ impl DiffViewer {
         cx: &mut Context<Self>,
         apply: impl FnOnce(&mut crate::app::native_files_editor::FilesEditor) -> bool,
     ) {
-        if self.editor_markdown_preview || !self.files_editor_focus_handle.is_focused(window) {
+        if self.editor_markdown_preview {
             return;
         }
-        if self.files_editor.borrow_mut().apply_motion_action(apply) {
-            self.sync_editor_dirty_from_input(cx);
-            cx.notify();
-        }
+        let focus_handle = self.files_editor_focus_handle.clone();
+        let _ = self.workspace_editor_motion_via(
+            window,
+            &focus_handle,
+            cx,
+            |this| this.files_editor.borrow_mut().apply_motion_action(apply),
+            |this, cx| {
+                this.sync_editor_dirty_from_input(cx);
+                cx.notify();
+            },
+        );
     }
 
     fn open_files_editor_document_in(

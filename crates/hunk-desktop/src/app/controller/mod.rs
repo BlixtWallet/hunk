@@ -69,6 +69,7 @@ include!("project_open.rs");
 include!("git_ops_review.rs");
 include!("git_ops.rs");
 include!("recent_commits.rs");
+include!("editor_actions.rs");
 include!("review_compare.rs");
 include!("review_editor.rs");
 include!("review_editor_workspace.rs");

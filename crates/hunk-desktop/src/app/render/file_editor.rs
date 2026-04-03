@@ -417,7 +417,7 @@ impl DiffViewer {
         };
 
         let editor_chrome = crate::app::theme::hunk_editor_chrome_colors(cx.theme(), is_dark);
-        let editor_font_size = cx.theme().mono_font_size * 1.2;
+        let editor_font_size = self.workspace_editor_font_size(cx);
         let is_markdown_file = is_markdown_path(file_path.as_str());
         let preview_active = is_markdown_file && self.editor_markdown_preview;
         let (editor_status, search_match_count, show_whitespace, soft_wrap_enabled) = {

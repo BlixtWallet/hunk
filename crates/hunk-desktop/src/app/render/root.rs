@@ -541,11 +541,11 @@ impl Render for DiffViewer {
                 .is_none_or(|logged_at| logged_at.elapsed() >= Duration::from_secs(1));
             if should_log {
                 self.last_review_slow_render_logged_at = Some(Instant::now());
-                let (visible_files, visible_preview_rows, active_file_visible) = self
+                let (visible_files, visible_section_rows, active_file_visible) = self
                     .last_review_visible_file_range
                     .map(|(start_ix, end_ix)| {
                         let visible_files = end_ix.saturating_sub(start_ix);
-                        let visible_preview_rows = self.review_files[start_ix..end_ix]
+                        let visible_section_rows = self.review_files[start_ix..end_ix]
                             .iter()
                             .filter_map(|file| self.review_preview_sections.get(file.path.as_str()))
                             .map(|section| section.rendered_row_count)
@@ -558,13 +558,13 @@ impl Render for DiffViewer {
                                     .iter()
                                     .any(|file| file.path == selected_path)
                             });
-                        (visible_files, visible_preview_rows, active_file_visible)
+                        (visible_files, visible_section_rows, active_file_visible)
                     })
                     .unwrap_or((0, 0, false));
                 tracing::debug!(
                     render_ms = render_elapsed.as_secs_f64() * 1000.0,
                     visible_files,
-                    visible_preview_rows,
+                    visible_section_rows,
                     active_file_visible,
                     fps = self.fps,
                     "slow review render"

@@ -4,49 +4,247 @@ struct ReviewPreviewDiffCellRenderSpec<'a> {
     cell: &'a DiffCell,
     peer_kind: DiffCellKind,
     panel_width: Option<Pixels>,
+    editor_font_size: Pixels,
 }
 
 const REVIEW_PREVIEW_MAX_TEXT_CHARS_PER_CELL: usize = 240;
 
 impl DiffViewer {
-    fn review_preview_section(
+    #[allow(clippy::too_many_arguments)]
+    fn render_review_preview_section(
         &self,
-        path: &str,
-    ) -> Option<&crate::app::review_preview_model::ReviewPreviewSection> {
-        self.review_preview_sections.get(path)
-    }
+        file: ChangedFile,
+        index: usize,
+        total_files: usize,
+        status_label: &'static str,
+        status_color: Hsla,
+        border_color: Hsla,
+        is_active: bool,
+        preview_section: crate::app::review_preview_model::ReviewPreviewSection,
+        hunk_count: usize,
+        line_stats: LineStats,
+        editor_loading: bool,
+        editor_error: Option<String>,
+        editor_font_size: gpui::Pixels,
+        _layout: Option<DiffColumnLayout>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let is_dark = cx.theme().mode.is_dark();
+        let preview_rows = self.render_review_preview_rows(&preview_section, editor_font_size, cx);
+        let preview_truncated = preview_section.truncated();
+        let hidden_rows = preview_section.hidden_row_count();
+        let hidden_hunks = preview_section.hidden_hunk_count();
 
-    fn review_preview_hunk_count(&self, path: &str) -> usize {
-        self.review_preview_section(path)
-            .map(|section| section.total_hunk_count)
-            .unwrap_or(0)
+        v_flex()
+            .id(("review-editor-section", index))
+            .w_full()
+            .pb_3()
+            .child(
+                v_flex()
+                    .w_full()
+                    .rounded(px(10.0))
+                    .border_1()
+                    .border_color(border_color)
+                    .bg(hunk_blend(
+                        cx.theme().background,
+                        cx.theme().muted,
+                        is_dark,
+                        0.10,
+                        0.04,
+                    ))
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .items_center()
+                            .justify_between()
+                            .gap_3()
+                            .px_3()
+                            .py_2()
+                            .border_b_1()
+                            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.82, 0.68))
+                            .on_mouse_down(MouseButton::Left, {
+                                let view = cx.entity();
+                                let path = file.path.clone();
+                                move |_, window, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.review_editor_activate_path(path.clone(), Some(window), cx);
+                                    });
+                                }
+                            })
+                            .child(
+                                h_flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .min_w_0()
+                                    .child(
+                                        div()
+                                            .px_1p5()
+                                            .py_0p5()
+                                            .rounded(px(6.0))
+                                            .bg(hunk_opacity(status_color, is_dark, 0.20, 0.12))
+                                            .text_xs()
+                                            .font_semibold()
+                                            .text_color(status_color)
+                                            .child(status_label),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_family(cx.theme().mono_font_family.clone())
+                                            .text_color(cx.theme().foreground)
+                                            .truncate()
+                                            .child(file.path),
+                                    ),
+                            )
+                            .child(
+                                h_flex()
+                                    .items_center()
+                                    .gap_3()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(format!("{}/{} files", index + 1, total_files))
+                                    .child(format!("{hunk_count} hunks"))
+                                    .child(self.render_line_stats("diff", line_stats, cx))
+                                    .when(is_active && editor_loading, |this| {
+                                        this.child(
+                                            div()
+                                                .px_2()
+                                                .py_1()
+                                                .rounded(px(6.0))
+                                                .bg(hunk_opacity(
+                                                    cx.theme().warning,
+                                                    is_dark,
+                                                    0.18,
+                                                    0.14,
+                                                ))
+                                                .text_xs()
+                                                .text_color(cx.theme().warning)
+                                                .child("Preparing editor..."),
+                                        )
+                                    })
+                                    .when_some(editor_error.as_ref(), |this, _| {
+                                        this.child(
+                                            div()
+                                                .px_2()
+                                                .py_1()
+                                                .rounded(px(6.0))
+                                                .bg(hunk_opacity(
+                                                    cx.theme().danger,
+                                                    is_dark,
+                                                    0.18,
+                                                    0.14,
+                                                ))
+                                                .text_xs()
+                                                .text_color(cx.theme().danger)
+                                                .child("Editor unavailable"),
+                                        )
+                                    }),
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .w_full()
+                            .children(preview_rows)
+                            .when(preview_truncated, |this| {
+                                this.child(
+                                    h_flex()
+                                        .w_full()
+                                        .items_center()
+                                        .justify_between()
+                                        .gap_3()
+                                        .px_3()
+                                        .py_2()
+                                        .border_t_1()
+                                        .border_color(hunk_opacity(
+                                            cx.theme().border,
+                                            is_dark,
+                                            0.82,
+                                            0.68,
+                                        ))
+                                        .bg(hunk_blend(
+                                            cx.theme().background,
+                                            cx.theme().muted,
+                                            is_dark,
+                                            0.08,
+                                            0.04,
+                                        ))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child(format!(
+                                                    "{hidden_rows} rows and {hidden_hunks} hunks remain collapsed in preview."
+                                                )),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child("Open this section to edit"),
+                                        ),
+                                )
+                            })
+                            .when_some(editor_error, |this, error| {
+                                this.child(
+                                    div()
+                                        .w_full()
+                                        .px_3()
+                                        .py_2()
+                                        .border_t_1()
+                                        .border_color(hunk_opacity(
+                                            cx.theme().border,
+                                            is_dark,
+                                            0.82,
+                                            0.68,
+                                        ))
+                                        .bg(hunk_opacity(
+                                            cx.theme().danger,
+                                            is_dark,
+                                            0.08,
+                                            0.05,
+                                        ))
+                                        .text_xs()
+                                        .text_color(cx.theme().danger)
+                                        .child(error),
+                                )
+                            }),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn render_review_preview_rows(
         &self,
         section: &crate::app::review_preview_model::ReviewPreviewSection,
+        editor_font_size: Pixels,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
         if section.rendered_row_indices.is_empty() {
             return Vec::new();
         }
 
-        section.rendered_row_indices.iter().filter_map(|row_ix| {
-            let row = self.diff_rows.get(*row_ix)?;
-            Some(match row.kind {
-                DiffRowKind::Code => self.render_review_preview_code_row(*row_ix, row, cx),
-                DiffRowKind::HunkHeader | DiffRowKind::Meta | DiffRowKind::Empty => {
-                    self.render_review_preview_meta_row(*row_ix, row, cx)
-                }
+        section
+            .rendered_row_indices
+            .iter()
+            .filter_map(|row_ix| {
+                let row = self.diff_rows.get(*row_ix)?;
+                Some(match row.kind {
+                    DiffRowKind::Code => {
+                        self.render_review_preview_code_row(*row_ix, row, editor_font_size, cx)
+                    }
+                    DiffRowKind::HunkHeader | DiffRowKind::Meta | DiffRowKind::Empty => {
+                        self.render_review_preview_meta_row(*row_ix, row, editor_font_size, cx)
+                    }
+                })
             })
-        })
-        .collect()
+            .collect()
     }
 
     fn render_review_preview_meta_row(
         &self,
         row_ix: usize,
         row: &SideBySideRow,
+        editor_font_size: Pixels,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let stable_row_id = self.diff_row_stable_id(row_ix);
@@ -109,7 +307,8 @@ impl DiffViewer {
             .border_b_1()
             .border_color(hunk_opacity(cx.theme().border, is_dark, 0.82, 0.70))
             .bg(background)
-            .text_xs()
+            .text_size(editor_font_size)
+            .line_height(gpui::relative(1.45))
             .text_color(foreground)
             .font_family(cx.theme().mono_font_family.clone())
             .w_full()
@@ -131,6 +330,7 @@ impl DiffViewer {
         &self,
         row_ix: usize,
         row: &SideBySideRow,
+        editor_font_size: Pixels,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let stable_row_id = self.diff_row_stable_id(row_ix);
@@ -153,6 +353,7 @@ impl DiffViewer {
                     cell: &row.left,
                     peer_kind: row.right.kind,
                     panel_width: layout.map(|layout| layout.left_panel_width),
+                    editor_font_size,
                 },
                 cx,
             ))
@@ -164,6 +365,7 @@ impl DiffViewer {
                     cell: &row.right,
                     peer_kind: row.left.kind,
                     panel_width: layout.map(|layout| layout.right_panel_width),
+                    editor_font_size,
                 },
                 cx,
             ))
@@ -248,6 +450,7 @@ impl DiffViewer {
 
         let line_number = cell.line.map(|line| line.to_string()).unwrap_or_default();
         let preview_text = self.review_preview_text(&cell.text);
+        let editor_font_size = spec.editor_font_size;
         let line_number_width = if side == "left" {
             self.diff_left_line_number_width
         } else {
@@ -266,13 +469,13 @@ impl DiffViewer {
         let should_draw_right_divider = side == "left";
         let gutter_background = match cell.kind {
             DiffCellKind::Added => {
-                hunk_blend(chrome.gutter_background, cx.theme().success, is_dark, 0.12, 0.07)
+                hunk_blend(cx.theme().background, cx.theme().success, is_dark, 0.12, 0.07)
             }
             DiffCellKind::Removed => {
-                hunk_blend(chrome.gutter_background, cx.theme().danger, is_dark, 0.12, 0.07)
+                hunk_blend(cx.theme().background, cx.theme().danger, is_dark, 0.12, 0.07)
             }
-            DiffCellKind::None => chrome.empty_gutter_background,
-            DiffCellKind::Context => chrome.gutter_background,
+            DiffCellKind::None => hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.04, 0.06),
+            DiffCellKind::Context => hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.06, 0.08),
         };
         let gutter_width = line_number_width + DIFF_MARKER_GUTTER_WIDTH + 16.0;
 
@@ -298,14 +501,15 @@ impl DiffViewer {
                     .py_0p5()
                     .bg(gutter_background)
                     .border_r_1()
-                    .border_color(chrome.gutter_divider)
+                    .border_color(chrome.center_divider)
                     .child(
                         h_flex()
                             .w(px(line_number_width))
                             .justify_end()
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_size(editor_font_size)
+                                    .line_height(gpui::relative(1.45))
                                     .text_color(line_color)
                                     .font_family(cx.theme().mono_font_family.clone())
                                     .whitespace_nowrap()
@@ -318,7 +522,8 @@ impl DiffViewer {
                             .justify_center()
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_size(editor_font_size)
+                                    .line_height(gpui::relative(1.45))
                                     .text_color(marker_color)
                                     .font_family(cx.theme().mono_font_family.clone())
                                     .whitespace_nowrap()
@@ -338,7 +543,8 @@ impl DiffViewer {
                         .gap_0()
                         .px_2()
                         .py_0p5()
-                        .text_xs()
+                        .text_size(editor_font_size)
+                        .line_height(gpui::relative(1.45))
                         .font_family(cx.theme().mono_font_family.clone())
                         .text_color(text_color)
                         .overflow_x_hidden()
@@ -365,7 +571,8 @@ impl DiffViewer {
                         .min_w_0()
                         .px_2()
                         .py_0p5()
-                        .text_xs()
+                        .text_size(editor_font_size)
+                        .line_height(gpui::relative(1.45))
                         .font_family(cx.theme().mono_font_family.clone())
                         .text_color(text_color)
                         .overflow_x_hidden()
@@ -386,6 +593,6 @@ impl DiffViewer {
             .chars()
             .take(REVIEW_PREVIEW_MAX_TEXT_CHARS_PER_CELL.saturating_sub(1))
             .collect::<String>();
-        SharedString::from(format!("{truncated}…"))
+        SharedString::from(format!("{truncated}..."))
     }
 }

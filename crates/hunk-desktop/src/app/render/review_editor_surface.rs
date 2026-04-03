@@ -1,4 +1,17 @@
 impl DiffViewer {
+    fn review_preview_section(
+        &self,
+        path: &str,
+    ) -> Option<&crate::app::review_preview_model::ReviewPreviewSection> {
+        self.review_preview_sections.get(path)
+    }
+
+    fn review_preview_hunk_count(&self, path: &str) -> usize {
+        self.review_preview_section(path)
+            .map(|section| section.total_hunk_count)
+            .unwrap_or(0)
+    }
+
     fn render_review_editor_preview(
         &mut self,
         window: &mut Window,
@@ -44,7 +57,7 @@ impl DiffViewer {
 
         let is_dark = cx.theme().mode.is_dark();
         let layout = self.diff_column_layout();
-        let editor_font_size = cx.theme().mono_font_size * 1.2;
+        let editor_font_size = self.workspace_editor_font_size(cx);
         let view = cx.entity();
         let is_review_editor_focused = self.review_editor_focus_handle.is_focused(window);
         let total_files = self.review_files.len();
@@ -219,20 +232,29 @@ impl DiffViewer {
             hunk_opacity(cx.theme().border, is_dark, 0.86, 0.72)
         };
 
-        let session_loading = self.review_editor_session(file.path.as_str()).is_some_and(|session| {
-            session.loading || session.presentation_loading || session.save_loading
-        });
-        let session_error = self
-            .review_editor_session(file.path.as_str())
-            .and_then(|session| session.error.clone());
-        let content_loaded = self.review_editor_session(file.path.as_str()).is_some_and(|session| {
-            session.left_source_id == self.review_left_source_id
-                && session.right_source_id == self.review_right_source_id
-                && !session.loading
-                && session.error.is_none()
-        });
+        let session_loading = is_active
+            && self
+                .review_editor_session(file.path.as_str())
+                .is_some_and(|session| {
+                    session.loading || session.presentation_loading || session.save_loading
+                });
+        let session_error = if is_active {
+            self.review_editor_session(file.path.as_str())
+                .and_then(|session| session.error.clone())
+        } else {
+            None
+        };
+        let content_loaded = is_active
+            && self
+                .review_editor_session(file.path.as_str())
+                .is_some_and(|session| {
+                    session.left_source_id == self.review_left_source_id
+                        && session.right_source_id == self.review_right_source_id
+                        && !session.loading
+                        && session.error.is_none()
+                });
 
-        if !is_active || !content_loaded {
+        if !content_loaded {
             return self.render_review_preview_section(
                 file,
                 index,
@@ -246,7 +268,8 @@ impl DiffViewer {
                 line_stats,
                 session_loading,
                 session_error,
-                is_dark,
+                editor_font_size,
+                layout,
                 cx,
             );
         }
@@ -461,227 +484,6 @@ impl DiffViewer {
             .into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn render_review_preview_section(
-        &self,
-        file: ChangedFile,
-        index: usize,
-        total_files: usize,
-        status_label: &'static str,
-        status_color: Hsla,
-        border_color: Hsla,
-        is_active: bool,
-        preview_section: crate::app::review_preview_model::ReviewPreviewSection,
-        hunk_count: usize,
-        line_stats: LineStats,
-        editor_loading: bool,
-        editor_error: Option<String>,
-        is_dark: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let preview_rows = self.render_review_preview_rows(&preview_section, cx);
-        let preview_rows_empty = preview_rows.is_empty();
-        let preview_truncated = preview_section.truncated();
-        v_flex()
-            .id(("review-editor-section", index))
-            .w_full()
-            .pb_3()
-            .child(
-                v_flex()
-                    .w_full()
-                    .rounded(px(10.0))
-                    .border_1()
-                    .border_color(border_color)
-                    .bg(hunk_blend(
-                        cx.theme().background,
-                        cx.theme().muted,
-                        is_dark,
-                        0.10,
-                        0.04,
-                    ))
-                    .child(
-                        h_flex()
-                            .w_full()
-                            .items_center()
-                            .justify_between()
-                            .gap_3()
-                            .px_3()
-                            .py_2()
-                            .border_b_1()
-                            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.82, 0.68))
-                            .on_mouse_down(MouseButton::Left, {
-                                let view = cx.entity();
-                                let path = file.path.clone();
-                                move |_, window, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.review_editor_activate_path(path.clone(), Some(window), cx);
-                                    });
-                                }
-                            })
-                            .child(
-                                h_flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .min_w_0()
-                                    .child(
-                                        div()
-                                            .px_1p5()
-                                            .py_0p5()
-                                            .rounded(px(6.0))
-                                            .bg(hunk_opacity(status_color, is_dark, 0.20, 0.12))
-                                            .text_xs()
-                                            .font_semibold()
-                                            .text_color(status_color)
-                                            .child(status_label),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .font_family(cx.theme().mono_font_family.clone())
-                                            .text_color(cx.theme().foreground)
-                                            .truncate()
-                                            .child(file.path),
-                                    ),
-                            )
-                            .child(
-                                h_flex()
-                                    .items_center()
-                                    .gap_3()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(format!("{}/{} files", index + 1, total_files))
-                                    .child(format!("{hunk_count} hunks"))
-                                    .child(self.render_line_stats("diff", line_stats, cx))
-                                    .when(is_active && editor_loading, |this| {
-                                        this.child(
-                                            div()
-                                                .px_2()
-                                                .py_1()
-                                                .rounded(px(6.0))
-                                                .bg(hunk_opacity(
-                                                    cx.theme().warning,
-                                                    is_dark,
-                                                    0.18,
-                                                    0.14,
-                                                ))
-                                                .text_xs()
-                                                .text_color(cx.theme().warning)
-                                                .child("Preparing editor..."),
-                                        )
-                                    })
-                                    .when_some(editor_error.as_ref(), |this, _| {
-                                        this.child(
-                                            div()
-                                                .px_2()
-                                                .py_1()
-                                                .rounded(px(6.0))
-                                                .bg(hunk_opacity(
-                                                    cx.theme().danger,
-                                                    is_dark,
-                                                    0.18,
-                                                    0.14,
-                                                ))
-                                                .text_xs()
-                                                .text_color(cx.theme().danger)
-                                                .child("Editor unavailable"),
-                                        )
-                                    }),
-                            ),
-                    )
-                    .child(
-                        v_flex()
-                            .w_full()
-                            .children(preview_rows)
-                            .when(preview_rows_empty, |this| {
-                                this.child(
-                                    h_flex()
-                                        .w_full()
-                                        .min_h(px(120.0))
-                                        .items_center()
-                                        .justify_center()
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .text_color(cx.theme().muted_foreground)
-                                                .child("No diff preview available for this file."),
-                                        ),
-                                )
-                            })
-                            .when_some(editor_error, |this, error| {
-                                this.child(
-                                    div()
-                                        .w_full()
-                                        .px_3()
-                                        .py_2()
-                                        .border_t_1()
-                                        .border_color(hunk_opacity(
-                                            cx.theme().border,
-                                            is_dark,
-                                            0.82,
-                                            0.68,
-                                        ))
-                                        .bg(hunk_opacity(
-                                            cx.theme().danger,
-                                            is_dark,
-                                            0.08,
-                                            0.05,
-                                        ))
-                                        .text_xs()
-                                        .text_color(cx.theme().danger)
-                                        .child(error),
-                                )
-                            })
-                            .when(preview_truncated, |this| {
-                                this.child(
-                                    h_flex()
-                                        .w_full()
-                                        .items_center()
-                                        .justify_between()
-                                        .gap_3()
-                                        .px_3()
-                                        .py_2()
-                                        .border_t_1()
-                                        .border_color(hunk_opacity(
-                                            cx.theme().border,
-                                            is_dark,
-                                            0.82,
-                                            0.68,
-                                        ))
-                                        .bg(hunk_opacity(
-                                            cx.theme().muted,
-                                            is_dark,
-                                            0.18,
-                                            0.10,
-                                        ))
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(cx.theme().muted_foreground)
-                                                .child(format!(
-                                                    "Showing {} of {} rows across {} of {} hunks.",
-                                                    preview_section.rendered_row_count,
-                                                    preview_section.total_row_count,
-                                                    preview_section.rendered_hunk_count,
-                                                    preview_section.total_hunk_count,
-                                                )),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(cx.theme().muted_foreground)
-                                                .child(format!(
-                                                    "{} rows and {} hunks hidden. Select to open the full editable diff.",
-                                                    preview_section.hidden_row_count(),
-                                                    preview_section.hidden_hunk_count(),
-                                                )),
-                                        ),
-                                )
-                            }),
-                    ),
-            )
-            .into_any_element()
-    }
-
     fn review_editor_section_height(
         &self,
         path: &str,
@@ -717,15 +519,8 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let editor_chrome = crate::app::theme::hunk_editor_chrome_colors(cx.theme(), is_dark);
-        let text_style = gpui::TextStyle {
-            color: editor_chrome.foreground,
-            font_family: cx.theme().mono_font_family.clone(),
-            font_size: editor_font_size.into(),
-            line_height: gpui::relative(1.45),
-            ..Default::default()
-        };
         let view = cx.entity();
-        let element = crate::app::native_files_editor::FilesEditorElement::new(
+        let element = self.workspace_editor_element(
             editor.clone(),
             {
                 let path = path.clone();
@@ -752,29 +547,9 @@ impl DiffViewer {
                 }
             },
             is_focused,
-            text_style,
-            crate::app::native_files_editor::FilesEditorPalette {
-                background: editor_chrome.background,
-                active_line_background: editor_chrome.active_line,
-                line_number: editor_chrome.line_number,
-                current_line_number: editor_chrome.active_line_number,
-                border: crate::app::theme::hunk_opacity(cx.theme().border, is_dark, 0.92, 0.78),
-                default_foreground: editor_chrome.foreground,
-                muted_foreground: editor_chrome.line_number,
-                selection_background: editor_chrome.selection,
-                cursor: cx.theme().primary,
-                invisible: editor_chrome.invisible,
-                indent_guide: editor_chrome.indent_guide,
-                fold_marker: editor_chrome.line_number,
-                current_scope: editor_chrome.current_scope,
-                bracket_match: editor_chrome.bracket_match,
-                diagnostic_error: cx.theme().danger,
-                diagnostic_warning: cx.theme().warning,
-                diagnostic_info: cx.theme().accent,
-                diff_addition: cx.theme().success,
-                diff_deletion: cx.theme().danger,
-                diff_modification: cx.theme().warning,
-            },
+            editor_font_size,
+            is_dark,
+            cx,
         );
 
         v_flex()

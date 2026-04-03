@@ -32,6 +32,12 @@ impl DiffViewer {
             .or_insert_with(|| ReviewEditorFileSession::new(path.to_string()))
     }
 
+    fn touch_review_editor_session(&mut self, path: &str) {
+        if let Some(session) = self.review_editor_session_mut(path) {
+            session.last_touched_at = Instant::now();
+        }
+    }
+
     fn next_review_editor_epoch(&mut self, path: &str) -> usize {
         let session = self.ensure_review_editor_session(path);
         session.load_epoch = session.load_epoch.saturating_add(1);
@@ -126,6 +132,7 @@ impl DiffViewer {
             Self::reset_review_editor_file_session(session);
         }
         self.review_editor_sessions.clear();
+        self.review_editor_evicted_paths.clear();
         self.review_editor_list_state.reset(0);
     }
 
@@ -410,40 +417,6 @@ impl DiffViewer {
         true
     }
 
-    pub(super) fn review_editor_cut_selection(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(path) = self.selected_path.clone() else {
-            return false;
-        };
-        let Some(text) = self
-            .review_editor_session_mut(path.as_str())
-            .and_then(|session| session.right_editor.borrow_mut().cut_selection_text())
-        else {
-            return false;
-        };
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
-        self.schedule_review_editor_save_for_path(path.as_str(), cx);
-        cx.notify();
-        true
-    }
-
-    pub(super) fn review_editor_paste_from_clipboard(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(path) = self.selected_path.clone() else {
-            return false;
-        };
-        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
-            return false;
-        };
-        let pasted = self
-            .review_editor_session_mut(path.as_str())
-            .is_some_and(|session| session.right_editor.borrow_mut().paste_text(text.as_str()));
-        if !pasted {
-            return false;
-        }
-        self.schedule_review_editor_save_for_path(path.as_str(), cx);
-        cx.notify();
-        true
-    }
-
     pub(super) fn review_editor_handle_keystroke(
         &mut self,
         keystroke: &gpui::Keystroke,
@@ -500,15 +473,19 @@ impl DiffViewer {
         cx: &mut Context<Self>,
         apply: impl FnOnce(&mut crate::app::native_files_editor::FilesEditor) -> bool,
     ) {
-        if !self.review_editor_focus_handle.is_focused(window) {
-            return;
-        }
-        let changed = self
-            .active_review_editor_session_mut()
-            .is_some_and(|session| session.right_editor.borrow_mut().apply_motion_action(apply));
-        if changed {
-            cx.notify();
-        }
+        let focus_handle = self.review_editor_focus_handle.clone();
+        let _ = self.workspace_editor_motion_via(
+            window,
+            &focus_handle,
+            cx,
+            |this| {
+                this.active_review_editor_session_mut()
+                    .is_some_and(|session| session.right_editor.borrow_mut().apply_motion_action(apply))
+            },
+            |_, cx| {
+                cx.notify();
+            },
+        );
     }
 
     pub(super) fn review_editor_copy_action(
@@ -517,10 +494,11 @@ impl DiffViewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.review_editor_focus_handle.is_focused(window) {
-            return;
-        }
-        let _ = self.review_editor_copy_selection(cx);
+        let focus_handle = self.review_editor_focus_handle.clone();
+        let _ = self.workspace_editor_copy_via(window, &focus_handle, cx, |this| {
+            this.active_review_editor_session()
+                .and_then(|session| session.right_editor.borrow().copy_selection_text())
+        });
     }
 
     pub(super) fn review_editor_cut_action(
@@ -529,10 +507,25 @@ impl DiffViewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.review_editor_focus_handle.is_focused(window) {
-            return;
-        }
-        let _ = self.review_editor_cut_selection(cx);
+        let focus_handle = self.review_editor_focus_handle.clone();
+        let _ = self.workspace_editor_cut_via(
+            window,
+            &focus_handle,
+            cx,
+            |this| {
+                let path = this.selected_path.clone()?;
+                let text = this
+                    .review_editor_session_mut(path.as_str())
+                    .and_then(|session| session.right_editor.borrow_mut().cut_selection_text())?;
+                Some(text)
+            },
+            |this, cx| {
+                if let Some(path) = this.selected_path.clone() {
+                    this.schedule_review_editor_save_for_path(path.as_str(), cx);
+                    cx.notify();
+                }
+            },
+        );
     }
 
     pub(super) fn review_editor_paste_action(
@@ -541,10 +534,25 @@ impl DiffViewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.review_editor_focus_handle.is_focused(window) {
-            return;
-        }
-        let _ = self.review_editor_paste_from_clipboard(cx);
+        let focus_handle = self.review_editor_focus_handle.clone();
+        let _ = self.workspace_editor_paste_via(
+            window,
+            &focus_handle,
+            cx,
+            |this, text| {
+                let Some(path) = this.selected_path.clone() else {
+                    return false;
+                };
+                this.review_editor_session_mut(path.as_str())
+                    .is_some_and(|session| session.right_editor.borrow_mut().paste_text(text))
+            },
+            |this, cx| {
+                if let Some(path) = this.selected_path.clone() {
+                    this.schedule_review_editor_save_for_path(path.as_str(), cx);
+                    cx.notify();
+                }
+            },
+        );
     }
 
     pub(super) fn review_editor_move_up_action(
@@ -761,6 +769,7 @@ impl DiffViewer {
             return;
         };
         self.ensure_review_editor_session(path);
+        self.touch_review_editor_session(path);
         let previous_path = self.review_editor_session(path).map(|session| session.path.clone());
         let previous_left_source_id = self
             .review_editor_session(path)
@@ -864,12 +873,16 @@ impl DiffViewer {
 
                                 match left_result.and(right_result) {
                                     Ok(()) => {
+                                        let rehydrated_after_eviction = this
+                                            .review_editor_evicted_paths
+                                            .remove(path.as_str());
                                         if let Some(session) =
                                             this.review_editor_session_mut(path.as_str())
                                         {
                                             session.left_present = document.left_present;
                                             session.right_present =
                                                 document.right_present || preserve_dirty_right;
+                                            session.last_touched_at = Instant::now();
                                             if !preserve_dirty_right {
                                                 session.save_loading = false;
                                                 session.last_saved_text =
@@ -881,6 +894,11 @@ impl DiffViewer {
                                             path = path.as_str(),
                                             left = left_source_id.as_deref().unwrap_or("unknown"),
                                             right = right_source_id.as_deref().unwrap_or("unknown"),
+                                            load_kind = if rehydrated_after_eviction {
+                                                "rehydrated"
+                                            } else {
+                                                "initial"
+                                            },
                                             preserve_dirty_right,
                                             elapsed_ms = load_started_at.elapsed().as_millis(),
                                             "review editor document loaded"

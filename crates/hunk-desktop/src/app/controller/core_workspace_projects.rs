@@ -49,6 +49,9 @@ impl DiffViewer {
             review_overall_line_stats: LineStats::default(),
             review_compare_loading: false,
             review_compare_error: None,
+            review_loaded_left_source_id: None,
+            review_loaded_right_source_id: None,
+            review_loaded_snapshot_fingerprint: None,
             overall_line_stats: LineStats::default(),
             last_git_workspace_fingerprint: None,
             recent_commits_loading: false,
@@ -164,6 +167,9 @@ impl DiffViewer {
             review_overall_line_stats: self.review_overall_line_stats,
             review_compare_loading: self.review_compare_loading,
             review_compare_error: self.review_compare_error.take(),
+            review_loaded_left_source_id: self.review_loaded_left_source_id.take(),
+            review_loaded_right_source_id: self.review_loaded_right_source_id.take(),
+            review_loaded_snapshot_fingerprint: self.review_loaded_snapshot_fingerprint.take(),
             overall_line_stats: self.overall_line_stats,
             last_git_workspace_fingerprint: self.last_git_workspace_fingerprint.take(),
             recent_commits_loading: self.recent_commits_loading,
@@ -215,6 +221,7 @@ impl DiffViewer {
         self.review_compare_loading = false;
         self.review_compare_error = None;
         self.review_editor_sessions.clear();
+        self.review_editor_evicted_paths.clear();
         self.review_editor_list_state = Self::empty_review_editor_list_state();
         self.repo_root = state.repo_root;
         self.workspace_targets = state.workspace_targets;
@@ -256,6 +263,9 @@ impl DiffViewer {
         self.review_overall_line_stats = state.review_overall_line_stats;
         self.review_compare_loading = state.review_compare_loading;
         self.review_compare_error = state.review_compare_error;
+        self.review_loaded_left_source_id = state.review_loaded_left_source_id;
+        self.review_loaded_right_source_id = state.review_loaded_right_source_id;
+        self.review_loaded_snapshot_fingerprint = state.review_loaded_snapshot_fingerprint;
         self.overall_line_stats = state.overall_line_stats;
         self.last_git_workspace_fingerprint = state.last_git_workspace_fingerprint;
         self.recent_commits_loading = state.recent_commits_loading;

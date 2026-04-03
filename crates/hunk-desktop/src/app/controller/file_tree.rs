@@ -171,7 +171,6 @@ impl DiffViewer {
         self.workspace_text_context_menu = None;
         if mode != WorkspaceViewMode::Diff {
             self.comments_preview_open = false;
-            self.clear_review_editor_session();
         }
         if mode != WorkspaceViewMode::Files {
             self.repo_tree_inline_edit = None;
@@ -214,10 +213,13 @@ impl DiffViewer {
                 .as_deref()
                 .and_then(|selected| self.status_for_path(selected));
             self.sync_review_editor_sessions_to_files();
-            self.request_review_editor_reload(false, cx);
             self.request_repo_tree_reload(cx);
-            self.diff_reload_scroll_behavior = DiffReloadScrollBehavior::RevealSelectedFile;
-            self.request_selected_diff_reload(cx);
+            if self.review_compare_cache_matches_current_inputs() {
+                self.request_review_editor_reload_preserving_scroll(false, cx);
+            } else {
+                self.diff_reload_scroll_behavior = DiffReloadScrollBehavior::RevealSelectedFile;
+                self.request_selected_diff_reload(cx);
+            }
         } else if mode == WorkspaceViewMode::Ai {
             self.refresh_ai_repo_thread_catalog(cx);
             self.ensure_ai_runtime_started(cx);

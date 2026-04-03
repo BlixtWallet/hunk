@@ -1,6 +1,6 @@
-use gpui::{Keystroke, Pixels, TextStyle, relative};
+use gpui::{Keystroke, Pixels};
 
-use crate::app::theme::{hunk_editor_chrome_colors, hunk_opacity};
+use crate::app::theme::hunk_editor_chrome_colors;
 
 impl DiffViewer {
     fn render_file_editor_surface(
@@ -14,14 +14,7 @@ impl DiffViewer {
         let view = cx.entity();
         let is_editor_focused = self.files_editor_focus_handle.is_focused(window);
         let editor_chrome = hunk_editor_chrome_colors(cx.theme(), is_dark);
-        let text_style = TextStyle {
-            color: editor_chrome.foreground,
-            font_family: cx.theme().mono_font_family.clone(),
-            font_size: editor_font_size.into(),
-            line_height: relative(1.45),
-            ..Default::default()
-        };
-        let editor_element = crate::app::native_files_editor::FilesEditorElement::new(
+        let editor_element = self.workspace_editor_element(
             self.files_editor.clone(),
             {
                 let view = view.clone();
@@ -44,29 +37,9 @@ impl DiffViewer {
                 }
             },
             is_editor_focused,
-            text_style,
-            crate::app::native_files_editor::FilesEditorPalette {
-                background: editor_chrome.background,
-                active_line_background: editor_chrome.active_line,
-                line_number: editor_chrome.line_number,
-                current_line_number: editor_chrome.active_line_number,
-                border: hunk_opacity(cx.theme().border, is_dark, 0.92, 0.78),
-                default_foreground: editor_chrome.foreground,
-                muted_foreground: editor_chrome.line_number,
-                selection_background: editor_chrome.selection,
-                cursor: cx.theme().primary,
-                invisible: editor_chrome.invisible,
-                indent_guide: editor_chrome.indent_guide,
-                fold_marker: editor_chrome.line_number,
-                current_scope: editor_chrome.current_scope,
-                bracket_match: editor_chrome.bracket_match,
-                diagnostic_error: cx.theme().danger,
-                diagnostic_warning: cx.theme().warning,
-                diagnostic_info: cx.theme().accent,
-                diff_addition: cx.theme().success,
-                diff_deletion: cx.theme().danger,
-                diff_modification: cx.theme().warning,
-            },
+            editor_font_size,
+            is_dark,
+            cx,
         );
 
         v_flex()
