@@ -1072,7 +1072,8 @@ struct WorkspaceProjectState {
 struct ReviewWorkspaceSurfaceState {
     status_message: Option<String>,
     selected_path: Option<String>,
-    workspace_editor_session: Option<native_files_editor::WorkspaceEditorSession>,
+    left_workspace_editor: Option<native_files_editor::SharedFilesEditor>,
+    right_workspace_editor: Option<native_files_editor::SharedFilesEditor>,
     workspace_search_matches: Vec<review_workspace_session::ReviewWorkspaceSearchTarget>,
     selection_anchor_row: Option<usize>,
     selection_head_row: Option<usize>,
@@ -1093,7 +1094,8 @@ impl ReviewWorkspaceSurfaceState {
         Self {
             status_message: None,
             selected_path: None,
-            workspace_editor_session: None,
+            left_workspace_editor: None,
+            right_workspace_editor: None,
             workspace_search_matches: Vec::new(),
             selection_anchor_row: None,
             selection_head_row: None,
@@ -1123,8 +1125,9 @@ impl ReviewWorkspaceSurfaceState {
         self.last_surface_snapshot = None;
     }
 
-    fn clear_workspace_editor_session(&mut self) {
-        self.workspace_editor_session = None;
+    fn clear_workspace_editors(&mut self) {
+        self.left_workspace_editor = None;
+        self.right_workspace_editor = None;
     }
 
     fn clear_workspace_search_matches(&mut self) {

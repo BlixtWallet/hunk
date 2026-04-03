@@ -119,9 +119,9 @@ impl DiffViewer {
         if self.workspace_view_mode == WorkspaceViewMode::Diff {
             let current_excerpt_id = self
                 .review_surface
-                .workspace_editor_session
+                .left_workspace_editor
                 .as_ref()
-                .and_then(|session| session.active_excerpt_id());
+                .and_then(|editor| editor.borrow().active_workspace_excerpt_id());
             let current_row = self.current_review_surface_row().unwrap_or(0);
             if let Some(target) = next_review_workspace_search_target(
                 &self.review_surface.workspace_search_matches,

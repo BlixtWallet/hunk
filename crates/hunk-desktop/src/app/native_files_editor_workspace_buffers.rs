@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
-use hunk_editor::{EditorCommand, EditorState, Viewport, WorkspaceLayout};
+use hunk_editor::{EditorCommand, EditorState, Viewport, WorkspaceExcerptId, WorkspaceLayout};
 use hunk_text::{BufferId, TextBuffer};
 
 use super::FilesEditor;
@@ -76,6 +76,46 @@ impl FilesEditor {
         }
 
         self.finish_active_buffer_install(path)?;
+        Ok(true)
+    }
+
+    pub(crate) fn activate_workspace_excerpt(
+        &mut self,
+        excerpt_id: WorkspaceExcerptId,
+    ) -> Result<bool> {
+        let Some(layout) = self.workspace_session.layout() else {
+            return Ok(false);
+        };
+        let Some(excerpt) = layout.excerpt(excerpt_id) else {
+            return Ok(false);
+        };
+        let Some(document) = layout.document(excerpt.spec.document_id) else {
+            return Ok(false);
+        };
+        let path = document.path().to_path_buf();
+
+        if self.active_path() == Some(path.as_path()) {
+            return Ok(self.workspace_session.activate_excerpt(excerpt_id));
+        }
+
+        let Some(next_buffer) = self.workspace_buffers.remove(path.as_path()) else {
+            return Ok(false);
+        };
+
+        let previous_path = self.active_path_buf();
+        self.capture_active_view_state();
+        if !self.workspace_session.activate_excerpt(excerpt_id) {
+            self.workspace_buffers.insert(path, next_buffer);
+            return Ok(false);
+        }
+
+        let previous_editor = std::mem::replace(&mut self.editor, EditorState::new(next_buffer));
+        if let Some(previous_path) = previous_path {
+            self.workspace_buffers
+                .insert(previous_path, previous_editor.into_buffer());
+        }
+
+        self.finish_active_buffer_install(path.as_path())?;
         Ok(true)
     }
 

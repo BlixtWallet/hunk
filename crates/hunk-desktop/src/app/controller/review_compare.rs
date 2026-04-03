@@ -176,36 +176,58 @@ fn update_persisted_review_compare_selection(
 impl DiffViewer {
     pub(crate) fn current_review_editor_path(&self) -> Option<String> {
         self.review_surface
-            .workspace_editor_session
+            .left_workspace_editor
             .as_ref()
-            .and_then(|session| session.active_path_buf())
+            .and_then(|editor| editor.borrow().active_workspace_path_buf())
             .map(|path| path.to_string_lossy().to_string())
     }
 
     fn sync_review_workspace_editor_selection_for_path(&mut self, path: Option<&str>) {
-        let Some(workspace_session) = self.review_surface.workspace_editor_session.as_mut() else {
-            return;
-        };
         let Some(path) = path else {
             return;
         };
-        let _ = workspace_session.activate_path(std::path::Path::new(path));
+        if let Some(editor) = self.review_surface.left_workspace_editor.as_ref() {
+            let _ = editor
+                .borrow_mut()
+                .activate_workspace_path(std::path::Path::new(path));
+        }
+        if let Some(editor) = self.review_surface.right_workspace_editor.as_ref() {
+            let _ = editor
+                .borrow_mut()
+                .activate_workspace_path(std::path::Path::new(path));
+        }
     }
 
     pub(crate) fn sync_review_workspace_editor_selection_for_row(&mut self, row_ix: usize) {
-        let Some(workspace_session) = self.review_surface.workspace_editor_session.as_mut() else {
-            return;
-        };
         let Some(session) = self.review_workspace_session.as_ref() else {
             return;
         };
         if let Some(excerpt_id) = session.excerpt_id_at_surface_row(row_ix)
-            && workspace_session.activate_excerpt(excerpt_id)
         {
-            return;
+            let mut handled = false;
+            if let Some(editor) = self.review_surface.left_workspace_editor.as_ref() {
+                handled |= editor
+                    .borrow_mut()
+                    .activate_workspace_excerpt(excerpt_id)
+                    .ok()
+                    == Some(true);
+            }
+            if let Some(editor) = self.review_surface.right_workspace_editor.as_ref() {
+                handled |= editor
+                    .borrow_mut()
+                    .activate_workspace_excerpt(excerpt_id)
+                    .ok()
+                    == Some(true);
+            }
+            if handled {
+                return;
+            }
         }
-        if let Some(path) = session.path_at_surface_row(row_ix) {
-            let _ = workspace_session.activate_path(std::path::Path::new(path));
+        if let Some(path) = session
+            .path_at_surface_row(row_ix)
+            .map(ToString::to_string)
+        {
+            self.sync_review_workspace_editor_selection_for_path(Some(path.as_str()));
         }
     }
 
@@ -814,6 +836,45 @@ impl DiffViewer {
         self.workspace_view_mode != WorkspaceViewMode::Diff || self.active_review_compare_is_default_pair()
     }
 
+    fn build_review_workspace_editors(
+        &self,
+        session: &crate::app::review_workspace_session::ReviewWorkspaceSession,
+        preferred_path: Option<&str>,
+    ) -> anyhow::Result<(
+        crate::app::native_files_editor::SharedFilesEditor,
+        crate::app::native_files_editor::SharedFilesEditor,
+    )> {
+        let layout = session.layout().clone();
+        let preferred_path = preferred_path.map(std::path::Path::new);
+        let left_workspace_editor = std::rc::Rc::new(std::cell::RefCell::new(
+            crate::app::native_files_editor::FilesEditor::new(),
+        ));
+        left_workspace_editor
+            .borrow_mut()
+            .open_workspace_layout_documents(
+                layout.clone(),
+                session.editor_documents(
+                    crate::app::review_workspace_session::ReviewWorkspaceEditorSide::Left,
+                ),
+                preferred_path,
+            )?;
+
+        let right_workspace_editor = std::rc::Rc::new(std::cell::RefCell::new(
+            crate::app::native_files_editor::FilesEditor::new(),
+        ));
+        right_workspace_editor
+            .borrow_mut()
+            .open_workspace_layout_documents(
+                layout,
+                session.editor_documents(
+                    crate::app::review_workspace_session::ReviewWorkspaceEditorSide::Right,
+                ),
+                preferred_path,
+            )?;
+
+        Ok((left_workspace_editor, right_workspace_editor))
+    }
+
     fn clear_review_compare_loaded_state(&mut self, empty_message: &str, cx: &mut Context<Self>) {
         self.cancel_patch_reload();
         self.review_compare_loading = false;
@@ -823,7 +884,7 @@ impl DiffViewer {
         self.review_loaded_right_source_id = None;
         self.review_loaded_collapsed_files.clear();
         self.review_loaded_snapshot_fingerprint = None;
-        self.review_surface.clear_workspace_editor_session();
+        self.review_surface.clear_workspace_editors();
         self.review_surface.clear_workspace_search_matches();
         self.review_surface.selected_path = None;
         self.review_surface.clear_row_selection();
@@ -974,10 +1035,27 @@ impl DiffViewer {
         let preferred_selected_path = self
             .current_review_editor_path()
             .or_else(|| self.review_surface.selected_path.clone());
-        self.review_surface.workspace_editor_session = self
+        let Some((left_workspace_editor, right_workspace_editor)) = self
             .review_workspace_session
             .as_ref()
-            .map(|session| session.build_editor_session(preferred_selected_path.as_deref()));
+            .map(|session| {
+                self.build_review_workspace_editors(session, preferred_selected_path.as_deref())
+            })
+            .transpose()
+            .unwrap_or_else(|err| {
+                error!("failed to build review workspace editors: {err:#}");
+                self.clear_review_compare_loaded_state(
+                    "Failed to build comparison surface.",
+                    cx,
+                );
+                self.review_compare_error = Some(Self::format_error_chain(&err));
+                None
+            })
+        else {
+            return;
+        };
+        self.review_surface.left_workspace_editor = Some(left_workspace_editor);
+        self.review_surface.right_workspace_editor = Some(right_workspace_editor);
         self.review_files = snapshot.files;
         self.review_file_status_by_path = self
             .review_files
