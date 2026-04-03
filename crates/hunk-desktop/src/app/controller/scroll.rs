@@ -117,10 +117,23 @@ impl DiffViewer {
         }
 
         self.segment_prefetch_anchor_row = Some(visible_row);
-        let start = visible_row.saturating_sub(DIFF_SEGMENT_PREFETCH_RADIUS_ROWS);
-        let end = visible_row
-            .saturating_add(DIFF_SEGMENT_PREFETCH_RADIUS_ROWS.saturating_add(1))
-            .min(row_count);
+        let visible_range = if self.uses_review_workspace_sections_surface() {
+            self.current_review_visible_row_range().unwrap_or_else(|| {
+                visible_row
+                    .saturating_sub(DIFF_SEGMENT_PREFETCH_RADIUS_ROWS)
+                    ..visible_row
+                        .saturating_add(DIFF_SEGMENT_PREFETCH_RADIUS_ROWS.saturating_add(1))
+                        .min(row_count)
+            })
+        } else {
+            visible_row
+                .saturating_sub(DIFF_SEGMENT_PREFETCH_RADIUS_ROWS)
+                ..visible_row
+                    .saturating_add(DIFF_SEGMENT_PREFETCH_RADIUS_ROWS.saturating_add(1))
+                    .min(row_count)
+        };
+        let start = visible_range.start.min(row_count);
+        let end = visible_range.end.min(row_count);
 
         let batch_limit = if force_upgrade {
             end.saturating_sub(start)

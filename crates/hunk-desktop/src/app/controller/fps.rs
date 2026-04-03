@@ -27,10 +27,16 @@ impl DiffViewer {
                     this.frame_sample_count = 0;
                     this.frame_sample_started_at = Instant::now();
 
-                    if !this.recently_scrolling()
-                        && let Some(visible_row) = this.review_surface.last_visible_row_start
-                    {
-                        this.request_visible_row_segment_prefetch(visible_row, true, cx);
+                    if !this.recently_scrolling() {
+                        if let Some(visible_range) = this.current_review_visible_row_range() {
+                            this.request_visible_row_segment_prefetch(
+                                visible_range.start,
+                                true,
+                                cx,
+                            );
+                        } else if let Some(visible_row) = this.review_surface.last_visible_row_start {
+                            this.request_visible_row_segment_prefetch(visible_row, true, cx);
+                        }
                     }
 
                     if this.workspace_view_mode == WorkspaceViewMode::Ai {

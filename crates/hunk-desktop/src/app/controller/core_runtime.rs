@@ -30,6 +30,33 @@ impl DiffViewer {
         )
     }
 
+    pub(super) fn current_review_visible_row_range(&self) -> Option<std::ops::Range<usize>> {
+        let row_count = self.active_diff_row_count();
+        if row_count == 0 {
+            return None;
+        }
+
+        if self.uses_review_workspace_sections_surface()
+            && let Some(session) = self.review_workspace_session.as_ref()
+        {
+            let start = session
+                .section(self.review_surface.diff_scroll_handle.top_item())
+                .or_else(|| session.sections().last())
+                .map(|section| section.start_row)
+                .unwrap_or(0)
+                .min(row_count.saturating_sub(1));
+            let end = session
+                .section(self.review_surface.diff_scroll_handle.bottom_item())
+                .or_else(|| session.sections().last())
+                .map(|section| section.end_row.min(row_count))
+                .unwrap_or(row_count);
+            return Some(start..end.max(start.saturating_add(1)).min(row_count));
+        }
+
+        let top = self.current_review_surface_top_row()?;
+        Some(top..row_count.min(top.saturating_add(DIFF_SEGMENT_PREFETCH_RADIUS_ROWS)))
+    }
+
     pub(super) fn current_review_surface_scroll_offset(&self) -> Point<Pixels> {
         if self.uses_review_workspace_sections_surface() {
             self.review_surface.diff_scroll_handle.offset()
