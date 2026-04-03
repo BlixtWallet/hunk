@@ -24,7 +24,6 @@ impl DiffViewer {
                 self.current_review_surface_row()
                     .and_then(|row_ix| session.path_at_surface_row(row_ix)),
                 self.current_review_file_range().map(|range| range.path).as_deref(),
-                self.current_review_editor_session_path().as_deref(),
                 self.review_surface.selected_path.as_deref(),
                 session,
             );

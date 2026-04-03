@@ -1074,8 +1074,6 @@ struct ReviewWorkspaceSurfaceState {
     selected_path: Option<String>,
     selection_anchor_row: Option<usize>,
     selection_head_row: Option<usize>,
-    left_files_editor: Option<native_files_editor::SharedFilesEditor>,
-    right_files_editor: Option<native_files_editor::SharedFilesEditor>,
     diff_visible_file_header_lookup: Vec<Option<usize>>,
     diff_visible_hunk_header_lookup: Vec<Option<usize>>,
     diff_list_state: ListState,
@@ -1100,8 +1098,6 @@ impl ReviewWorkspaceSurfaceState {
             selected_path: None,
             selection_anchor_row: None,
             selection_head_row: None,
-            left_files_editor: None,
-            right_files_editor: None,
             diff_visible_file_header_lookup: Vec::new(),
             diff_visible_hunk_header_lookup: Vec::new(),
             diff_list_state: Self::empty_diff_list_state(),
@@ -1127,10 +1123,6 @@ impl ReviewWorkspaceSurfaceState {
 
     fn clear_workspace_surface_snapshot(&mut self) {
         self.last_surface_snapshot = None;
-    }
-
-    fn has_workspace_editor_backing(&self) -> bool {
-        self.left_files_editor.is_some() && self.right_files_editor.is_some()
     }
 
     fn clear_row_selection(&mut self) {

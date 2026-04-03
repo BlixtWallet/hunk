@@ -333,7 +333,6 @@ impl DiffViewer {
         } else {
             self.selected_path = Some(path.clone());
             self.selected_status = Some(status);
-            self.sync_review_workspace_editor_active_path();
         }
         self.scroll_to_file_start(&path);
         self.select_row(start_row, false, cx);
