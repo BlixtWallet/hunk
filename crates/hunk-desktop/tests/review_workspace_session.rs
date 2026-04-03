@@ -537,10 +537,10 @@ fn review_workspace_session_builds_viewport_snapshot_from_shared_geometry() {
     let session = ReviewWorkspaceSession::from_compare_snapshot(&snapshot, &BTreeSet::new())
         .expect("workspace session should build")
         .with_render_stream(&stream);
-    let expected_first_visible = session
+    let expected_first_visible_rows = session
         .section_visible_row_range(0, 0, REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX * 2, 1)
-        .expect("first section visible rows");
-    let expected_first_visible_rows = expected_first_visible.clone().collect::<Vec<_>>();
+        .expect("first section visible rows")
+        .collect::<Vec<_>>();
 
     let viewport =
         session.build_viewport_snapshot(0, REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX * 2, 1, 1);
@@ -550,20 +550,13 @@ fn review_workspace_session_builds_viewport_snapshot_from_shared_geometry() {
         session.total_surface_height_px()
     );
     assert_eq!(viewport.sections.len(), 2);
-    assert_eq!(viewport.sections[0].section_index, 0);
     assert_eq!(viewport.sections[0].pixel_range.start, 0);
-    assert_eq!(
-        viewport.sections[0].visible_row_range,
-        expected_first_visible,
-    );
-    assert_eq!(
-        viewport.sections[0].top_spacer_height_px,
-        session
-            .row_boundary_offset_px(viewport.sections[0].visible_row_range.start)
-            .unwrap_or(viewport.sections[0].pixel_range.start)
-            .saturating_sub(viewport.sections[0].pixel_range.start),
-    );
-    assert!(viewport.sections[0].bottom_spacer_height_px > 0);
+    let first_visible_pixel_range = session
+        .row_boundary_offset_px(expected_first_visible_rows[0])
+        .expect("first visible row should have a top offset")
+        ..session
+            .row_boundary_offset_px(expected_first_visible_rows.last().copied().unwrap() + 1)
+            .expect("last visible row boundary should exist");
     assert_eq!(
         viewport.sections[0]
             .rows
@@ -571,6 +564,21 @@ fn review_workspace_session_builds_viewport_snapshot_from_shared_geometry() {
             .map(|row| row.row_index)
             .collect::<Vec<_>>(),
         expected_first_visible_rows,
+    );
+    assert_eq!(
+        viewport.visible_pixel_range(),
+        Some(
+            viewport.sections.first().unwrap().pixel_range.start
+                ..viewport.sections.last().unwrap().pixel_range.end
+        ),
+    );
+    assert_eq!(
+        first_visible_pixel_range.start,
+        viewport.sections[0]
+            .rows
+            .first()
+            .expect("first section should have rows")
+            .surface_top_px,
     );
     assert!(
         session
@@ -616,24 +624,20 @@ fn review_workspace_session_builds_viewport_snapshot_from_shared_geometry() {
     assert_eq!(code_row.left_line, session_row.left.line);
     assert_eq!(code_row.right_cell_kind, session_row.right.kind);
     assert_eq!(code_row.right_line, session_row.right.line);
-    assert!(!code_row.left_segments.is_empty());
-    assert!(!code_row.right_segments.is_empty());
-    let visible_start_px = session
-        .row_boundary_offset_px(viewport.sections[0].visible_row_range.start)
-        .expect("visible range should have a top offset");
     assert_eq!(
-        code_row.local_top_px,
+        code_row.surface_top_px,
         session
             .row_top_offset_px(code_row.row_index)
-            .expect("code row should have a top offset")
-            .saturating_sub(visible_start_px)
+            .expect("row should have a top offset")
     );
+    assert!(!code_row.left_segments.is_empty());
+    assert!(!code_row.right_segments.is_empty());
     assert_eq!(code_row.height_px, REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX);
     assert!(
         viewport.sections[0]
             .rows
             .windows(2)
-            .all(|pair| pair[1].local_top_px >= pair[0].local_top_px + pair[0].height_px)
+            .all(|pair| pair[1].surface_top_px >= pair[0].surface_top_px + pair[0].height_px)
     );
 }
 

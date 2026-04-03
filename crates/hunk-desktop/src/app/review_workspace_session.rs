@@ -78,11 +78,7 @@ pub(crate) struct ReviewWorkspaceSection {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReviewWorkspaceViewportSection {
-    pub(crate) section_index: usize,
     pub(crate) pixel_range: Range<usize>,
-    pub(crate) visible_row_range: Range<usize>,
-    pub(crate) top_spacer_height_px: usize,
-    pub(crate) bottom_spacer_height_px: usize,
     pub(crate) rows: Vec<ReviewWorkspaceViewportRow>,
 }
 
@@ -99,7 +95,7 @@ pub(crate) struct ReviewWorkspaceViewportRow {
     pub(crate) left_line: Option<u32>,
     pub(crate) right_cell_kind: DiffCellKind,
     pub(crate) right_line: Option<u32>,
-    pub(crate) local_top_px: usize,
+    pub(crate) surface_top_px: usize,
     pub(crate) height_px: usize,
     pub(crate) left_display_row: WorkspaceDisplayRow,
     pub(crate) left_segments: Vec<CachedStyledSegment>,
@@ -111,6 +107,12 @@ pub(crate) struct ReviewWorkspaceViewportRow {
 pub(crate) struct ReviewWorkspaceViewportSnapshot {
     pub(crate) total_surface_height_px: usize,
     pub(crate) sections: Vec<ReviewWorkspaceViewportSection>,
+}
+
+impl ReviewWorkspaceViewportSnapshot {
+    pub(crate) fn visible_pixel_range(&self) -> Option<Range<usize>> {
+        Some(self.sections.first()?.pixel_range.start..self.sections.last()?.pixel_range.end)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -445,11 +447,11 @@ impl ReviewWorkspaceSession {
                 visible_row_range.clone(),
                 ReviewWorkspaceDisplaySide::Right,
             );
-            let top_spacer_height_px = self
+            let _top_spacer_height_px = self
                 .row_boundary_offset_px(visible_row_range.start)
                 .unwrap_or(pixel_range.start)
                 .saturating_sub(pixel_range.start);
-            let bottom_spacer_height_px = pixel_range.end.saturating_sub(
+            let _bottom_spacer_height_px = pixel_range.end.saturating_sub(
                 self.row_boundary_offset_px(visible_row_range.end)
                     .unwrap_or(pixel_range.end),
             );
@@ -473,6 +475,9 @@ impl ReviewWorkspaceSession {
                                 .and_then(|path| self.status_for_path(path))
                         });
                     let row_segment_cache = self.row_segment_cache(row_index);
+                    let surface_top_px = self
+                        .row_top_offset_px(row_index)
+                        .unwrap_or(visible_start_px);
                     Some(ReviewWorkspaceViewportRow {
                         row_index,
                         stable_id: row_metadata
@@ -489,10 +494,7 @@ impl ReviewWorkspaceSession {
                         left_line: row.left.line,
                         right_cell_kind: row.right.kind,
                         right_line: row.right.line,
-                        local_top_px: self
-                            .row_top_offset_px(row_index)
-                            .unwrap_or(visible_start_px)
-                            .saturating_sub(visible_start_px),
+                        surface_top_px,
                         height_px: self.surface_row_height_px(row_index),
                         left_segments: review_viewport_render_segments(
                             row_segment_cache.map(|cache| &cache.left),
@@ -507,14 +509,7 @@ impl ReviewWorkspaceSession {
                     })
                 })
                 .collect();
-            sections.push(ReviewWorkspaceViewportSection {
-                section_index: section_ix,
-                pixel_range,
-                visible_row_range,
-                top_spacer_height_px,
-                bottom_spacer_height_px,
-                rows,
-            });
+            sections.push(ReviewWorkspaceViewportSection { pixel_range, rows });
         }
 
         ReviewWorkspaceViewportSnapshot {

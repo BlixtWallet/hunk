@@ -231,30 +231,77 @@ impl DiffViewer {
                     REVIEW_SECTION_ROW_OVERSCAN_ROWS,
                 )
             });
-        let session = self
-            .review_workspace_session
-            .as_ref()
-            .expect("checked review workspace session above");
         let scroll_handle = self.review_surface.diff_scroll_handle.clone();
-        let mut section_children = Vec::new();
-        for viewport_section in &viewport.sections {
-            let Some(section) = session.section(viewport_section.section_index) else {
-                continue;
-            };
-            section_children.push(
-                div()
-                    .id(("review-workspace-section", section.index as u64))
+        let surface_children = viewport
+            .visible_pixel_range()
+            .map(|visible_pixel_range| {
+                let painted_surface = div()
                     .absolute()
-                    .top(px(viewport_section.pixel_range.start as f32))
+                    .top(px(visible_pixel_range.start as f32))
                     .left_0()
                     .right_0()
-                    .child(self.render_review_workspace_section(
-                        viewport_section,
+                    .h(px(visible_pixel_range.len() as f32))
+                    .child(self.render_review_workspace_viewport(
+                        &viewport,
+                        visible_pixel_range.start,
                         cx,
                     ))
-                    .into_any_element(),
-            );
-        }
+                    .into_any_element();
+
+                let file_header_overlays = viewport
+                    .sections
+                    .iter()
+                    .flat_map(|viewport_section| viewport_section.rows.iter())
+                    .filter_map(|viewport_row| {
+                        let row_ix = viewport_row.row_index;
+                        if viewport_row.stream_kind != DiffStreamRowKind::FileHeader {
+                            return None;
+                        }
+                        let path = viewport_row.file_path.as_deref()?;
+                        let status = viewport_row.file_status?;
+                        Some(
+                            div()
+                                .absolute()
+                                .top(px(viewport_row.surface_top_px as f32))
+                                .left_0()
+                                .right_0()
+                                .h(px(viewport_row.height_px as f32))
+                                .child(self.render_review_workspace_file_header_controls_overlay(
+                                    row_ix,
+                                    path,
+                                    status,
+                                    self.is_row_selected(row_ix),
+                                    cx,
+                                ))
+                                .into_any_element(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+
+                let comment_affordance_overlays = viewport
+                    .sections
+                    .iter()
+                    .flat_map(|viewport_section| viewport_section.rows.iter())
+                    .filter(|viewport_row| self.row_shows_comment_affordance(viewport_row.row_index))
+                    .map(|viewport_row| {
+                        div()
+                            .absolute()
+                            .top(px(viewport_row.surface_top_px as f32))
+                            .left_0()
+                            .right_0()
+                            .h(px(viewport_row.height_px as f32))
+                            .child(self.render_row_comment_affordance(viewport_row.row_index, cx))
+                            .into_any_element()
+                    })
+                    .collect::<Vec<_>>();
+
+                vec![painted_surface]
+                    .into_iter()
+                    .chain(file_header_overlays)
+                    .chain(comment_affordance_overlays)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
         div()
             .id("review-workspace-sections-scroll")
@@ -266,97 +313,34 @@ impl DiffViewer {
                     .relative()
                     .w_full()
                     .h(px(viewport.total_surface_height_px as f32))
-                    .children(section_children),
+                    .children(surface_children),
             )
             .into_any_element()
     }
 
-    fn render_review_workspace_section(
+    fn render_review_workspace_viewport(
         &self,
-        viewport_section: &review_workspace_session::ReviewWorkspaceViewportSection,
+        viewport: &review_workspace_session::ReviewWorkspaceViewportSnapshot,
+        viewport_origin_px: usize,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        debug_assert_eq!(
-            viewport_section.rows.len(),
-            viewport_section.visible_row_range.len(),
-            "review viewport rows should match the visible row range"
-        );
+        let visible_height_px = viewport
+            .visible_pixel_range()
+            .map(|range| range.len())
+            .unwrap_or_default();
         let layout = self.diff_column_layout();
-        let body_height_px = viewport_section
-            .pixel_range
-            .len()
-            .saturating_sub(viewport_section.top_spacer_height_px)
-            .saturating_sub(viewport_section.bottom_spacer_height_px);
 
-        let painted_surface = self.render_review_workspace_section_element(
-            viewport_section,
-            layout,
-            cx,
-        );
-
-        let file_header_overlays = viewport_section
-            .rows
-            .iter()
-            .filter_map(|viewport_row| {
-                let row_ix = viewport_row.row_index;
-                if viewport_row.stream_kind != DiffStreamRowKind::FileHeader {
-                    return None;
-                }
-                let path = viewport_row.file_path.as_deref()?;
-                let status = viewport_row.file_status?;
-                Some(
-                    div()
-                        .absolute()
-                        .top(px(viewport_row.local_top_px as f32))
-                        .left_0()
-                        .right_0()
-                        .h(px(viewport_row.height_px as f32))
-                        .child(self.render_review_workspace_file_header_controls_overlay(
-                            row_ix,
-                            path,
-                            status,
-                            self.is_row_selected(row_ix),
-                            cx,
-                        ))
-                        .into_any_element(),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let comment_affordance_overlays = viewport_section
-            .rows
-            .iter()
-            .filter(|viewport_row| self.row_shows_comment_affordance(viewport_row.row_index))
-            .map(|viewport_row| {
-                div()
-                    .absolute()
-                    .top(px(viewport_row.local_top_px as f32))
-                    .left_0()
-                    .right_0()
-                    .h(px(viewport_row.height_px as f32))
-                    .child(self.render_row_comment_affordance(viewport_row.row_index, cx))
-                    .into_any_element()
-            })
-            .collect::<Vec<_>>();
-
-        v_flex()
-            .id(("review-workspace-section", viewport_section.section_index as u64))
+        div()
+            .id("review-workspace-viewport")
+            .relative()
             .w_full()
-            .when(viewport_section.top_spacer_height_px > 0, |this| {
-                this.child(div().w_full().h(px(viewport_section.top_spacer_height_px as f32)))
-            })
-            .child(
-                div()
-                    .relative()
-                    .w_full()
-                    .h(px(body_height_px as f32))
-                    .child(painted_surface)
-                    .children(file_header_overlays)
-                    .children(comment_affordance_overlays),
-            )
-            .when(viewport_section.bottom_spacer_height_px > 0, |this| {
-                this.child(div().w_full().h(px(viewport_section.bottom_spacer_height_px as f32)))
-            })
+            .h(px(visible_height_px as f32))
+            .child(self.render_review_workspace_viewport_element(
+                viewport,
+                viewport_origin_px,
+                layout,
+                cx,
+            ))
             .into_any_element()
     }
     fn render_diff_column_header(

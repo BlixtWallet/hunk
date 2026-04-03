@@ -13,13 +13,13 @@ enum ReviewWorkspacePaintedRowKind {
 #[derive(Clone)]
 struct ReviewWorkspacePaintedRow {
     row_index: usize,
-    local_top_px: usize,
+    top_px: usize,
     height_px: usize,
     kind: ReviewWorkspacePaintedRowKind,
 }
 
 #[derive(Clone)]
-struct ReviewWorkspaceSectionElement {
+struct ReviewWorkspaceViewportElement {
     view: Entity<DiffViewer>,
     rows: std::rc::Rc<Vec<ReviewWorkspacePaintedRow>>,
     center_divider: gpui::Hsla,
@@ -31,7 +31,7 @@ struct ReviewWorkspaceSectionLayout {
     hitbox: gpui::Hitbox,
 }
 
-impl ReviewWorkspaceSectionElement {
+impl ReviewWorkspaceViewportElement {
     fn new(
         view: Entity<DiffViewer>,
         rows: Vec<ReviewWorkspacePaintedRow>,
@@ -47,7 +47,7 @@ impl ReviewWorkspaceSectionElement {
     }
 }
 
-impl IntoElement for ReviewWorkspaceSectionElement {
+impl IntoElement for ReviewWorkspaceViewportElement {
     type Element = Self;
 
     fn into_element(self) -> Self::Element {
@@ -55,7 +55,7 @@ impl IntoElement for ReviewWorkspaceSectionElement {
     }
 }
 
-impl Element for ReviewWorkspaceSectionElement {
+impl Element for ReviewWorkspaceViewportElement {
     type RequestLayoutState = ();
     type PrepaintState = ReviewWorkspaceSectionLayout;
 
@@ -160,7 +160,7 @@ impl Element for ReviewWorkspaceSectionElement {
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
             for row in self.rows.iter() {
                 let row_bounds = Bounds {
-                    origin: point(bounds.origin.x, bounds.origin.y + px(row.local_top_px as f32)),
+                    origin: point(bounds.origin.x, bounds.origin.y + px(row.top_px as f32)),
                     size: gpui::size(bounds.size.width, px(row.height_px as f32)),
                 };
                 match &row.kind {
@@ -207,7 +207,7 @@ fn review_workspace_row_at_position(
     let local_y = (position.y - origin.y).max(gpui::Pixels::ZERO).as_f32();
     rows.iter()
         .find(|row| {
-            let top = row.local_top_px as f32;
+            let top = row.top_px as f32;
             let bottom = top + row.height_px as f32;
             local_y >= top && local_y < bottom
         })
@@ -215,15 +215,17 @@ fn review_workspace_row_at_position(
 }
 
 impl DiffViewer {
-    fn build_review_workspace_section_painted_rows(
+    fn build_review_workspace_viewport_painted_rows(
         &self,
-        viewport_section: &review_workspace_session::ReviewWorkspaceViewportSection,
+        viewport: &review_workspace_session::ReviewWorkspaceViewportSnapshot,
+        viewport_origin_px: usize,
         layout: Option<DiffColumnLayout>,
         cx: &mut Context<Self>,
     ) -> Vec<ReviewWorkspacePaintedRow> {
-        viewport_section
-            .rows
+        viewport
+            .sections
             .iter()
+            .flat_map(|viewport_section| viewport_section.rows.iter())
             .filter_map(|viewport_row| {
                 let row_ix = viewport_row.row_index;
                 let is_selected = self.is_row_selected(row_ix);
@@ -297,7 +299,7 @@ impl DiffViewer {
                 };
                 Some(ReviewWorkspacePaintedRow {
                     row_index: row_ix,
-                    local_top_px: viewport_row.local_top_px,
+                    top_px: viewport_row.surface_top_px.saturating_sub(viewport_origin_px),
                     height_px: viewport_row.height_px,
                     kind,
                 })
@@ -305,19 +307,21 @@ impl DiffViewer {
             .collect()
     }
 
-    fn render_review_workspace_section_element(
+    fn render_review_workspace_viewport_element(
         &self,
-        viewport_section: &review_workspace_session::ReviewWorkspaceViewportSection,
+        viewport: &review_workspace_session::ReviewWorkspaceViewportSnapshot,
+        viewport_origin_px: usize,
         layout: Option<DiffColumnLayout>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let painted_rows = self.build_review_workspace_section_painted_rows(
-            viewport_section,
+        let painted_rows = self.build_review_workspace_viewport_painted_rows(
+            viewport,
+            viewport_origin_px,
             layout,
             cx,
         );
         let chrome = hunk_diff_chrome(cx.theme(), cx.theme().mode.is_dark());
-        ReviewWorkspaceSectionElement::new(
+        ReviewWorkspaceViewportElement::new(
             cx.entity(),
             painted_rows,
             chrome.center_divider,
