@@ -230,7 +230,7 @@ impl DiffViewer {
             self.request_repo_tree_reload(cx);
             if self.should_reuse_loaded_review_compare() {
                 self.scroll_selected_after_reload = false;
-                self.prime_diff_surface_visible_state(cx);
+                self.prime_diff_surface_visible_state(false, cx);
             } else {
                 self.scroll_selected_after_reload = true;
                 self.request_selected_diff_reload(cx);

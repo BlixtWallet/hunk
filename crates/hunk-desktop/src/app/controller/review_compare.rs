@@ -718,7 +718,7 @@ impl DiffViewer {
             self.review_compare_loading = false;
             self.review_compare_error = None;
             self.review_last_selected_path = self.selected_path.clone();
-            self.prime_diff_surface_visible_state(cx);
+            self.prime_diff_surface_visible_state(false, cx);
             cx.notify();
             return;
         }
@@ -894,7 +894,7 @@ impl DiffViewer {
             self.scroll_selected_file_to_top();
             self.scroll_selected_after_reload = false;
         }
-        self.prime_diff_surface_visible_state(cx);
+        self.prime_diff_surface_visible_state(true, cx);
 
         self.request_repo_tree_reload(cx);
         cx.notify();

@@ -258,7 +258,11 @@ impl DiffViewer {
         self.last_scroll_activity_at = Instant::now();
     }
 
-    fn prime_diff_surface_visible_state(&mut self, cx: &mut Context<Self>) {
+    fn prime_diff_surface_visible_state(
+        &mut self,
+        force_reprime: bool,
+        cx: &mut Context<Self>,
+    ) {
         if self.diff_rows.is_empty() {
             return;
         }
@@ -268,7 +272,9 @@ impl DiffViewer {
             .logical_scroll_top()
             .item_ix
             .min(self.diff_rows.len().saturating_sub(1));
-        self.last_visible_row_start = None;
+        if force_reprime {
+            self.last_visible_row_start = None;
+        }
         self.sync_selected_file_from_visible_row(visible_row, cx);
     }
 

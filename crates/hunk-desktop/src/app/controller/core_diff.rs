@@ -336,7 +336,7 @@ impl DiffViewer {
                 self.scroll_selected_after_reload = false;
             }
         }
-        self.prime_diff_surface_visible_state(cx);
+        self.prime_diff_surface_visible_state(true, cx);
         if !self.patch_loading {
             self.reconcile_comments_with_loaded_diff();
         }
