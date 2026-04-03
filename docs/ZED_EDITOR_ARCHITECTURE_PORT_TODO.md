@@ -278,6 +278,7 @@ Current state:
 - Redundant Review refresh requests now short-circuit when the compare pair, snapshot fingerprint, and collapsed-file layout still match the loaded surface.
 - Workspace project persistence no longer stores duplicate flat diff-row vectors when a Review workspace session exists; the shared session now remains the authoritative Diff row/syntax source across project or tab state restores.
 - Diff selection no longer needs to mirror into the Files-mode `selected_path`; Review tree highlighting and Review workspace path resolution now prefer the Review session/editor selection state directly.
+- Background snapshot application no longer rewrites Files-mode `selected_path`/`selected_status` while Diff mode is active, so Files selection stays stable across Review refreshes.
 
 ### Phase 7: Delete Legacy Diff Rendering Paths
 

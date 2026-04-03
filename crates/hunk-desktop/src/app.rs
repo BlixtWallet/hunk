@@ -105,7 +105,7 @@ use project_picker::{
 use refresh_policy::{
     GitWorkspaceRefreshRequest, SnapshotRefreshBehavior, SnapshotRefreshPriority,
     SnapshotRefreshRequest, diff_state_changed, line_stats_paths_from_dirty_paths,
-    missing_line_stat_paths, repo_watch_refresh_request,
+    missing_line_stat_paths, repo_watch_refresh_request, retained_selection_path,
     should_bootstrap_empty_files_workspace_editor, should_refresh_line_stats_after_snapshot,
     should_reload_diff_after_snapshot, should_reload_empty_files_workspace_tree,
     should_reload_repo_tree_after_snapshot, should_request_startup_git_workspace_refresh,

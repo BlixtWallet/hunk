@@ -619,15 +619,13 @@ impl DiffViewer {
         self.recompute_overall_line_stats_from_file_stats();
         self.collapsed_files
             .retain(|path| self.files.iter().any(|file| file.path == *path));
-        self.selected_path = self
-            .selected_path
-            .clone()
-            .filter(|selected| self.files.iter().any(|file| &file.path == selected))
-            .or_else(|| self.files.first().map(|file| file.path.clone()));
-        self.selected_status = self
-            .selected_path
-            .as_deref()
-            .and_then(|selected| self.status_for_path(selected));
+        if self.workspace_view_mode == WorkspaceViewMode::Files {
+            self.selected_path = retained_selection_path(&self.files, self.selected_path.as_deref());
+            self.selected_status = self
+                .selected_path
+                .as_deref()
+                .and_then(|selected| self.status_for_path(selected));
+        }
         self.last_commit_subject = last_commit_subject;
         self.persist_workflow_cache();
     }
@@ -753,18 +751,18 @@ impl DiffViewer {
         }
         self.collapsed_files
             .retain(|path| self.files.iter().any(|file| file.path == *path));
-        let current_selection = self.selected_path.clone();
-        self.selected_path = if full_refresh && self.workspace_view_mode == WorkspaceViewMode::Files {
-            current_selection.or_else(|| self.files.first().map(|file| file.path.clone()))
-        } else {
-            current_selection
-                .filter(|selected| self.files.iter().any(|file| &file.path == selected))
-                .or_else(|| self.files.first().map(|file| file.path.clone()))
-        };
-        self.selected_status = self
-            .selected_path
-            .as_deref()
-            .and_then(|selected| self.status_for_path(selected));
+        if self.workspace_view_mode == WorkspaceViewMode::Files {
+            let current_selection = self.selected_path.clone();
+            self.selected_path = if full_refresh {
+                current_selection.or_else(|| self.files.first().map(|file| file.path.clone()))
+            } else {
+                retained_selection_path(&self.files, current_selection.as_deref())
+            };
+            self.selected_status = self
+                .selected_path
+                .as_deref()
+                .and_then(|selected| self.status_for_path(selected));
+        }
 
         if full_refresh {
             let selected_changed = self.selected_path != previous_selected_path
