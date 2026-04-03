@@ -1,7 +1,9 @@
 struct DiffCellRenderSpec<'a> {
     row_ix: usize,
     side: &'static str,
-    cell: &'a DiffCell,
+    line: Option<u32>,
+    cell_kind: DiffCellKind,
+    text: &'a str,
     peer_kind: DiffCellKind,
     panel_width: Option<Pixels>,
 }
@@ -319,7 +321,9 @@ impl DiffViewer {
                 DiffCellRenderSpec {
                     row_ix: ix,
                     side: "left",
-                    cell: &row_data.left,
+                    line: row_data.left.line,
+                    cell_kind: row_data.left.kind,
+                    text: row_data.left.text.as_str(),
                     peer_kind: row_data.right.kind,
                     panel_width: layout.map(|layout| layout.left_panel_width),
                 },
@@ -332,7 +336,9 @@ impl DiffViewer {
                 DiffCellRenderSpec {
                     row_ix: ix,
                     side: "right",
-                    cell: &row_data.right,
+                    line: row_data.right.line,
+                    cell_kind: row_data.right.kind,
+                    text: row_data.right.text.as_str(),
                     peer_kind: row_data.left.kind,
                     panel_width: layout.map(|layout| layout.right_panel_width),
                 },
@@ -377,7 +383,7 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let side = spec.side;
-        let cell = spec.cell;
+        let cell_kind = spec.cell_kind;
         let peer_kind = spec.peer_kind;
         let cell_id = if side == "left" {
             ("diff-cell-left", row_stable_id)
@@ -393,7 +399,7 @@ impl DiffViewer {
         let dark_remove_accent: gpui::Hsla = gpui::rgb(0xeea9b4).into();
 
         let (mut background, marker_color, line_color, text_color, marker) =
-            match (cell.kind, peer_kind) {
+            match (cell_kind, peer_kind) {
                 (DiffCellKind::Added, _) => (
                     hunk_pick(
                         is_dark,
@@ -439,7 +445,7 @@ impl DiffViewer {
                     "",
                 ),
             };
-        if matches!(cell.kind, DiffCellKind::Context | DiffCellKind::None)
+        if matches!(cell_kind, DiffCellKind::Context | DiffCellKind::None)
             && row_stable_id.is_multiple_of(2)
         {
             background = hunk_blend(background, cx.theme().muted, is_dark, 0.06, 0.10);
@@ -448,7 +454,7 @@ impl DiffViewer {
             background = hunk_blend(background, cx.theme().primary, is_dark, 0.22, 0.13);
         }
 
-        let line_number = cell.line.map(|line| line.to_string()).unwrap_or_default();
+        let line_number = spec.line.map(|line| line.to_string()).unwrap_or_default();
         let display_row = viewport_row.map(|row| {
             if side == "left" {
                 &row.left_display_row
@@ -458,7 +464,7 @@ impl DiffViewer {
         });
         let cell_text = display_row
             .map(|row| row.text.as_str())
-            .unwrap_or(cell.text.as_str());
+            .unwrap_or(spec.text);
         let cached_row_segments = self.active_diff_row_segment_cache(spec.row_ix);
         let segment_cache = if side == "left" {
             cached_row_segments.map(|segments| &segments.left)
@@ -479,7 +485,7 @@ impl DiffViewer {
         };
 
         let should_draw_right_divider = side == "left";
-        let mut gutter_background = match cell.kind {
+        let mut gutter_background = match cell_kind {
             DiffCellKind::Added => {
                 hunk_blend(chrome.gutter_background, cx.theme().success, is_dark, 0.12, 0.07)
             }

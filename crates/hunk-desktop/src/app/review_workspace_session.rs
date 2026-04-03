@@ -85,6 +85,16 @@ pub(crate) struct ReviewWorkspaceViewportSection {
 #[derive(Debug, Clone)]
 pub(crate) struct ReviewWorkspaceViewportRow {
     pub(crate) row_index: usize,
+    pub(crate) stable_id: u64,
+    pub(crate) row_kind: DiffRowKind,
+    pub(crate) stream_kind: DiffStreamRowKind,
+    pub(crate) file_path: Option<String>,
+    pub(crate) file_status: Option<FileStatus>,
+    pub(crate) text: String,
+    pub(crate) left_cell_kind: DiffCellKind,
+    pub(crate) left_line: Option<u32>,
+    pub(crate) right_cell_kind: DiffCellKind,
+    pub(crate) right_line: Option<u32>,
     pub(crate) local_top_px: usize,
     pub(crate) height_px: usize,
     pub(crate) left_display_row: WorkspaceDisplayRow,
@@ -409,8 +419,33 @@ impl ReviewWorkspaceSession {
                     let visible_start_px = self
                         .row_boundary_offset_px(visible_row_range.start)
                         .unwrap_or(pixel_range.start);
-                    self.row(row_index).map(|_| ReviewWorkspaceViewportRow {
+                    let row = self.row(row_index)?;
+                    let row_metadata = self.row_metadata(row_index);
+                    let file_path = row_metadata
+                        .and_then(|meta| meta.file_path.clone())
+                        .or_else(|| self.row_file_path(row_index).map(ToString::to_string));
+                    let file_status =
+                        row_metadata.and_then(|meta| meta.file_status).or_else(|| {
+                            file_path
+                                .as_deref()
+                                .and_then(|path| self.status_for_path(path))
+                        });
+                    Some(ReviewWorkspaceViewportRow {
                         row_index,
+                        stable_id: row_metadata
+                            .map(|meta| meta.stable_id)
+                            .unwrap_or(row_index as u64),
+                        row_kind: row.kind,
+                        stream_kind: row_metadata
+                            .map(|meta| meta.kind)
+                            .unwrap_or_else(|| review_stream_row_kind_for_row(row.kind)),
+                        file_path,
+                        file_status,
+                        text: row.text.clone(),
+                        left_cell_kind: row.left.kind,
+                        left_line: row.left.line,
+                        right_cell_kind: row.right.kind,
+                        right_line: row.right.line,
                         local_top_px: self
                             .row_top_offset_px(row_index)
                             .unwrap_or(visible_start_px)
@@ -993,6 +1028,15 @@ impl ReviewWorkspaceSession {
             Ok(ix) => ix.min(row_count.saturating_sub(1)),
             Err(ix) => ix.saturating_sub(1).min(row_count.saturating_sub(1)),
         }
+    }
+}
+
+fn review_stream_row_kind_for_row(row_kind: DiffRowKind) -> DiffStreamRowKind {
+    match row_kind {
+        DiffRowKind::Code => DiffStreamRowKind::CoreCode,
+        DiffRowKind::HunkHeader => DiffStreamRowKind::CoreHunkHeader,
+        DiffRowKind::Meta => DiffStreamRowKind::CoreMeta,
+        DiffRowKind::Empty => DiffStreamRowKind::CoreEmpty,
     }
 }
 

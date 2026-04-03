@@ -284,12 +284,11 @@ impl DiffViewer {
             .iter()
             .filter_map(|viewport_row| {
                 let row_ix = viewport_row.row_index;
-                let meta = self.active_diff_row_metadata(row_ix)?;
-                if meta.kind != DiffStreamRowKind::FileHeader {
+                if viewport_row.stream_kind != DiffStreamRowKind::FileHeader {
                     return None;
                 }
-                let path = meta.file_path.as_deref()?;
-                let status = meta.file_status?;
+                let path = viewport_row.file_path.as_deref()?;
+                let status = viewport_row.file_status?;
                 Some(
                     div()
                         .absolute()

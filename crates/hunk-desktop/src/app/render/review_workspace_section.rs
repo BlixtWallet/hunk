@@ -226,16 +226,10 @@ impl DiffViewer {
             .iter()
             .filter_map(|viewport_row| {
                 let row_ix = viewport_row.row_index;
-                let row = self.active_diff_row(row_ix)?;
                 let is_selected = self.is_row_selected(row_ix);
-                let kind = if let Some(meta) = self.active_diff_row_metadata(row_ix)
-                    && meta.kind == DiffStreamRowKind::FileHeader
-                {
-                    let path = meta.file_path.as_deref()?;
-                    let status = meta
-                        .file_status
-                        .or_else(|| self.status_for_path(path))
-                        .unwrap_or(FileStatus::Unknown);
+                let kind = if viewport_row.stream_kind == DiffStreamRowKind::FileHeader {
+                    let path = viewport_row.file_path.as_deref()?;
+                    let status = viewport_row.file_status.unwrap_or(FileStatus::Unknown);
                     let stats = self
                         .active_diff_file_line_stats()
                         .get(path)
@@ -251,18 +245,19 @@ impl DiffViewer {
                         )),
                     }
                 } else {
-                    match row.kind {
+                    match viewport_row.row_kind {
                         DiffRowKind::Code => {
-                            let stable_row_id = self.diff_row_stable_id(row_ix);
+                            let stable_row_id = viewport_row.stable_id;
                             let left = self.build_review_workspace_code_row_cell(
                                 stable_row_id,
-                                row,
                                 is_selected,
                                 DiffCellRenderSpec {
                                     row_ix,
                                     side: "left",
-                                    cell: &row.left,
-                                    peer_kind: row.right.kind,
+                                    line: viewport_row.left_line,
+                                    cell_kind: viewport_row.left_cell_kind,
+                                    text: viewport_row.left_display_row.text.as_str(),
+                                    peer_kind: viewport_row.right_cell_kind,
                                     panel_width: layout.map(|layout| layout.left_panel_width),
                                 },
                                 viewport_row,
@@ -270,13 +265,14 @@ impl DiffViewer {
                             );
                             let right = self.build_review_workspace_code_row_cell(
                                 stable_row_id,
-                                row,
                                 is_selected,
                                 DiffCellRenderSpec {
                                     row_ix,
                                     side: "right",
-                                    cell: &row.right,
-                                    peer_kind: row.left.kind,
+                                    line: viewport_row.right_line,
+                                    cell_kind: viewport_row.right_cell_kind,
+                                    text: viewport_row.right_display_row.text.as_str(),
+                                    peer_kind: viewport_row.left_cell_kind,
                                     panel_width: layout.map(|layout| layout.right_panel_width),
                                 },
                                 viewport_row,
@@ -289,7 +285,12 @@ impl DiffViewer {
                         }
                         DiffRowKind::HunkHeader | DiffRowKind::Meta | DiffRowKind::Empty => {
                             ReviewWorkspacePaintedRowKind::Meta(
-                                self.build_review_workspace_meta_row_paint(row, is_selected, cx),
+                                self.build_review_workspace_meta_row_paint(
+                                    viewport_row.row_kind,
+                                    &viewport_row.text,
+                                    is_selected,
+                                    cx,
+                                ),
                             )
                         }
                     }

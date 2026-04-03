@@ -561,8 +561,24 @@ fn review_workspace_session_builds_viewport_snapshot_from_shared_geometry() {
     let session_row = session
         .row(code_row.row_index)
         .expect("session row should exist for viewport code row");
+    let session_row_meta = session
+        .row_metadata(code_row.row_index)
+        .expect("session row metadata should exist for viewport code row");
     assert_eq!(code_row.left_display_row.text, session_row.left.text);
     assert_eq!(code_row.right_display_row.text, session_row.right.text);
+    assert_eq!(code_row.stable_id, session_row_meta.stable_id);
+    assert_eq!(code_row.row_kind, session_row.kind);
+    assert_eq!(code_row.stream_kind, session_row_meta.kind);
+    assert_eq!(
+        code_row.file_path.as_deref(),
+        session_row_meta.file_path.as_deref()
+    );
+    assert_eq!(code_row.file_status, session_row_meta.file_status);
+    assert_eq!(code_row.text, session_row.text);
+    assert_eq!(code_row.left_cell_kind, session_row.left.kind);
+    assert_eq!(code_row.left_line, session_row.left.line);
+    assert_eq!(code_row.right_cell_kind, session_row.right.kind);
+    assert_eq!(code_row.right_line, session_row.right.line);
     let visible_start_px = session
         .row_boundary_offset_px(viewport.sections[0].visible_row_range.start)
         .expect("visible range should have a top offset");

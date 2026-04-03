@@ -708,12 +708,13 @@ impl DiffViewer {
     ) -> AnyElement {
         let left = self.build_review_workspace_code_row_cell(
             row_stable_id,
-            row_data,
             row_is_selected,
             DiffCellRenderSpec {
                 row_ix: viewport_row.row_index,
                 side: "left",
-                cell: &row_data.left,
+                line: row_data.left.line,
+                cell_kind: row_data.left.kind,
+                text: row_data.left.text.as_str(),
                 peer_kind: row_data.right.kind,
                 panel_width: layout.map(|layout| layout.left_panel_width),
             },
@@ -722,12 +723,13 @@ impl DiffViewer {
         );
         let right = self.build_review_workspace_code_row_cell(
             row_stable_id,
-            row_data,
             row_is_selected,
             DiffCellRenderSpec {
                 row_ix: viewport_row.row_index,
                 side: "right",
-                cell: &row_data.right,
+                line: row_data.right.line,
+                cell_kind: row_data.right.kind,
+                text: row_data.right.text.as_str(),
                 peer_kind: row_data.left.kind,
                 panel_width: layout.map(|layout| layout.right_panel_width),
             },
@@ -748,15 +750,13 @@ impl DiffViewer {
     fn build_review_workspace_code_row_cell(
         &self,
         row_stable_id: u64,
-        row_data: &SideBySideRow,
         row_is_selected: bool,
         spec: DiffCellRenderSpec<'_>,
         viewport_row: &review_workspace_session::ReviewWorkspaceViewportRow,
         cx: &mut Context<Self>,
     ) -> ReviewWorkspaceCodeRowCellPaint {
-        let _ = row_data;
         let side = spec.side;
-        let cell = spec.cell;
+        let cell_kind = spec.cell_kind;
         let peer_kind = spec.peer_kind;
         let is_dark = cx.theme().mode.is_dark();
         let chrome = hunk_diff_chrome(cx.theme(), is_dark);
@@ -766,7 +766,7 @@ impl DiffViewer {
         let dark_remove_accent: gpui::Hsla = gpui::rgb(0xeea9b4).into();
 
         let (mut background, marker_color, line_color, text_color, marker) =
-            match (cell.kind, peer_kind) {
+            match (cell_kind, peer_kind) {
                 (DiffCellKind::Added, _) => (
                     hunk_pick(
                         is_dark,
@@ -812,7 +812,7 @@ impl DiffViewer {
                     "",
                 ),
             };
-        if matches!(cell.kind, DiffCellKind::Context | DiffCellKind::None)
+        if matches!(cell_kind, DiffCellKind::Context | DiffCellKind::None)
             && row_stable_id.is_multiple_of(2)
         {
             background = hunk_blend(background, cx.theme().muted, is_dark, 0.06, 0.10);
@@ -840,7 +840,7 @@ impl DiffViewer {
             fallback_segments
         };
 
-        let mut gutter_background = match cell.kind {
+        let mut gutter_background = match cell_kind {
             DiffCellKind::Added => {
                 hunk_blend(chrome.gutter_background, cx.theme().success, is_dark, 0.12, 0.07)
             }
@@ -869,7 +869,7 @@ impl DiffViewer {
             line_color,
             marker_color,
             marker: SharedString::from(marker),
-            line_number: SharedString::from(cell.line.map(|line| line.to_string()).unwrap_or_default()),
+            line_number: SharedString::from(spec.line.map(|line| line.to_string()).unwrap_or_default()),
             segments,
         }
     }
@@ -880,7 +880,7 @@ impl DiffViewer {
         is_selected: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let paint = self.build_review_workspace_meta_row_paint(row, is_selected, cx);
+        let paint = self.build_review_workspace_meta_row_paint(row.kind, &row.text, is_selected, cx);
         ReviewWorkspaceMetaRowElement::new(
             paint.kind,
             paint.text,
@@ -895,13 +895,14 @@ impl DiffViewer {
 
     fn build_review_workspace_meta_row_paint(
         &self,
-        row: &SideBySideRow,
+        row_kind: DiffRowKind,
+        row_text: &str,
         is_selected: bool,
         cx: &mut Context<Self>,
     ) -> ReviewWorkspaceMetaRowPaint {
         let is_dark = cx.theme().mode.is_dark();
 
-        let (background, foreground, accent) = match row.kind {
+        let (background, foreground, accent) = match row_kind {
             DiffRowKind::HunkHeader => (
                 if is_selected {
                     hunk_opacity(cx.theme().primary, is_dark, 0.34, 0.18)
@@ -912,7 +913,7 @@ impl DiffViewer {
                 cx.theme().primary,
             ),
             DiffRowKind::Meta => {
-                let line = row.text.as_str();
+                let line = row_text;
                 if line.starts_with("new file mode") || line.starts_with("+++ b/") {
                     (
                         hunk_blend(cx.theme().background, cx.theme().success, is_dark, 0.22, 0.12),
@@ -950,7 +951,7 @@ impl DiffViewer {
                 cx.theme().border,
             ),
         };
-        let background = if row.kind == DiffRowKind::HunkHeader {
+        let background = if row_kind == DiffRowKind::HunkHeader {
             background
         } else if is_selected {
             hunk_blend(background, cx.theme().primary, is_dark, 0.24, 0.14)
@@ -959,8 +960,8 @@ impl DiffViewer {
         };
 
         ReviewWorkspaceMetaRowPaint {
-            kind: row.kind,
-            text: row.text.clone().into(),
+            kind: row_kind,
+            text: row_text.to_string().into(),
             background,
             foreground,
             accent,
