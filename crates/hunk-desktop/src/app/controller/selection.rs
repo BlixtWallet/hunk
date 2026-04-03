@@ -30,12 +30,17 @@ impl DiffViewer {
             self.collapsed_files.insert(path.clone());
         }
 
-        self.selected_path = Some(path.clone());
-        self.selected_status = self
+        let status = self
             .active_diff_files()
             .iter()
             .find(|file| file.path == path)
             .map(|file| file.status);
+        if self.workspace_view_mode == WorkspaceViewMode::Diff {
+            self.set_review_selected_file(Some(path.clone()), status);
+        } else {
+            self.selected_path = Some(path.clone());
+            self.selected_status = status;
+        }
         self.scroll_selected_after_reload = true;
         self.review_surface.last_diff_scroll_offset = None;
         self.last_scroll_activity_at = Instant::now();

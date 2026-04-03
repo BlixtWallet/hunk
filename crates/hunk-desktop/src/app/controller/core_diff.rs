@@ -304,6 +304,16 @@ impl DiffViewer {
         vec![files[0].clone()]
     }
 
+    fn retained_selection_path(
+        files: &[ChangedFile],
+        selected_path: Option<&str>,
+    ) -> Option<String> {
+        selected_path
+            .filter(|selected_path| files.iter().any(|file| file.path == *selected_path))
+            .map(ToString::to_string)
+            .or_else(|| files.first().map(|file| file.path.clone()))
+    }
+
     fn apply_loaded_diff_stream(&mut self, stream: DiffStream, cx: &mut Context<Self>) {
         self.file_line_stats = self.apply_loaded_diff_surface_stream(stream);
         if !self.patch_loading || !self.line_stats_loading {
@@ -311,23 +321,20 @@ impl DiffViewer {
         }
 
         if self.workspace_view_mode == WorkspaceViewMode::Files {
-            if self.selected_path.is_none() {
-                self.selected_path = self.files.first().map(|file| file.path.clone());
-            }
-        } else {
-            let has_selection = self
+            self.selected_path =
+                Self::retained_selection_path(&self.files, self.selected_path.as_deref());
+            self.selected_status = self
                 .selected_path
-                .as_ref()
-                .is_some_and(|path| self.files.iter().any(|file| file.path == *path));
-            if !has_selection {
-                self.selected_path = self.files.first().map(|file| file.path.clone());
-            }
+                .as_deref()
+                .and_then(|selected| self.status_for_path(selected));
+        } else {
+            let next_selected_path =
+                Self::retained_selection_path(&self.files, self.current_review_path().as_deref());
+            let next_selected_status = next_selected_path
+                .as_deref()
+                .and_then(|selected| self.status_for_path(selected));
+            self.set_review_selected_file(next_selected_path, next_selected_status);
         }
-
-        self.selected_status = self
-            .selected_path
-            .as_deref()
-            .and_then(|selected| self.status_for_path(selected));
         self.rebuild_comment_row_match_cache();
 
         if self.scroll_selected_after_reload {
@@ -460,9 +467,11 @@ fn should_send_ai_prompt_from_input_event(event: &InputEvent) -> bool {
 #[cfg(test)]
 mod ai_input_tests {
     use super::{
-        SnapshotStageALoadPath, SnapshotRefreshBehavior, should_send_ai_prompt_from_input_event,
-        snapshot_stage_a_fallback_load_path, snapshot_stage_a_load_path,
+        DiffViewer, SnapshotStageALoadPath, SnapshotRefreshBehavior,
+        should_send_ai_prompt_from_input_event, snapshot_stage_a_fallback_load_path,
+        snapshot_stage_a_load_path,
     };
+    use hunk_git::git::{ChangedFile, FileStatus};
     use gpui_component::input::InputEvent;
 
     #[test]
@@ -499,6 +508,36 @@ mod ai_input_tests {
         assert_eq!(
             snapshot_stage_a_fallback_load_path(false),
             SnapshotStageALoadPath::IfChangedRefreshWorkingCopy
+        );
+    }
+
+    fn changed_file(path: &str) -> ChangedFile {
+        ChangedFile {
+            path: path.to_string(),
+            status: FileStatus::Modified,
+            staged: false,
+            unstaged: true,
+            untracked: false,
+        }
+    }
+
+    #[test]
+    fn retained_selection_path_keeps_matching_selection() {
+        let files = vec![changed_file("src/main.rs"), changed_file("src/lib.rs")];
+
+        assert_eq!(
+            DiffViewer::retained_selection_path(&files, Some("src/lib.rs")),
+            Some("src/lib.rs".to_string())
+        );
+    }
+
+    #[test]
+    fn retained_selection_path_falls_back_to_first_file_when_selection_is_missing() {
+        let files = vec![changed_file("src/main.rs"), changed_file("src/lib.rs")];
+
+        assert_eq!(
+            DiffViewer::retained_selection_path(&files, Some("missing.rs")),
+            Some("src/main.rs".to_string())
         );
     }
 }

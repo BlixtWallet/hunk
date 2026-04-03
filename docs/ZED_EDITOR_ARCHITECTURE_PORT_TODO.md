@@ -202,6 +202,7 @@ Current state:
 - Review’s current-file decisions for tab revisit, editor active-path sync, scroll-to-file, and next/previous-file navigation now prefer the current shared-surface row/session state before falling back to `selected_path`.
 - Review file reveal, scroll-to-file, and comment fallback jumps now resolve through shared workspace file ranges before touching the legacy flat row ranges.
 - Review row selection, visible-row sync, and diff-list sizing now derive their live row count and current file from the shared workspace session before falling back to the legacy flat row state.
+- Diff-mode file collapse and diff-stream reload retention now preserve Review-owned selection through `current_review_path`/`review_last_selected_path` instead of mirroring back into the Files-mode `selected_path`.
 - The remaining gap is no longer metadata ownership. It is the surface itself: selection UI and scrolling are still hosted by the flat diff list instead of one editor-native multi-file surface.
 
 ### Phase 5: Unify Syntax, Folding, Search, And Visible-Range Work
