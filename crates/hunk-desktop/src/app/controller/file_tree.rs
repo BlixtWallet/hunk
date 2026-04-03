@@ -2,16 +2,22 @@ use std::path::{Component, Path, PathBuf};
 
 fn review_mode_selected_path(
     review_last_selected_path: Option<&str>,
-    selected_path: Option<&str>,
     review_files: &[ChangedFile],
 ) -> Option<String> {
     review_last_selected_path
         .map(str::to_string)
-        .or_else(|| selected_path.map(str::to_string))
         .or_else(|| review_files.first().map(|file| file.path.clone()))
 }
 
 impl DiffViewer {
+    pub(crate) fn current_tree_selected_path(&self) -> Option<String> {
+        if self.workspace_view_mode == WorkspaceViewMode::Diff {
+            return self.current_review_path();
+        }
+
+        self.selected_path.clone()
+    }
+
     fn preferred_review_workspace_path(&self) -> Option<String> {
         if let Some(session) = self.review_workspace_session.as_ref() {
             return preferred_review_workspace_path_for_session(
@@ -20,14 +26,12 @@ impl DiffViewer {
                 self.current_review_file_range().map(|range| range.path).as_deref(),
                 self.current_review_editor_session_path().as_deref(),
                 self.review_last_selected_path.as_deref(),
-                self.selected_path.as_deref(),
                 session,
             );
         }
 
         review_mode_selected_path(
             self.review_last_selected_path.as_deref(),
-            self.selected_path.as_deref(),
             &self.review_files,
         )
     }

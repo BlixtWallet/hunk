@@ -30,7 +30,6 @@ fn preferred_review_workspace_path_for_session(
     current_range_path: Option<&str>,
     editor_active_path: Option<&str>,
     last_selected_path: Option<&str>,
-    selected_path: Option<&str>,
     session: &crate::app::review_workspace_session::ReviewWorkspaceSession,
 ) -> Option<String> {
     current_surface_path
@@ -43,11 +42,6 @@ fn preferred_review_workspace_path_for_session(
         })
         .or_else(|| {
             last_selected_path
-                .filter(|path| session.contains_path(path))
-                .map(str::to_string)
-        })
-        .or_else(|| {
-            selected_path
                 .filter(|path| session.contains_path(path))
                 .map(str::to_string)
         })
@@ -196,12 +190,11 @@ impl DiffViewer {
         path: Option<String>,
         status: Option<FileStatus>,
     ) {
-        self.selected_path = path.clone();
-        self.selected_status = status;
         self.review_last_selected_path = path.clone();
         if let Some(path) = path.as_deref() {
             self.activate_review_workspace_editor_path(path);
         }
+        let _ = status;
     }
 
     pub(crate) fn activate_review_workspace_editor_path(&mut self, path: &str) -> bool {
@@ -249,11 +242,6 @@ impl DiffViewer {
                     .and_then(|path| self.active_diff_file_range_for_path(path))
             })
             .or_else(|| {
-                self.selected_path
-                    .as_deref()
-                    .and_then(|path| self.active_diff_file_range_for_path(path))
-            })
-            .or_else(|| {
                 session.first_file().map(|range| FileRowRange {
                     path: range.path.clone(),
                     status: range.status,
@@ -270,14 +258,11 @@ impl DiffViewer {
                 self.current_review_file_range().map(|range| range.path).as_deref(),
                 self.current_review_editor_session_path().as_deref(),
                 self.review_last_selected_path.as_deref(),
-                self.selected_path.as_deref(),
                 session,
             );
         }
 
-        self.review_last_selected_path
-            .clone()
-            .or_else(|| self.selected_path.clone())
+        self.review_last_selected_path.clone()
     }
 
     pub(crate) fn should_reuse_loaded_review_compare(&self) -> bool {
@@ -470,8 +455,7 @@ impl DiffViewer {
                 cx,
             );
         }
-        self.selected_path = Some(path);
-        self.selected_status = None;
+        self.set_review_selected_file(Some(path), None);
         self.set_workspace_view_mode(WorkspaceViewMode::Diff, cx);
     }
 
@@ -839,8 +823,6 @@ impl DiffViewer {
         self.review_file_status_by_path.clear();
         self.review_file_line_stats.clear();
         self.review_overall_line_stats = LineStats::default();
-        self.selected_path = None;
-        self.selected_status = None;
         self.comments_cache.clear();
         self.comment_miss_streaks.clear();
         self.reset_comment_row_match_cache();
@@ -1010,8 +992,7 @@ impl DiffViewer {
 
         let preferred_selected_path = self
             .current_review_editor_session_path()
-            .or_else(|| self.review_last_selected_path.clone())
-            .or_else(|| self.selected_path.clone());
+            .or_else(|| self.review_last_selected_path.clone());
         let has_selection = preferred_selected_path
             .as_ref()
             .is_some_and(|path| self.active_diff_contains_path(path.as_str()));
@@ -1194,7 +1175,6 @@ mod review_compare_tests {
                 None,
                 Some("src/lib.rs"),
                 Some("missing.rs"),
-                Some("src/main.rs"),
                 &session,
             ),
             Some("src/lib.rs".to_string())
@@ -1211,7 +1191,6 @@ mod review_compare_tests {
                 None,
                 Some("missing.rs"),
                 Some("also-missing.rs"),
-                Some("still-missing.rs"),
                 &session,
             ),
             Some("src/main.rs".to_string())
