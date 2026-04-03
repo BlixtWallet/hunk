@@ -340,6 +340,10 @@ impl ReviewWorkspaceSession {
         self.row_top_offsets.get(row_ix).copied()
     }
 
+    pub(crate) fn row_boundary_offset_px(&self, boundary_ix: usize) -> Option<usize> {
+        self.row_top_offsets.get(boundary_ix).copied()
+    }
+
     pub(crate) fn visible_row_range_for_viewport(
         &self,
         scroll_top_px: usize,
@@ -388,6 +392,44 @@ impl ReviewWorkspaceSession {
             ..last_visible_exclusive
                 .saturating_add(overscan_sections)
                 .min(self.section_pixel_ranges.len())
+    }
+
+    pub(crate) fn section_visible_row_range(
+        &self,
+        section_ix: usize,
+        scroll_top_px: usize,
+        viewport_height_px: usize,
+        overscan_rows: usize,
+    ) -> Option<Range<usize>> {
+        let section = self.section(section_ix)?;
+        let overscan_rows = overscan_rows.max(1);
+        let visible = self.visible_row_range_for_viewport(scroll_top_px, viewport_height_px)?;
+
+        if visible.end <= section.start_row {
+            let end = section
+                .start_row
+                .saturating_add(overscan_rows)
+                .min(section.end_row);
+            return Some(section.start_row..end.max(section.start_row.saturating_add(1)));
+        }
+
+        if section.end_row <= visible.start {
+            let start = section
+                .end_row
+                .saturating_sub(overscan_rows)
+                .max(section.start_row);
+            return Some(start..section.end_row);
+        }
+
+        let start = visible
+            .start
+            .saturating_sub(overscan_rows)
+            .max(section.start_row);
+        let end = visible
+            .end
+            .saturating_add(overscan_rows)
+            .min(section.end_row);
+        Some(start..end.max(start.saturating_add(1)).min(section.end_row))
     }
 
     pub(crate) fn row(&self, row_ix: usize) -> Option<&SideBySideRow> {

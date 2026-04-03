@@ -429,6 +429,55 @@ fn review_workspace_session_tracks_section_pixel_geometry() {
 }
 
 #[test]
+fn review_workspace_session_limits_section_rows_to_viewport_slice() {
+    let patch = "\
+@@ -1,2 +1,3 @@
+ before
+-old
++new
+ keep
+@@ -8,0 +10,2 @@
++tail
++more
+";
+    let snapshot = CompareSnapshot {
+        files: vec![changed_file("src/main.rs", FileStatus::Modified)],
+        file_line_stats: BTreeMap::new(),
+        overall_line_stats: LineStats::default(),
+        patches_by_path: BTreeMap::from([("src/main.rs".to_string(), patch.to_string())]),
+    };
+    let rows = parse_patch_side_by_side(patch);
+    let stream = review_stream_for_rows(&rows, "src/main.rs", FileStatus::Modified);
+    let session = ReviewWorkspaceSession::from_compare_snapshot(&snapshot, &BTreeSet::new())
+        .expect("workspace session should build")
+        .with_render_stream(&stream);
+
+    let first = session.section(0).expect("first section");
+    let second = session.section(1).expect("second section");
+    let first_pixels = session
+        .section_pixel_range(0)
+        .expect("first section pixel range")
+        .clone();
+
+    let first_visible = session
+        .section_visible_row_range(0, 0, REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX * 2, 1)
+        .expect("first section visible rows");
+    let second_visible = session
+        .section_visible_row_range(1, 0, REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX * 2, 1)
+        .expect("second section visible rows");
+
+    assert_eq!(session.row_boundary_offset_px(first.start_row), Some(0));
+    assert_eq!(
+        session.row_boundary_offset_px(first.end_row),
+        Some(first_pixels.end)
+    );
+    assert_eq!(first_visible.start, first.start_row);
+    assert!(first_visible.end < first.end_row);
+    assert_eq!(second_visible.start, second.start_row);
+    assert!(second_visible.end < second.end_row);
+}
+
+#[test]
 fn review_workspace_session_can_attach_render_rows() {
     let patch = "\
 @@ -1,2 +1,2 @@
