@@ -1113,6 +1113,11 @@ impl ReviewWorkspaceSurfaceState {
             last_diff_scroll_offset: None,
         }
     }
+
+    fn clear_legacy_diff_row_lookups(&mut self) {
+        self.diff_visible_file_header_lookup.clear();
+        self.diff_visible_hunk_header_lookup.clear();
+    }
 }
 
 struct DiffViewer {

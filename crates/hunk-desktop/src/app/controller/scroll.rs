@@ -360,8 +360,7 @@ impl DiffViewer {
         self.diff_row_metadata.clear();
         self.diff_row_segment_cache.clear();
         self.invalidate_segment_prefetch();
-        self.review_surface.diff_visible_file_header_lookup.clear();
-        self.review_surface.diff_visible_hunk_header_lookup.clear();
+        self.review_surface.clear_legacy_diff_row_lookups();
         self.file_row_ranges.clear();
         self.selection_anchor_row = None;
         self.selection_head_row = None;

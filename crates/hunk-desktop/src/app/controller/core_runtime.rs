@@ -118,8 +118,7 @@ impl DiffViewer {
 
     fn recompute_diff_visible_header_lookup(&mut self) {
         let row_count = self.active_diff_row_count();
-        self.review_surface.diff_visible_file_header_lookup = vec![None; row_count];
-        self.review_surface.diff_visible_hunk_header_lookup = vec![None; row_count];
+        self.review_surface.clear_legacy_diff_row_lookups();
         if row_count == 0 {
             return;
         }
@@ -127,14 +126,12 @@ impl DiffViewer {
         if self.workspace_view_mode == WorkspaceViewMode::Diff
             && let Some(session) = self.review_workspace_session.as_ref()
         {
-            for row_ix in 0..row_count {
-                self.review_surface.diff_visible_file_header_lookup[row_ix] =
-                    session.visible_file_header_row(row_ix);
-                self.review_surface.diff_visible_hunk_header_lookup[row_ix] =
-                    session.visible_hunk_header_row(row_ix);
-            }
+            debug_assert_eq!(session.row_count(), row_count);
             return;
         }
+
+        self.review_surface.diff_visible_file_header_lookup = vec![None; row_count];
+        self.review_surface.diff_visible_hunk_header_lookup = vec![None; row_count];
 
         let mut current_file_header = None::<usize>;
         let mut current_hunk_header = None::<usize>;

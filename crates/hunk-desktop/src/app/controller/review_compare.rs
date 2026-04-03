@@ -988,20 +988,7 @@ impl DiffViewer {
         }
 
         if let Some(session) = self.review_workspace_session.as_ref() {
-            let session_file_ranges = session
-                .file_ranges()
-                .iter()
-                .map(|range| FileRowRange {
-                    path: range.path.clone(),
-                    status: range.status,
-                    start_row: range.start_row,
-                    end_row: range.end_row,
-                })
-                .collect::<Vec<_>>();
-            let workspace_row_count = session_file_ranges
-                .last()
-                .map(|range| range.end_row)
-                .unwrap_or(0);
+            let workspace_row_count = session.file_ranges().last().map(|range| range.end_row).unwrap_or(0);
             let render_row_count = session.row_count();
             if workspace_row_count != render_row_count {
                 error!(
@@ -1010,10 +997,11 @@ impl DiffViewer {
                     "review workspace session surface rows diverged from render rows"
                 );
             }
-            self.file_row_ranges = session_file_ranges;
+            self.file_row_ranges.clear();
             self.diff_rows.clear();
             self.diff_row_metadata.clear();
             self.diff_row_segment_cache.clear();
+            self.review_surface.clear_legacy_diff_row_lookups();
         }
 
         let has_selection = self
