@@ -7,6 +7,8 @@ struct LoadedReviewCompareReuseState<'a, F> {
     current_right_source_id: Option<&'a str>,
     loaded_left_source_id: Option<&'a str>,
     loaded_right_source_id: Option<&'a str>,
+    current_collapsed_files: &'a BTreeSet<String>,
+    loaded_collapsed_files: &'a BTreeSet<String>,
     current_snapshot_fingerprint: Option<&'a F>,
     loaded_snapshot_fingerprint: Option<&'a F>,
 }
@@ -19,6 +21,7 @@ fn should_reuse_loaded_review_compare<F: PartialEq>(
         && state.review_compare_error.is_none()
         && state.current_left_source_id == state.loaded_left_source_id
         && state.current_right_source_id == state.loaded_right_source_id
+        && state.current_collapsed_files == state.loaded_collapsed_files
         && state.current_snapshot_fingerprint == state.loaded_snapshot_fingerprint
 }
 
@@ -160,6 +163,8 @@ impl DiffViewer {
             current_right_source_id: self.review_right_source_id.as_deref(),
             loaded_left_source_id: self.review_loaded_left_source_id.as_deref(),
             loaded_right_source_id: self.review_loaded_right_source_id.as_deref(),
+            current_collapsed_files: &self.collapsed_files,
+            loaded_collapsed_files: &self.review_loaded_collapsed_files,
             current_snapshot_fingerprint: self.last_snapshot_fingerprint.as_ref(),
             loaded_snapshot_fingerprint: self.review_loaded_snapshot_fingerprint.as_ref(),
         })
@@ -681,6 +686,7 @@ impl DiffViewer {
         self.review_workspace_session = None;
         self.review_loaded_left_source_id = None;
         self.review_loaded_right_source_id = None;
+        self.review_loaded_collapsed_files.clear();
         self.review_loaded_snapshot_fingerprint = None;
         self.review_last_selected_path = None;
         self.review_files.clear();
@@ -707,6 +713,15 @@ impl DiffViewer {
             self.clear_review_compare_loaded_state("Select two compare sources.", cx);
             return;
         };
+
+        if self.should_reuse_loaded_review_compare() {
+            self.review_compare_loading = false;
+            self.review_compare_error = None;
+            self.review_last_selected_path = self.selected_path.clone();
+            self.prime_diff_surface_visible_state(cx);
+            cx.notify();
+            return;
+        }
 
         let previous_review_line_stats = self.review_file_line_stats.clone();
         let collapsed_files = self.collapsed_files.clone();
@@ -815,6 +830,7 @@ impl DiffViewer {
             .collect();
         self.review_loaded_left_source_id = self.review_left_source_id.clone();
         self.review_loaded_right_source_id = self.review_right_source_id.clone();
+        self.review_loaded_collapsed_files = self.collapsed_files.clone();
         self.review_loaded_snapshot_fingerprint = self.last_snapshot_fingerprint.clone();
         self.review_file_line_stats = snapshot.file_line_stats;
         self.review_overall_line_stats = snapshot.overall_line_stats;
@@ -930,6 +946,7 @@ impl DiffViewer {
         self.clear_comment_ui_state();
         self.review_loaded_left_source_id = None;
         self.review_loaded_right_source_id = None;
+        self.review_loaded_collapsed_files.clear();
         self.review_loaded_snapshot_fingerprint = None;
         if self.workspace_view_mode == WorkspaceViewMode::Diff {
             self.scroll_selected_after_reload = true;
@@ -943,9 +960,12 @@ impl DiffViewer {
 #[cfg(test)]
 mod review_compare_tests {
     use super::{LoadedReviewCompareReuseState, should_reuse_loaded_review_compare};
+    use std::collections::BTreeSet;
 
     #[test]
     fn loaded_review_compare_reuse_requires_matching_identity() {
+        let current_collapsed_files = BTreeSet::new();
+        let loaded_collapsed_files = BTreeSet::new();
         let matching_state = LoadedReviewCompareReuseState {
             has_loaded_session: true,
             review_compare_loading: false,
@@ -954,6 +974,8 @@ mod review_compare_tests {
             current_right_source_id: Some("right"),
             loaded_left_source_id: Some("left"),
             loaded_right_source_id: Some("right"),
+            current_collapsed_files: &current_collapsed_files,
+            loaded_collapsed_files: &loaded_collapsed_files,
             current_snapshot_fingerprint: Some(&1_u8),
             loaded_snapshot_fingerprint: Some(&1_u8),
         };
@@ -965,6 +987,11 @@ mod review_compare_tests {
         }));
         assert!(!should_reuse_loaded_review_compare(LoadedReviewCompareReuseState {
             loaded_snapshot_fingerprint: Some(&2_u8),
+            ..matching_state
+        }));
+        let loaded_with_collapse = BTreeSet::from([String::from("src/main.rs")]);
+        assert!(!should_reuse_loaded_review_compare(LoadedReviewCompareReuseState {
+            loaded_collapsed_files: &loaded_with_collapse,
             ..matching_state
         }));
         assert!(!should_reuse_loaded_review_compare(LoadedReviewCompareReuseState {

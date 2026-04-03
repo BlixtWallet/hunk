@@ -417,6 +417,7 @@ impl DiffViewer {
             review_right_source_id: None,
             review_loaded_left_source_id: None,
             review_loaded_right_source_id: None,
+            review_loaded_collapsed_files: BTreeSet::new(),
             branch_name: "unknown".to_string(),
             branch_has_upstream: false,
             branch_ahead_count: 0,

@@ -80,6 +80,7 @@ impl DiffViewer {
         self.review_right_source_id = None;
         self.review_loaded_left_source_id = None;
         self.review_loaded_right_source_id = None;
+        self.review_loaded_collapsed_files.clear();
         self.sync_review_compare_picker_states(cx);
         self.ai_handle_workspace_change(previous_ai_workspace_key, cx);
         self.request_ai_composer_file_completion_reload(cx);

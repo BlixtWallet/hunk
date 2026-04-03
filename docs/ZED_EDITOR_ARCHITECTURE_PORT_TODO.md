@@ -208,7 +208,7 @@ Tasks:
 
 - [ ] Keep Files editor workspace state alive across mode switches.
 - [x] Keep Diff editor workspace state alive when compare inputs are unchanged.
-- [ ] Recompute only when compare sources or repo snapshot fingerprints actually change.
+- [x] Recompute only when compare sources or repo snapshot fingerprints actually change.
 - [ ] Avoid scroll-position and layout churn when revisiting tabs.
 
 Zed analogue:
@@ -219,6 +219,7 @@ Current state:
 - Review now records which compare pair and repo snapshot fingerprint the loaded workspace session was built from.
 - Switching back to Diff reuses the loaded Review surface when that identity still matches, instead of unconditionally rebuilding the compare.
 - Review also remembers its last selected path separately from Files mode so tab switches can preserve Diff-oriented selection when the session is reused.
+- Redundant Review refresh requests now short-circuit when the compare pair, snapshot fingerprint, and collapsed-file layout still match the loaded surface.
 
 ### Phase 7: Delete Legacy Diff Rendering Paths
 

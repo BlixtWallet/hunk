@@ -16,6 +16,7 @@ impl DiffViewer {
             review_right_source_id: None,
             review_loaded_left_source_id: None,
             review_loaded_right_source_id: None,
+            review_loaded_collapsed_files: BTreeSet::new(),
             branch_name: "unknown".to_string(),
             branch_has_upstream: false,
             branch_ahead_count: 0,
@@ -130,6 +131,7 @@ impl DiffViewer {
             review_right_source_id: self.review_right_source_id.take(),
             review_loaded_left_source_id: self.review_loaded_left_source_id.take(),
             review_loaded_right_source_id: self.review_loaded_right_source_id.take(),
+            review_loaded_collapsed_files: std::mem::take(&mut self.review_loaded_collapsed_files),
             branch_name: std::mem::take(&mut self.branch_name),
             branch_has_upstream: self.branch_has_upstream,
             branch_ahead_count: self.branch_ahead_count,
@@ -227,6 +229,7 @@ impl DiffViewer {
         self.review_right_source_id = state.review_right_source_id;
         self.review_loaded_left_source_id = state.review_loaded_left_source_id;
         self.review_loaded_right_source_id = state.review_loaded_right_source_id;
+        self.review_loaded_collapsed_files = state.review_loaded_collapsed_files;
         self.branch_name = state.branch_name;
         self.branch_has_upstream = state.branch_has_upstream;
         self.branch_ahead_count = state.branch_ahead_count;
