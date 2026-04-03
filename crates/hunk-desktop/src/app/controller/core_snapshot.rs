@@ -793,12 +793,15 @@ impl DiffViewer {
             if !should_reload_diff_after_snapshot(
                 self.workspace_view_mode.supports_diff_stream(),
                 diff_changed,
-                self.diff_rows.is_empty(),
+                self.active_diff_row_count() == 0,
             ) {
                 self.scroll_selected_after_reload = false;
             } else {
                 self.scroll_selected_after_reload =
-                    should_scroll_selected_after_reload(selected_changed, self.diff_rows.is_empty());
+                    should_scroll_selected_after_reload(
+                        selected_changed,
+                        self.active_diff_row_count() == 0,
+                    );
                 self.request_selected_diff_reload(cx);
             }
 

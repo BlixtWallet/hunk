@@ -174,6 +174,9 @@ impl ReviewWorkspaceSession {
     }
 
     pub(crate) fn with_render_stream(mut self, stream: &DiffStream) -> Self {
+        debug_assert_eq!(self.layout.total_rows(), stream.rows.len());
+        debug_assert_eq!(stream.rows.len(), stream.row_metadata.len());
+        debug_assert_eq!(stream.rows.len(), stream.row_segments.len());
         self.rows = stream.rows.clone();
         self.row_metadata = stream.row_metadata.clone();
         self.row_segments = stream.row_segments.clone();
@@ -265,18 +268,27 @@ impl ReviewWorkspaceSession {
     }
 
     pub(crate) fn row_count(&self) -> usize {
-        self.rows.len()
+        self.layout.total_rows()
     }
 
     pub(crate) fn row(&self, row_ix: usize) -> Option<&SideBySideRow> {
+        if row_ix >= self.layout.total_rows() {
+            return None;
+        }
         self.rows.get(row_ix)
     }
 
     pub(crate) fn row_metadata(&self, row_ix: usize) -> Option<&DiffStreamRowMeta> {
+        if row_ix >= self.layout.total_rows() {
+            return None;
+        }
         self.row_metadata.get(row_ix)
     }
 
     pub(crate) fn row_segment_cache(&self, row_ix: usize) -> Option<&DiffRowSegmentCache> {
+        if row_ix >= self.layout.total_rows() {
+            return None;
+        }
         self.row_segments.get(row_ix).and_then(Option::as_ref)
     }
 

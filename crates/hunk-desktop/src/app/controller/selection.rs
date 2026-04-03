@@ -123,6 +123,9 @@ impl DiffViewer {
         {
             self.selected_path = Some(path);
             self.selected_status = Some(status);
+            if self.workspace_view_mode == WorkspaceViewMode::Diff {
+                self.review_last_selected_path = self.selected_path.clone();
+            }
             self.sync_review_workspace_editor_active_path();
         }
 
@@ -269,6 +272,7 @@ impl DiffViewer {
 
             self.selected_path = Some(path.clone());
             self.selected_status = Some(status);
+            self.review_last_selected_path = self.selected_path.clone();
             self.sync_review_workspace_editor_active_path();
             self.scroll_to_file_start(path.as_str());
             self.select_row(start_row, false, cx);

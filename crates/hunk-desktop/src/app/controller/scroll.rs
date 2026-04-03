@@ -76,6 +76,9 @@ impl DiffViewer {
 
         self.selected_path = Some(next_path);
         self.selected_status = Some(next_status);
+        if self.workspace_view_mode == WorkspaceViewMode::Diff {
+            self.review_last_selected_path = self.selected_path.clone();
+        }
         self.sync_review_workspace_editor_active_path();
         cx.notify();
     }
@@ -269,7 +272,8 @@ impl DiffViewer {
         force_reprime: bool,
         cx: &mut Context<Self>,
     ) {
-        if self.diff_rows.is_empty() {
+        let row_count = self.active_diff_row_count();
+        if row_count == 0 {
             return;
         }
 
@@ -277,7 +281,7 @@ impl DiffViewer {
             .diff_list_state
             .logical_scroll_top()
             .item_ix
-            .min(self.diff_rows.len().saturating_sub(1));
+            .min(row_count.saturating_sub(1));
         if force_reprime {
             self.last_visible_row_start = None;
         }
@@ -326,11 +330,25 @@ impl DiffViewer {
         file_line_stats
     }
 
+    fn apply_loaded_review_workspace_surface(&mut self) {
+        self.invalidate_segment_prefetch();
+        self.clamp_comment_rows_to_diff();
+        self.clamp_selection_to_rows();
+        self.drag_selecting_rows = false;
+        self.sync_diff_list_state();
+        self.recompute_diff_layout();
+        self.last_visible_row_start = None;
+        self.recompute_diff_visible_header_lookup();
+    }
+
     fn recompute_diff_layout(&mut self) {
         let mut max_left_line_digits = DIFF_LINE_NUMBER_MIN_DIGITS;
         let mut max_right_line_digits = DIFF_LINE_NUMBER_MIN_DIGITS;
 
-        for row in &self.diff_rows {
+        for row_ix in 0..self.active_diff_row_count() {
+            let Some(row) = self.active_diff_row(row_ix) else {
+                continue;
+            };
             if row.kind != DiffRowKind::Code {
                 continue;
             }
@@ -348,16 +366,16 @@ impl DiffViewer {
 
     fn sync_diff_list_state(&self) {
         let previous_top = self.diff_list_state.logical_scroll_top();
-        self.diff_list_state.reset(self.diff_rows.len());
-        let clamped_item_ix = if self.diff_rows.is_empty() {
+        let row_count = self.active_diff_row_count();
+        self.diff_list_state.reset(row_count);
+        let clamped_item_ix = if row_count == 0 {
             0
         } else {
             previous_top
                 .item_ix
-                .min(self.diff_rows.len().saturating_sub(1))
+                .min(row_count.saturating_sub(1))
         };
-        let offset_in_item = if self.diff_rows.is_empty() || clamped_item_ix != previous_top.item_ix
-        {
+        let offset_in_item = if row_count == 0 || clamped_item_ix != previous_top.item_ix {
             px(0.)
         } else {
             previous_top.offset_in_item

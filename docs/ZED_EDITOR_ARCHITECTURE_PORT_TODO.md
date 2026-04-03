@@ -147,6 +147,9 @@ Current state:
 - Review now builds and persists one shared workspace editor session alongside the compare session and keeps its active document in sync with Review selection/path changes.
 - Sticky file headers, hunk navigation, and comment hunk lookup in Review now read from that shared session.
 - Review rendering now also reads row content, row metadata, and syntax segment caches from the shared session.
+- Review’s live row count now comes from the shared workspace layout rather than the legacy flat render vector length, so list sizing and visible-row sync track the workspace model directly.
+- Once the Review session is loaded, the live Review surface rows no longer need to stay duplicated in the top-level legacy `diff_rows` caches; the shared session is now the source of truth for row data during Diff mode.
+- Review compare apply no longer needs the generic flat-row load path when the shared session builds successfully; it now initializes the visible Review surface state directly from the workspace session and only falls back to the legacy row path if session construction fails.
 - The remaining gap is the surface itself: Review still scrolls as a list over flattened rows instead of one editor-backed multi-file surface.
 
 Zed analogue:
@@ -157,7 +160,7 @@ Zed analogue:
 
 ### Phase 4: Move Diff Metadata Onto Workspace Coordinates
 
-Status: In progress
+Status: Done
 
 Targets:
 
@@ -170,7 +173,7 @@ Tasks:
 - [ ] Move comment anchors from file-local assumptions to workspace row/file mappings.
 - [x] Move comment anchors from file-local assumptions to workspace row/file mappings.
 - [x] Move hunk navigation to workspace coordinates.
-- [ ] Move diff selection and reveal logic off `selected_path`-driven row lists.
+- [x] Move diff selection and reveal logic off `selected_path`-driven row lists.
 - [x] Keep a stable file-path mapping for actions that still need file scope.
 
 Current state:
@@ -179,7 +182,8 @@ Current state:
 - Review comment-anchor indexing and file-anchor reconcile state now come directly from `ReviewWorkspaceSession`, so comment matching no longer rebuilds those anchors by rescanning the legacy flat row list.
 - Review’s current-file decisions for tab revisit, editor active-path sync, scroll-to-file, and next/previous-file navigation now prefer the current shared-surface row/session state before falling back to `selected_path`.
 - Review file reveal, scroll-to-file, and comment fallback jumps now resolve through shared workspace file ranges before touching the legacy flat row ranges.
-- The remaining gap is that selection state, comments UI state, and the scroll surface are still hosted by the flat diff list instead of one editor-native multi-file surface.
+- Review row selection, visible-row sync, and diff-list sizing now derive their live row count and current file from the shared workspace session before falling back to the legacy flat row state.
+- The remaining gap is no longer metadata ownership. It is the surface itself: selection UI and scrolling are still hosted by the flat diff list instead of one editor-native multi-file surface.
 
 ### Phase 5: Unify Syntax, Folding, Search, And Visible-Range Work
 

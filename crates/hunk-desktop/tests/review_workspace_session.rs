@@ -67,8 +67,9 @@ mod review_workspace_session;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use hunk_domain::diff::DiffRowKind;
-use hunk_domain::diff::parse_patch_side_by_side;
+use hunk_domain::diff::{
+    DiffCell, DiffCellKind, DiffRowKind, SideBySideRow, parse_patch_side_by_side,
+};
 use hunk_git::compare::CompareSnapshot;
 use hunk_git::git::{ChangedFile, FileStatus, LineStats};
 use review_workspace_session::ReviewWorkspaceSession;
@@ -91,7 +92,7 @@ fn stream_row_metadata_for_rows(
     rows.iter()
         .enumerate()
         .map(|(ix, row)| app::DiffStreamRowMeta {
-            stable_id: ix as u64 + 1,
+            stable_id: ix as u64 + 2,
             file_path: Some(path.to_string()),
             file_status: Some(status),
             kind: match row.kind {
@@ -102,6 +103,76 @@ fn stream_row_metadata_for_rows(
             },
         })
         .collect()
+}
+
+fn file_header_row(path: &str) -> SideBySideRow {
+    SideBySideRow {
+        kind: DiffRowKind::Meta,
+        left: DiffCell {
+            line: None,
+            text: String::new(),
+            kind: DiffCellKind::None,
+        },
+        right: DiffCell {
+            line: None,
+            text: String::new(),
+            kind: DiffCellKind::None,
+        },
+        text: path.to_string(),
+    }
+}
+
+fn empty_file_body_row() -> SideBySideRow {
+    SideBySideRow {
+        kind: DiffRowKind::Empty,
+        left: DiffCell {
+            line: None,
+            text: String::new(),
+            kind: DiffCellKind::None,
+        },
+        right: DiffCell {
+            line: None,
+            text: String::new(),
+            kind: DiffCellKind::None,
+        },
+        text: "No textual diff to display.".to_string(),
+    }
+}
+
+fn review_stream_for_rows(
+    core_rows: &[SideBySideRow],
+    path: &str,
+    status: FileStatus,
+) -> app::data::DiffStream {
+    let mut rows = Vec::with_capacity(core_rows.len().saturating_add(1).max(2));
+    rows.push(file_header_row(path));
+    if core_rows.is_empty() {
+        rows.push(empty_file_body_row());
+    } else {
+        rows.extend(core_rows.iter().cloned());
+    }
+
+    let mut row_metadata = vec![app::DiffStreamRowMeta {
+        stable_id: 1,
+        file_path: Some(path.to_string()),
+        file_status: Some(status),
+        kind: app::DiffStreamRowKind::FileHeader,
+    }];
+    row_metadata.extend(stream_row_metadata_for_rows(core_rows, path, status));
+    if core_rows.is_empty() {
+        row_metadata.push(app::DiffStreamRowMeta {
+            stable_id: 2,
+            file_path: Some(path.to_string()),
+            file_status: Some(status),
+            kind: app::DiffStreamRowKind::CoreEmpty,
+        });
+    }
+
+    app::data::DiffStream {
+        row_segments: vec![None; rows.len()],
+        row_metadata,
+        rows,
+    }
 }
 
 #[test]
@@ -138,6 +209,7 @@ fn review_workspace_session_registers_multi_file_hunk_excerpts() {
 
     assert_eq!(session.layout().documents().len(), 2);
     assert_eq!(session.layout().excerpts().len(), 3);
+    assert_eq!(session.row_count(), session.layout().total_rows());
     assert_eq!(session.first_path(), Some("src/lib.rs"));
     assert_eq!(session.file_ranges().len(), 2);
     assert_eq!(session.hunk_ranges().len(), 2);
@@ -273,34 +345,23 @@ fn review_workspace_session_can_attach_render_rows() {
     };
 
     let rows = parse_patch_side_by_side(patch);
-    let stream = app::data::DiffStream {
-        rows: rows.clone(),
-        row_metadata: stream_row_metadata_for_rows(&rows, "src/main.rs", FileStatus::Modified),
-        row_segments: vec![
-            None,
-            Some(app::DiffRowSegmentCache {
-                quality: app::DiffSegmentQuality::Detailed,
-            }),
-            None,
-        ],
-    };
+    let mut stream = review_stream_for_rows(&rows, "src/main.rs", FileStatus::Modified);
+    stream.row_segments[1] = Some(app::DiffRowSegmentCache {
+        quality: app::DiffSegmentQuality::Detailed,
+    });
     let session = ReviewWorkspaceSession::from_compare_snapshot(&snapshot, &BTreeSet::new())
         .expect("workspace session should build")
         .with_render_stream(&stream);
 
-    assert_eq!(session.row_count(), rows.len());
+    assert_eq!(session.row_count(), session.layout().total_rows());
+    assert_eq!(session.row_count(), rows.len() + 1);
+    assert_eq!(session.row(0).map(|row| row.kind), Some(DiffRowKind::Meta));
     assert_eq!(
-        session.row(0).map(|row| row.kind),
-        rows.first().map(|row| row.kind)
-    );
-    assert_eq!(
-        session
-            .row(rows.len().saturating_sub(1))
-            .map(|row| row.kind),
+        session.row(rows.len()).map(|row| row.kind),
         rows.last().map(|row| row.kind)
     );
     assert_eq!(session.row_file_path(0), Some("src/main.rs"));
-    assert!(session.row_supports_comments(1));
+    assert!(session.row_supports_comments(2));
 }
 
 #[test]
@@ -349,13 +410,10 @@ fn review_workspace_session_prefers_higher_quality_segment_upgrades() {
         overall_line_stats: LineStats::default(),
         patches_by_path: BTreeMap::from([("src/main.rs".to_string(), String::new())]),
     };
-    let stream = app::data::DiffStream {
-        rows: Vec::new(),
-        row_metadata: Vec::new(),
-        row_segments: vec![Some(app::DiffRowSegmentCache {
-            quality: app::DiffSegmentQuality::Plain,
-        })],
-    };
+    let mut stream = review_stream_for_rows(&[], "src/main.rs", FileStatus::Modified);
+    stream.row_segments[0] = Some(app::DiffRowSegmentCache {
+        quality: app::DiffSegmentQuality::Plain,
+    });
     let mut session = ReviewWorkspaceSession::from_compare_snapshot(&snapshot, &BTreeSet::new())
         .expect("workspace session should build")
         .with_render_stream(&stream);
@@ -427,11 +485,7 @@ fn review_workspace_session_builds_comment_anchors_from_render_rows() {
         patches_by_path: BTreeMap::from([("src/main.rs".to_string(), patch.to_string())]),
     };
     let rows = parse_patch_side_by_side(patch);
-    let stream = app::data::DiffStream {
-        rows: rows.clone(),
-        row_metadata: stream_row_metadata_for_rows(&rows, "src/main.rs", FileStatus::Modified),
-        row_segments: vec![None; rows.len()],
-    };
+    let stream = review_stream_for_rows(&rows, "src/main.rs", FileStatus::Modified);
     let session = ReviewWorkspaceSession::from_compare_snapshot(&snapshot, &BTreeSet::new())
         .expect("workspace session should build")
         .with_render_stream(&stream);
@@ -441,6 +495,7 @@ fn review_workspace_session_builds_comment_anchors_from_render_rows() {
     let added_row_ix = rows
         .iter()
         .position(|row| row.right.text == "new line")
+        .map(|ix| ix + 1)
         .expect("added row should exist");
     let anchor = anchors
         .get(&added_row_ix)
