@@ -232,11 +232,7 @@ impl DiffViewer {
                 let kind = if viewport_row.stream_kind == DiffStreamRowKind::FileHeader {
                     let path = viewport_row.file_path.as_deref()?;
                     let status = viewport_row.file_status.unwrap_or(FileStatus::Unknown);
-                    let stats = self
-                        .active_diff_file_line_stats()
-                        .get(path)
-                        .copied()
-                        .unwrap_or_default();
+                    let stats = viewport_row.file_line_stats.unwrap_or_default();
                     ReviewWorkspacePaintedRowKind::FileHeader {
                         paint: Box::new(self.build_review_workspace_file_header_paint(
                             path,

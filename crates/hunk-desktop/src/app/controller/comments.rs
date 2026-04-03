@@ -13,15 +13,23 @@ struct FuzzyCommentKey {
 }
 
 impl DiffViewer {
+    fn invalidate_review_comment_surface_snapshot(&mut self) {
+        if self.uses_review_workspace_sections_surface() {
+            self.review_surface.clear_workspace_surface_snapshot();
+        }
+    }
+
     fn reset_comment_row_match_cache(&mut self) {
         self.comment_row_matches.clear();
         self.comment_open_row_counts.clear();
+        self.invalidate_review_comment_surface_snapshot();
     }
 
     fn rebuild_comment_row_match_cache(&mut self) {
         self.comment_row_matches.clear();
         let row_count = self.active_diff_row_count();
         self.comment_open_row_counts = vec![0; row_count];
+        self.invalidate_review_comment_surface_snapshot();
         if row_count == 0 || self.comments_cache.is_empty() {
             return;
         }
@@ -82,6 +90,7 @@ impl DiffViewer {
         self.hovered_comment_row = None;
         self.active_comment_editor_row = None;
         self.comments_preview_open = false;
+        self.invalidate_review_comment_surface_snapshot();
     }
 
     fn auto_show_non_open_if_open_empty(&mut self) {
@@ -98,12 +107,14 @@ impl DiffViewer {
         if row_count == 0 {
             self.hovered_comment_row = None;
             self.active_comment_editor_row = None;
+            self.invalidate_review_comment_surface_snapshot();
             return;
         }
 
         let max_ix = row_count.saturating_sub(1);
         self.hovered_comment_row = self.hovered_comment_row.map(|ix| ix.min(max_ix));
         self.active_comment_editor_row = self.active_comment_editor_row.map(|ix| ix.min(max_ix));
+        self.invalidate_review_comment_surface_snapshot();
     }
 
     fn comment_scope_repo_root(&self) -> Option<String> {
@@ -291,6 +302,7 @@ impl DiffViewer {
             return;
         }
         self.hovered_comment_row = Some(row_ix);
+        self.invalidate_review_comment_surface_snapshot();
         cx.notify();
     }
 
@@ -309,6 +321,7 @@ impl DiffViewer {
         }
         self.active_comment_editor_row = Some(row_ix);
         self.comment_status_message = None;
+        self.invalidate_review_comment_surface_snapshot();
         let state = self.comment_input_state.clone();
         state.update(cx, |input, cx| {
             input.set_value("", window, cx);
@@ -322,6 +335,7 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) {
         self.active_comment_editor_row = None;
+        self.invalidate_review_comment_surface_snapshot();
         let state = self.comment_input_state.clone();
         state.update(cx, |input, cx| {
             input.set_value("", window, cx);

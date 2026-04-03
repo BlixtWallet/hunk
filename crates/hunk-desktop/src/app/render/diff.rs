@@ -282,7 +282,7 @@ impl DiffViewer {
                     .sections
                     .iter()
                     .flat_map(|viewport_section| viewport_section.rows.iter())
-                    .filter(|viewport_row| self.row_shows_comment_affordance(viewport_row.row_index))
+                    .filter(|viewport_row| viewport_row.show_comment_affordance)
                     .map(|viewport_row| {
                         div()
                             .absolute()

@@ -1,5 +1,5 @@
 impl DiffViewer {
-    fn row_shows_comment_affordance(&self, row_ix: usize) -> bool {
+    pub(super) fn row_shows_comment_affordance(&self, row_ix: usize) -> bool {
         self.row_supports_comments(row_ix)
             && (self.row_open_comment_count(row_ix) > 0
                 || self.hovered_comment_row == Some(row_ix)

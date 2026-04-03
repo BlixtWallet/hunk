@@ -1,4 +1,18 @@
 impl DiffViewer {
+    fn decorate_review_surface_snapshot(
+        &self,
+        snapshot: &mut review_workspace_session::ReviewWorkspaceSurfaceSnapshot,
+    ) {
+        for row in snapshot
+            .viewport
+            .sections
+            .iter_mut()
+            .flat_map(|section| section.rows.iter_mut())
+        {
+            row.show_comment_affordance = self.row_shows_comment_affordance(row.row_index);
+        }
+    }
+
     pub(super) fn refresh_review_surface_snapshot(
         &mut self,
     ) -> Option<review_workspace_session::ReviewWorkspaceVisibleState> {
@@ -28,12 +42,10 @@ impl DiffViewer {
                     || snapshot.viewport_height_px != viewport_height_px
             });
         if needs_refresh {
-            self.review_surface.last_surface_snapshot = Some(session.build_surface_snapshot(
-                scroll_top_px,
-                viewport_height_px,
-                1,
-                8,
-            ));
+            let mut snapshot =
+                session.build_surface_snapshot(scroll_top_px, viewport_height_px, 1, 8);
+            self.decorate_review_surface_snapshot(&mut snapshot);
+            self.review_surface.last_surface_snapshot = Some(snapshot);
         }
 
         self.review_surface

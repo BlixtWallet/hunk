@@ -90,6 +90,8 @@ pub(crate) struct ReviewWorkspaceViewportRow {
     pub(crate) stream_kind: DiffStreamRowKind,
     pub(crate) file_path: Option<String>,
     pub(crate) file_status: Option<FileStatus>,
+    pub(crate) file_line_stats: Option<LineStats>,
+    pub(crate) show_comment_affordance: bool,
     pub(crate) text: String,
     pub(crate) left_cell_kind: DiffCellKind,
     pub(crate) left_line: Option<u32>,
@@ -487,8 +489,12 @@ impl ReviewWorkspaceSession {
                         stream_kind: row_metadata
                             .map(|meta| meta.kind)
                             .unwrap_or_else(|| review_stream_row_kind_for_row(row.kind)),
+                        file_line_stats: file_path
+                            .as_deref()
+                            .and_then(|path| self.file_line_stats.get(path).copied()),
                         file_path,
                         file_status,
+                        show_comment_affordance: false,
                         text: row.text.clone(),
                         left_cell_kind: row.left.kind,
                         left_line: row.left.line,
