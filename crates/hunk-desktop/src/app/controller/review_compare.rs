@@ -827,7 +827,10 @@ impl DiffViewer {
         self.comment_miss_streaks.clear();
         self.reset_comment_row_match_cache();
         self.clear_comment_ui_state();
-        self.reset_diff_surface_rows(vec![message_row(DiffRowKind::Empty, empty_message)]);
+        self.reset_diff_surface_rows(Vec::new());
+        self.review_surface.clear_legacy_diff_row_lookups();
+        self.review_surface.clear_workspace_surface_snapshot();
+        self.review_surface.status_message = Some(empty_message.to_string());
         self.request_repo_tree_reload(cx);
         cx.notify();
     }
@@ -845,6 +848,7 @@ impl DiffViewer {
         if self.should_reuse_loaded_review_compare() {
             self.review_compare_loading = false;
             self.review_compare_error = None;
+            self.review_surface.status_message = None;
             self.review_last_selected_path = self.current_review_path();
             self.sync_review_workspace_editor_active_path();
             self.prime_diff_surface_visible_state(false, cx);
@@ -861,10 +865,10 @@ impl DiffViewer {
         self.review_compare_loading = true;
         self.review_compare_error = None;
         self.patch_loading = false;
-        self.reset_diff_surface_rows(vec![message_row(
-            DiffRowKind::Meta,
-            "Loading comparison...",
-        )]);
+        self.reset_diff_surface_rows(Vec::new());
+        self.review_surface.clear_legacy_diff_row_lookups();
+        self.review_surface.clear_workspace_surface_snapshot();
+        self.review_surface.status_message = Some("Loading comparison...".to_string());
 
         self.patch_task = cx.spawn(async move |this, cx| {
             let started_at = Instant::now();
@@ -930,6 +934,7 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) {
         self.review_compare_error = None;
+        self.review_surface.status_message = None;
         self.review_workspace_session =
             match crate::app::review_workspace_session::ReviewWorkspaceSession::from_compare_snapshot(
                 &snapshot,

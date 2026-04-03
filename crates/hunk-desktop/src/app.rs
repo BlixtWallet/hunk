@@ -1074,6 +1074,7 @@ struct WorkspaceProjectState {
 }
 
 struct ReviewWorkspaceSurfaceState {
+    status_message: Option<String>,
     diff_visible_file_header_lookup: Vec<Option<usize>>,
     diff_visible_hunk_header_lookup: Vec<Option<usize>>,
     diff_list_state: ListState,
@@ -1094,6 +1095,7 @@ impl ReviewWorkspaceSurfaceState {
 
     fn new() -> Self {
         Self {
+            status_message: None,
             diff_visible_file_header_lookup: Vec::new(),
             diff_visible_hunk_header_lookup: Vec::new(),
             diff_list_state: Self::empty_diff_list_state(),

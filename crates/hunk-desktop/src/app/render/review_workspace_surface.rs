@@ -212,10 +212,24 @@ impl DiffViewer {
 
     fn render_review_workspace_status_surface(&self, cx: &mut Context<Self>) -> AnyElement {
         let message = self
-            .active_diff_row(0)
-            .map(|row| row.text.clone())
-            .filter(|message| !message.is_empty())
-            .unwrap_or_else(|| "Loading comparison...".to_string());
+            .review_compare_error
+            .clone()
+            .or_else(|| self.review_surface.status_message.clone())
+            .unwrap_or_else(|| {
+                if self.review_compare_loading {
+                    "Loading comparison...".to_string()
+                } else if self.project_path.is_none() {
+                    "Open a Git repository to compare workspaces.".to_string()
+                } else if self.review_left_source_id.is_none()
+                    || self.review_right_source_id.is_none()
+                {
+                    "Select two compare sources.".to_string()
+                } else if self.review_files.is_empty() {
+                    "No files changed between the selected sources.".to_string()
+                } else {
+                    "Loading comparison...".to_string()
+                }
+            });
 
         div()
             .size_full()
