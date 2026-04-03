@@ -225,11 +225,10 @@ impl DiffViewer {
         self.selection_head_row
             .or_else(|| {
                 self.review_surface
-                    .last_visible_row_range
+                    .last_visible_state
                     .as_ref()
-                    .map(|range| range.start)
+                    .and_then(|state| state.top_row)
             })
-            .or(self.review_surface.last_visible_row_start)
             .map(|row_ix| row_ix.min(max_ix))
             .or_else(|| self.current_review_surface_top_row())
     }

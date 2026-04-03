@@ -562,6 +562,55 @@ fn review_workspace_session_builds_viewport_snapshot_from_shared_geometry() {
 }
 
 #[test]
+fn review_workspace_session_builds_visible_state_from_viewport() {
+    let patch = "\
+@@ -1,2 +1,3 @@
+ before
+-old
++new
+ keep
+@@ -8,0 +10,2 @@
++tail
++more
+";
+    let snapshot = CompareSnapshot {
+        files: vec![changed_file("src/main.rs", FileStatus::Modified)],
+        file_line_stats: BTreeMap::new(),
+        overall_line_stats: LineStats::default(),
+        patches_by_path: BTreeMap::from([("src/main.rs".to_string(), patch.to_string())]),
+    };
+    let rows = parse_patch_side_by_side(patch);
+    let stream = review_stream_for_rows(&rows, "src/main.rs", FileStatus::Modified);
+    let session = ReviewWorkspaceSession::from_compare_snapshot(&snapshot, &BTreeSet::new())
+        .expect("workspace session should build")
+        .with_render_stream(&stream);
+
+    let visible_state = session.build_visible_state(0, REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX * 2);
+
+    assert_eq!(
+        visible_state.visible_row_range,
+        session.visible_row_range_for_viewport(0, REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX * 2),
+    );
+    assert_eq!(
+        visible_state.top_row,
+        visible_state
+            .visible_row_range
+            .as_ref()
+            .map(|range| range.start),
+    );
+    assert_eq!(
+        visible_state.visible_file_path.as_deref(),
+        Some("src/main.rs")
+    );
+    assert_eq!(
+        visible_state.visible_file_status,
+        Some(FileStatus::Modified)
+    );
+    assert_eq!(visible_state.visible_file_header_row, Some(0));
+    assert_eq!(visible_state.visible_hunk_header_row, Some(1));
+}
+
+#[test]
 fn review_workspace_session_can_attach_render_rows() {
     let patch = "\
 @@ -1,2 +1,2 @@

@@ -43,10 +43,6 @@ impl DiffViewer {
         row_ix: usize,
         cx: &mut Context<Self>,
     ) {
-        if self.review_surface.last_visible_row_start == Some(row_ix) {
-            return;
-        }
-        self.review_surface.last_visible_row_start = Some(row_ix);
         if self.uses_review_workspace_sections_surface() {
             if let Some(visible_range) = self.current_review_visible_row_range() {
                 self.request_visible_row_range_segment_prefetch(visible_range, false, cx);
@@ -371,9 +367,8 @@ impl DiffViewer {
             .unwrap_or(0)
             .min(row_count.saturating_sub(1));
         if force_reprime {
-            self.review_surface.last_visible_row_range = None;
+            self.review_surface.last_visible_state = None;
             self.review_surface.last_prefetched_visible_row_range = None;
-            self.review_surface.last_visible_row_start = None;
         }
         self.sync_selected_file_from_visible_row(visible_row, cx);
     }
@@ -390,9 +385,8 @@ impl DiffViewer {
         self.drag_selecting_rows = false;
         self.sync_diff_list_state();
         self.recompute_diff_layout();
-        self.review_surface.last_visible_row_range = None;
+        self.review_surface.last_visible_state = None;
         self.review_surface.last_prefetched_visible_row_range = None;
-        self.review_surface.last_visible_row_start = None;
     }
 
     fn apply_loaded_diff_surface_stream(
@@ -417,9 +411,8 @@ impl DiffViewer {
         self.sync_diff_list_state();
         self.file_row_ranges = file_ranges;
         self.recompute_diff_layout();
-        self.review_surface.last_visible_row_range = None;
+        self.review_surface.last_visible_state = None;
         self.review_surface.last_prefetched_visible_row_range = None;
-        self.review_surface.last_visible_row_start = None;
         self.recompute_diff_visible_header_lookup();
         file_line_stats
     }
@@ -431,9 +424,8 @@ impl DiffViewer {
         self.drag_selecting_rows = false;
         self.sync_diff_list_state();
         self.recompute_diff_layout();
-        self.review_surface.last_visible_row_range = None;
+        self.review_surface.last_visible_state = None;
         self.review_surface.last_prefetched_visible_row_range = None;
-        self.review_surface.last_visible_row_start = None;
         self.recompute_diff_visible_header_lookup();
     }
 

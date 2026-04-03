@@ -1082,9 +1082,8 @@ struct ReviewWorkspaceSurfaceState {
     diff_split_bounds: Option<Bounds<Pixels>>,
     diff_left_line_number_width: f32,
     diff_right_line_number_width: f32,
-    last_visible_row_range: Option<std::ops::Range<usize>>,
+    last_visible_state: Option<review_workspace_session::ReviewWorkspaceVisibleState>,
     last_prefetched_visible_row_range: Option<std::ops::Range<usize>>,
-    last_visible_row_start: Option<usize>,
     last_diff_scroll_offset: Option<gpui::Point<gpui::Pixels>>,
 }
 
@@ -1107,9 +1106,8 @@ impl ReviewWorkspaceSurfaceState {
             diff_right_line_number_width: crate::app::data::line_number_column_width(
                 DIFF_LINE_NUMBER_MIN_DIGITS,
             ),
-            last_visible_row_range: None,
+            last_visible_state: None,
             last_prefetched_visible_row_range: None,
-            last_visible_row_start: None,
             last_diff_scroll_offset: None,
         }
     }

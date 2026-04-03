@@ -95,6 +95,16 @@ pub(crate) struct ReviewWorkspaceViewportSnapshot {
     pub(crate) sections: Vec<ReviewWorkspaceViewportSection>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReviewWorkspaceVisibleState {
+    pub(crate) visible_row_range: Option<Range<usize>>,
+    pub(crate) top_row: Option<usize>,
+    pub(crate) visible_file_header_row: Option<usize>,
+    pub(crate) visible_hunk_header_row: Option<usize>,
+    pub(crate) visible_file_path: Option<String>,
+    pub(crate) visible_file_status: Option<FileStatus>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ReviewWorkspaceSession {
     layout: WorkspaceLayout,
@@ -420,6 +430,43 @@ impl ReviewWorkspaceSession {
         .into_iter()
         .flat_map(|section| section.rows.into_iter().map(|row| row.row_index))
         .collect()
+    }
+
+    pub(crate) fn build_visible_state(
+        &self,
+        scroll_top_px: usize,
+        viewport_height_px: usize,
+    ) -> ReviewWorkspaceVisibleState {
+        let visible_row_range =
+            self.visible_row_range_for_viewport(scroll_top_px, viewport_height_px);
+        let top_row = visible_row_range.as_ref().map(|range| range.start);
+        let visible_file_header_row = visible_row_range.as_ref().and_then(|range| {
+            self.file_ranges
+                .iter()
+                .find(|file| file.start_row < range.end && range.start < file.end_row)
+                .map(|file| file.start_row)
+        });
+        let visible_hunk_header_row = visible_row_range.as_ref().and_then(|range| {
+            self.hunk_ranges
+                .iter()
+                .find(|hunk| hunk.start_row < range.end && range.start < hunk.end_row)
+                .map(|hunk| hunk.start_row)
+        });
+        let visible_file_path = top_row
+            .and_then(|row| self.path_at_surface_row(row))
+            .map(ToString::to_string);
+        let visible_file_status = visible_file_path
+            .as_deref()
+            .and_then(|path| self.status_for_path(path));
+
+        ReviewWorkspaceVisibleState {
+            visible_file_header_row,
+            visible_hunk_header_row,
+            visible_file_path,
+            visible_file_status,
+            visible_row_range,
+            top_row,
+        }
     }
 
     pub(crate) fn visible_hunk_header_row(&self, row: usize) -> Option<usize> {
