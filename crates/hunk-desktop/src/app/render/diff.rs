@@ -14,7 +14,7 @@ impl Render for DiffSplitDrag {
 }
 
 impl DiffViewer {
-    fn render_diff(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_review_workspace_surface(&mut self, cx: &mut Context<Self>) -> AnyElement {
         if self.repo_discovery_failed {
             return self.render_open_project_empty_state(cx);
         }
