@@ -54,10 +54,43 @@ impl DiffViewer {
             return;
         };
         let Some(query) = query.map(str::trim).filter(|query| !query.is_empty()) else {
+            if let Some(editor) = self.review_surface.left_workspace_editor.as_ref() {
+                editor.borrow_mut().set_search_query(None);
+            }
+            if let Some(editor) = self.review_surface.right_workspace_editor.as_ref() {
+                editor.borrow_mut().set_search_query(None);
+            }
             self.review_surface.clear_workspace_search_matches();
             return;
         };
+        if let Some(editor) = self.review_surface.left_workspace_editor.as_ref() {
+            editor.borrow_mut().set_search_query(Some(query));
+        }
+        if let Some(editor) = self.review_surface.right_workspace_editor.as_ref() {
+            editor.borrow_mut().set_search_query(Some(query));
+        }
+
+        if let Some(editor) = self.review_surface.right_workspace_editor.as_ref()
+            && let Some(matches) = editor.borrow().workspace_search_matches(query)
+        {
+            self.review_surface.workspace_search_matches = matches
+                .iter()
+                .filter_map(|target| {
+                    session.review_search_target_for_workspace_match(
+                        target.path.as_path(),
+                        target.excerpt_id,
+                        target.surface_order,
+                        target.start,
+                        target.end,
+                    )
+                })
+                .collect();
+            self.review_surface.workspace_editor_search_matches = matches;
+            return;
+        }
+
         self.review_surface.workspace_search_matches = session.workspace_search_matches(query);
+        self.review_surface.workspace_editor_search_matches.clear();
     }
 
     pub(super) fn sync_editor_search_query(&mut self, cx: &mut Context<Self>) {
@@ -97,6 +130,12 @@ impl DiffViewer {
                 state.set_value("", window, cx);
             });
             self.review_surface.clear_workspace_search_matches();
+            if let Some(editor) = self.review_surface.left_workspace_editor.as_ref() {
+                editor.borrow_mut().set_search_query(None);
+            }
+            if let Some(editor) = self.review_surface.right_workspace_editor.as_ref() {
+                editor.borrow_mut().set_search_query(None);
+            }
             self.files_editor.borrow_mut().set_search_query(None);
             if self.workspace_view_mode == WorkspaceViewMode::Diff {
                 self.focus_handle.focus(window, cx);
@@ -117,6 +156,36 @@ impl DiffViewer {
 
     pub(super) fn navigate_editor_search(&mut self, forward: bool, cx: &mut Context<Self>) {
         if self.workspace_view_mode == WorkspaceViewMode::Diff {
+            let editor_matches = self.review_surface.workspace_editor_search_matches.clone();
+            let selected_target = self
+                .review_surface
+                .right_workspace_editor
+                .as_ref()
+                .and_then(|editor| {
+                    editor
+                        .borrow_mut()
+                        .select_next_workspace_search_target(&editor_matches, forward)
+                });
+            if let Some(target) = selected_target {
+                if let Some(left_editor) = self.review_surface.left_workspace_editor.as_ref() {
+                    let _ = left_editor
+                        .borrow_mut()
+                        .activate_workspace_excerpt(target.excerpt_id);
+                }
+                if let Some(session) = self.review_workspace_session.as_ref()
+                    && let Some(review_target) = session.review_search_target_for_workspace_match(
+                        target.path.as_path(),
+                        target.excerpt_id,
+                        target.surface_order,
+                        target.start,
+                        target.end,
+                    )
+                {
+                    self.select_row_and_scroll(review_target.row_index, false, cx);
+                    return;
+                }
+            }
+
             let current_excerpt_id = self
                 .review_surface
                 .left_workspace_editor

@@ -14,18 +14,18 @@ use workspace_display_buffers::find_workspace_search_matches;
 use super::FilesEditor;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct WorkspaceSearchTarget {
-    path: PathBuf,
-    document_id: WorkspaceDocumentId,
-    excerpt_id: WorkspaceExcerptId,
-    surface_order: usize,
-    byte_range: std::ops::Range<usize>,
-    start: TextPosition,
-    end: TextPosition,
+pub(crate) struct WorkspaceSearchTarget {
+    pub(crate) path: PathBuf,
+    pub(crate) document_id: WorkspaceDocumentId,
+    pub(crate) excerpt_id: WorkspaceExcerptId,
+    pub(crate) surface_order: usize,
+    pub(crate) byte_range: std::ops::Range<usize>,
+    pub(crate) start: TextPosition,
+    pub(crate) end: TextPosition,
 }
 
 impl FilesEditor {
-    pub(super) fn workspace_search_matches(
+    pub(crate) fn workspace_search_matches(
         &self,
         query: &str,
     ) -> Option<Vec<WorkspaceSearchTarget>> {
@@ -67,26 +67,38 @@ impl FilesEditor {
         )
     }
 
-    pub(super) fn select_next_workspace_search_match(
+    pub(crate) fn select_next_workspace_search_match(
         &mut self,
         matches: &[WorkspaceSearchTarget],
         forward: bool,
     ) -> bool {
-        let Some(target) = self.next_workspace_search_target(matches, forward) else {
-            return false;
-        };
+        self.select_next_workspace_search_target(matches, forward)
+            .is_some()
+    }
+
+    pub(crate) fn select_next_workspace_search_target(
+        &mut self,
+        matches: &[WorkspaceSearchTarget],
+        forward: bool,
+    ) -> Option<WorkspaceSearchTarget> {
+        let target = self.next_workspace_search_target(matches, forward)?;
         if self.active_path() != Some(target.path.as_path())
             && self.activate_workspace_path(target.path.as_path()).ok() != Some(true)
         {
-            return false;
+            return None;
         }
         self.workspace_session.activate_excerpt(target.excerpt_id);
-        self.editor
+        if self
+            .editor
             .apply(EditorCommand::SetSelection(Selection::new(
                 target.start,
                 target.end,
             )))
             .selection_changed
+        {
+            return Some(target);
+        }
+        Some(target)
     }
 
     fn next_workspace_search_target(
