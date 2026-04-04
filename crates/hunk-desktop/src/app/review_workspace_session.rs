@@ -317,9 +317,6 @@ pub(crate) struct ReviewWorkspaceSession {
     rows: Vec<SideBySideRow>,
     row_metadata: Vec<DiffStreamRowMeta>,
     row_segments: Vec<Option<DiffRowSegmentCache>>,
-    row_top_offsets: Vec<usize>,
-    section_pixel_ranges: Vec<Range<usize>>,
-    total_surface_height_px: usize,
     display_geometry: ReviewWorkspaceDisplayGeometry,
 }
 
@@ -467,9 +464,6 @@ impl ReviewWorkspaceSession {
             rows: Vec::new(),
             row_metadata: Vec::new(),
             row_segments: Vec::new(),
-            row_top_offsets: Vec::new(),
-            section_pixel_ranges: Vec::new(),
-            total_surface_height_px: 0,
             display_geometry: ReviewWorkspaceDisplayGeometry::default(),
         })
     }
@@ -482,7 +476,6 @@ impl ReviewWorkspaceSession {
         self.row_metadata = stream.row_metadata.clone();
         self.row_segments = stream.row_segments.clone();
         self.rebuild_document_buffers();
-        self.rebuild_surface_geometry();
         self.rebuild_display_geometry(None);
         self
     }
@@ -611,9 +604,7 @@ impl ReviewWorkspaceSession {
     }
 
     pub(crate) fn section_pixel_range(&self, section_ix: usize) -> Option<&Range<usize>> {
-        self.display_geometry
-            .section_pixel_range(section_ix)
-            .or_else(|| self.section_pixel_ranges.get(section_ix))
+        self.display_geometry.section_pixel_range(section_ix)
     }
 
     pub(crate) fn total_surface_height_px(&self) -> usize {
@@ -1144,15 +1135,11 @@ impl ReviewWorkspaceSession {
     }
 
     pub(crate) fn row_top_offset_px(&self, row_ix: usize) -> Option<usize> {
-        self.display_geometry
-            .row_top_offset_px(row_ix)
-            .or_else(|| self.row_top_offsets.get(row_ix).copied())
+        self.display_geometry.row_top_offset_px(row_ix)
     }
 
     pub(crate) fn row_boundary_offset_px(&self, boundary_ix: usize) -> Option<usize> {
-        self.display_geometry
-            .row_boundary_offset_px(boundary_ix)
-            .or_else(|| self.row_top_offsets.get(boundary_ix).copied())
+        self.display_geometry.row_boundary_offset_px(boundary_ix)
     }
 
     pub(crate) fn visible_row_range_for_viewport(
@@ -1161,7 +1148,7 @@ impl ReviewWorkspaceSession {
         viewport_height_px: usize,
     ) -> Option<Range<usize>> {
         let row_count = self.row_count();
-        if row_count == 0 || self.row_top_offsets.is_empty() {
+        if row_count == 0 || self.row_boundary_offset_px(1).is_none() {
             return None;
         }
 
@@ -1183,26 +1170,32 @@ impl ReviewWorkspaceSession {
         viewport_height_px: usize,
         overscan_sections: usize,
     ) -> Range<usize> {
-        if self.section_pixel_ranges.is_empty() {
+        if self.sections.is_empty() {
             return 0..0;
         }
 
         let viewport_bottom = scroll_top_px
             .saturating_add(viewport_height_px.max(REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX));
         let first_visible = self
-            .section_pixel_ranges
-            .partition_point(|range| range.end <= scroll_top_px)
-            .min(self.section_pixel_ranges.len().saturating_sub(1));
+            .sections
+            .partition_point(|section| {
+                self.section_pixel_range(section.index)
+                    .is_some_and(|range| range.end <= scroll_top_px)
+            })
+            .min(self.sections.len().saturating_sub(1));
         let last_visible_exclusive = self
-            .section_pixel_ranges
-            .partition_point(|range| range.start < viewport_bottom)
+            .sections
+            .partition_point(|section| {
+                self.section_pixel_range(section.index)
+                    .is_some_and(|range| range.start < viewport_bottom)
+            })
             .max(first_visible.saturating_add(1))
-            .min(self.section_pixel_ranges.len());
+            .min(self.sections.len());
 
         first_visible.saturating_sub(overscan_sections)
             ..last_visible_exclusive
                 .saturating_add(overscan_sections)
-                .min(self.section_pixel_ranges.len())
+                .min(self.sections.len())
     }
 
     pub(crate) fn section_visible_row_range(
@@ -1534,35 +1527,6 @@ impl ReviewWorkspaceSession {
         lines
     }
 
-    fn rebuild_surface_geometry(&mut self) {
-        let row_count = self.row_count();
-        self.row_top_offsets = Vec::with_capacity(row_count.saturating_add(1));
-        self.row_top_offsets.push(0);
-        let mut next_offset = 0usize;
-        for row_ix in 0..row_count {
-            next_offset = next_offset.saturating_add(self.surface_row_height_px(row_ix));
-            self.row_top_offsets.push(next_offset);
-        }
-        self.total_surface_height_px = next_offset;
-        self.section_pixel_ranges = self
-            .sections
-            .iter()
-            .map(|section| {
-                let start = self
-                    .row_top_offsets
-                    .get(section.start_row)
-                    .copied()
-                    .unwrap_or(0);
-                let end = self
-                    .row_top_offsets
-                    .get(section.end_row)
-                    .copied()
-                    .unwrap_or(start);
-                start..end
-            })
-            .collect();
-    }
-
     fn rebuild_display_geometry(&mut self, display_rows: Option<&ReviewWorkspaceDisplayRows>) {
         self.display_geometry =
             ReviewWorkspaceDisplayGeometry::build(&self.rows, &self.sections, display_rows);
@@ -1757,13 +1721,9 @@ impl ReviewWorkspaceSession {
 
     fn row_index_for_pixel(&self, pixel_offset: usize) -> usize {
         let row_count = self.row_count();
-        let row_boundaries = if self.display_geometry_total_surface_height_px() > 0 {
-            (0..=row_count)
-                .filter_map(|boundary_ix| self.row_boundary_offset_px(boundary_ix))
-                .collect::<Vec<_>>()
-        } else {
-            self.row_top_offsets.clone()
-        };
+        let row_boundaries = (0..=row_count)
+            .filter_map(|boundary_ix| self.row_boundary_offset_px(boundary_ix))
+            .collect::<Vec<_>>();
         if row_count == 0 || row_boundaries.len() < 2 {
             return 0;
         }
