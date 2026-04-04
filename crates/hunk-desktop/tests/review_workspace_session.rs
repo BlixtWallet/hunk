@@ -2080,9 +2080,10 @@ fn review_workspace_session_reuses_cached_display_rows_across_ranges() {
     session.cache_display_rows(first);
     session.cache_display_rows(second);
 
+    assert!(session.cached_display_rows_covering(0..4));
     let cached = session
-        .cached_display_rows_covering(0..4)
-        .expect("cached display rows should cover the merged raw range");
+        .cached_display_rows()
+        .expect("cached display rows should be present");
     assert!(cached.covers_row_range(0..4));
     assert_eq!(cached.rows.len(), 2);
     assert_eq!(cached.rows[0].raw_row_range, 0..2);

@@ -92,37 +92,25 @@ impl DiffViewer {
         });
         if needs_refresh {
             let surface_options = self.review_surface_snapshot_options();
-            let display_rows = match self
+            let has_display_rows = self
                 .review_workspace_session
                 .as_mut()
-                .and_then(|session| {
+                .is_some_and(|session| {
                     Self::review_surface_display_rows(session, scroll_top_px, viewport_height_px, 8)
-                }) {
-                Some(display_rows) => display_rows,
-                None => {
-                if !self.seed_review_surface_display_rows() {
-                    self.review_surface.last_surface_snapshot = None;
-                    return None;
-                }
-                let Some(display_rows) = self
-                    .review_workspace_session
-                    .as_mut()
-                    .and_then(|session| {
-                        Self::review_surface_display_rows(
-                            session,
-                            scroll_top_px,
-                            viewport_height_px,
-                            8,
-                        )
-                    })
-                else {
-                    self.review_surface.last_surface_snapshot = None;
-                    return None;
-                };
-                display_rows
+                });
+            if !has_display_rows && !self.seed_review_surface_display_rows() {
+                self.review_surface.last_surface_snapshot = None;
+                return None;
             }
-            };
             let session = self.review_workspace_session.as_mut()?;
+            if !Self::review_surface_display_rows(session, scroll_top_px, viewport_height_px, 8) {
+                self.review_surface.last_surface_snapshot = None;
+                return None;
+            }
+            let Some(display_rows) = session.cached_display_rows() else {
+                self.review_surface.last_surface_snapshot = None;
+                return None;
+            };
             let snapshot = session.build_surface_snapshot_with_display_rows(
                 scroll_top_px,
                 viewport_height_px,
@@ -145,23 +133,24 @@ impl DiffViewer {
         scroll_top_px: usize,
         viewport_height_px: usize,
         overscan_rows: usize,
-    ) -> Option<review_workspace_session::ReviewWorkspaceDisplayRows> {
-        let visible_row_range = session.visible_row_range_for_viewport(
+    ) -> bool {
+        let Some(visible_row_range) = session.visible_row_range_for_viewport(
             scroll_top_px,
             viewport_height_px,
-        )?;
+        ) else {
+            return false;
+        };
         let first_visible_row = visible_row_range.start.saturating_sub(overscan_rows);
         let last_visible_row = visible_row_range
             .end
             .saturating_add(overscan_rows)
             .min(session.row_count());
         let requested_row_range = first_visible_row..last_visible_row;
-        if let Some(display_rows) = session.cached_display_rows_covering(requested_row_range.clone())
-        {
-            session.refresh_display_geometry_from_display_rows(&display_rows);
-            return Some(display_rows);
+        if session.cached_display_rows_covering(requested_row_range) {
+            session.refresh_display_geometry_from_cached_display_rows();
+            return true;
         }
-        None
+        false
     }
 
     pub(super) fn seed_review_surface_display_rows(&mut self) -> bool {
@@ -184,10 +173,8 @@ impl DiffViewer {
             horizontal_offset: 0,
         };
         let requested_row_range = 0..session.row_count();
-        if let Some(display_rows) = session.cached_display_rows_covering(requested_row_range.clone())
-            && display_rows.covers_row_range(requested_row_range.clone())
-        {
-            session.refresh_display_geometry_from_display_rows(&display_rows);
+        if session.cached_display_rows_covering(requested_row_range.clone()) {
+            session.refresh_display_geometry_from_cached_display_rows();
             return true;
         }
 

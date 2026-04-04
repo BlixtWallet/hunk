@@ -1316,6 +1316,7 @@ impl ReviewWorkspaceSession {
         &self.layout
     }
 
+    #[allow(dead_code)]
     pub(crate) fn refresh_display_geometry_from_display_rows(
         &mut self,
         display_rows: &ReviewWorkspaceDisplayRows,
@@ -1323,19 +1324,26 @@ impl ReviewWorkspaceSession {
         self.rebuild_display_geometry(Some(display_rows));
     }
 
-    pub(crate) fn cached_display_rows_covering(
-        &self,
-        row_range: Range<usize>,
-    ) -> Option<ReviewWorkspaceDisplayRows> {
-        (!self.cached_display_rows.is_empty()
-            && self.cached_display_rows.covers_row_range(row_range))
-        .then(|| self.cached_display_rows.clone())
+    pub(crate) fn refresh_display_geometry_from_cached_display_rows(&mut self) {
+        let geometry = ReviewWorkspaceDisplayGeometry::build(
+            &self.rows,
+            &self.sections,
+            Some(&self.cached_display_rows),
+        );
+        self.display_geometry = geometry;
+    }
+
+    pub(crate) fn cached_display_rows_covering(&self, row_range: Range<usize>) -> bool {
+        !self.cached_display_rows.is_empty() && self.cached_display_rows.covers_row_range(row_range)
+    }
+
+    pub(crate) fn cached_display_rows(&self) -> Option<&ReviewWorkspaceDisplayRows> {
+        (!self.cached_display_rows.is_empty()).then_some(&self.cached_display_rows)
     }
 
     pub(crate) fn cache_display_rows(&mut self, display_rows: ReviewWorkspaceDisplayRows) {
         self.cached_display_rows.merge_from(display_rows);
-        let cached_display_rows = self.cached_display_rows.clone();
-        self.rebuild_display_geometry(Some(&cached_display_rows));
+        self.refresh_display_geometry_from_cached_display_rows();
     }
 
     pub(crate) fn clear_cached_display_rows(&mut self) {
