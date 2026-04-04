@@ -42,7 +42,10 @@ where
     let projected_rows = build_projected_rows(layout, &mut display_rows_for_excerpt);
     let total_display_rows = projected_rows.len();
     let start = viewport.first_visible_row.min(total_display_rows);
-    let end = min(start.saturating_add(viewport.visible_row_count), total_display_rows);
+    let end = min(
+        start.saturating_add(viewport.visible_row_count),
+        total_display_rows,
+    );
 
     WorkspaceProjectedSnapshot {
         viewport,
@@ -99,10 +102,15 @@ fn project_display_row(
     row: &DisplayRow,
 ) -> WorkspaceProjectedRow {
     let content_start = excerpt.content_row_range().start;
-    let source_row_start = content_start + row.source_line.saturating_sub(excerpt.spec.line_range.start);
+    let source_row_start = content_start
+        + row
+            .source_line
+            .saturating_sub(excerpt.spec.line_range.start);
     let hidden_rows = match row.kind {
         DisplayRowKind::Text => 1,
-        DisplayRowKind::FoldPlaceholder { hidden_line_count } => hidden_line_count.saturating_add(1),
+        DisplayRowKind::FoldPlaceholder { hidden_line_count } => {
+            hidden_line_count.saturating_add(1)
+        }
     };
     let source_row_end = source_row_start.saturating_add(hidden_rows);
 
@@ -114,7 +122,9 @@ fn project_display_row(
             document_id: excerpt.spec.document_id,
             row_kind: WorkspaceRowKind::Content,
             document_line: Some(row.source_line),
-            row_in_excerpt: row.source_line.saturating_sub(excerpt.spec.line_range.start),
+            row_in_excerpt: row
+                .source_line
+                .saturating_sub(excerpt.spec.line_range.start),
         }),
         kind: row.kind.clone(),
         raw_start_column: row.raw_start_column,

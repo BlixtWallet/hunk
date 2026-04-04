@@ -111,6 +111,8 @@ pub(crate) struct ReviewWorkspaceViewportSection {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReviewWorkspaceViewportRow {
+    #[allow(dead_code)]
+    pub(crate) display_row_index: usize,
     pub(crate) row_index: usize,
     pub(crate) stable_id: u64,
     pub(crate) row_kind: DiffRowKind,
@@ -703,6 +705,7 @@ impl ReviewWorkspaceSession {
                             .collect()
                     };
                     Some(ReviewWorkspaceViewportRow {
+                        display_row_index: entry.display_row_index,
                         row_index,
                         stable_id: row_metadata
                             .map(|meta| meta.stable_id)

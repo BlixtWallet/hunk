@@ -176,6 +176,12 @@ fn workspace_projected_snapshot_preserves_search_highlights_across_excerpts() {
     );
 
     assert_eq!(snapshot.total_display_rows, 2);
-    assert_eq!(snapshot.visible_rows[0].search_highlights, first.search_highlights);
-    assert_eq!(snapshot.visible_rows[1].search_highlights, second.search_highlights);
+    assert_eq!(
+        snapshot.visible_rows[0].search_highlights,
+        first.search_highlights
+    );
+    assert_eq!(
+        snapshot.visible_rows[1].search_highlights,
+        second.search_highlights
+    );
 }

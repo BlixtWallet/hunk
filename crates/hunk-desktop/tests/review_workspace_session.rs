@@ -236,8 +236,8 @@ use hunk_git::compare::CompareSnapshot;
 use hunk_git::git::{ChangedFile, FileStatus, LineStats};
 use review_workspace_session::{
     REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX, REVIEW_SURFACE_HUNK_DIVIDER_HEIGHT_PX,
-    ReviewWorkspaceDisplayRows, ReviewWorkspaceEditorSide, ReviewWorkspaceSegmentPrefetchRequest,
-    ReviewWorkspaceSession, ReviewWorkspaceSurfaceOptions,
+    ReviewWorkspaceDisplayRowEntry, ReviewWorkspaceDisplayRows, ReviewWorkspaceEditorSide,
+    ReviewWorkspaceSegmentPrefetchRequest, ReviewWorkspaceSession, ReviewWorkspaceSurfaceOptions,
 };
 
 fn changed_file(path: &str, status: FileStatus) -> ChangedFile {
@@ -1536,13 +1536,13 @@ fn review_workspace_session_builds_comment_anchors_from_render_rows() {
 fn review_workspace_display_rows_require_complete_left_and_right_coverage() {
     let full = ReviewWorkspaceDisplayRows {
         rows: vec![
-            review_workspace_session::ReviewWorkspaceDisplayRowEntry {
+            ReviewWorkspaceDisplayRowEntry {
                 display_row_index: 3,
                 row_index: 3,
                 left: display_row(3, "left-a"),
                 right: display_row(3, "right-a"),
             },
-            review_workspace_session::ReviewWorkspaceDisplayRowEntry {
+            ReviewWorkspaceDisplayRowEntry {
                 display_row_index: 4,
                 row_index: 4,
                 left: display_row(4, "left-b"),
@@ -1567,6 +1567,78 @@ fn review_workspace_display_rows_require_complete_left_and_right_coverage() {
         right_syntax_by_row: BTreeMap::new(),
     };
     assert!(!missing_right.covers_row_range(3..5));
+}
+
+#[test]
+fn review_workspace_surface_snapshot_preserves_display_row_identity() {
+    let patch = "\
+@@ -1 +1 @@
+-old
++new
+";
+    let snapshot = CompareSnapshot {
+        files: vec![changed_file("src/main.rs", FileStatus::Modified)],
+        file_line_stats: BTreeMap::new(),
+        overall_line_stats: LineStats::default(),
+        patches_by_path: BTreeMap::from([(
+            "src/main.rs".to_string(),
+            patch.to_string(),
+        )]),
+    };
+    let rows = parse_patch_side_by_side(patch);
+    let stream = review_stream_for_rows(&rows, "src/main.rs", FileStatus::Modified);
+    let session = ReviewWorkspaceSession::from_compare_snapshot(&snapshot, &BTreeSet::new())
+        .expect("review workspace session should build")
+        .with_render_stream(&stream);
+    let row_range = 0..session.row_count();
+    let left_by_row = session
+        .build_display_snapshot_for_side(row_range.clone(), ReviewWorkspaceEditorSide::Left)
+        .into_iter()
+        .map(|row| (row.row_index, row))
+        .collect::<BTreeMap<_, _>>();
+    let right_by_row = session
+        .build_display_snapshot_for_side(row_range, ReviewWorkspaceEditorSide::Right)
+        .into_iter()
+        .map(|row| (row.row_index, row))
+        .collect::<BTreeMap<_, _>>();
+    let first_row_index = *left_by_row.keys().next().unwrap();
+    let mut rows = left_by_row
+        .iter()
+        .filter_map(|(row_index, left)| {
+            Some(ReviewWorkspaceDisplayRowEntry {
+                display_row_index: *row_index,
+                row_index: *row_index,
+                left: left.clone(),
+                right: right_by_row.get(row_index)?.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    rows[0].display_row_index = 42;
+    let display_rows = ReviewWorkspaceDisplayRows {
+        rows,
+        left_by_row,
+        right_by_row,
+        left_syntax_by_row: BTreeMap::new(),
+        right_syntax_by_row: BTreeMap::new(),
+    };
+
+    let surface = session.build_surface_snapshot_with_display_rows(
+        0,
+        256,
+        1,
+        8,
+        &ReviewWorkspaceSurfaceOptions::default(),
+        &display_rows,
+    );
+
+    let viewport_row = surface
+        .viewport
+        .sections
+        .iter()
+        .find_map(|section| section.rows.first())
+        .expect("surface snapshot should contain the injected display row");
+    assert_eq!(viewport_row.display_row_index, 42);
+    assert_eq!(viewport_row.row_index, first_row_index);
 }
 
 fn display_row(row_index: usize, text: &str) -> WorkspaceDisplayRow {
