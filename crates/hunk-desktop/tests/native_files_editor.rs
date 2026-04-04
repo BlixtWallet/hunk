@@ -4,8 +4,8 @@ mod native_files_editor;
 
 use gpui::Keystroke;
 use hunk_editor::{
-    Viewport, WorkspaceDocument, WorkspaceDocumentId, WorkspaceExcerptId, WorkspaceExcerptKind,
-    WorkspaceExcerptSpec, WorkspaceLayout, WorkspaceRowKind,
+    DisplayRowKind, Viewport, WorkspaceDocument, WorkspaceDocumentId, WorkspaceExcerptId,
+    WorkspaceExcerptKind, WorkspaceExcerptSpec, WorkspaceLayout, WorkspaceRowKind,
 };
 use hunk_language::{CompletionTriggerKind, Diagnostic, DiagnosticSeverity};
 use hunk_text::{BufferId, Selection, TextPosition, TextRange};
@@ -674,6 +674,93 @@ fn workspace_display_snapshot_projects_search_highlights_across_layout_documents
         .collect::<Vec<_>>();
 
     assert_eq!(highlighted_texts, vec!["needle in main", "needle in lib"]);
+}
+
+#[test]
+fn workspace_projected_snapshot_uses_per_path_fold_and_wrap_state() {
+    let mut editor = FilesEditor::new();
+    let main_document_id = WorkspaceDocumentId::new(1);
+    let lib_document_id = WorkspaceDocumentId::new(2);
+    let layout = WorkspaceLayout::new(
+        vec![
+            WorkspaceDocument::new(main_document_id, "src/main.rs", BufferId::new(11), 3),
+            WorkspaceDocument::new(lib_document_id, "src/lib.rs", BufferId::new(21), 1),
+        ],
+        vec![
+            WorkspaceExcerptSpec::new(
+                WorkspaceExcerptId::new(1),
+                main_document_id,
+                WorkspaceExcerptKind::FullFile,
+                0..3,
+            ),
+            WorkspaceExcerptSpec::new(
+                WorkspaceExcerptId::new(2),
+                lib_document_id,
+                WorkspaceExcerptKind::FullFile,
+                0..1,
+            ),
+        ],
+        1,
+    )
+    .expect("workspace layout should build");
+
+    let wrapped = "x".repeat(96);
+    editor
+        .open_workspace_layout_documents(
+            layout,
+            vec![
+                (
+                    PathBuf::from("src/main.rs"),
+                    "fn main() {\n    println!(\"hi\");\n}".to_string(),
+                ),
+                (PathBuf::from("src/lib.rs"), wrapped),
+            ],
+            Some(Path::new("src/main.rs")),
+        )
+        .expect("workspace layout documents should open");
+
+    assert!(editor.toggle_fold_at_line(0));
+    assert!(
+        editor
+            .activate_workspace_path(Path::new("src/lib.rs"))
+            .expect("workspace path activation should succeed")
+    );
+    assert!(editor.toggle_soft_wrap());
+
+    let snapshot = editor
+        .build_workspace_projected_snapshot(
+            Viewport {
+                first_visible_row: 0,
+                visible_row_count: 10,
+                horizontal_offset: 0,
+            },
+            4,
+        )
+        .expect("workspace projected snapshot should exist");
+
+    assert_eq!(snapshot.total_display_rows, 4);
+    assert!(matches!(
+        snapshot.visible_rows[0].kind,
+        DisplayRowKind::FoldPlaceholder {
+            hidden_line_count: 2
+        }
+    ));
+    assert_eq!(snapshot.visible_rows[0].workspace_row_range, Some(0..3));
+    assert!(snapshot.visible_rows[1].location.is_none());
+
+    let lib_rows = snapshot
+        .visible_rows
+        .iter()
+        .filter(|row| {
+            row.location
+                .as_ref()
+                .is_some_and(|location| location.document_id == lib_document_id)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(lib_rows.len(), 2);
+    assert_eq!(lib_rows[0].workspace_row_range, Some(4..5));
+    assert_eq!(lib_rows[1].workspace_row_range, Some(4..5));
+    assert!(lib_rows[1].is_wrapped);
 }
 
 #[test]

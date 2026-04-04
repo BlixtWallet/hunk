@@ -135,7 +135,7 @@ impl FilesEditor {
         Some(segments_by_row)
     }
 
-    fn workspace_document_snapshot(&self, path: &Path) -> Option<TextSnapshot> {
+    pub(super) fn workspace_document_snapshot(&self, path: &Path) -> Option<TextSnapshot> {
         if self.active_path() == Some(path) {
             return Some(self.editor.buffer().snapshot());
         }

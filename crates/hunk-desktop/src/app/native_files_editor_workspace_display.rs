@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use hunk_editor::{
-    SearchHighlight, Viewport, WorkspaceDisplayRow, WorkspaceDisplaySnapshot, WorkspaceDocumentId,
-    WorkspaceExcerptId, WorkspaceLayout, WorkspaceRowLocation,
+    DisplayRow, EditorCommand, EditorState, SearchHighlight, Viewport, WorkspaceDisplayRow,
+    WorkspaceDisplaySnapshot, WorkspaceDocumentId, WorkspaceExcerptId, WorkspaceLayout,
+    WorkspaceProjectedSnapshot, WorkspaceRowLocation, build_workspace_projected_snapshot,
 };
-use hunk_text::{TextBuffer, TextSnapshot};
+use hunk_text::{Selection, TextBuffer, TextPosition, TextSnapshot};
 
 #[allow(clippy::duplicate_mod)]
 #[path = "workspace_display_buffers.rs"]
@@ -15,7 +17,7 @@ use workspace_display_buffers::{
     find_workspace_search_matches, snapshot_line_text,
 };
 
-use super::FilesEditor;
+use super::{FilesEditor, FilesEditorViewState, default_show_whitespace_for_path};
 
 impl FilesEditor {
     #[allow(dead_code)]
@@ -53,6 +55,40 @@ impl FilesEditor {
     }
 
     #[allow(dead_code)]
+    pub(crate) fn build_workspace_projected_snapshot(
+        &self,
+        viewport: Viewport,
+        tab_width: usize,
+    ) -> Option<WorkspaceProjectedSnapshot> {
+        let layout = self.workspace_session.layout()?;
+        let display_rows_by_path = layout
+            .documents()
+            .iter()
+            .filter_map(|document| {
+                self.workspace_document_display_rows(document.path(), tab_width.max(1))
+                    .map(|rows| (document.path.clone(), rows))
+            })
+            .collect::<BTreeMap<PathBuf, Vec<DisplayRow>>>();
+
+        Some(build_workspace_projected_snapshot(
+            layout,
+            viewport,
+            |excerpt| {
+                let Some(document) = layout.document(excerpt.spec.document_id) else {
+                    return Vec::new();
+                };
+                let Some(rows) = display_rows_by_path.get(document.path()) else {
+                    return Vec::new();
+                };
+                rows.iter()
+                    .filter(|row| excerpt.spec.line_range.contains(&row.source_line))
+                    .cloned()
+                    .collect()
+            },
+        ))
+    }
+
+    #[allow(dead_code)]
     fn workspace_buffer_line_text(
         &self,
         document_id: WorkspaceDocumentId,
@@ -73,6 +109,55 @@ impl FilesEditor {
             return Some(self.editor.buffer());
         }
         self.workspace_buffers.get(document.path())
+    }
+
+    fn workspace_document_display_rows(
+        &self,
+        path: &Path,
+        tab_width: usize,
+    ) -> Option<Vec<DisplayRow>> {
+        let snapshot = self.workspace_document_snapshot(path)?;
+        let mut editor = EditorState::new(TextBuffer::new(snapshot.buffer_id, &snapshot.text()));
+        let state = self.workspace_document_view_state(path);
+        editor.apply(EditorCommand::SetShowWhitespace(state.show_whitespace));
+        editor.apply(EditorCommand::SetWrapWidth(state.soft_wrap.then_some(80)));
+        for region in state.folded_regions {
+            editor.apply(EditorCommand::FoldLines {
+                start_line: region.start_line,
+                end_line: region.end_line,
+            });
+        }
+        editor.apply(EditorCommand::SetSearchQuery(self.search_query.clone()));
+        editor.apply(EditorCommand::SetViewport(Viewport {
+            first_visible_row: 0,
+            visible_row_count: usize::MAX,
+            horizontal_offset: 0,
+        }));
+        let _ = tab_width;
+        Some(editor.display_snapshot().visible_rows)
+    }
+
+    fn workspace_document_view_state(&self, path: &Path) -> FilesEditorViewState {
+        if self.active_path() == Some(path) {
+            return FilesEditorViewState {
+                selection: self.editor.selection(),
+                viewport: self.editor.viewport(),
+                folded_regions: self.editor.folded_regions().to_vec(),
+                soft_wrap: self.soft_wrap_enabled(),
+                show_whitespace: self.show_whitespace(),
+            };
+        }
+
+        self.view_state_by_path
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| FilesEditorViewState {
+                selection: Selection::caret(TextPosition::new(0, 0)),
+                viewport: Viewport::default(),
+                folded_regions: Vec::new(),
+                soft_wrap: false,
+                show_whitespace: default_show_whitespace_for_path(path),
+            })
     }
 }
 
