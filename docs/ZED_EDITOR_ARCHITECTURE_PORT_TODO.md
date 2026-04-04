@@ -235,7 +235,7 @@ Targets:
 Tasks:
 
 - [x] Make visible-range syntax work operate on workspace excerpts, not separate preview paths.
-- [ ] Make fold placeholders and search results work across excerpt boundaries.
+- [x] Make fold placeholders and search results work across excerpt boundaries.
 - [ ] Ensure inactive diff sections do not need a separate rendering/highlighting system.
 - [ ] Keep the 8ms frame budget for 120fps scrolling.
 
@@ -282,7 +282,7 @@ Current state:
 - Diff-mode sticky-header, file-anchor, and visible-file resolution paths now prefer the shared workspace session and active row accessors instead of reading `diff_row_metadata` directly.
 - Review file selection now also prefers the persistent workspace editor session’s active path before falling back to duplicated top-level Diff selection fields, which moves active-file ownership closer to the editor/session itself.
 - Diff mode now also keeps its own persistent `WorkspaceEditorSession`, hydrated from `ReviewWorkspaceSession`, and scroll/row selection update that shared editor session before touching mirrored `selected_path` state. That moves Diff file/excerpt ownership another step closer to the same workspace-editor primitive Files mode already uses.
-- Diff search query generation now also comes from the persistent right-side Review editor’s workspace search over the shared layout, and next/previous match navigation now advances through those editor-owned targets before syncing the Review surface scroll/highlight state. That removes another session-only behavior seam between Files and Diff.
+- Diff-mode search target generation and next/previous-match navigation now resolve directly from `ReviewWorkspaceSession` excerpt order, while the persistent side editors only supply the underlying search-aware display projection. That keeps search ownership on the shared workspace/session model across excerpt boundaries instead of on a separate editor-only match list.
 - Review surface snapshots now also project visible search-match columns into the shared right-side code-row segments, so Diff search highlighting is no longer just controller-side navigation state; it rides on the same session-owned viewport payload the painted surface consumes.
 - Diff-mode compare rebuilds, file-to-file navigation, visible-row selection sync, and no-session review path selection now preserve the Review workspace/editor session’s active path or `review_last_selected_path` before falling back to the mirrored top-level `selected_path`.
 - Diff mode no longer persists duplicate `file_row_ranges` or visible header lookup vectors when a Review workspace session exists; those file-range and header queries are now expected to resolve from the shared session instead of cached flat-row state.

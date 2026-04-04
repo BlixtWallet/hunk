@@ -49,11 +49,11 @@ impl DiffViewer {
     }
 
     fn sync_review_workspace_search_query(&mut self, query: Option<&str>) {
-        let Some(session) = self.review_workspace_session.as_ref() else {
+        if self.review_workspace_session.is_none() {
             self.review_surface.clear_workspace_search_matches();
             self.review_surface.clear_workspace_surface_snapshot();
             return;
-        };
+        }
         let Some(query) = query.map(str::trim).filter(|query| !query.is_empty()) else {
             if let Some(editor) = self.review_surface.left_workspace_editor.as_ref() {
                 editor.borrow_mut().set_search_query(None);
@@ -72,31 +72,11 @@ impl DiffViewer {
             editor.borrow_mut().set_search_query(Some(query));
         }
 
-        let editor_matches = self
-            .review_surface
-            .right_workspace_editor
+        self.review_surface.workspace_search_matches = self
+            .review_workspace_session
             .as_ref()
-            .and_then(|editor| editor.borrow().workspace_search_matches(query));
-        if let Some(matches) = editor_matches {
-            self.review_surface.workspace_search_matches = matches
-                .iter()
-                .filter_map(|target| {
-                    session.review_search_target_for_workspace_match(
-                        target.path.as_path(),
-                        target.excerpt_id,
-                        target.surface_order,
-                        target.start,
-                        target.end,
-                    )
-                })
-                .collect();
-            self.review_surface.workspace_editor_search_matches = matches;
-            let _ = self.rebuild_review_surface_display_rows();
-            return;
-        }
-
-        self.review_surface.workspace_search_matches = session.workspace_search_matches(query);
-        self.review_surface.workspace_editor_search_matches.clear();
+            .map(|session| session.workspace_search_matches(query))
+            .unwrap_or_default();
         let _ = self.rebuild_review_surface_display_rows();
     }
 
@@ -164,42 +144,11 @@ impl DiffViewer {
 
     pub(super) fn navigate_editor_search(&mut self, forward: bool, cx: &mut Context<Self>) {
         if self.workspace_view_mode == WorkspaceViewMode::Diff {
-            let editor_matches = self.review_surface.workspace_editor_search_matches.clone();
-            let selected_target = self
-                .review_surface
-                .right_workspace_editor
-                .as_ref()
-                .and_then(|editor| {
-                    editor
-                        .borrow_mut()
-                        .select_next_workspace_search_target(&editor_matches, forward)
-                });
-            if let Some(target) = selected_target {
-                if let Some(left_editor) = self.review_surface.left_workspace_editor.as_ref() {
-                    let _ = left_editor
-                        .borrow_mut()
-                        .activate_workspace_excerpt(target.excerpt_id);
-                }
-                if let Some(session) = self.review_workspace_session.as_ref()
-                    && let Some(review_target) = session.review_search_target_for_workspace_match(
-                        target.path.as_path(),
-                        target.excerpt_id,
-                        target.surface_order,
-                        target.start,
-                        target.end,
-                    )
-                {
-                    self.select_row_and_scroll(review_target.row_index, false, cx);
-                    return;
-                }
-            }
-
-            let current_excerpt_id = self
-                .review_surface
-                .left_workspace_editor
-                .as_ref()
-                .and_then(|editor| editor.borrow().active_workspace_excerpt_id());
             let current_row = self.current_review_surface_row().unwrap_or(0);
+            let current_excerpt_id = self
+                .review_workspace_session
+                .as_ref()
+                .and_then(|session| session.excerpt_id_at_surface_row(current_row));
             if let Some(target) = next_review_workspace_search_target(
                 &self.review_surface.workspace_search_matches,
                 current_excerpt_id,

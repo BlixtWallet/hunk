@@ -665,6 +665,7 @@ impl FilesEditor {
         self.active_path_buf()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn active_workspace_excerpt_id(&self) -> Option<WorkspaceExcerptId> {
         self.workspace_session.active_excerpt_id()
     }
