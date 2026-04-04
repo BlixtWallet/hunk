@@ -20,7 +20,9 @@ struct ReviewWorkspaceCodeRowCellPaint {
     marker_color: gpui::Hsla,
     marker: SharedString,
     line_number: SharedString,
-    segments: Vec<crate::app::data::CachedStyledSegment>,
+    display_row: hunk_editor::WorkspaceDisplayRow,
+    syntax_spans: Vec<crate::app::native_files_editor::paint::RowSyntaxSpan>,
+    changed_ranges: Vec<std::ops::Range<usize>>,
 }
 
 #[derive(Clone)]
@@ -179,8 +181,6 @@ fn paint_review_workspace_code_cell(
         line_height,
     );
 
-    let mut text = String::new();
-    let mut text_runs = Vec::new();
     let changed_bg = hunk_opacity(cell.marker_color, cx.theme().mode.is_dark(), 0.20, 0.11);
     let search_bg = hunk_opacity(
         hunk_text_selection_background(cx.theme(), cx.theme().mode.is_dark()),
@@ -188,27 +188,17 @@ fn paint_review_workspace_code_cell(
         0.42,
         0.26,
     );
-    for segment in &cell.segments {
-        let segment_text = segment.plain_text.as_ref();
-        if segment_text.is_empty() {
-            continue;
-        }
-        text.push_str(segment_text);
-        text_runs.push(TextRun {
-            len: segment_text.len(),
-            color: diff_syntax_color(cx.theme(), cell.text_color, segment.syntax),
-            font: font.clone(),
-            background_color: if segment.search_match {
-                Some(search_bg)
-            } else if segment.changed {
-                Some(changed_bg)
-            } else {
-                None
-            },
-            underline: None,
-            strikethrough: None,
-        });
-    }
+    let mut text_runs = build_review_workspace_text_runs(
+        cx,
+        &cell.display_row,
+        &cell.syntax_spans,
+        &cell.changed_ranges,
+        cell.text_color,
+        font.clone(),
+        changed_bg,
+        search_bg,
+    );
+    let mut text = cell.display_row.text.clone();
     if text_runs.is_empty() {
         text.push(' ');
         text_runs.push(TextRun {
@@ -377,10 +367,18 @@ fn build_review_workspace_code_row_cell_paint(
         background = hunk_blend(background, theme.primary, is_dark, 0.22, 0.13);
     }
 
-    let segments = if side == "left" {
-        viewport_row.left_segments.clone()
+    let (display_row, syntax_spans, changed_ranges) = if side == "left" {
+        (
+            viewport_row.left_cell.display_row.clone(),
+            viewport_row.left_cell.syntax_spans.clone(),
+            viewport_row.left_cell.changed_ranges.clone(),
+        )
     } else {
-        viewport_row.right_segments.clone()
+        (
+            viewport_row.right_cell.display_row.clone(),
+            viewport_row.right_cell.syntax_spans.clone(),
+            viewport_row.right_cell.changed_ranges.clone(),
+        )
     };
 
     let mut gutter_background = match cell_kind {
@@ -408,7 +406,9 @@ fn build_review_workspace_code_row_cell_paint(
         marker_color,
         marker: SharedString::from(marker),
         line_number: SharedString::from(spec.line.map(|line| line.to_string()).unwrap_or_default()),
-        segments,
+        display_row,
+        syntax_spans,
+        changed_ranges,
     }
 }
 
@@ -471,5 +471,127 @@ fn build_review_workspace_meta_row_paint(
         foreground,
         accent,
         border: hunk_opacity(theme.border, is_dark, 0.82, 0.70),
+    }
+}
+
+fn build_review_workspace_text_runs(
+    cx: &App,
+    display_row: &hunk_editor::WorkspaceDisplayRow,
+    syntax_spans: &[crate::app::native_files_editor::paint::RowSyntaxSpan],
+    changed_ranges: &[std::ops::Range<usize>],
+    default_foreground: gpui::Hsla,
+    font: gpui::Font,
+    changed_bg: gpui::Hsla,
+    search_bg: gpui::Hsla,
+) -> Vec<TextRun> {
+    if display_row.text.is_empty() {
+        return Vec::new();
+    }
+
+    let mut column_byte_offsets = Vec::with_capacity(display_row.text.chars().count() + 1);
+    column_byte_offsets.push(0);
+    for (byte_index, ch) in display_row.text.char_indices() {
+        column_byte_offsets.push(byte_index + ch.len_utf8());
+    }
+    let total_columns = column_byte_offsets.len().saturating_sub(1);
+    if total_columns == 0 {
+        return Vec::new();
+    }
+
+    let mut boundaries = vec![0, total_columns];
+    for span in syntax_spans {
+        boundaries.push(span.start_column.min(total_columns));
+        boundaries.push(span.end_column.min(total_columns));
+    }
+    for range in changed_ranges {
+        if range.start < range.end {
+            boundaries.push(range.start.min(total_columns));
+            boundaries.push(range.end.min(total_columns));
+        }
+    }
+    for highlight in &display_row.search_highlights {
+        if highlight.start_column < highlight.end_column {
+            boundaries.push(highlight.start_column.min(total_columns));
+            boundaries.push(highlight.end_column.min(total_columns));
+        }
+    }
+    boundaries.sort_unstable();
+    boundaries.dedup();
+
+    let mut runs = Vec::new();
+    for window in boundaries.windows(2) {
+        let start = window[0];
+        let end = window[1];
+        if start >= end {
+            continue;
+        }
+
+        let syntax = syntax_spans
+            .iter()
+            .find(|span| span.start_column <= start && start < span.end_column)
+            .map(|span| {
+                diff_syntax_color(
+                    cx.theme(),
+                    default_foreground,
+                    review_workspace_syntax_token_for_style_key(span.style_key.as_str()),
+                )
+            })
+            .unwrap_or(default_foreground);
+        let background_color = if display_row
+            .search_highlights
+            .iter()
+            .any(|highlight| highlight.start_column <= start && start < highlight.end_column)
+        {
+            Some(search_bg)
+        } else if changed_ranges
+            .iter()
+            .any(|range| range.start <= start && start < range.end)
+        {
+            Some(changed_bg)
+        } else {
+            None
+        };
+        runs.push(TextRun {
+            len: column_byte_offsets[end].saturating_sub(column_byte_offsets[start]),
+            color: syntax,
+            font: font.clone(),
+            background_color,
+            underline: None,
+            strikethrough: None,
+        });
+    }
+
+    if runs.is_empty() {
+        runs.push(TextRun {
+            len: display_row.text.len(),
+            color: default_foreground,
+            font,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        });
+    }
+
+    runs
+}
+
+fn review_workspace_syntax_token_for_style_key(
+    style_key: &str,
+) -> crate::app::highlight::SyntaxTokenKind {
+    match style_key.split('.').next().unwrap_or_default() {
+        "keyword" => crate::app::highlight::SyntaxTokenKind::Keyword,
+        "string" => crate::app::highlight::SyntaxTokenKind::String,
+        "number" => crate::app::highlight::SyntaxTokenKind::Number,
+        "comment" => crate::app::highlight::SyntaxTokenKind::Comment,
+        "function" => crate::app::highlight::SyntaxTokenKind::Function,
+        "type" | "constructor" | "tag" => crate::app::highlight::SyntaxTokenKind::TypeName,
+        "constant" | "attribute" | "boolean" => {
+            crate::app::highlight::SyntaxTokenKind::Constant
+        }
+        "variable" | "property" | "parameter" => {
+            crate::app::highlight::SyntaxTokenKind::Variable
+        }
+        "operator" | "punctuation" => crate::app::highlight::SyntaxTokenKind::Operator,
+        _ => crate::app::highlight::SyntaxTokenKind::Plain,
     }
 }

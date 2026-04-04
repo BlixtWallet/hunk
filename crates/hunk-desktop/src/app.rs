@@ -189,6 +189,7 @@ mod repo_file_search;
 mod review_workspace_session;
 mod terminal_cursor;
 mod theme;
+mod workspace_surface;
 mod workspace_view;
 
 actions!(

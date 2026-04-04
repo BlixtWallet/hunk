@@ -468,11 +468,7 @@ fn review_workspace_surface_snapshot_marks_visible_search_matches() {
         .sections
         .iter()
         .flat_map(|section| section.rows.iter())
-        .filter(|row| {
-            row.right_segments
-                .iter()
-                .any(|segment| segment.search_match)
-        })
+        .filter(|row| !row.right_cell.display_row.search_highlights.is_empty())
         .map(|row| row.row_index)
         .collect::<Vec<_>>();
 
@@ -558,10 +554,7 @@ fn review_workspace_surface_snapshot_prefers_display_row_search_highlights() {
             .sections
             .iter()
             .flat_map(|section| section.rows.iter())
-            .any(|row| row
-                .right_segments
-                .iter()
-                .any(|segment| segment.search_match))
+            .any(|row| !row.right_cell.display_row.search_highlights.is_empty())
     );
 }
 
@@ -1389,11 +1382,11 @@ fn review_workspace_session_builds_viewport_snapshot_from_shared_geometry() {
         .row_metadata(code_row.row_index)
         .expect("session row metadata should exist for viewport code row");
     assert_eq!(
-        code_row.left_segments[0].plain_text.as_ref(),
+        code_row.left_cell.display_row.text,
         session_row.left.text
     );
     assert_eq!(
-        code_row.right_segments[0].plain_text.as_ref(),
+        code_row.right_cell.display_row.text,
         session_row.right.text
     );
     assert_eq!(code_row.stable_id, session_row_meta.stable_id);
@@ -1421,8 +1414,8 @@ fn review_workspace_session_builds_viewport_snapshot_from_shared_geometry() {
             .map(|row| row.surface_top_px),
         Some(code_row.surface_top_px)
     );
-    assert!(!code_row.left_segments.is_empty());
-    assert!(!code_row.right_segments.is_empty());
+    assert!(!code_row.left_cell.display_row.text.is_empty());
+    assert!(!code_row.right_cell.display_row.text.is_empty());
     assert_eq!(code_row.height_px, REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX);
     assert!(
         viewport.sections[0]

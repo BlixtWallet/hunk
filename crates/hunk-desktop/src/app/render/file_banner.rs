@@ -81,12 +81,12 @@ fn build_review_workspace_file_header_paint(
 }
 
 #[derive(Clone, Copy)]
-struct ReviewWorkspaceFileHeaderControlsLayout {
-    collapse_bounds: Bounds<Pixels>,
-    view_bounds: Bounds<Pixels>,
+pub(crate) struct ReviewWorkspaceFileHeaderControlsLayout {
+    pub(crate) collapse_bounds: Bounds<Pixels>,
+    pub(crate) view_bounds: Bounds<Pixels>,
 }
 
-fn review_workspace_file_header_controls_layout(
+pub(crate) fn review_workspace_file_header_controls_layout(
     bounds: Bounds<Pixels>,
 ) -> ReviewWorkspaceFileHeaderControlsLayout {
     let left_padding = px(12.0);

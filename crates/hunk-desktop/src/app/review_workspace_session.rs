@@ -26,12 +26,7 @@ pub(crate) use search_impl::ReviewWorkspaceSearchTarget;
 #[path = "workspace_display_buffers.rs"]
 mod workspace_display_buffers;
 
-use crate::app::data::{
-    CachedStyledSegment, DiffSegmentQuality, DiffStream, DiffStreamRowKind,
-    apply_search_highlights_to_cached_segments, cached_runtime_fallback_segments,
-    compact_cached_segments_for_render, merge_cached_segments_with_changed_flags,
-};
-use crate::app::highlight::SyntaxTokenKind;
+use crate::app::data::{CachedStyledSegment, DiffSegmentQuality, DiffStream, DiffStreamRowKind};
 use crate::app::native_files_editor::WorkspaceEditorSession;
 use crate::app::native_files_editor::paint::RowSyntaxSpan;
 use crate::app::{DiffRowSegmentCache, DiffStreamRowMeta};
@@ -45,8 +40,6 @@ const HUNK_HEADER_SURFACE_ROWS: usize = 1;
 pub(crate) const REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX: usize = 26;
 pub(crate) const REVIEW_SURFACE_HUNK_DIVIDER_HEIGHT_PX: usize = 6;
 const REVIEW_LINE_NUMBER_MIN_DIGITS: u32 = 3;
-const REVIEW_VIEWPORT_RENDER_MAX_SEGMENTS_PER_CELL: usize = 48;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReviewCommentAnchor {
     pub(crate) file_path: String,
@@ -110,6 +103,13 @@ pub(crate) struct ReviewWorkspaceViewportSection {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct ReviewWorkspaceViewportCodeCell {
+    pub(crate) display_row: WorkspaceDisplayRow,
+    pub(crate) syntax_spans: Vec<RowSyntaxSpan>,
+    pub(crate) changed_ranges: Vec<Range<usize>>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct ReviewWorkspaceViewportRow {
     #[allow(dead_code)]
     pub(crate) display_row_index: usize,
@@ -131,8 +131,8 @@ pub(crate) struct ReviewWorkspaceViewportRow {
     pub(crate) right_line: Option<u32>,
     pub(crate) surface_top_px: usize,
     pub(crate) height_px: usize,
-    pub(crate) left_segments: Vec<CachedStyledSegment>,
-    pub(crate) right_segments: Vec<CachedStyledSegment>,
+    pub(crate) left_cell: ReviewWorkspaceViewportCodeCell,
+    pub(crate) right_cell: ReviewWorkspaceViewportCodeCell,
 }
 
 #[derive(Debug, Clone)]
@@ -839,22 +839,37 @@ impl ReviewWorkspaceSession {
                         right_line: row.right.line,
                         surface_top_px,
                         height_px: row_height_px,
-                        left_segments: review_viewport_render_segments(
-                            display_rows
+                        left_cell: ReviewWorkspaceViewportCodeCell {
+                            display_row: left_display_row,
+                            syntax_spans: display_rows
                                 .left_syntax_by_display_row
-                                .get(&left_display_row_index),
-                            row_segment_cache.map(|cache| &cache.left),
-                            left_display_row.text.as_str(),
-                            &[],
-                        ),
-                        right_segments: review_viewport_render_segments(
-                            display_rows
+                                .get(&left_display_row_index)
+                                .cloned()
+                                .unwrap_or_default(),
+                            changed_ranges: review_changed_ranges_for_display_row(
+                                row_segment_cache.map(|cache| &cache.left),
+                            ),
+                        },
+                        right_cell: ReviewWorkspaceViewportCodeCell {
+                            display_row: WorkspaceDisplayRow {
+                                search_highlights: right_search_highlights
+                                    .into_iter()
+                                    .map(|range| hunk_editor::SearchHighlight {
+                                        start_column: range.start,
+                                        end_column: range.end,
+                                    })
+                                    .collect(),
+                                ..right_display_row
+                            },
+                            syntax_spans: display_rows
                                 .right_syntax_by_display_row
-                                .get(&right_display_row_index),
-                            row_segment_cache.map(|cache| &cache.right),
-                            right_display_row.text.as_str(),
-                            right_search_highlights.as_slice(),
-                        ),
+                                .get(&right_display_row_index)
+                                .cloned()
+                                .unwrap_or_default(),
+                            changed_ranges: review_changed_ranges_for_display_row(
+                                row_segment_cache.map(|cache| &cache.right),
+                            ),
+                        },
                     })
                 })
                 .collect();
@@ -1836,130 +1851,6 @@ fn review_effective_segment_quality(
     }
 }
 
-fn review_viewport_render_segments(
-    editor_syntax_spans: Option<&Vec<RowSyntaxSpan>>,
-    cached_segments: Option<&Vec<CachedStyledSegment>>,
-    display_text: &str,
-    search_highlights: &[Range<usize>],
-) -> Vec<CachedStyledSegment> {
-    apply_search_highlights_to_cached_segments(
-        editor_syntax_spans
-            .map(|spans: &Vec<RowSyntaxSpan>| {
-                review_cached_segments_from_editor_syntax(display_text, spans.as_slice())
-            })
-            .map(|segments| {
-                merge_cached_segments_with_changed_flags(segments, cached_segments, display_text)
-            })
-            .or_else(|| cached_segments.cloned())
-            .map(|segments| {
-                compact_cached_segments_for_render(
-                    segments,
-                    REVIEW_VIEWPORT_RENDER_MAX_SEGMENTS_PER_CELL,
-                )
-            })
-            .unwrap_or_else(|| cached_runtime_fallback_segments(display_text)),
-        search_highlights,
-    )
-}
-
-fn review_cached_segments_from_editor_syntax(
-    display_text: &str,
-    spans: &[RowSyntaxSpan],
-) -> Vec<CachedStyledSegment> {
-    let total_columns = display_text.chars().count();
-    if total_columns == 0 {
-        return Vec::new();
-    }
-
-    let mut segments = Vec::new();
-    let mut cursor = 0usize;
-    for span in spans {
-        let start = span.start_column.min(total_columns);
-        let end = span.end_column.min(total_columns);
-        if cursor < start {
-            review_push_cached_syntax_segment(
-                &mut segments,
-                SyntaxTokenKind::Plain,
-                review_display_text_slice(display_text, cursor, start),
-            );
-        }
-        if start < end {
-            review_push_cached_syntax_segment(
-                &mut segments,
-                review_syntax_token_for_style_key(span.style_key.as_str()),
-                review_display_text_slice(display_text, start, end),
-            );
-        }
-        cursor = end;
-    }
-
-    if cursor < total_columns {
-        review_push_cached_syntax_segment(
-            &mut segments,
-            SyntaxTokenKind::Plain,
-            review_display_text_slice(display_text, cursor, total_columns),
-        );
-    }
-
-    if segments.is_empty() {
-        review_push_cached_syntax_segment(
-            &mut segments,
-            SyntaxTokenKind::Plain,
-            display_text.to_string(),
-        );
-    }
-
-    segments
-}
-
-fn review_push_cached_syntax_segment(
-    segments: &mut Vec<CachedStyledSegment>,
-    syntax: SyntaxTokenKind,
-    text: String,
-) {
-    if text.is_empty() {
-        return;
-    }
-
-    if let Some(previous) = segments.last_mut()
-        && previous.syntax == syntax
-        && !previous.changed
-        && !previous.search_match
-    {
-        previous.plain_text = format!("{}{}", previous.plain_text.as_ref(), text).into();
-        return;
-    }
-
-    segments.push(CachedStyledSegment {
-        plain_text: text.into(),
-        syntax,
-        changed: false,
-        search_match: false,
-    });
-}
-
-fn review_display_text_slice(text: &str, start_column: usize, end_column: usize) -> String {
-    text.chars()
-        .skip(start_column)
-        .take(end_column.saturating_sub(start_column))
-        .collect()
-}
-
-fn review_syntax_token_for_style_key(style_key: &str) -> SyntaxTokenKind {
-    match style_key.split('.').next().unwrap_or_default() {
-        "keyword" => SyntaxTokenKind::Keyword,
-        "string" => SyntaxTokenKind::String,
-        "number" => SyntaxTokenKind::Number,
-        "comment" => SyntaxTokenKind::Comment,
-        "function" => SyntaxTokenKind::Function,
-        "type" | "constructor" | "tag" => SyntaxTokenKind::TypeName,
-        "constant" | "attribute" | "boolean" => SyntaxTokenKind::Constant,
-        "variable" | "property" | "parameter" => SyntaxTokenKind::Variable,
-        "operator" | "punctuation" => SyntaxTokenKind::Operator,
-        _ => SyntaxTokenKind::Plain,
-    }
-}
-
 fn review_project_search_highlights_for_display_row(
     row: &WorkspaceDisplayRow,
     raw_ranges: &[Range<usize>],
@@ -1979,6 +1870,38 @@ fn review_project_search_highlights_for_display_row(
             )
         })
         .collect()
+}
+
+fn review_changed_ranges_for_display_row(
+    cached_segments: Option<&Vec<CachedStyledSegment>>,
+) -> Vec<Range<usize>> {
+    let Some(cached_segments) = cached_segments else {
+        return Vec::new();
+    };
+
+    let mut ranges = Vec::new();
+    let mut cursor = 0usize;
+    let mut active_start = None;
+
+    for segment in cached_segments {
+        let len = segment.plain_text.chars().count();
+        if len == 0 {
+            continue;
+        }
+        let end = cursor.saturating_add(len);
+        if segment.changed {
+            active_start.get_or_insert(cursor);
+        } else if let Some(start) = active_start.take() {
+            ranges.push(start..cursor);
+        }
+        cursor = end;
+    }
+
+    if let Some(start) = active_start {
+        ranges.push(start..cursor);
+    }
+
+    ranges
 }
 
 fn review_workspace_display_column_for_raw(row: &WorkspaceDisplayRow, raw_column: usize) -> usize {

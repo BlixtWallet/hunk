@@ -411,7 +411,7 @@ Zed reference points:
 
 ### Phase 10: Replace Review Code-Row Painting With Workspace-Projection Elements
 
-Status: Pending
+Status: Done
 
 Targets:
 
@@ -421,14 +421,14 @@ Targets:
 
 Tasks:
 
-- [ ] Feed left/right visible projected render snapshots from the persistent side editors into the Diff surface.
-- [ ] Stop painting visible code rows directly from Review-only cached segments.
-- [ ] Keep file headers, meta rows, and comment affordances on the current Review surface as temporary overlay blocks.
-- [ ] Match current search, syntax, and selection behavior on the new projected-row path.
+- [x] Feed left/right visible projected render snapshots from the persistent side editors into the Diff surface.
+- [x] Stop painting visible code rows directly from Review-only cached segments.
+- [x] Keep file headers, meta rows, and comment affordances on the current Review surface as temporary overlay blocks.
+- [x] Match current search, syntax, and selection behavior on the new projected-row path.
 
 ### Phase 11: Move Diff Viewport Ownership Into The Editor Surface
 
-Status: Pending
+Status: Done
 
 Targets:
 
@@ -438,10 +438,10 @@ Targets:
 
 Tasks:
 
-- [ ] Move scroll hit-testing and row hit-testing off `ReviewWorkspaceViewportElement`.
-- [ ] Treat file headers, hunk headers, sticky headers, and comment affordances as sparse editor-surface blocks/overlays.
-- [ ] Remove per-row manual painting from the Review viewport element.
-- [ ] Route Diff-mode input through the editor-owned surface instead of the current custom viewport painter.
+- [x] Move scroll hit-testing and row hit-testing off `ReviewWorkspaceViewportElement`.
+- [x] Treat file headers, hunk headers, sticky headers, and comment affordances as sparse editor-surface blocks/overlays.
+- [x] Remove per-row manual painting from the Review viewport element.
+- [x] Route Diff-mode input through the editor-owned surface instead of the current custom viewport painter.
 
 Zed reference points:
 
