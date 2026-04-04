@@ -140,16 +140,11 @@ impl DiffViewer {
             .end
             .saturating_add(overscan_rows)
             .min(session.row_count());
-        let visible_row_count = last_visible_row.saturating_sub(first_visible_row);
-        if visible_row_count == 0 {
-            return None;
-        }
-
-        let viewport = hunk_editor::Viewport {
-            first_visible_row,
-            visible_row_count,
-            horizontal_offset: 0,
-        };
+        let viewport = session.display_viewport_for_surface_viewport(
+            scroll_top_px,
+            viewport_height_px,
+            overscan_rows,
+        )?;
         let mut left_editor = left_workspace_editor.borrow_mut();
         let left_projected =
             left_editor.build_workspace_projected_snapshot(viewport, 4).and_then(projected_review_workspace_side_rows);

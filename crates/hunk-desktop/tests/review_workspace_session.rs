@@ -827,6 +827,114 @@ fn review_workspace_surface_snapshot_positions_expanded_display_rows_by_display_
 }
 
 #[test]
+fn review_workspace_session_builds_display_viewport_for_expanded_rows() {
+    let patch = "\
+@@ -1,3 +1,3 @@
+-before
++after
+ keep
+ tail
+";
+    let snapshot = CompareSnapshot {
+        files: vec![changed_file("src/lib.rs", FileStatus::Modified)],
+        file_line_stats: BTreeMap::new(),
+        overall_line_stats: LineStats::default(),
+        patches_by_path: BTreeMap::from([("src/lib.rs".to_string(), patch.to_string())]),
+    };
+
+    let rows = parse_patch_side_by_side(patch);
+    let stream = review_stream_for_rows(&rows, "src/lib.rs", FileStatus::Modified);
+    let mut session = ReviewWorkspaceSession::from_compare_snapshot(&snapshot, &BTreeSet::new())
+        .expect("review workspace session should build")
+        .with_render_stream(&stream);
+
+    let left_by_raw_row = session
+        .build_display_snapshot_for_side(0..session.row_count(), ReviewWorkspaceEditorSide::Left)
+        .into_iter()
+        .map(|row| (row.row_index, row))
+        .collect::<BTreeMap<_, _>>();
+    let right_by_raw_row = session
+        .build_display_snapshot_for_side(0..session.row_count(), ReviewWorkspaceEditorSide::Right)
+        .into_iter()
+        .map(|row| (row.row_index, row))
+        .collect::<BTreeMap<_, _>>();
+    let target_code_row = (0..session.row_count())
+        .find(|&row_ix| {
+            session
+                .row(row_ix)
+                .is_some_and(|row| row.kind == DiffRowKind::Code)
+        })
+        .expect("code row");
+
+    let mut rows = Vec::new();
+    let mut left_by_display_row = BTreeMap::new();
+    let mut right_by_display_row = BTreeMap::new();
+    let mut next_display_row = 0usize;
+    for row_ix in 0..session.row_count() {
+        let repeat = if row_ix == target_code_row { 3 } else { 1 };
+        let left = left_by_raw_row
+            .get(&row_ix)
+            .cloned()
+            .expect("left display row");
+        let right = right_by_raw_row
+            .get(&row_ix)
+            .cloned()
+            .expect("right display row");
+        for _ in 0..repeat {
+            let mut left = left.clone();
+            left.row_index = next_display_row;
+            let mut right = right.clone();
+            right.row_index = next_display_row;
+            rows.push(ReviewWorkspaceDisplayRowEntry {
+                display_row_index: next_display_row,
+                row_index: row_ix,
+                left: left.clone(),
+                right: right.clone(),
+            });
+            left_by_display_row.insert(next_display_row, left);
+            right_by_display_row.insert(next_display_row, right);
+            next_display_row = next_display_row.saturating_add(1);
+        }
+    }
+
+    let display_rows = ReviewWorkspaceDisplayRows {
+        rows,
+        left_by_display_row,
+        right_by_display_row,
+        left_syntax_by_display_row: BTreeMap::new(),
+        right_syntax_by_display_row: BTreeMap::new(),
+    };
+    session.refresh_display_geometry_from_display_rows(&display_rows);
+
+    let target_display_range = session
+        .display_row_range_for_raw_row(target_code_row)
+        .expect("target display row range");
+    let viewport = session
+        .display_viewport_for_surface_viewport(
+            session
+                .row_top_offset_px(target_code_row)
+                .expect("row top")
+                .saturating_add(REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX),
+            REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX,
+            1,
+        )
+        .expect("display viewport");
+
+    assert_eq!(
+        viewport.first_visible_row,
+        target_display_range.start.saturating_sub(1)
+    );
+    assert_eq!(
+        viewport.visible_row_count,
+        target_display_range
+            .end
+            .saturating_add(1)
+            .min(session.display_geometry_total_display_rows())
+            .saturating_sub(target_display_range.start.saturating_sub(1))
+    );
+}
+
+#[test]
 fn review_workspace_session_surface_rows_match_current_side_by_side_shape() {
     let patch = "\
 @@ -3,5 +3,4 @@

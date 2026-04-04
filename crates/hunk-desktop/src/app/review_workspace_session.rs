@@ -8,7 +8,7 @@ use hunk_domain::diff::{
     DiffCellKind, DiffDocument, DiffHunk, DiffLineKind, DiffRowKind, parse_patch_document,
 };
 use hunk_editor::{
-    WorkspaceDisplayRow, WorkspaceDocument, WorkspaceDocumentId, WorkspaceExcerptId,
+    Viewport, WorkspaceDisplayRow, WorkspaceDocument, WorkspaceDocumentId, WorkspaceExcerptId,
     WorkspaceExcerptKind, WorkspaceExcerptSpec, WorkspaceLayout, WorkspaceLayoutError,
 };
 use hunk_git::compare::CompareSnapshot;
@@ -37,8 +37,6 @@ use crate::app::highlight::SyntaxTokenKind;
 use crate::app::native_files_editor::WorkspaceEditorSession;
 use crate::app::native_files_editor::paint::RowSyntaxSpan;
 use crate::app::{DiffRowSegmentCache, DiffStreamRowMeta};
-#[cfg(test)]
-use hunk_editor::Viewport;
 #[cfg(test)]
 use hunk_text::TextSnapshot;
 #[cfg(test)]
@@ -943,6 +941,46 @@ impl ReviewWorkspaceSession {
             row_indices.extend(visible_row_range);
         }
         row_indices
+    }
+
+    pub(crate) fn display_viewport_for_surface_viewport(
+        &self,
+        scroll_top_px: usize,
+        viewport_height_px: usize,
+        overscan_display_rows: usize,
+    ) -> Option<Viewport> {
+        let visible_row_range =
+            self.visible_row_range_for_viewport(scroll_top_px, viewport_height_px)?;
+        self.display_viewport_for_raw_row_range(visible_row_range, overscan_display_rows)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn display_viewport_for_raw_row_range(
+        &self,
+        raw_row_range: Range<usize>,
+        overscan_display_rows: usize,
+    ) -> Option<Viewport> {
+        if raw_row_range.is_empty() {
+            return None;
+        }
+
+        let total_display_rows = self.display_geometry_total_display_rows();
+        if total_display_rows == 0 {
+            return None;
+        }
+
+        let start = self.display_row_boundary_for_raw_row(raw_row_range.start)?;
+        let end = self.display_row_boundary_for_raw_row(raw_row_range.end)?;
+        let first_visible_row = start.saturating_sub(overscan_display_rows);
+        let visible_end = end
+            .saturating_add(overscan_display_rows)
+            .min(total_display_rows);
+        let visible_row_count = visible_end.saturating_sub(first_visible_row);
+        (visible_row_count > 0).then_some(Viewport {
+            first_visible_row,
+            visible_row_count,
+            horizontal_offset: 0,
+        })
     }
 
     pub(crate) fn build_segment_prefetch_rows(
