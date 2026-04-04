@@ -969,6 +969,7 @@ impl ReviewWorkspaceSession {
         row_indices
     }
 
+    #[allow(dead_code)]
     pub(crate) fn display_viewport_for_surface_viewport(
         &self,
         scroll_top_px: usize,

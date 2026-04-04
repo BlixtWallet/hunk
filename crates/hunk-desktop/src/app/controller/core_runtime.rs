@@ -92,20 +92,37 @@ impl DiffViewer {
         });
         if needs_refresh {
             let surface_options = self.review_surface_snapshot_options();
-            let left_workspace_editor = self.review_surface.left_workspace_editor.clone()?;
-            let right_workspace_editor = self.review_surface.right_workspace_editor.clone()?;
-            let session = self.review_workspace_session.as_mut()?;
-            let Some(display_rows) = Self::review_surface_display_rows(
-                session,
-                &left_workspace_editor,
-                &right_workspace_editor,
-                scroll_top_px,
-                viewport_height_px,
-                8,
-            ) else {
-                self.review_surface.last_surface_snapshot = None;
-                return None;
+            let display_rows = match self
+                .review_workspace_session
+                .as_mut()
+                .and_then(|session| {
+                    Self::review_surface_display_rows(session, scroll_top_px, viewport_height_px, 8)
+                }) {
+                Some(display_rows) => display_rows,
+                None => {
+                if !self.seed_review_surface_display_rows() {
+                    self.review_surface.last_surface_snapshot = None;
+                    return None;
+                }
+                let Some(display_rows) = self
+                    .review_workspace_session
+                    .as_mut()
+                    .and_then(|session| {
+                        Self::review_surface_display_rows(
+                            session,
+                            scroll_top_px,
+                            viewport_height_px,
+                            8,
+                        )
+                    })
+                else {
+                    self.review_surface.last_surface_snapshot = None;
+                    return None;
+                };
+                display_rows
+            }
             };
+            let session = self.review_workspace_session.as_mut()?;
             let snapshot = session.build_surface_snapshot_with_display_rows(
                 scroll_top_px,
                 viewport_height_px,
@@ -125,8 +142,6 @@ impl DiffViewer {
 
     fn review_surface_display_rows(
         session: &mut review_workspace_session::ReviewWorkspaceSession,
-        left_workspace_editor: &crate::app::native_files_editor::SharedFilesEditor,
-        right_workspace_editor: &crate::app::native_files_editor::SharedFilesEditor,
         scroll_top_px: usize,
         viewport_height_px: usize,
         overscan_rows: usize,
@@ -146,22 +161,7 @@ impl DiffViewer {
             session.refresh_display_geometry_from_display_rows(&display_rows);
             return Some(display_rows);
         }
-        let viewport = session.display_viewport_for_surface_viewport(
-            scroll_top_px,
-            viewport_height_px,
-            overscan_rows,
-        )?;
-        let display_rows = Self::project_review_surface_display_rows_for_viewport(
-            left_workspace_editor,
-            right_workspace_editor,
-            viewport,
-        )?;
-        if display_rows.covers_row_range(requested_row_range) {
-            session.cache_display_rows(display_rows.clone());
-            Some(display_rows)
-        } else {
-            None
-        }
+        None
     }
 
     pub(super) fn seed_review_surface_display_rows(&mut self) -> bool {
