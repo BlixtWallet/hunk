@@ -613,11 +613,13 @@ impl ReviewWorkspaceSession {
     }
 
     pub(crate) fn section_pixel_range(&self, section_ix: usize) -> Option<&Range<usize>> {
-        self.section_pixel_ranges.get(section_ix)
+        self.display_geometry
+            .section_pixel_range(section_ix)
+            .or_else(|| self.section_pixel_ranges.get(section_ix))
     }
 
     pub(crate) fn total_surface_height_px(&self) -> usize {
-        self.total_surface_height_px
+        self.display_geometry_total_surface_height_px()
     }
 
     #[allow(dead_code)]
@@ -722,6 +724,7 @@ impl ReviewWorkspaceSession {
                 self.row_boundary_offset_px(visible_row_range.end)
                     .unwrap_or(pixel_range.end),
             );
+            let mut display_row_offsets_by_raw_row = BTreeMap::<usize, usize>::new();
             let rows = display_row_entries
                 .into_iter()
                 .filter_map(|entry| {
@@ -751,9 +754,16 @@ impl ReviewWorkspaceSession {
                         .as_deref()
                         .is_some_and(|path| options.view_file_enabled_paths.contains(path));
                     let row_segment_cache = self.row_segment_cache(row_index);
+                    let row_height_px = self.surface_row_height_px(row_index);
+                    let display_row_offset = display_row_offsets_by_raw_row
+                        .entry(row_index)
+                        .and_modify(|offset| *offset = offset.saturating_add(1))
+                        .or_insert(0);
+                    let display_row_offset = *display_row_offset;
                     let surface_top_px = self
                         .row_top_offset_px(row_index)
-                        .unwrap_or(visible_start_px);
+                        .unwrap_or(visible_start_px)
+                        .saturating_add(display_row_offset.saturating_mul(row_height_px));
                     let right_search_highlights = if right_display_row.search_highlights.is_empty()
                     {
                         options
@@ -804,7 +814,7 @@ impl ReviewWorkspaceSession {
                         right_cell_kind: row.right.kind,
                         right_line: row.right.line,
                         surface_top_px,
-                        height_px: self.surface_row_height_px(row_index),
+                        height_px: row_height_px,
                         left_segments: review_viewport_render_segments(
                             display_rows
                                 .left_syntax_by_display_row
@@ -1022,17 +1032,17 @@ impl ReviewWorkspaceSession {
     ) -> ReviewWorkspaceVisibleState {
         let visible_row_range =
             self.visible_row_range_for_viewport(scroll_top_px, viewport_height_px);
-        let visible_viewport_rows = visible_row_range
-            .as_ref()
-            .map(|range| {
-                viewport
-                    .sections
-                    .iter()
-                    .flat_map(|section| section.rows.iter())
-                    .filter(|row| row.row_index >= range.start && row.row_index < range.end)
-                    .collect::<Vec<_>>()
+        let viewport_bottom = scroll_top_px
+            .saturating_add(viewport_height_px.max(REVIEW_SURFACE_COMPACT_ROW_HEIGHT_PX));
+        let visible_viewport_rows = viewport
+            .sections
+            .iter()
+            .flat_map(|section| section.rows.iter())
+            .filter(|row| {
+                let row_bottom_px = row.surface_top_px.saturating_add(row.height_px);
+                row_bottom_px > scroll_top_px && row.surface_top_px < viewport_bottom
             })
-            .unwrap_or_default();
+            .collect::<Vec<_>>();
         let visible_display_row_range = visible_viewport_rows.first().and_then(|first| {
             visible_viewport_rows
                 .last()
@@ -1096,11 +1106,15 @@ impl ReviewWorkspaceSession {
     }
 
     pub(crate) fn row_top_offset_px(&self, row_ix: usize) -> Option<usize> {
-        self.row_top_offsets.get(row_ix).copied()
+        self.display_geometry
+            .row_top_offset_px(row_ix)
+            .or_else(|| self.row_top_offsets.get(row_ix).copied())
     }
 
     pub(crate) fn row_boundary_offset_px(&self, boundary_ix: usize) -> Option<usize> {
-        self.row_top_offsets.get(boundary_ix).copied()
+        self.display_geometry
+            .row_boundary_offset_px(boundary_ix)
+            .or_else(|| self.row_top_offsets.get(boundary_ix).copied())
     }
 
     pub(crate) fn visible_row_range_for_viewport(
@@ -1705,11 +1719,18 @@ impl ReviewWorkspaceSession {
 
     fn row_index_for_pixel(&self, pixel_offset: usize) -> usize {
         let row_count = self.row_count();
-        if row_count == 0 || self.row_top_offsets.len() < 2 {
+        let row_boundaries = if self.display_geometry_total_surface_height_px() > 0 {
+            (0..=row_count)
+                .filter_map(|boundary_ix| self.row_boundary_offset_px(boundary_ix))
+                .collect::<Vec<_>>()
+        } else {
+            self.row_top_offsets.clone()
+        };
+        if row_count == 0 || row_boundaries.len() < 2 {
             return 0;
         }
 
-        match self.row_top_offsets.binary_search(&pixel_offset) {
+        match row_boundaries.binary_search(&pixel_offset) {
             Ok(ix) => ix.min(row_count.saturating_sub(1)),
             Err(ix) => ix.saturating_sub(1).min(row_count.saturating_sub(1)),
         }
