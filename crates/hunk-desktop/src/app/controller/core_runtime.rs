@@ -154,6 +154,16 @@ impl DiffViewer {
     }
 
     pub(super) fn seed_review_surface_display_rows(&mut self) -> bool {
+        let scroll_top_px = self.current_review_surface_scroll_top_px();
+        let viewport_height_px = self
+            .review_surface
+            .diff_scroll_handle
+            .bounds()
+            .size
+            .height
+            .max(Pixels::ZERO)
+            .as_f32()
+            .round() as usize;
         let Some(session) = self.review_workspace_session.as_mut() else {
             return false;
         };
@@ -163,13 +173,23 @@ impl DiffViewer {
         let Some(workspace_owner) = self.review_surface.workspace_owner() else {
             return false;
         };
-
+        let Some(visible_row_range) =
+            session.visible_row_range_for_viewport(scroll_top_px, viewport_height_px)
+        else {
+            return false;
+        };
+        let overscan_rows = 8usize;
+        let first_visible_row = visible_row_range.start.saturating_sub(overscan_rows);
+        let last_visible_row = visible_row_range
+            .end
+            .saturating_add(overscan_rows)
+            .min(session.row_count());
+        let requested_row_range = first_visible_row..last_visible_row;
         let viewport = hunk_editor::Viewport {
-            first_visible_row: 0,
-            visible_row_count: usize::MAX,
+            first_visible_row,
+            visible_row_count: requested_row_range.len(),
             horizontal_offset: 0,
         };
-        let requested_row_range = 0..session.row_count();
         if session.cached_display_rows_covering(requested_row_range.clone()) {
             session.refresh_display_geometry_from_cached_display_rows();
             return true;

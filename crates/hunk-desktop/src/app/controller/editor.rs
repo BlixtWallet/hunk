@@ -291,12 +291,17 @@ impl DiffViewer {
             return;
         }
 
-        let Some(path) = self.selected_path.clone() else {
+        let current_review_file_range = self.current_review_file_range();
+        let Some(path) = self
+            .current_review_path()
+            .or_else(|| current_review_file_range.as_ref().map(|range| range.path.clone()))
+        else {
             self.set_git_warning_message("No review file is selected.".to_string(), Some(window), cx);
             return;
         };
-        let status = self
-            .selected_status
+        let status = current_review_file_range
+            .as_ref()
+            .map(|range| range.status)
             .or_else(|| self.status_for_path(path.as_str()))
             .unwrap_or(FileStatus::Unknown);
 
