@@ -56,7 +56,7 @@ Create `crates/hunk-updater` to hold all OTA logic that is not UI-specific:
 
 Publish a single manifest for the stable channel, for example:
 
-- `https://hunkstableupdates.niteshbalusu.com/stable.json`
+- `https://pub-de32dfa5fe9845849590fa075f3edafa.r2.dev/stable.json`
 
 Recommended manifest shape:
 
@@ -340,6 +340,7 @@ Completed in the current repo state:
 - [x] Add deployment documentation for the static update manifest host.
 - [x] Allow release builds to embed the updater public key while retaining a runtime override for local testing.
 - [x] Verify the update manifest itself with the updater signing key and publish a companion `stable.json.sig`.
+- [x] Automate `stable.json` and `stable.json.sig` publishing to the current Cloudflare R2 public bucket from the release workflow.
 
 Still pending:
 

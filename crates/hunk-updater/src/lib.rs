@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tar::Archive;
 
 pub const DEFAULT_UPDATE_MANIFEST_URL: &str =
-    "https://hunkstableupdates.niteshbalusu.com/stable.json";
+    "https://pub-de32dfa5fe9845849590fa075f3edafa.r2.dev/stable.json";
 pub const UPDATE_EXPLANATION_ENV_VAR: &str = "HUNK_UPDATE_EXPLANATION";
 pub const UPDATE_MANIFEST_URL_ENV_VAR: &str = "HUNK_UPDATE_MANIFEST_URL";
 pub const UPDATE_PUBLIC_KEY_ENV_VAR: &str = "HUNK_UPDATE_PUBLIC_KEY";

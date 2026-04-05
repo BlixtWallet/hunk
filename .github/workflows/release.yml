@@ -301,6 +301,9 @@ jobs:
     timeout-minutes: 20
     env:
       HUNK_UPDATE_PRIVATE_KEY_BASE64: ${{ secrets.HUNK_UPDATE_PRIVATE_KEY_BASE64 }}
+      HUNK_UPDATE_MANIFEST_R2_ACCESS_KEY_ID: ${{ secrets.HUNK_UPDATE_MANIFEST_R2_ACCESS_KEY_ID }}
+      HUNK_UPDATE_MANIFEST_R2_SECRET_ACCESS_KEY: ${{ secrets.HUNK_UPDATE_MANIFEST_R2_SECRET_ACCESS_KEY }}
+      HUNK_UPDATE_MANIFEST_R2_S3_API_URL: ${{ secrets.HUNK_UPDATE_MANIFEST_R2_S3_API_URL }}
 
     steps:
       - name: Checkout
@@ -310,6 +313,16 @@ jobs:
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install AWS CLI when missing
+        run: |
+          if command -v aws >/dev/null 2>&1; then
+            aws --version
+            exit 0
+          fi
+          sudo apt-get update
+          sudo apt-get install -y awscli
+        shell: bash
 
       - name: Resolve release version
         run: |
@@ -369,6 +382,37 @@ jobs:
           name: hunk-update-manifest
           path: dist/update-manifest
           if-no-files-found: error
+
+      - name: Publish updater manifest to Cloudflare R2
+        if: env.HUNK_UPDATE_PRIVATE_KEY_BASE64 != '' && env.HUNK_UPDATE_MANIFEST_R2_ACCESS_KEY_ID != '' && env.HUNK_UPDATE_MANIFEST_R2_SECRET_ACCESS_KEY != '' && env.HUNK_UPDATE_MANIFEST_R2_S3_API_URL != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ env.HUNK_UPDATE_MANIFEST_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.HUNK_UPDATE_MANIFEST_R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          AWS_DEFAULT_REGION: "auto"
+        run: |
+          s3_url="${HUNK_UPDATE_MANIFEST_R2_S3_API_URL}"
+          endpoint_url="${s3_url%/*}"
+          bucket_name="${s3_url##*/}"
+
+          if [[ -z "$endpoint_url" || -z "$bucket_name" || "$endpoint_url" == "$s3_url" ]]; then
+            echo "error: invalid HUNK_UPDATE_MANIFEST_R2_S3_API_URL: $s3_url" >&2
+            exit 1
+          fi
+
+          aws --endpoint-url "$endpoint_url" s3 cp dist/update-manifest/stable.json "s3://$bucket_name/stable.json" \
+            --content-type application/json \
+            --cache-control "no-cache, no-store, must-revalidate"
+          aws --endpoint-url "$endpoint_url" s3 cp dist/update-manifest/stable.json.sig "s3://$bucket_name/stable.json.sig" \
+            --content-type "text/plain; charset=utf-8" \
+            --cache-control "no-cache, no-store, must-revalidate"
+        shell: bash
+
+      - name: Skip Cloudflare R2 manifest publish when bucket credentials are unavailable
+        if: env.HUNK_UPDATE_PRIVATE_KEY_BASE64 != '' && (env.HUNK_UPDATE_MANIFEST_R2_ACCESS_KEY_ID == '' || env.HUNK_UPDATE_MANIFEST_R2_SECRET_ACCESS_KEY == '' || env.HUNK_UPDATE_MANIFEST_R2_S3_API_URL == '')
+        run: |
+          echo "Cloudflare R2 manifest publishing is not configured; skipping stable.json upload." >&2
+        shell: bash
 
       - name: List prepared release artifacts
         env:

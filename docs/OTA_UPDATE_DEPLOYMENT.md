@@ -9,7 +9,7 @@ Hunk does **not** need a custom backend for OTA updates right now.
 The updater design is:
 
 - Hunk downloads a small signed manifest from:
-  - `https://hunkstableupdates.niteshbalusu.com/stable.json`
+  - `https://pub-de32dfa5fe9845849590fa075f3edafa.r2.dev/stable.json`
 - That manifest points at release binaries already hosted on GitHub Releases.
 - Hunk verifies the signed payloads before applying them.
 
@@ -17,7 +17,7 @@ That means the "server" is currently just a **static file host** for the manifes
 
 ## What is hosted where
 
-### Hosted on your custom domain
+### Hosted on Cloudflare R2 public bucket
 
 At minimum:
 
@@ -66,8 +66,17 @@ Add these repository secrets:
 
 1. `HUNK_UPDATE_PRIVATE_KEY_BASE64`
 2. `HUNK_UPDATE_PUBLIC_KEY`
+3. `HUNK_UPDATE_MANIFEST_R2_ACCESS_KEY_ID`
+4. `HUNK_UPDATE_MANIFEST_R2_SECRET_ACCESS_KEY`
+5. `HUNK_UPDATE_MANIFEST_R2_S3_API_URL`
 
 You can keep the public key in a secret for convenience even though it is not sensitive.
+
+For your current bucket, `HUNK_UPDATE_MANIFEST_R2_S3_API_URL` should be:
+
+```text
+https://127ee78df72c8aa0363d47c0672c195e.r2.cloudflarestorage.com/hunk-stable-releases
+```
 
 ## Release output you need after tagging
 
@@ -84,56 +93,25 @@ The workflow produces:
 
 ## How to deploy the server
 
-### Option 1: Static hosting on your existing domain
+### Current setup: Cloudflare R2 public bucket
 
-Any static host is fine:
+The release workflow can now upload the manifest files directly to your public R2 bucket.
 
-- Cloudflare Pages
-- Netlify
-- Vercel static hosting
-- an S3 bucket behind a CDN
-- a plain Nginx directory on your server
+The public URLs are:
 
-You only need the site root to serve:
+- `https://pub-de32dfa5fe9845849590fa075f3edafa.r2.dev/stable.json`
+- `https://pub-de32dfa5fe9845849590fa075f3edafa.r2.dev/stable.json.sig`
 
-- `/stable.json`
-- `/stable.json.sig`
-
-### Minimal deployment procedure
+### Release procedure
 
 1. Create a release tag such as `v0.0.2`.
 2. Wait for the GitHub Actions release workflow to finish.
-3. Download the `hunk-update-manifest` workflow artifact, or download `stable.json` from the release assets.
-4. Upload `stable.json` to the document root for `hunkstableupdates.niteshbalusu.com`.
-5. Upload `stable.json.sig` beside it.
-6. Confirm these URLs work:
-   - `https://hunkstableupdates.niteshbalusu.com/stable.json`
-   - `https://hunkstableupdates.niteshbalusu.com/stable.json.sig`
-7. Confirm the JSON points to the correct GitHub Release asset URLs.
-
-### Example Nginx setup
-
-If the document root is `/var/www/hunkstableupdates`:
-
-```nginx
-server {
-    server_name hunkstableupdates.niteshbalusu.com;
-
-    root /var/www/hunkstableupdates;
-    index stable.json;
-
-    location / {
-        add_header Cache-Control "no-cache";
-        try_files $uri =404;
-    }
-}
-```
-
-Then copy the file into place:
-
-```bash
-scp stable.json stable.json.sig your-host:/var/www/hunkstableupdates/
-```
+3. The workflow generates `stable.json` and `stable.json.sig`.
+4. The workflow uploads both files to your R2 bucket automatically.
+5. Confirm these URLs work:
+   - `https://pub-de32dfa5fe9845849590fa075f3edafa.r2.dev/stable.json`
+   - `https://pub-de32dfa5fe9845849590fa075f3edafa.r2.dev/stable.json.sig`
+6. Confirm the JSON points to the correct GitHub Release asset URLs.
 
 ## How to test the updater
 
