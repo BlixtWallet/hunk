@@ -113,6 +113,27 @@ The public URLs are:
    - `https://pub-de32dfa5fe9845849590fa075f3edafa.r2.dev/stable.json.sig`
 6. Confirm the JSON points to the correct GitHub Release asset URLs.
 
+### Manual workflow test
+
+There is also a separate manual workflow at:
+
+- `.github/workflows/release-dispatch.yml`
+
+Use it with `workflow_dispatch` when you want to test:
+
+- artifact builds
+- manifest generation
+- detached signatures
+- automatic R2 upload
+
+without touching the production tag-triggered release workflow.
+
+Important:
+
+- this manual workflow does **not** create or upload a GitHub Release
+- it writes whatever `asset_base_url` you pass into `stable.json`
+- that means it is good for testing R2 publishing and manifest generation, but end-to-end updater downloads only work if `asset_base_url` points to real public binaries
+
 ## How to test the updater
 
 ### Local manifest testing
