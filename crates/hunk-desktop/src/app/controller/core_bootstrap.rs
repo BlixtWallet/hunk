@@ -403,6 +403,7 @@ impl DiffViewer {
             update_install_source,
             update_status,
             update_check_task: Task::ready(()),
+            update_apply_task: Task::ready(()),
             state_store,
             state,
             database_store,

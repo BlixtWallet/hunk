@@ -8,6 +8,10 @@ impl DiffViewer {
         let update_line = match &self.update_status {
             UpdateStatus::UpdateAvailable(update) => Some(format!("Update available: {}", update.version)),
             UpdateStatus::Checking => Some("Checking for updates...".to_string()),
+            UpdateStatus::Downloading { version } => {
+                Some(format!("Downloading update: {version}"))
+            }
+            UpdateStatus::Installing { version } => Some(format!("Installing update: {version}")),
             UpdateStatus::DisabledByInstallSource { explanation } => Some(explanation.clone()),
             UpdateStatus::UpToDate { version, .. } => Some(format!("Updater status: {version} is current")),
             UpdateStatus::Error(message) => Some(format!("Updater error: {message}")),

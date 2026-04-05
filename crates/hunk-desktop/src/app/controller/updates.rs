@@ -26,6 +26,135 @@ impl DiffViewer {
         self.start_update_check(UpdateCheckTrigger::UserInitiated, Some(window), cx);
     }
 
+    pub(super) fn install_available_update(
+        &mut self,
+        window: Option<&mut Window>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.update_activity_in_progress() {
+            Self::push_warning_notification(
+                "Another updater action is already in progress.".to_string(),
+                window,
+                cx,
+            );
+            return;
+        }
+
+        let update = match self.update_status.clone() {
+            UpdateStatus::UpdateAvailable(update) => update,
+            _ => {
+                Self::push_warning_notification(
+                    "No downloaded update is available to install yet.".to_string(),
+                    window,
+                    cx,
+                );
+                return;
+            }
+        };
+
+        if let InstallSource::PackageManaged { explanation } = &self.update_install_source {
+            self.update_status = UpdateStatus::DisabledByInstallSource {
+                explanation: explanation.clone(),
+            };
+            self.git_status_message = Some(explanation.clone());
+            Self::push_warning_notification(explanation.clone(), window, cx);
+            cx.notify();
+            return;
+        }
+
+        let Some(public_key) = hunk_updater::resolve_public_key_base64() else {
+            let message = format!(
+                "Updater public key is not configured. Set {} before enabling installs.",
+                hunk_updater::UPDATE_PUBLIC_KEY_ENV_VAR
+            );
+            self.update_status = UpdateStatus::Error(message.clone());
+            self.git_status_message = Some(message.clone());
+            Self::push_error_notification(message, cx);
+            cx.notify();
+            return;
+        };
+
+        let version = update.version.clone();
+        let current_pid = std::process::id();
+        self.update_status = UpdateStatus::Downloading {
+            version: version.clone(),
+        };
+        self.git_status_message = Some(format!("Downloading Hunk {version}..."));
+        cx.notify();
+
+        self.update_apply_task = cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let staged_update =
+                        hunk_updater::stage_available_update(&update, public_key.as_str())?;
+                    let current_executable = std::env::current_exe()
+                        .context("resolve current Hunk executable for updater install")?;
+                    let install_target =
+                        hunk_updater::detect_install_target(current_executable.as_path())?;
+                    Ok::<_, anyhow::Error>((staged_update, current_executable, install_target, current_pid))
+                })
+                .await;
+
+            let Some(this) = this.upgrade() else {
+                return;
+            };
+
+            let mut should_exit = false;
+            this.update(cx, |this, cx| {
+                match result {
+                    Ok((staged_update, current_executable, install_target, current_pid)) => {
+                        let version = staged_update.version.clone();
+                        match spawn_staged_update_apply(
+                            current_executable.as_path(),
+                            current_pid,
+                            &install_target,
+                            &staged_update,
+                        ) {
+                            Ok(()) => {
+                                this.update_status = UpdateStatus::Installing {
+                                    version: version.clone(),
+                                };
+                                this.git_status_message =
+                                    Some(format!("Installing Hunk {version}..."));
+                                should_exit = true;
+                            }
+                            Err(err) => {
+                                error!("failed to start updater install helper: {err:#}");
+                                let summary = err.to_string();
+                                this.update_status = UpdateStatus::Error(summary.clone());
+                                this.git_status_message =
+                                    Some(format!("Update install failed: {summary}"));
+                                Self::push_error_notification(
+                                    format!("Update install failed: {summary}"),
+                                    cx,
+                                );
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        error!("failed to stage update install: {err:#}");
+                        let summary = err.to_string();
+                        this.update_status = UpdateStatus::Error(summary.clone());
+                        this.git_status_message = Some(format!("Update install failed: {summary}"));
+                        Self::push_error_notification(
+                            format!("Update install failed: {summary}"),
+                            cx,
+                        );
+                    }
+                }
+
+                cx.notify();
+            });
+
+            if should_exit {
+                hunk_codex::host::begin_host_shutdown();
+                hunk_codex::host::cleanup_tracked_hosts_for_shutdown();
+                std::process::exit(0);
+            }
+        });
+    }
+
     pub(super) fn maybe_schedule_startup_update_check(&mut self, cx: &mut Context<Self>) {
         if !self.config.auto_update_enabled {
             return;
@@ -33,7 +162,7 @@ impl DiffViewer {
         if !matches!(self.update_install_source, InstallSource::SelfManaged) {
             return;
         }
-        if matches!(self.update_status, UpdateStatus::Checking) {
+        if self.update_activity_in_progress() {
             return;
         }
 
@@ -55,10 +184,10 @@ impl DiffViewer {
         window: Option<&mut Window>,
         cx: &mut Context<Self>,
     ) {
-        if matches!(self.update_status, UpdateStatus::Checking) {
+        if self.update_activity_in_progress() {
             if matches!(trigger, UpdateCheckTrigger::UserInitiated) {
                 Self::push_warning_notification(
-                    "An update check is already in progress.".to_string(),
+                    "Another updater action is already in progress.".to_string(),
                     window,
                     cx,
                 );
@@ -163,4 +292,93 @@ impl DiffViewer {
             });
         });
     }
+
+    pub(super) fn update_activity_in_progress(&self) -> bool {
+        matches!(
+            self.update_status,
+            UpdateStatus::Checking
+                | UpdateStatus::Downloading { .. }
+                | UpdateStatus::Installing { .. }
+        )
+    }
+}
+
+fn spawn_staged_update_apply(
+    current_executable: &std::path::Path,
+    current_pid: u32,
+    install_target: &hunk_updater::UpdateInstallTarget,
+    staged_update: &hunk_updater::StagedUpdate,
+) -> anyhow::Result<()> {
+    match install_target {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        hunk_updater::UpdateInstallTarget::MacOsApp { .. }
+        | hunk_updater::UpdateInstallTarget::LinuxBundle { .. } => {
+            std::process::Command::new(current_executable)
+                .arg("--apply-staged-update")
+                .arg("--wait-pid")
+                .arg(current_pid.to_string())
+                .arg("--package")
+                .arg(staged_update.package_path.as_os_str())
+                .arg("--asset-format")
+                .arg(staged_update.asset.format.as_str())
+                .spawn()
+                .with_context(|| {
+                    format!(
+                        "spawn updater helper from {}",
+                        current_executable.display()
+                    )
+                })?;
+            Ok(())
+        }
+        #[cfg(target_os = "windows")]
+        hunk_updater::UpdateInstallTarget::WindowsMsi {
+            current_executable,
+        } => spawn_windows_update_script(current_pid, current_executable.as_path(), staged_update),
+        #[allow(unreachable_patterns)]
+        other => anyhow::bail!(
+            "updater apply helper is not supported for install target {:?} on this platform",
+            other
+        ),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_windows_update_script(
+    current_pid: u32,
+    current_executable: &std::path::Path,
+    staged_update: &hunk_updater::StagedUpdate,
+) -> anyhow::Result<()> {
+    let script_path = staged_update.package_path.with_extension("ps1");
+    let script = format!(
+        "$waitPid = {current_pid}\n\
+$msiPath = {msi_path}\n\
+$appPath = {app_path}\n\
+while (Get-Process -Id $waitPid -ErrorAction SilentlyContinue) {{ Start-Sleep -Milliseconds 200 }}\n\
+$process = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', $msiPath, '/passive', '/norestart') -Wait -PassThru\n\
+if ($process.ExitCode -ne 0) {{ exit $process.ExitCode }}\n\
+Start-Process -FilePath $appPath\n",
+        msi_path = powershell_single_quoted(staged_update.package_path.as_path()),
+        app_path = powershell_single_quoted(current_executable),
+    );
+    std::fs::write(script_path.as_path(), script).with_context(|| {
+        format!(
+            "write staged Windows update helper script {}",
+            script_path.display()
+        )
+    })?;
+    std::process::Command::new("powershell.exe")
+        .arg("-NoProfile")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-File")
+        .arg(script_path.as_os_str())
+        .spawn()
+        .context("spawn Windows staged updater helper")?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn powershell_single_quoted(path: &std::path::Path) -> String {
+    let escaped = path.display().to_string().replace('\'', "''");
+    format!("'{escaped}'")
 }

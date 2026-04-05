@@ -56,7 +56,7 @@ Create `crates/hunk-updater` to hold all OTA logic that is not UI-specific:
 
 Publish a single manifest for the stable channel, for example:
 
-- `https://updates.hunk.dev/stable.json`
+- `https://hunkstableupdates.niteshbalusu.com/stable.json`
 
 Recommended manifest shape:
 
@@ -105,8 +105,9 @@ Expected behaviors:
 Persisted config should support:
 
 - `auto_update_enabled`
-- `update_explanation`
 - `last_update_check_at`
+
+Install-source explanation may be derived dynamically from packaging/runtime context, for example via installer-provided environment or launch metadata.
 
 ### 4. Updater state model
 
@@ -327,15 +328,22 @@ Completed in the current repo state:
 - [x] Add the `hunk-updater` crate with manifest parsing, stable version comparison, platform targeting, install-source detection, and tests.
 - [x] Wire a `Check for Updates...` action into `hunk-desktop`.
 - [x] Add startup/manual background manifest checks with notifications and last-check persistence.
+- [x] Add updater controls and status to the Settings UI.
+- [x] Add release-asset download and detached signature verification primitives to `hunk-updater`.
+- [x] Add updater manifest/signature generation scaffolding to release automation behind an optional signing secret.
+- [x] Add staged OTA asset downloads and self-managed install-target detection in `hunk-updater`.
+- [x] Add helper-driven macOS OTA apply and relaunch behavior for direct installs.
+- [x] Add helper-driven Linux direct-bundle OTA apply and relaunch behavior in the updater core.
+- [x] Add Windows staged MSI install orchestration from the desktop updater flow.
+- [x] Add an `Install Update` settings action and helper-mode startup entrypoint in `hunk-desktop`.
+- [x] Add integration coverage for macOS install-target detection and bundle replacement.
+- [x] Add deployment documentation for the static update manifest host.
+- [x] Allow release builds to embed the updater public key while retaining a runtime override for local testing.
+- [x] Verify the update manifest itself with the updater signing key and publish a companion `stable.json.sig`.
 
 Still pending:
 
-- [ ] Add updater settings controls to the Settings UI.
-- [ ] Download OTA assets.
-- [ ] Verify OTA signatures.
-- [ ] Apply macOS OTA installs.
-- [ ] Apply Windows MSI OTA installs.
-- [ ] Apply Linux direct-bundle OTA installs.
-- [ ] Add relaunch/restart-to-apply behavior.
-- [ ] Extend release automation to publish OTA assets, signatures, and `stable.json`.
 - [ ] Run full platform smoke coverage for the apply/install paths.
+- [ ] Validate the macOS app-bundle swap flow on a real packaged install.
+- [ ] Validate the Windows staged MSI flow on a real packaged install.
+- [ ] Validate the Linux direct-bundle swap flow on a real packaged install.

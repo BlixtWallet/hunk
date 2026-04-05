@@ -1344,6 +1344,7 @@ struct DiffViewer {
     update_install_source: InstallSource,
     update_status: UpdateStatus,
     update_check_task: Task<()>,
+    update_apply_task: Task<()>,
     state_store: Option<AppStateStore>,
     state: AppState,
     database_store: Option<DatabaseStore>,
