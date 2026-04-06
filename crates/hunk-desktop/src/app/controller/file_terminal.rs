@@ -197,6 +197,7 @@ impl DiffViewer {
 
     fn defer_files_focus_restore_after_terminal_close(&self, cx: &mut Context<Self>) {
         if self.workspace_view_mode != WorkspaceViewMode::Files {
+            self.defer_root_focus(cx);
             return;
         }
 

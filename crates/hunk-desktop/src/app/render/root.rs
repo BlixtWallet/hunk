@@ -142,18 +142,31 @@ impl DiffViewer {
 
         let is_dark = cx.theme().mode.is_dark();
         let show_loading_overlay = self.git_workspace_loading && !self.git_workflow_ready_for_panel();
+        let terminal_state = self.files_terminal_panel_state();
+        let view = cx.entity();
 
-        div()
+        v_flex()
             .size_full()
             .min_h_0()
-            .relative()
-            .pb(px(APP_BOTTOM_SAFE_INSET))
-            .child(self.render_git_workspace_panel(cx))
-            .when(show_loading_overlay, |this| {
-                this.child(render_git_workspace_loading_overlay(is_dark, cx))
-            })
-            .when_some(self.ai_git_progress.clone(), |this, progress| {
-                this.child(render_ai_git_progress_overlay(&progress, is_dark, cx))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .relative()
+                    .pb(px(APP_BOTTOM_SAFE_INSET))
+                    .child(self.render_git_workspace_panel(cx))
+                    .when(show_loading_overlay, |this| {
+                        this.child(render_git_workspace_loading_overlay(is_dark, cx))
+                    })
+                    .when_some(self.ai_git_progress.clone(), |this, progress| {
+                        this.child(render_ai_git_progress_overlay(&progress, is_dark, cx))
+                    }),
+            )
+            .when(terminal_state.open, |this| {
+                this.child(
+                    self.render_workspace_terminal_panel(view, &terminal_state, is_dark, cx)
+                        .unwrap_or_else(|| div().into_any_element()),
+                )
             })
             .into_any_element()
     }

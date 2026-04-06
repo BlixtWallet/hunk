@@ -61,7 +61,6 @@ impl DiffViewer {
         } else {
             self.render_review_workspace_status_surface(cx)
         };
-
         let scrollbar_size = px(DIFF_SCROLLBAR_SIZE);
         let edge_inset = px(DIFF_BOTTOM_SAFE_INSET);
         let right_inset = px(DIFF_SCROLLBAR_RIGHT_INSET);
@@ -336,7 +335,26 @@ impl DiffViewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let surface = self.render_review_workspace_surface(window, cx);
-        self.render_tree_workspace_screen("hunk-diff-workspace", surface, cx)
+        let is_dark = cx.theme().mode.is_dark();
+        let terminal_state = self.files_terminal_panel_state();
+        let view = cx.entity();
+        let review_surface = self.render_review_workspace_surface(window, cx);
+        let workspace = self.render_tree_workspace_screen("hunk-diff-workspace", review_surface, cx);
+
+        v_flex()
+            .size_full()
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .child(workspace),
+            )
+            .when(terminal_state.open, |this| {
+                this.child(
+                    self.render_workspace_terminal_panel(view, &terminal_state, is_dark, cx)
+                        .unwrap_or_else(|| div().into_any_element()),
+                )
+            })
+            .into_any_element()
     }
 }

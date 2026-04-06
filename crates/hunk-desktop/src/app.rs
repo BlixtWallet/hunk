@@ -517,6 +517,20 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
             Some(WorkspaceViewMode::Files.shortcut_context()),
         )
     }));
+    bindings.extend(shortcuts.toggle_ai_terminal_drawer.iter().map(|shortcut| {
+        KeyBinding::new(
+            shortcut.as_str(),
+            AiToggleTerminalDrawer,
+            Some(WorkspaceViewMode::Diff.shortcut_context()),
+        )
+    }));
+    bindings.extend(shortcuts.toggle_ai_terminal_drawer.iter().map(|shortcut| {
+        KeyBinding::new(
+            shortcut.as_str(),
+            AiToggleTerminalDrawer,
+            Some(WorkspaceViewMode::GitWorkspace.shortcut_context()),
+        )
+    }));
     bindings.push(KeyBinding::new(
         "ctrl-c",
         AiTerminalSendCtrlC,

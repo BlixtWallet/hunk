@@ -5,6 +5,38 @@ struct MarkdownInlineRenderStyle {
 }
 
 impl DiffViewer {
+    fn files_terminal_panel_state(&self) -> TerminalPanelState {
+        TerminalPanelState {
+            kind: WorkspaceTerminalKind::Files,
+            open: self.files_terminal_open,
+            cwd_label: self
+                .files_terminal_session
+                .cwd
+                .clone()
+                .or_else(|| self.repo_root.clone())
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "No repository selected".to_string()),
+            shell_label: ai_terminal_shell_label(&self.config),
+            status_message: self.files_terminal_session.status_message.clone(),
+            status: self.files_terminal_session.status,
+            running: self.files_terminal_is_running(),
+            surface_focused: self.files_terminal_surface_focused,
+            screen: self.files_terminal_session.screen.clone(),
+            display_offset: self
+                .files_terminal_session
+                .screen
+                .as_ref()
+                .map(|screen| screen.display_offset)
+                .unwrap_or(0),
+            has_transcript: !self.files_terminal_session.transcript.trim().is_empty(),
+            has_output: self.files_terminal_session.screen.is_some()
+                || !self.files_terminal_session.transcript.trim().is_empty(),
+            has_last_command: self.files_terminal_session.last_command.is_some(),
+            transcript: self.files_terminal_session.transcript.clone(),
+            height_px: self.files_terminal_height_px,
+        }
+    }
+
     fn file_editor_tab_title(&self, path: &str) -> String {
         std::path::Path::new(path)
             .file_name()
@@ -222,35 +254,7 @@ impl DiffViewer {
         let view = cx.entity();
         let is_dark = cx.theme().mode.is_dark();
         let Some(file_path) = self.editor_path.clone() else {
-            let terminal_state = TerminalPanelState {
-                kind: WorkspaceTerminalKind::Files,
-                open: self.files_terminal_open,
-                cwd_label: self
-                    .files_terminal_session
-                    .cwd
-                    .clone()
-                    .or_else(|| self.repo_root.clone())
-                    .map(|path| path.display().to_string())
-                    .unwrap_or_else(|| "No repository selected".to_string()),
-                shell_label: ai_terminal_shell_label(&self.config),
-                status_message: self.files_terminal_session.status_message.clone(),
-                status: self.files_terminal_session.status,
-                running: self.files_terminal_is_running(),
-                surface_focused: self.files_terminal_surface_focused,
-                screen: self.files_terminal_session.screen.clone(),
-                display_offset: self
-                    .files_terminal_session
-                    .screen
-                    .as_ref()
-                    .map(|screen| screen.display_offset)
-                    .unwrap_or(0),
-                has_transcript: !self.files_terminal_session.transcript.trim().is_empty(),
-                has_output: self.files_terminal_session.screen.is_some()
-                    || !self.files_terminal_session.transcript.trim().is_empty(),
-                has_last_command: self.files_terminal_session.last_command.is_some(),
-                transcript: self.files_terminal_session.transcript.clone(),
-                height_px: self.files_terminal_height_px,
-            };
+            let terminal_state = self.files_terminal_panel_state();
             return v_flex()
                 .size_full()
                 .child(
@@ -347,35 +351,7 @@ impl DiffViewer {
         } else {
             self.render_file_editor_surface(window, editor_font_size, is_dark, cx)
         };
-        let terminal_state = TerminalPanelState {
-            kind: WorkspaceTerminalKind::Files,
-            open: self.files_terminal_open,
-            cwd_label: self
-                .files_terminal_session
-                .cwd
-                .clone()
-                .or_else(|| self.repo_root.clone())
-                .map(|path| path.display().to_string())
-                .unwrap_or_else(|| "No repository selected".to_string()),
-            shell_label: ai_terminal_shell_label(&self.config),
-            status_message: self.files_terminal_session.status_message.clone(),
-            status: self.files_terminal_session.status,
-            running: self.files_terminal_is_running(),
-            surface_focused: self.files_terminal_surface_focused,
-            screen: self.files_terminal_session.screen.clone(),
-            display_offset: self
-                .files_terminal_session
-                .screen
-                .as_ref()
-                .map(|screen| screen.display_offset)
-                .unwrap_or(0),
-            has_transcript: !self.files_terminal_session.transcript.trim().is_empty(),
-            has_output: self.files_terminal_session.screen.is_some()
-                || !self.files_terminal_session.transcript.trim().is_empty(),
-            has_last_command: self.files_terminal_session.last_command.is_some(),
-            transcript: self.files_terminal_session.transcript.clone(),
-            height_px: self.files_terminal_height_px,
-        };
+        let terminal_state = self.files_terminal_panel_state();
 
         v_flex()
             .size_full()

@@ -86,8 +86,9 @@ impl DiffViewer {
     pub(crate) fn active_workspace_terminal_kind(&self) -> Option<WorkspaceTerminalKind> {
         match self.workspace_view_mode {
             WorkspaceViewMode::Ai => Some(WorkspaceTerminalKind::Ai),
-            WorkspaceViewMode::Files => Some(WorkspaceTerminalKind::Files),
-            _ => None,
+            WorkspaceViewMode::Files
+            | WorkspaceViewMode::Diff
+            | WorkspaceViewMode::GitWorkspace => Some(WorkspaceTerminalKind::Files),
         }
     }
 
@@ -398,8 +399,11 @@ impl DiffViewer {
     ) {
         match self.workspace_view_mode {
             WorkspaceViewMode::Ai => self.toggle_ai_terminal_drawer(cx),
-            WorkspaceViewMode::Files => self.toggle_files_terminal_drawer(Some(window), cx),
-            _ => {}
+            WorkspaceViewMode::Files
+            | WorkspaceViewMode::Diff
+            | WorkspaceViewMode::GitWorkspace => {
+                self.toggle_files_terminal_drawer(Some(window), cx);
+            }
         }
     }
 
