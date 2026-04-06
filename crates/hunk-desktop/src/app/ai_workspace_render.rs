@@ -438,7 +438,14 @@ fn ai_workspace_paint_lines_for_block(
                 line_text,
                 workspace_root,
             )),
-            style_spans: Arc::from([]),
+            style_spans: Arc::<[ai_workspace_session::AiWorkspacePreviewStyleSpan]>::from(
+                block
+                    .text_layout
+                    .title_line_style_spans
+                    .get(line_index)
+                    .cloned()
+                    .unwrap_or_default(),
+            ),
             syntax_spans: Arc::from([]),
             origin: point(
                 render_layout.text_origin_x,
@@ -813,6 +820,9 @@ fn ai_workspace_text_runs_for_line(
             .iter()
             .filter(|span| span.range.start <= start && span.range.end >= end)
         {
+            if let Some(color_role) = span.color_role {
+                color = ai_workspace_color_for_role(theme, color_role);
+            }
             if span.bold {
                 run_font.weight = FontWeight::SEMIBOLD;
             }
@@ -878,6 +888,21 @@ fn ai_workspace_text_runs_for_line(
         )]
     } else {
         runs
+    }
+}
+
+fn ai_workspace_color_for_role(
+    theme: &gpui_component::Theme,
+    color_role: ai_workspace_session::AiWorkspacePreviewColorRole,
+) -> gpui::Hsla {
+    let is_dark = theme.mode.is_dark();
+    let line_stats = crate::app::theme::hunk_line_stats(theme, is_dark);
+    match color_role {
+        ai_workspace_session::AiWorkspacePreviewColorRole::Accent => theme.accent,
+        ai_workspace_session::AiWorkspacePreviewColorRole::Added => line_stats.added,
+        ai_workspace_session::AiWorkspacePreviewColorRole::Removed => line_stats.removed,
+        ai_workspace_session::AiWorkspacePreviewColorRole::Foreground => theme.foreground,
+        ai_workspace_session::AiWorkspacePreviewColorRole::Muted => theme.muted_foreground,
     }
 }
 

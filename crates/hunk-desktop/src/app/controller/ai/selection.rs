@@ -1,4 +1,20 @@
 impl DiffViewer {
+    pub(super) fn ai_copy_text_action(
+        &mut self,
+        text: String,
+        success_message: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        gpui_component::WindowExt::push_notification(
+            window,
+            crate::app::notifications::success(success_message),
+            cx,
+        );
+        cx.notify();
+    }
+
     pub(super) fn ai_set_pressed_markdown_link(
         &mut self,
         pressed_link: Option<AiPressedMarkdownLink>,
@@ -196,6 +212,15 @@ impl DiffViewer {
         }
 
         self.ai_select_all_text(cx)
+    }
+
+    pub(super) fn ai_copy_message_action(
+        &mut self,
+        message: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ai_copy_text_action(message, "Copied message.", window, cx);
     }
 
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]

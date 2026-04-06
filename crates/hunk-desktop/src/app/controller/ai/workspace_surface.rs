@@ -62,10 +62,20 @@ impl DiffViewer {
                     pending.prompt.as_str(),
                     pending.local_images.as_slice(),
                 ),
+                copy_text: Some(ai_workspace_prompt_preview(
+                    pending.prompt.as_str(),
+                    pending.local_images.as_slice(),
+                )),
+                copy_tooltip: Some("Copy message"),
+                copy_success_message: Some("Copied message."),
                 last_sequence: ai_workspace_pending_steer_signature(&pending),
             }];
         }
         if let Some(queued) = self.ai_queued_message_for_row_id(row_id) {
+            let preview = ai_workspace_prompt_preview(
+                queued.prompt.as_str(),
+                queued.local_images.as_slice(),
+            );
             return vec![ai_workspace_session::AiWorkspaceBlock {
                 id: row_id.to_string(),
                 source_row_id: row_id.to_string(),
@@ -82,10 +92,10 @@ impl DiffViewer {
                         "Pending Confirmation".to_string()
                     }
                 },
-                preview: ai_workspace_prompt_preview(
-                    queued.prompt.as_str(),
-                    queued.local_images.as_slice(),
-                ),
+                preview: preview.clone(),
+                copy_text: Some(preview),
+                copy_tooltip: Some("Copy message"),
+                copy_success_message: Some("Copied message."),
                 last_sequence: ai_workspace_queued_message_signature(&queued),
             }];
         }
@@ -138,6 +148,9 @@ impl DiffViewer {
                     expanded: true,
                     title: "Updated Plan".to_string(),
                     preview: ai_workspace_plan_preview(plan),
+                    copy_text: None,
+                    copy_tooltip: None,
+                    copy_success_message: None,
                     last_sequence: row.last_sequence,
                     }])
                     .unwrap_or_default()
@@ -408,7 +421,9 @@ impl DiffViewer {
     ) -> Option<ai_workspace_session::AiWorkspaceBlock> {
         let expanded = self.ai_workspace_row_is_expanded(row.id.as_str());
         match item.kind.as_str() {
-            "userMessage" | "agentMessage" => Some(ai_workspace_session::AiWorkspaceBlock {
+            "userMessage" | "agentMessage" => {
+                let preview = ai_workspace_message_preview(item);
+                Some(ai_workspace_session::AiWorkspaceBlock {
                 id: row.id.clone(),
                 source_row_id: row.id.clone(),
                 role: if item.kind == "userMessage" {
@@ -427,9 +442,13 @@ impl DiffViewer {
                 } else {
                     "Assistant".to_string()
                 },
-                preview: ai_workspace_message_preview(item),
+                preview: preview.clone(),
+                copy_text: Some(preview),
+                copy_tooltip: Some("Copy message"),
+                copy_success_message: Some("Copied message."),
                 last_sequence: row.last_sequence,
-            }),
+                })
+            }
             "fileChange" => crate::app::ai_workspace_timeline_projection::ai_workspace_file_change_summary(item)
                 .map(|summary| {
                     ai_workspace_diff_block(
@@ -463,6 +482,7 @@ impl DiffViewer {
                 } else {
                     String::new()
                 };
+                let copy_text = expanded.then_some(preview.clone());
                 Some(ai_workspace_session::AiWorkspaceBlock {
                     id: row.id.clone(),
                     source_row_id: row.id.clone(),
@@ -475,6 +495,9 @@ impl DiffViewer {
                     expanded,
                     title,
                     preview,
+                    copy_text,
+                    copy_tooltip: expanded.then_some("Copy command transcript"),
+                    copy_success_message: expanded.then_some("Copied command transcript."),
                     last_sequence: row.last_sequence,
                 })
             }
@@ -514,6 +537,9 @@ impl DiffViewer {
                     expanded,
                     title: ai_workspace_tool_header_line(item, item.content.trim()),
                     preview,
+                    copy_text: None,
+                    copy_tooltip: None,
+                    copy_success_message: None,
                     last_sequence: row.last_sequence,
                 })
             }
@@ -529,6 +555,9 @@ impl DiffViewer {
                 expanded: true,
                 title: ai_workspace_tool_header_line(item, item.content.trim()),
                 preview: String::new(),
+                copy_text: None,
+                copy_tooltip: None,
+                copy_success_message: None,
                 last_sequence: row.last_sequence,
             }),
         }
@@ -568,6 +597,9 @@ impl DiffViewer {
                 None,
             ),
             preview: String::new(),
+            copy_text: None,
+            copy_tooltip: None,
+            copy_success_message: None,
             last_sequence: row.last_sequence,
         }];
 
@@ -707,6 +739,9 @@ fn ai_workspace_diff_block(
         expanded: false,
         title,
         preview,
+        copy_text: None,
+        copy_tooltip: None,
+        copy_success_message: None,
         last_sequence,
     }
 }

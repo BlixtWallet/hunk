@@ -13,8 +13,8 @@ use std::sync::Arc;
 use ai_workspace_session::{
     AI_WORKSPACE_SURFACE_BLOCK_BOTTOM_PADDING_PX, AI_WORKSPACE_SURFACE_BLOCK_GAP_PX,
     AI_WORKSPACE_SURFACE_BLOCK_SIDE_PADDING_PX, AI_WORKSPACE_SURFACE_BLOCK_TOP_PADDING_PX,
-    AiWorkspaceBlock, AiWorkspaceBlockKind, AiWorkspaceBlockRole, AiWorkspaceSelection,
-    AiWorkspaceSelectionRegion, AiWorkspaceSession, AiWorkspaceSourceRow,
+    AiWorkspaceBlock, AiWorkspaceBlockKind, AiWorkspaceBlockRole, AiWorkspacePreviewColorRole,
+    AiWorkspaceSelection, AiWorkspaceSelectionRegion, AiWorkspaceSession, AiWorkspaceSourceRow,
     ai_workspace_text_layout_for_block,
 };
 
@@ -45,6 +45,9 @@ fn block(id: &str, kind: AiWorkspaceBlockKind, preview: &str) -> AiWorkspaceBloc
         ),
         title: id.to_string(),
         preview: preview.to_string(),
+        copy_text: None,
+        copy_tooltip: None,
+        copy_success_message: None,
         last_sequence: 1,
     }
 }
@@ -167,6 +170,9 @@ fn surface_snapshot_supports_all_block_kinds_and_roles() {
                 expanded: true,
                 title: "You".to_string(),
                 preview: "prompt".to_string(),
+                copy_text: None,
+                copy_tooltip: None,
+                copy_success_message: None,
                 last_sequence: 1,
             },
             block("row-group", AiWorkspaceBlockKind::Group, "group"),
@@ -255,6 +261,9 @@ fn narrower_widths_increase_wrapped_height() {
         expanded: true,
         title: "Assistant".to_string(),
         preview: "This is a longer assistant message preview that should wrap across multiple lines when the surface width gets narrower.".to_string(),
+        copy_text: None,
+        copy_tooltip: None,
+        copy_success_message: None,
         last_sequence: 1,
     };
 
@@ -283,6 +292,9 @@ fn message_blocks_are_no_longer_limited_to_six_preview_lines() {
         expanded: true,
         title: "Assistant".to_string(),
         preview,
+        copy_text: None,
+        copy_tooltip: None,
+        copy_success_message: None,
         last_sequence: 1,
     };
 
@@ -309,6 +321,9 @@ fn expanded_tool_blocks_take_more_height_than_collapsed_tool_blocks() {
         expanded: false,
         title: "Command".to_string(),
         preview: preview.clone(),
+        copy_text: None,
+        copy_tooltip: None,
+        copy_success_message: None,
         last_sequence: 1,
     };
     let expanded = AiWorkspaceBlock {
@@ -337,6 +352,9 @@ fn very_narrow_surface_widths_do_not_panic() {
         expanded: true,
         title: "Assistant".to_string(),
         preview: "narrow viewport".to_string(),
+        copy_text: None,
+        copy_tooltip: None,
+        copy_success_message: None,
         last_sequence: 1,
     };
     let mut session =
@@ -362,6 +380,9 @@ fn markdown_message_layout_preserves_heading_links_and_inline_styles() {
         expanded: true,
         title: "Assistant".to_string(),
         preview: "# Heading\nA **bold** [link](https://example.com) with `code`.".to_string(),
+        copy_text: None,
+        copy_tooltip: None,
+        copy_success_message: None,
         last_sequence: 1,
     };
 
@@ -392,4 +413,115 @@ fn markdown_message_layout_preserves_heading_links_and_inline_styles() {
             .flatten()
             .any(|range| range.raw_target == "https://example.com")
     );
+}
+
+#[test]
+fn diff_summary_layout_marks_filename_and_line_stats_with_color_roles() {
+    let block = AiWorkspaceBlock {
+        id: "row-diff".to_string(),
+        source_row_id: "row-diff".to_string(),
+        role: AiWorkspaceBlockRole::Tool,
+        kind: AiWorkspaceBlockKind::DiffSummary,
+        nested: false,
+        mono_preview: false,
+        open_review_tab: true,
+        expandable: false,
+        expanded: false,
+        title: "Edited workspace_surface.rs  +1 -12".to_string(),
+        preview: "2 files changed, +3 -12".to_string(),
+        copy_text: None,
+        copy_tooltip: None,
+        copy_success_message: None,
+        last_sequence: 1,
+    };
+
+    let layout = ai_workspace_text_layout_for_block(&block, 640);
+
+    assert!(
+        layout
+            .title_line_style_spans
+            .iter()
+            .flatten()
+            .any(|span| span.color_role == Some(AiWorkspacePreviewColorRole::Accent))
+    );
+    assert!(
+        layout
+            .title_line_style_spans
+            .iter()
+            .flatten()
+            .any(|span| span.color_role == Some(AiWorkspacePreviewColorRole::Added))
+    );
+    assert!(
+        layout
+            .title_line_style_spans
+            .iter()
+            .flatten()
+            .any(|span| span.color_role == Some(AiWorkspacePreviewColorRole::Removed))
+    );
+}
+
+#[test]
+fn plan_layout_marks_in_progress_steps_with_accent_and_completed_steps_as_muted() {
+    let block = AiWorkspaceBlock {
+        id: "row-plan".to_string(),
+        source_row_id: "row-plan".to_string(),
+        role: AiWorkspaceBlockRole::Assistant,
+        kind: AiWorkspaceBlockKind::Plan,
+        nested: false,
+        mono_preview: false,
+        open_review_tab: false,
+        expandable: false,
+        expanded: true,
+        title: "Updated Plan".to_string(),
+        preview: "[>] Implement copy buttons\n[x] Restore diff colors\n[ ] Re-run verification"
+            .to_string(),
+        copy_text: None,
+        copy_tooltip: None,
+        copy_success_message: None,
+        last_sequence: 1,
+    };
+
+    let layout = ai_workspace_text_layout_for_block(&block, 640);
+
+    assert!(
+        layout
+            .preview_line_style_spans
+            .iter()
+            .flatten()
+            .any(|span| span.color_role == Some(AiWorkspacePreviewColorRole::Accent))
+    );
+    assert!(
+        layout
+            .preview_line_style_spans
+            .iter()
+            .flatten()
+            .any(|span| span.color_role == Some(AiWorkspacePreviewColorRole::Muted))
+    );
+}
+
+#[test]
+fn markdown_code_blocks_expose_copy_regions() {
+    let block = AiWorkspaceBlock {
+        id: "row-code".to_string(),
+        source_row_id: "row-code".to_string(),
+        role: AiWorkspaceBlockRole::Assistant,
+        kind: AiWorkspaceBlockKind::Message,
+        nested: false,
+        mono_preview: false,
+        open_review_tab: false,
+        expandable: false,
+        expanded: true,
+        title: "Assistant".to_string(),
+        preview: "```rust\nfn main() {\n    println!(\"hi\");\n}\n```".to_string(),
+        copy_text: None,
+        copy_tooltip: None,
+        copy_success_message: None,
+        last_sequence: 1,
+    };
+
+    let layout = ai_workspace_text_layout_for_block(&block, 640);
+
+    assert_eq!(layout.preview_copy_regions.len(), 1);
+    assert_eq!(layout.preview_copy_regions[0].tooltip, "Copy code block");
+    assert!(layout.preview_copy_regions[0].text.contains("fn main()"));
 }

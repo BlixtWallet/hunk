@@ -151,6 +151,29 @@ Follow-up parity work completed in the surface path:
 - restored file-change and diff rows to compact diff summaries that open the Review tab again
 - restored per-group and per-child invalidation signatures so expanded group content rebuilds when nested rows change
 
+The latest screenshot review reopened one more parity slice. These are not design tweaks; they are missing behaviors from the old timeline that still need to be restored on the painted surface.
+
+Confirmed remaining parity gaps:
+
+- diff/file summary rows still render as plain text instead of restoring semantic color treatment for filenames and added/removed counters
+- plan rows still restore strike-through semantics but not the old checklist state colors for completed, in-progress, and pending items
+- assistant rows lost the old copy-message affordance
+- user rows lost the old copy-message affordance
+- expanded command transcript rows lost the old copy-command-transcript affordance
+- markdown code fences lost the old copy-code-block affordance
+
+Implementation plan for the reopened slice:
+
+1. Extend the AI surface projection with semantic style metadata instead of hard-coded plain-text styling.
+   This includes filename accent spans, added/removed line-stat spans, and plan checklist state color spans.
+2. Restore block-level copy actions in the painted surface session model.
+   Message blocks need copy-message metadata and command transcript blocks need copy-transcript metadata.
+3. Restore code-block copy actions in the markdown projection.
+   Markdown code fences need explicit copy regions so the painted surface can place action buttons over the correct code block instead of only offering whole-message copy.
+4. Render the missing copy affordances on top of the painted surface without reintroducing the old list renderer.
+   The surface remains paint-first for text/content, while a small overlay action layer handles the interactive copy buttons for visible blocks/code regions.
+5. Re-run full workspace verification, then commit and push only after the parity slice is green.
+
 ## Validation and Follow-up
 
 - Run manual parity QA against the old AI timeline on representative threads, especially long markdown-heavy and command-heavy turns.

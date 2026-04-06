@@ -47,6 +47,9 @@ pub(crate) struct AiWorkspaceBlock {
     pub(crate) expanded: bool,
     pub(crate) title: String,
     pub(crate) preview: String,
+    pub(crate) copy_text: Option<String>,
+    pub(crate) copy_tooltip: Option<&'static str>,
+    pub(crate) copy_success_message: Option<&'static str>,
     pub(crate) last_sequence: u64,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,11 +122,13 @@ pub(crate) struct AiWorkspaceSurfaceSnapshotResult {
 pub(crate) struct AiWorkspaceBlockTextLayout {
     pub(crate) block_width_px: usize,
     pub(crate) title_lines: Vec<String>,
+    pub(crate) title_line_style_spans: Vec<Vec<AiWorkspacePreviewStyleSpan>>,
     pub(crate) preview_lines: Vec<String>,
     pub(crate) preview_line_kinds: Vec<AiWorkspacePreviewLineKind>,
     pub(crate) preview_line_link_ranges: Vec<Vec<MarkdownLinkRange>>,
     pub(crate) preview_line_style_spans: Vec<Vec<AiWorkspacePreviewStyleSpan>>,
     pub(crate) preview_line_syntax_spans: Vec<Vec<AiWorkspacePreviewSyntaxSpan>>,
+    pub(crate) preview_copy_regions: Vec<AiWorkspaceCopyRegion>,
     pub(crate) height_px: usize,
 }
 
@@ -137,14 +142,32 @@ pub(crate) enum AiWorkspacePreviewLineKind {
     Rule,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AiWorkspacePreviewColorRole {
+    Accent,
+    Added,
+    Removed,
+    Foreground,
+    Muted,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AiWorkspacePreviewStyleSpan {
     pub(crate) range: Range<usize>,
+    pub(crate) color_role: Option<AiWorkspacePreviewColorRole>,
     pub(crate) bold: bool,
     pub(crate) italic: bool,
     pub(crate) strikethrough: bool,
     pub(crate) code: bool,
     pub(crate) link: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AiWorkspaceCopyRegion {
+    pub(crate) line_range: Range<usize>,
+    pub(crate) text: String,
+    pub(crate) tooltip: &'static str,
+    pub(crate) success_message: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,6 +181,7 @@ type AiWorkspacePreviewProjection = (
     Vec<Vec<MarkdownLinkRange>>,
     Vec<Vec<AiWorkspacePreviewStyleSpan>>,
     Vec<Vec<AiWorkspacePreviewSyntaxSpan>>,
+    Vec<AiWorkspaceCopyRegion>,
 );
 type AiWorkspaceStructuredPreviewLine = (
     String,
@@ -310,12 +334,15 @@ pub(crate) fn ai_workspace_text_layout_for_block(
         ai_workspace_chars_per_line(text_width_px, true, false),
         2,
     );
+    let title_line_style_spans =
+        ai_workspace_title_style_spans(block, title_lines.as_slice(), text_width_px);
     let (
         preview_lines,
         preview_line_kinds,
         preview_line_link_ranges,
         preview_line_style_spans,
         preview_line_syntax_spans,
+        preview_copy_regions,
     ) = if block.kind == AiWorkspaceBlockKind::Message {
         ai_workspace_message_preview_lines(block.preview.as_str(), text_width_px, block)
     } else {
@@ -328,17 +355,69 @@ pub(crate) fn ai_workspace_text_layout_for_block(
             preview_lines
                 .iter()
                 .map(|line| match line.as_bytes().get(..4) {
-                    Some(b"[x] ") => vec![AiWorkspacePreviewStyleSpan {
-                        range: 4..line.len(),
-                        bold: false,
-                        italic: false,
-                        strikethrough: true,
-                        code: false,
-                        link: false,
-                    }],
-                    Some(b"[>] ") | Some(b"[ ] ") => Vec::new(),
+                    Some(b"[x] ") => vec![
+                        AiWorkspacePreviewStyleSpan {
+                            range: 0..3,
+                            color_role: Some(AiWorkspacePreviewColorRole::Added),
+                            bold: false,
+                            italic: false,
+                            strikethrough: false,
+                            code: false,
+                            link: false,
+                        },
+                        AiWorkspacePreviewStyleSpan {
+                            range: 4..line.len(),
+                            color_role: Some(AiWorkspacePreviewColorRole::Muted),
+                            bold: false,
+                            italic: false,
+                            strikethrough: true,
+                            code: false,
+                            link: false,
+                        },
+                    ],
+                    Some(b"[>] ") => vec![
+                        AiWorkspacePreviewStyleSpan {
+                            range: 0..3,
+                            color_role: Some(AiWorkspacePreviewColorRole::Accent),
+                            bold: false,
+                            italic: false,
+                            strikethrough: false,
+                            code: false,
+                            link: false,
+                        },
+                        AiWorkspacePreviewStyleSpan {
+                            range: 4..line.len(),
+                            color_role: Some(AiWorkspacePreviewColorRole::Foreground),
+                            bold: true,
+                            italic: false,
+                            strikethrough: false,
+                            code: false,
+                            link: false,
+                        },
+                    ],
+                    Some(b"[ ] ") => vec![
+                        AiWorkspacePreviewStyleSpan {
+                            range: 0..3,
+                            color_role: Some(AiWorkspacePreviewColorRole::Muted),
+                            bold: false,
+                            italic: false,
+                            strikethrough: false,
+                            code: false,
+                            link: false,
+                        },
+                        AiWorkspacePreviewStyleSpan {
+                            range: 4..line.len(),
+                            color_role: Some(AiWorkspacePreviewColorRole::Muted),
+                            bold: false,
+                            italic: false,
+                            strikethrough: false,
+                            code: false,
+                            link: false,
+                        },
+                    ],
                     _ => vec![AiWorkspacePreviewStyleSpan {
                         range: 0..line.len(),
+                        color_role: Some(AiWorkspacePreviewColorRole::Muted),
                         bold: false,
                         italic: true,
                         strikethrough: false,
@@ -346,6 +425,11 @@ pub(crate) fn ai_workspace_text_layout_for_block(
                         link: false,
                     }],
                 })
+                .collect()
+        } else if block.kind == AiWorkspaceBlockKind::DiffSummary {
+            preview_lines
+                .iter()
+                .map(|line| ai_workspace_diff_summary_line_style_spans(line, text_width_px))
                 .collect()
         } else {
             Vec::new()
@@ -363,6 +447,7 @@ pub(crate) fn ai_workspace_text_layout_for_block(
             Vec::new(),
             preview_line_style_spans,
             Vec::new(),
+            Vec::new(),
         )
     };
     let title_height_px = title_lines.len() * AI_WORKSPACE_BLOCK_TITLE_LINE_HEIGHT_PX;
@@ -376,11 +461,13 @@ pub(crate) fn ai_workspace_text_layout_for_block(
     AiWorkspaceBlockTextLayout {
         block_width_px,
         title_lines,
+        title_line_style_spans,
         preview_lines,
         preview_line_kinds,
         preview_line_link_ranges,
         preview_line_style_spans,
         preview_line_syntax_spans,
+        preview_copy_regions,
         height_px: AI_WORKSPACE_BLOCK_CONTENT_TOP_PADDING_PX
             + title_height_px
             + preview_gap_px
@@ -488,6 +575,21 @@ fn ai_workspace_preview_line_limit(block: &AiWorkspaceBlock) -> usize {
     }
 }
 
+fn ai_workspace_title_style_spans(
+    block: &AiWorkspaceBlock,
+    title_lines: &[String],
+    text_width_px: usize,
+) -> Vec<Vec<AiWorkspacePreviewStyleSpan>> {
+    if block.kind != AiWorkspaceBlockKind::DiffSummary {
+        return vec![Vec::new(); title_lines.len()];
+    }
+
+    title_lines
+        .iter()
+        .map(|line| ai_workspace_diff_summary_line_style_spans(line, text_width_px))
+        .collect()
+}
+
 fn ai_workspace_width_bucket(width_px: usize) -> usize {
     const AI_WORKSPACE_WIDTH_BUCKET_SIZE_PX: usize = 40;
 
@@ -502,7 +604,14 @@ fn ai_workspace_message_preview_lines(
 ) -> AiWorkspacePreviewProjection {
     let max_lines = ai_workspace_preview_line_limit(block);
     if markdown.trim().is_empty() {
-        return (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        return (
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
     }
 
     let blocks = hunk_domain::markdown_preview::parse_markdown_preview(markdown);
@@ -518,10 +627,12 @@ fn ai_workspace_message_preview_lines(
             Vec::new(),
             Vec::new(),
             Vec::new(),
+            Vec::new(),
         );
     }
 
     let mut structured_lines = Vec::<AiWorkspaceStructuredPreviewLine>::new();
+    let mut copy_regions = Vec::<AiWorkspaceCopyRegion>::new();
     for (block_index, markdown_block) in blocks.into_iter().enumerate() {
         if block_index > 0 {
             structured_lines.push((
@@ -598,6 +709,7 @@ fn ai_workspace_message_preview_lines(
                 );
             }
             hunk_domain::markdown_preview::MarkdownPreviewBlock::CodeBlock { language, lines } => {
+                let copy_region_start = structured_lines.len();
                 if let Some(language) = language.filter(|value| !value.trim().is_empty()) {
                     ai_workspace_push_markdown_block_line(
                         &mut structured_lines,
@@ -608,9 +720,11 @@ fn ai_workspace_message_preview_lines(
                         Vec::new(),
                     );
                 }
+                let mut code_lines = Vec::with_capacity(lines.len());
                 for line in lines {
                     let (text, syntax_spans) =
                         ai_workspace_markdown_code_line_text_and_spans(&line);
+                    code_lines.push(text.clone());
                     structured_lines.push((
                         text,
                         AiWorkspacePreviewLineKind::Code,
@@ -618,6 +732,14 @@ fn ai_workspace_message_preview_lines(
                         Vec::new(),
                         syntax_spans,
                     ));
+                }
+                if !code_lines.is_empty() {
+                    copy_regions.push(AiWorkspaceCopyRegion {
+                        line_range: copy_region_start..structured_lines.len(),
+                        text: code_lines.join("\n"),
+                        tooltip: "Copy code block",
+                        success_message: "Copied code block.",
+                    });
                 }
             }
             hunk_domain::markdown_preview::MarkdownPreviewBlock::ThematicBreak => {
@@ -632,7 +754,12 @@ fn ai_workspace_message_preview_lines(
         }
     }
 
-    ai_workspace_wrap_structured_preview_lines(structured_lines, text_width_px, max_lines)
+    ai_workspace_wrap_structured_preview_lines(
+        structured_lines,
+        copy_regions,
+        text_width_px,
+        max_lines,
+    )
 }
 
 fn ai_workspace_push_markdown_block_line(
@@ -650,11 +777,19 @@ fn ai_workspace_push_markdown_block_line(
 
 fn ai_workspace_wrap_structured_preview_lines(
     structured_lines: Vec<AiWorkspaceStructuredPreviewLine>,
+    copy_regions: Vec<AiWorkspaceCopyRegion>,
     text_width_px: usize,
     max_lines: usize,
 ) -> AiWorkspacePreviewProjection {
     if max_lines == 0 {
-        return (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        return (
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
     }
 
     let mut wrapped_lines = Vec::new();
@@ -662,11 +797,16 @@ fn ai_workspace_wrap_structured_preview_lines(
     let mut wrapped_link_ranges = Vec::new();
     let mut wrapped_style_spans = Vec::new();
     let mut wrapped_syntax_spans = Vec::new();
+    let mut wrapped_copy_regions = Vec::new();
+    let mut structured_line_to_wrapped_start = Vec::new();
+    let mut structured_line_to_wrapped_end = Vec::new();
 
     let total_structured_lines = structured_lines.len();
     for (line_index, (line, kind, link_ranges, style_spans, syntax_spans)) in
         structured_lines.into_iter().enumerate()
     {
+        let wrapped_start = wrapped_lines.len();
+        structured_line_to_wrapped_start.push(wrapped_start);
         let has_more_input = line_index + 1 < total_structured_lines;
         let max_chars_per_line = ai_workspace_chars_per_line(
             text_width_px,
@@ -699,16 +839,32 @@ fn ai_workspace_wrap_structured_preview_lines(
                 if has_more_input || wrapped_index > 0 {
                     ai_workspace_append_ellipsis(wrapped_lines.last_mut());
                 }
+                structured_line_to_wrapped_end.push(wrapped_lines.len());
+                wrapped_copy_regions.extend(ai_workspace_clip_copy_regions(
+                    copy_regions.as_slice(),
+                    structured_line_to_wrapped_start.as_slice(),
+                    structured_line_to_wrapped_end.as_slice(),
+                    wrapped_lines.len(),
+                ));
                 return (
                     wrapped_lines,
                     wrapped_kinds,
                     wrapped_link_ranges,
                     wrapped_style_spans,
                     wrapped_syntax_spans,
+                    wrapped_copy_regions,
                 );
             }
         }
+        structured_line_to_wrapped_end.push(wrapped_lines.len());
     }
+
+    wrapped_copy_regions.extend(ai_workspace_clip_copy_regions(
+        copy_regions.as_slice(),
+        structured_line_to_wrapped_start.as_slice(),
+        structured_line_to_wrapped_end.as_slice(),
+        wrapped_lines.len(),
+    ));
 
     (
         wrapped_lines,
@@ -716,274 +872,8 @@ fn ai_workspace_wrap_structured_preview_lines(
         wrapped_link_ranges,
         wrapped_style_spans,
         wrapped_syntax_spans,
+        wrapped_copy_regions,
     )
 }
 
-fn ai_workspace_wrap_text(text: &str, max_chars_per_line: usize, max_lines: usize) -> Vec<String> {
-    ai_workspace_wrap_text_ranges(text, max_chars_per_line, max_lines)
-        .into_iter()
-        .map(|range| text[range].to_string())
-        .collect()
-}
-
-fn ai_workspace_wrap_text_ranges(
-    text: &str,
-    max_chars_per_line: usize,
-    max_lines: usize,
-) -> Vec<Range<usize>> {
-    if max_lines == 0 {
-        return Vec::new();
-    }
-
-    let max_chars_per_line = max_chars_per_line.max(8);
-    let mut lines = Vec::new();
-
-    let mut raw_lines = text.lines().peekable();
-    let mut cursor = 0usize;
-    while let Some(raw_line) = raw_lines.next() {
-        let has_more_input = raw_lines.peek().is_some();
-        let raw_line_start = cursor;
-        let raw_line_end = raw_line_start + raw_line.len();
-        cursor = raw_line_end.saturating_add(1);
-        if raw_line.is_empty() {
-            lines.push(raw_line_start..raw_line_start);
-            if lines.len() == max_lines {
-                if has_more_input {
-                    ai_workspace_append_ellipsis_range(lines.last_mut(), text);
-                }
-                return lines;
-            }
-            continue;
-        }
-
-        let mut remaining_start = raw_line_start;
-        let mut remaining = raw_line.trim_end_matches(['\r', ' ']);
-        loop {
-            if remaining.is_empty() {
-                break;
-            }
-
-            let remaining_chars = remaining.chars().count();
-            if remaining_chars <= max_chars_per_line {
-                let trimmed_len = remaining.len();
-                lines.push(remaining_start..remaining_start.saturating_add(trimmed_len));
-                if lines.len() == max_lines {
-                    if has_more_input {
-                        ai_workspace_append_ellipsis_range(lines.last_mut(), text);
-                    }
-                    return lines;
-                }
-                break;
-            }
-
-            let split_index = ai_workspace_wrap_split_index(remaining, max_chars_per_line)
-                .unwrap_or(remaining.len());
-            let (chunk, rest) = remaining.split_at(split_index);
-            let chunk = chunk.trim_end_matches([' ', '\t']);
-            lines.push(if chunk.is_empty() {
-                remaining_start..remaining_start.saturating_add(split_index)
-            } else {
-                remaining_start..remaining_start.saturating_add(chunk.len())
-            });
-            if lines.len() == max_lines {
-                ai_workspace_append_ellipsis_range(lines.last_mut(), text);
-                return lines;
-            }
-            remaining_start = remaining_start.saturating_add(split_index).saturating_add(
-                rest.len()
-                    .saturating_sub(rest.trim_start_matches([' ', '\t']).len()),
-            );
-            remaining = rest.trim_start_matches([' ', '\t']);
-        }
-    }
-
-    lines
-}
-
-fn ai_workspace_wrap_split_index(text: &str, max_chars_per_line: usize) -> Option<usize> {
-    let mut char_count = 0usize;
-    let mut last_whitespace_break = None;
-
-    for (byte_index, ch) in text.char_indices() {
-        char_count = char_count.saturating_add(1);
-        if ch.is_whitespace() {
-            last_whitespace_break = Some(byte_index + ch.len_utf8());
-        }
-        if char_count >= max_chars_per_line {
-            return last_whitespace_break.or(Some(byte_index + ch.len_utf8()));
-        }
-    }
-
-    None
-}
-
-fn ai_workspace_append_ellipsis(line: Option<&mut String>) {
-    let Some(line) = line else {
-        return;
-    };
-    if !line.ends_with("...") {
-        line.push_str("...");
-    }
-}
-
-fn ai_workspace_append_ellipsis_range(line: Option<&mut Range<usize>>, text: &str) {
-    let Some(line) = line else {
-        return;
-    };
-    let mut end = line.end;
-    while end > line.start && !text.is_char_boundary(end) {
-        end = end.saturating_sub(1);
-    }
-    line.end = end;
-}
-
-fn ai_workspace_offset_link_ranges(
-    link_ranges: Vec<MarkdownLinkRange>,
-    offset: usize,
-) -> Vec<MarkdownLinkRange> {
-    link_ranges
-        .into_iter()
-        .map(|range| MarkdownLinkRange {
-            range: (range.range.start + offset)..(range.range.end + offset),
-            raw_target: range.raw_target,
-        })
-        .collect()
-}
-
-fn ai_workspace_offset_style_spans(
-    style_spans: Vec<AiWorkspacePreviewStyleSpan>,
-    offset: usize,
-) -> Vec<AiWorkspacePreviewStyleSpan> {
-    style_spans
-        .into_iter()
-        .map(|span| AiWorkspacePreviewStyleSpan {
-            range: (span.range.start + offset)..(span.range.end + offset),
-            ..span
-        })
-        .collect()
-}
-
-fn ai_workspace_markdown_inline_text_and_styles(
-    spans: &[hunk_domain::markdown_preview::MarkdownInlineSpan],
-) -> (
-    String,
-    Vec<MarkdownLinkRange>,
-    Vec<AiWorkspacePreviewStyleSpan>,
-) {
-    let (text, link_ranges) = markdown_inline_text_and_link_ranges(spans);
-    let mut style_spans = Vec::new();
-    let mut cursor = 0usize;
-
-    for span in spans {
-        if span.style.hard_break {
-            if !text[..cursor].ends_with('\n') {
-                cursor += 1;
-            }
-            continue;
-        }
-        if span.text.is_empty() {
-            continue;
-        }
-
-        let start = cursor;
-        let end = start + span.text.len();
-        cursor = end;
-        if !(span.style.bold
-            || span.style.italic
-            || span.style.strikethrough
-            || span.style.code
-            || span.style.link.is_some())
-        {
-            continue;
-        }
-
-        style_spans.push(AiWorkspacePreviewStyleSpan {
-            range: start..end,
-            bold: span.style.bold,
-            italic: span.style.italic,
-            strikethrough: span.style.strikethrough,
-            code: span.style.code,
-            link: span.style.link.is_some(),
-        });
-    }
-
-    (text, link_ranges, style_spans)
-}
-
-fn ai_workspace_markdown_code_line_text_and_spans(
-    spans: &[hunk_domain::markdown_preview::MarkdownCodeSpan],
-) -> (String, Vec<AiWorkspacePreviewSyntaxSpan>) {
-    let mut text = String::new();
-    let mut syntax_spans = Vec::new();
-    let mut cursor = 0usize;
-
-    for span in spans {
-        if span.text.is_empty() {
-            continue;
-        }
-        let start = cursor;
-        text.push_str(span.text.as_str());
-        cursor += span.text.len();
-        syntax_spans.push(AiWorkspacePreviewSyntaxSpan {
-            range: start..cursor,
-            token: span.token,
-        });
-    }
-
-    (text, syntax_spans)
-}
-
-fn ai_workspace_clip_link_ranges(
-    link_ranges: &[MarkdownLinkRange],
-    visible_range: Range<usize>,
-) -> Vec<MarkdownLinkRange> {
-    link_ranges
-        .iter()
-        .filter_map(|range| {
-            let start = range.range.start.max(visible_range.start);
-            let end = range.range.end.min(visible_range.end);
-            (start < end).then(|| MarkdownLinkRange {
-                range: (start - visible_range.start)..(end - visible_range.start),
-                raw_target: range.raw_target.clone(),
-            })
-        })
-        .collect()
-}
-
-fn ai_workspace_clip_style_spans(
-    style_spans: &[AiWorkspacePreviewStyleSpan],
-    visible_range: Range<usize>,
-) -> Vec<AiWorkspacePreviewStyleSpan> {
-    style_spans
-        .iter()
-        .filter_map(|span| {
-            let start = span.range.start.max(visible_range.start);
-            let end = span.range.end.min(visible_range.end);
-            (start < end).then(|| AiWorkspacePreviewStyleSpan {
-                range: (start - visible_range.start)..(end - visible_range.start),
-                bold: span.bold,
-                italic: span.italic,
-                strikethrough: span.strikethrough,
-                code: span.code,
-                link: span.link,
-            })
-        })
-        .collect()
-}
-
-fn ai_workspace_clip_syntax_spans(
-    syntax_spans: &[AiWorkspacePreviewSyntaxSpan],
-    visible_range: Range<usize>,
-) -> Vec<AiWorkspacePreviewSyntaxSpan> {
-    syntax_spans
-        .iter()
-        .filter_map(|span| {
-            let start = span.range.start.max(visible_range.start);
-            let end = span.range.end.min(visible_range.end);
-            (start < end).then(|| AiWorkspacePreviewSyntaxSpan {
-                range: (start - visible_range.start)..(end - visible_range.start),
-                token: span.token,
-            })
-        })
-        .collect()
-}
+include!("ai_workspace_session_projection.rs");
