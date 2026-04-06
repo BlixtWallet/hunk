@@ -125,14 +125,26 @@ Use it with `workflow_dispatch` when you want to test:
 - manifest generation
 - detached signatures
 - automatic R2 upload
+- full OTA downloads from a temporary public test prefix
 
 without touching the production tag-triggered release workflow.
+
+What it does now:
+
+- builds the normal macOS, Windows, and Linux artifacts
+- uploads the OTA test assets to your public R2 bucket under:
+  - `test/<github-run-id>/<github-run-attempt>/`
+- generates `stable.json` against that same public prefix
+- uploads `stable.json`, `stable.json.sig`, and the asset `.sig` files beside the assets
+- writes the final manifest URL into the GitHub Actions step summary
 
 Important:
 
 - this manual workflow does **not** create or upload a GitHub Release
-- it writes whatever `asset_base_url` you pass into `stable.json`
-- that means it is good for testing R2 publishing and manifest generation, but end-to-end updater downloads only work if `asset_base_url` points to real public binaries
+- it is intended for real end-to-end updater tests against temporary public R2 URLs
+- by default it uses:
+  - `https://pub-de32dfa5fe9845849590fa075f3edafa.r2.dev`
+- you can override that with the `public_base_url` workflow input if you move buckets later
 
 ## How to test the updater
 
@@ -160,11 +172,18 @@ python3 -m http.server 8080
 ### App-side manual test
 
 1. Build or install an older Hunk version.
-2. Publish a newer release and generate `stable.json`.
-3. Point Hunk at the test manifest with `HUNK_UPDATE_MANIFEST_URL`.
-4. Launch Hunk.
-5. Use `Check for Updates...` or the Settings updater controls.
-6. Confirm:
+2. Run the `Release Manual Test` workflow from GitHub Actions.
+3. Copy the manifest URL from the workflow summary. It will look like:
+   - `https://pub-de32dfa5fe9845849590fa075f3edafa.r2.dev/test/<run-id>/<attempt>/stable.json`
+4. Point Hunk at that manifest:
+
+```bash
+export HUNK_UPDATE_MANIFEST_URL="https://pub-de32dfa5fe9845849590fa075f3edafa.r2.dev/test/<run-id>/<attempt>/stable.json"
+```
+
+5. Launch Hunk.
+6. Use `Check for Updates...` or the Settings updater controls.
+7. Confirm:
    - the app detects the newer version
    - `Install Update` appears
    - the update downloads
