@@ -707,7 +707,7 @@ fn replace_install_root(current_root: &Path, replacement_root: &Path) -> Result<
 fn sync_install_root_in_place(current_root: &Path, replacement_root: &Path) -> Result<()> {
     let source = replacement_root.join(".");
     let output = Command::new("rsync")
-        .args(["-a", "--delete"])
+        .args(["-a", "--delete", "--checksum"])
         .arg(source.as_path())
         .arg(current_root)
         .output()
