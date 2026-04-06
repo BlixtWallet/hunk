@@ -48,21 +48,23 @@ impl DiffViewer {
         let previous_draft_key = self.current_ai_composer_draft_key();
         let previous_sidebar_workspace_key = self.ai_state_snapshot_workspace_key();
         let previous_workspace_key = self.ai_workspace_key();
-        let visible_threads_changed = ai_snapshot_threads_changed(&self.ai_state_snapshot, &snapshot.state);
+        let visible_threads_changed =
+            ai_snapshot_threads_changed(&self.ai_state_snapshot, &snapshot.state);
         let visible_threads_removed =
             ai_snapshot_removed_thread_ids(&self.ai_state_snapshot, &snapshot.state);
-        let retainable_terminal_threads_removed =
-            ai_snapshot_removed_retainable_terminal_threads(&self.ai_state_snapshot, &snapshot.state);
+        let retainable_terminal_threads_removed = ai_snapshot_removed_retainable_terminal_threads(
+            &self.ai_state_snapshot,
+            &snapshot.state,
+        );
         self.sync_ai_visible_composer_prompt_to_draft(cx);
         let previous_visible_row_ids = previous_selected_thread
             .as_deref()
             .map(|thread_id| current_ai_renderable_visible_row_ids(self, thread_id))
             .unwrap_or_default();
-        let previous_selected_thread_sequence =
-            previous_selected_thread
-                .as_deref()
-                .map(|thread_id| thread_latest_timeline_sequence(&self.ai_state_snapshot, thread_id))
-                .unwrap_or(0);
+        let previous_selected_thread_sequence = previous_selected_thread
+            .as_deref()
+            .map(|thread_id| thread_latest_timeline_sequence(&self.ai_state_snapshot, thread_id))
+            .unwrap_or(0);
         let AiSnapshot {
             state,
             active_thread_id,
@@ -109,7 +111,8 @@ impl DiffViewer {
         self.maybe_submit_ready_ai_queued_messages(worker_workspace_key.as_deref(), cx);
         self.rebuild_ai_timeline_indexes();
         self.sync_ai_in_progress_turn_started_at();
-        self.ai_composer_activity_elapsed_second = self.current_ai_composer_activity_elapsed_second();
+        self.ai_composer_activity_elapsed_second =
+            self.current_ai_composer_activity_elapsed_second();
         self.ai_pending_approvals = pending_approvals;
         self.ai_pending_user_inputs = pending_user_inputs;
         self.sync_ai_pending_user_input_answers();
@@ -180,11 +183,15 @@ impl DiffViewer {
         {
             self.ai_selected_thread_id = Some(first_thread.id.clone());
         }
-        if self.ai_pending_thread_start.as_ref().is_some_and(|pending| {
-            pending.thread_id.as_ref().is_some_and(|thread_id| {
-                ai_state_has_user_message_for_thread(&self.ai_state_snapshot, thread_id)
+        if self
+            .ai_pending_thread_start
+            .as_ref()
+            .is_some_and(|pending| {
+                pending.thread_id.as_ref().is_some_and(|thread_id| {
+                    ai_state_has_user_message_for_thread(&self.ai_state_snapshot, thread_id)
+                })
             })
-        }) {
+        {
             self.ai_pending_thread_start = None;
         }
         let next_sidebar_workspace_key = self.ai_state_snapshot_workspace_key();
@@ -206,6 +213,8 @@ impl DiffViewer {
         ) {
             self.ai_timeline_follow_output = true;
             self.ai_scroll_timeline_to_bottom = true;
+            self.ai_workspace_selection = None;
+            self.ai_workspace_surface_last_scroll_offset = None;
             self.ai_expanded_timeline_row_ids.clear();
             self.ai_text_selection = None;
         }
@@ -259,12 +268,10 @@ impl DiffViewer {
         }
         let next_draft_key = self.current_ai_composer_draft_key();
         if previous_draft_key != next_draft_key
-            || next_draft_key
-                .as_ref()
-                .is_some_and(|key| {
-                    restored_pending_steer_drafts.contains(key)
-                        || restored_queued_message_drafts.contains(key)
-                })
+            || next_draft_key.as_ref().is_some_and(|key| {
+                restored_pending_steer_drafts.contains(key)
+                    || restored_queued_message_drafts.contains(key)
+            })
         {
             self.restore_ai_visible_composer_from_current_draft(cx);
         }
@@ -324,7 +331,9 @@ impl DiffViewer {
         {
             let key = ai_in_progress_turn_tracking_key(turn.thread_id.as_str(), turn.id.as_str());
             in_progress_turn_keys.insert(key.clone());
-            self.ai_in_progress_turn_started_at.entry(key).or_insert(now);
+            self.ai_in_progress_turn_started_at
+                .entry(key)
+                .or_insert(now);
         }
 
         self.ai_in_progress_turn_started_at
@@ -401,17 +410,15 @@ impl DiffViewer {
         }
     }
 
-    fn validated_current_ai_prompt(
-        &mut self,
-        cx: &mut Context<Self>,
-    ) -> Option<AiValidatedPrompt> {
+    fn validated_current_ai_prompt(&mut self, cx: &mut Context<Self>) -> Option<AiValidatedPrompt> {
         let prompt = self.ai_composer_input_state.read(cx).value().to_string();
         let local_image_paths = self.current_ai_composer_local_images();
         let raw_skill_bindings = self.current_ai_composer_skill_bindings();
-        let (prompt, skill_bindings) = crate::app::ai_composer_completion::trim_prompt_with_skill_bindings(
-            prompt.as_str(),
-            raw_skill_bindings.as_slice(),
-        );
+        let (prompt, skill_bindings) =
+            crate::app::ai_composer_completion::trim_prompt_with_skill_bindings(
+                prompt.as_str(),
+                raw_skill_bindings.as_slice(),
+            );
         let selected_skills = crate::app::ai_composer_completion::selected_skills_from_bindings(
             skill_bindings.as_slice(),
             self.ai_skills.as_slice(),
@@ -456,10 +463,7 @@ impl DiffViewer {
                 self.ai_bootstrap_loading,
             )
         {
-            self.set_current_ai_composer_status(
-                "Cannot send until Codex finishes connecting.",
-                cx,
-            );
+            self.set_current_ai_composer_status("Cannot send until Codex finishes connecting.", cx);
             cx.notify();
             return false;
         }
@@ -484,17 +488,17 @@ impl DiffViewer {
             return sent;
         }
 
-        let pending_thread_start = self.ai_workspace_key_for_draft().map(|workspace_key| {
-            AiPendingThreadStart {
-                workspace_key,
-                prompt: prompt.clone().unwrap_or_default(),
-                local_images: local_image_paths.clone(),
-                skill_bindings: skill_bindings.clone(),
-                started_at: Instant::now(),
-                start_mode: self.ai_new_thread_start_mode,
-                thread_id: None,
-            }
-        });
+        let pending_thread_start =
+            self.ai_workspace_key_for_draft()
+                .map(|workspace_key| AiPendingThreadStart {
+                    workspace_key,
+                    prompt: prompt.clone().unwrap_or_default(),
+                    local_images: local_image_paths.clone(),
+                    skill_bindings: skill_bindings.clone(),
+                    started_at: Instant::now(),
+                    start_mode: self.ai_new_thread_start_mode,
+                    thread_id: None,
+                });
         let started = self.prepare_workspace_and_start_ai_thread(
             prompt,
             local_image_paths,
@@ -520,22 +524,32 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) -> bool {
         if self.git_controls_busy() {
-            self.set_current_ai_composer_status("Wait for the active workspace action to finish.", cx);
+            self.set_current_ai_composer_status(
+                "Wait for the active workspace action to finish.",
+                cx,
+            );
             cx.notify();
             return false;
         }
 
         let Some(repo_root) = self.ai_draft_workspace_root() else {
-            self.set_current_ai_composer_status("Open a workspace before starting an AI thread.", cx);
+            self.set_current_ai_composer_status(
+                "Open a workspace before starting an AI thread.",
+                cx,
+            );
             cx.notify();
             return false;
         };
 
         let start_mode = self.ai_new_thread_start_mode;
-        let selected_base_branch_name = self.ai_selected_worktree_base_branch_name().map(str::to_string);
+        let selected_base_branch_name = self
+            .ai_selected_worktree_base_branch_name()
+            .map(str::to_string);
         let prompt_seed = prompt.clone().unwrap_or_default();
-        let fallback_branch_name =
-            ai_branch_name_for_prompt(prompt_seed.as_str(), start_mode == AiNewThreadStartMode::Worktree);
+        let fallback_branch_name = ai_branch_name_for_prompt(
+            prompt_seed.as_str(),
+            start_mode == AiNewThreadStartMode::Worktree,
+        );
         let epoch = self.begin_git_action("Prepare AI thread", cx);
         let started_at = Instant::now();
 
@@ -834,9 +848,7 @@ impl DiffViewer {
     }
 
     fn sync_ai_session_selection_from_state(&mut self) {
-        let resolved = {
-            self.resolve_ai_current_state()
-        };
+        let resolved = { self.resolve_ai_current_state() };
         let persisted = {
             resolved_ai_thread_session_state(
                 &self.state,
@@ -915,11 +927,7 @@ impl DiffViewer {
         }
     }
 
-    fn persist_ai_session_for_target(
-        &mut self,
-        thread_id: Option<&str>,
-        workspace: Option<&str>,
-    ) {
+    fn persist_ai_session_for_target(&mut self, thread_id: Option<&str>, workspace: Option<&str>) {
         let session = AiThreadSessionState {
             model: self.ai_selected_model.clone(),
             effort: self.ai_selected_effort.clone(),
@@ -965,8 +973,7 @@ impl DiffViewer {
         }
 
         let current_state = self.capture_current_ai_workspace_state();
-        let seeded_state =
-            Self::seeded_ai_workspace_state_for_new_thread_workspace(&current_state);
+        let seeded_state = Self::seeded_ai_workspace_state_for_new_thread_workspace(&current_state);
         self.ai_workspace_states
             .insert(workspace.to_string(), seeded_state);
     }
@@ -977,10 +984,7 @@ impl DiffViewer {
         if current_thread_id.is_none() && workspace_key.is_none() {
             return;
         }
-        self.persist_ai_session_for_target(
-            current_thread_id.as_deref(),
-            workspace_key.as_deref(),
-        );
+        self.persist_ai_session_for_target(current_thread_id.as_deref(), workspace_key.as_deref());
     }
 
     fn clear_ai_composer_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1070,7 +1074,9 @@ fn prepare_ai_thread_workspace(
             };
             let base_branch_synced =
                 sync_branch_from_remote_if_tracked(repo_root, base_branch_name.as_str())
-                    .with_context(|| format!("failed to sync base branch '{}'", base_branch_name))?;
+                    .with_context(|| {
+                        format!("failed to sync base branch '{}'", base_branch_name)
+                    })?;
 
             let status_base_label = if base_branch_synced {
                 format!("synced {}", base_branch_name)

@@ -1,9 +1,5 @@
 impl AiPerfWindow {
-    fn record_timeline_row_render(
-        &mut self,
-        kind: AiPerfTimelineRowKind,
-        duration: Duration,
-    ) {
+    fn record_timeline_row_render(&mut self, kind: AiPerfTimelineRowKind, duration: Duration) {
         self.timeline_row_render.record(duration);
         match kind {
             AiPerfTimelineRowKind::Message => self.message_row_render.record(duration),
@@ -14,24 +10,23 @@ impl AiPerfWindow {
         }
     }
 
-    fn record_thread_sidebar_row_render(
-        &mut self,
-        kind: AiPerfSidebarRowKind,
-        duration: Duration,
-    ) {
+    fn record_thread_sidebar_row_render(&mut self, kind: AiPerfSidebarRowKind, duration: Duration) {
         self.thread_sidebar_row_render.record(duration);
         match kind {
             AiPerfSidebarRowKind::ProjectHeader => {
-                self.thread_sidebar_project_header_row_render.record(duration);
+                self.thread_sidebar_project_header_row_render
+                    .record(duration);
             }
             AiPerfSidebarRowKind::Thread => {
                 self.thread_sidebar_thread_row_render.record(duration);
             }
             AiPerfSidebarRowKind::EmptyProject => {
-                self.thread_sidebar_empty_project_row_render.record(duration);
+                self.thread_sidebar_empty_project_row_render
+                    .record(duration);
             }
             AiPerfSidebarRowKind::ProjectFooter => {
-                self.thread_sidebar_project_footer_row_render.record(duration);
+                self.thread_sidebar_project_footer_row_render
+                    .record(duration);
             }
         }
     }
@@ -84,19 +79,13 @@ impl DiffViewer {
         });
     }
 
-    pub(super) fn record_ai_visible_frame_timeline_rows_timing(
-        &self,
-        duration: Duration,
-    ) {
+    pub(super) fn record_ai_visible_frame_timeline_rows_timing(&self, duration: Duration) {
         self.update_ai_perf_window(|window| {
             window.visible_frame_timeline_rows.record(duration);
         });
     }
 
-    pub(super) fn record_ai_visible_frame_composer_feedback_timing(
-        &self,
-        duration: Duration,
-    ) {
+    pub(super) fn record_ai_visible_frame_composer_feedback_timing(&self, duration: Duration) {
         self.update_ai_perf_window(|window| {
             window.visible_frame_composer_feedback.record(duration);
         });
@@ -144,8 +133,7 @@ impl DiffViewer {
         visible_row_count: usize,
     ) {
         self.update_ai_perf_window(|window| {
-            window.timeline_list_sync_count =
-                window.timeline_list_sync_count.saturating_add(1);
+            window.timeline_list_sync_count = window.timeline_list_sync_count.saturating_add(1);
             if row_ids_changed {
                 window.timeline_list_sync_row_ids_changed =
                     window.timeline_list_sync_row_ids_changed.saturating_add(1);
@@ -171,6 +159,38 @@ impl DiffViewer {
             window.timeline_list_render_visible_rows_total = window
                 .timeline_list_render_visible_rows_total
                 .saturating_add(visible_row_count as u64);
+        });
+    }
+
+    pub(super) fn record_ai_workspace_session_rebuild_timing(&self, duration: Duration) {
+        self.update_ai_perf_window(|window| {
+            window.workspace_session_rebuild.record(duration);
+        });
+    }
+
+    pub(super) fn record_ai_workspace_surface_geometry_rebuild_timing(&self, duration: Duration) {
+        self.update_ai_perf_window(|window| {
+            window.workspace_surface_geometry_rebuild.record(duration);
+        });
+    }
+
+    pub(super) fn record_ai_workspace_surface_paint_timing(
+        &self,
+        duration: Duration,
+        visible_block_count: usize,
+    ) {
+        self.update_ai_perf_window(|window| {
+            window.workspace_surface_paint.record(duration);
+            window.workspace_surface_visible_blocks_total = window
+                .workspace_surface_visible_blocks_total
+                .saturating_add(visible_block_count as u64);
+        });
+    }
+
+    pub(super) fn record_ai_workspace_surface_hit_test(&self) {
+        self.update_ai_perf_window(|window| {
+            window.workspace_surface_hit_tests =
+                window.workspace_surface_hit_tests.saturating_add(1);
         });
     }
 
@@ -212,7 +232,9 @@ impl DiffViewer {
             window.markdown_parse.record(parse_duration);
             window.markdown_comrak_parse.record(comrak_parse_duration);
             window.markdown_transform.record(transform_duration);
-            window.markdown_code_highlight.record(code_highlight_duration);
+            window
+                .markdown_code_highlight
+                .record(code_highlight_duration);
             window.markdown_code_block_count_total = window
                 .markdown_code_block_count_total
                 .saturating_add(code_block_count as u64);

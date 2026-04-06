@@ -38,7 +38,10 @@ impl DiffViewer {
         match store.load_or_default() {
             Ok(state) => (Some(store), state),
             Err(err) => {
-                error!("failed to load app state from {}: {err:#}", store.path().display());
+                error!(
+                    "failed to load app state from {}: {err:#}",
+                    store.path().display()
+                );
                 (Some(store), AppState::default())
             }
         }
@@ -131,7 +134,11 @@ impl DiffViewer {
             return;
         };
         let cache_key = expected_root.to_string_lossy().to_string();
-        let Some(cache) = self.state.git_workflow_cache_by_repo.get(cache_key.as_str()).cloned()
+        let Some(cache) = self
+            .state
+            .git_workflow_cache_by_repo
+            .get(cache_key.as_str())
+            .cloned()
         else {
             return;
         };
@@ -256,7 +263,11 @@ impl DiffViewer {
             cached_unix_time: 0,
         };
 
-        if let Some(previous) = self.state.git_workflow_cache_by_repo.get(cache_key.as_str()) {
+        if let Some(previous) = self
+            .state
+            .git_workflow_cache_by_repo
+            .get(cache_key.as_str())
+        {
             let mut previous_without_time = previous.clone();
             previous_without_time.cached_unix_time = 0;
             if previous_without_time == cache {
@@ -361,11 +372,14 @@ impl DiffViewer {
                 cx,
             )
         });
-        let branch_input_state = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Create or activate branch")
+        let branch_input_state =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Create or activate branch"));
+        let commit_input_state = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line(true)
+                .rows(4)
+                .placeholder("Commit message")
         });
-        let commit_input_state = cx
-            .new(|cx| InputState::new(window, cx).multi_line(true).rows(4).placeholder("Commit message"));
         let files_editor = Rc::new(RefCell::new(
             crate::app::native_files_editor::FilesEditor::new(),
         ));
@@ -384,12 +398,10 @@ impl DiffViewer {
                 .rows(4)
                 .placeholder("Ask Codex anything, @ to add files, / for commands, $ for skills")
         });
-        let ai_terminal_input_state = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Run a command in this workspace")
-        });
-        let file_quick_open_input_state = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Type a file name or path")
-        });
+        let ai_terminal_input_state =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Run a command in this workspace"));
+        let file_quick_open_input_state =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Type a file name or path"));
         let editor_search_input_state =
             cx.new(|cx| InputState::new(window, cx).placeholder("Find in file"));
         let editor_replace_input_state =
@@ -466,6 +478,10 @@ impl DiffViewer {
             ai_thread_sidebar_rows: Vec::new(),
             ai_thread_sidebar_list_state: ListState::new(0, ListAlignment::Top, px(40.0)),
             ai_thread_sidebar_row_count: 0,
+            ai_workspace_session: None,
+            ai_workspace_surface_scroll_handle: ScrollHandle::default(),
+            ai_workspace_surface_last_scroll_offset: None,
+            ai_workspace_selection: None,
             ai_timeline_list_view: None,
             ai_timeline_list_state: ListState::new(0, ListAlignment::Top, px(360.0)),
             ai_timeline_list_row_count: 0,
@@ -588,7 +604,8 @@ impl DiffViewer {
             ai_composer_status_by_draft: BTreeMap::new(),
             ai_composer_status_generation: 0,
             ai_composer_status_generation_by_key: BTreeMap::new(),
-            available_project_open_targets: crate::app::project_open::resolve_available_project_open_targets(),
+            available_project_open_targets:
+                crate::app::project_open::resolve_available_project_open_targets(),
             files: Vec::new(),
             file_status_by_path: BTreeMap::new(),
             project_picker_state,
@@ -801,8 +818,9 @@ impl DiffViewer {
                 return;
             };
             if let Some(action) = hunk_picker_action_for_keystroke(&event.keystroke) {
-                let handled =
-                    view.update(cx, |this, cx| this.handle_hunk_picker_keystroke(action, window, cx));
+                let handled = view.update(cx, |this, cx| {
+                    this.handle_hunk_picker_keystroke(action, window, cx)
+                });
                 if handled {
                     return;
                 }
@@ -848,7 +866,8 @@ impl DiffViewer {
         )
         .detach();
 
-        let ai_worktree_base_branch_picker_state = view.ai_worktree_base_branch_picker_state.clone();
+        let ai_worktree_base_branch_picker_state =
+            view.ai_worktree_base_branch_picker_state.clone();
         cx.subscribe(
             &ai_worktree_base_branch_picker_state,
             |this, _, event: &HunkPickerEvent<BranchPickerDelegate>, cx| {

@@ -36,33 +36,24 @@ impl DiffViewer {
                     .gap_3()
                     .pr_2()
                     .child(
-                        h_flex()
-                            .gap_2()
-                            .items_center()
-                            .flex_shrink_0()
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py_0p5()
-                                    .rounded(px(6.0))
-                                    .bg(hunk_blend(
-                                        cx.theme().title_bar,
-                                        cx.theme().accent,
-                                        is_dark,
-                                        0.18,
-                                        0.10,
-                                    ))
-                                    .border_1()
-                                    .border_color(hunk_opacity(
-                                        cx.theme().border,
-                                        is_dark,
-                                        0.72,
-                                        0.52,
-                                    ))
-                                    .text_xs()
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .child("Hunk"),
-                            ),
+                        h_flex().gap_2().items_center().flex_shrink_0().child(
+                            div()
+                                .px_2()
+                                .py_0p5()
+                                .rounded(px(6.0))
+                                .bg(hunk_blend(
+                                    cx.theme().title_bar,
+                                    cx.theme().accent,
+                                    is_dark,
+                                    0.18,
+                                    0.10,
+                                ))
+                                .border_1()
+                                .border_color(hunk_opacity(cx.theme().border, is_dark, 0.72, 0.52))
+                                .text_xs()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .child("Hunk"),
+                        ),
                     )
                     .child(
                         div()
@@ -87,7 +78,13 @@ impl DiffViewer {
             .px_2()
             .border_b_1()
             .border_color(cx.theme().border)
-            .bg(hunk_blend(cx.theme().title_bar, cx.theme().muted, is_dark, 0.16, 0.24))
+            .bg(hunk_blend(
+                cx.theme().title_bar,
+                cx.theme().muted,
+                is_dark,
+                0.16,
+                0.24,
+            ))
             .child(div().flex_1().min_w_0().h_full().child(menu_bar))
             .into_any_element()
     }
@@ -141,7 +138,8 @@ impl DiffViewer {
         }
 
         let is_dark = cx.theme().mode.is_dark();
-        let show_loading_overlay = self.git_workspace_loading && !self.git_workflow_ready_for_panel();
+        let show_loading_overlay =
+            self.git_workspace_loading && !self.git_workflow_ready_for_panel();
         let terminal_state = self.files_terminal_panel_state();
         let view = cx.entity();
 
@@ -221,9 +219,13 @@ impl DiffViewer {
             )
         };
         let active_terminal_kind = self.active_workspace_terminal_kind();
-        let terminal_open = active_terminal_kind.is_some_and(|kind| self.workspace_terminal_open(kind));
+        let terminal_open =
+            active_terminal_kind.is_some_and(|kind| self.workspace_terminal_open(kind));
         let terminal_shortcut = ai_preferred_shortcut_label(
-            self.config.keyboard_shortcuts.toggle_ai_terminal_drawer.as_slice(),
+            self.config
+                .keyboard_shortcuts
+                .toggle_ai_terminal_drawer
+                .as_slice(),
         );
         let terminal_tooltip = terminal_shortcut.as_ref().map_or_else(
             || {
@@ -276,7 +278,13 @@ impl DiffViewer {
             .px_2()
             .border_t_1()
             .border_color(hunk_opacity(cx.theme().border, is_dark, 0.88, 0.68))
-            .bg(hunk_blend(cx.theme().sidebar, cx.theme().muted, is_dark, 0.18, 0.22))
+            .bg(hunk_blend(
+                cx.theme().sidebar,
+                cx.theme().muted,
+                is_dark,
+                0.18,
+                0.22,
+            ))
             .child(
                 h_flex()
                     .items_center()
@@ -429,7 +437,11 @@ impl DiffViewer {
                             .compact()
                             .rounded(px(7.0))
                             .icon(Icon::new(HunkIconName::RotateCcw).size(px(14.0)))
-                            .min_w(if footer_update_ready { px(156.0) } else { px(30.0) })
+                            .min_w(if footer_update_ready {
+                                px(156.0)
+                            } else {
+                                px(30.0)
+                            })
                             .h(px(28.0))
                             .tooltip(footer_update_tooltip.clone())
                             .loading(footer_update_loading)
@@ -536,15 +548,23 @@ impl Render for DiffViewer {
         } else if self.uses_review_workspace_sections_surface() {
             self.refresh_review_surface_snapshot();
         }
+        let ai_selected = self.workspace_view_mode == WorkspaceViewMode::Ai;
+        if ai_selected && self.ai_workspace_session.is_some() {
+            let current_ai_scroll_offset = self.current_ai_workspace_surface_scroll_offset();
+            if self.ai_workspace_surface_last_scroll_offset != Some(current_ai_scroll_offset) {
+                self.ai_workspace_surface_last_scroll_offset = Some(current_ai_scroll_offset);
+                self.last_scroll_activity_at = Instant::now();
+                self.refresh_ai_timeline_follow_output_from_scroll();
+            }
+        }
         if self.ignore_next_frame_sample {
             self.ignore_next_frame_sample = false;
         } else {
             self.frame_sample_count = self.frame_sample_count.saturating_add(1);
         }
-        let ai_selected = self.workspace_view_mode == WorkspaceViewMode::Ai;
         let ai_view_state = ai_selected.then(|| self.visible_ai_frame_state());
-        let show_linux_client_title_bar =
-            cfg!(target_os = "linux") && matches!(window.window_decorations(), Decorations::Client { .. });
+        let show_linux_client_title_bar = cfg!(target_os = "linux")
+            && matches!(window.window_decorations(), Decorations::Client { .. });
         let element = v_flex()
             .size_full()
             .relative()
@@ -583,9 +603,10 @@ impl Render for DiffViewer {
             .when(show_linux_client_title_bar, |this| {
                 this.child(self.render_linux_client_title_bar(cx))
             })
-            .when(!cfg!(target_os = "macos") && !show_linux_client_title_bar, |this| {
-                this.child(self.render_in_app_menu_bar(cx))
-            })
+            .when(
+                !cfg!(target_os = "macos") && !show_linux_client_title_bar,
+                |this| this.child(self.render_in_app_menu_bar(cx)),
+            )
             .child(self.render_toolbar(ai_view_state.as_ref(), cx))
             .child(
                 div()
@@ -604,9 +625,8 @@ impl Render for DiffViewer {
             .child(self.render_app_footer(cx))
             .when(
                 self.comments_preview_open && self.workspace_view_mode == WorkspaceViewMode::Diff,
-                |this| {
-                this.child(self.render_comments_preview(cx))
-            })
+                |this| this.child(self.render_comments_preview(cx)),
+            )
             .when(self.file_quick_open_visible, |this| {
                 this.child(self.render_file_quick_open_popup(window, cx))
             })

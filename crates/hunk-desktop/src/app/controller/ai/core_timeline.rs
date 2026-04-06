@@ -35,7 +35,9 @@ impl DiffViewer {
         let thread_id = current_thread_id?;
         let turn_id = self.current_ai_in_progress_turn_id(thread_id)?;
         let tracking_key = format!("{thread_id}::{turn_id}");
-        let started_at = *self.ai_in_progress_turn_started_at.get(tracking_key.as_str())?;
+        let started_at = *self
+            .ai_in_progress_turn_started_at
+            .get(tracking_key.as_str())?;
         let label = self
             .ai_state_snapshot
             .items
@@ -61,7 +63,9 @@ impl DiffViewer {
         workspace_key: &str,
     ) -> Option<String> {
         if self.ai_workspace_key().as_deref() == Some(workspace_key) {
-            return self.ai_selected_worktree_base_branch_name().map(str::to_string);
+            return self
+                .ai_selected_worktree_base_branch_name()
+                .map(str::to_string);
         }
 
         self.ai_workspace_states
@@ -176,10 +180,7 @@ impl DiffViewer {
         self.record_ai_thread_sidebar_rebuild_timing(rebuild_started_at.elapsed());
     }
 
-    pub(super) fn invalidate_ai_visible_frame_state_with_reason(
-        &mut self,
-        reason: &'static str,
-    ) {
+    pub(super) fn invalidate_ai_visible_frame_state_with_reason(&mut self, reason: &'static str) {
         self.record_ai_visible_frame_invalidation(reason);
         self.ai_visible_frame_state = None;
     }
@@ -231,13 +232,16 @@ impl DiffViewer {
             let selected_thread_start_mode = selected_thread_id
                 .as_deref()
                 .and_then(|_| {
-                    resolved.current_thread_workspace_root.as_deref().map(|thread_root| {
-                        ai_thread_start_mode_for_workspace(
-                            self.repo_root.as_deref(),
-                            &self.workspace_targets,
-                            thread_root,
-                        )
-                    })
+                    resolved
+                        .current_thread_workspace_root
+                        .as_deref()
+                        .map(|thread_root| {
+                            ai_thread_start_mode_for_workspace(
+                                self.repo_root.as_deref(),
+                                &self.workspace_targets,
+                                thread_root,
+                            )
+                        })
                 })
                 .flatten();
             let selected_workspace_root = resolved.workspace_root.clone();
@@ -266,6 +270,18 @@ impl DiffViewer {
         } else {
             (0, 0, 0, Vec::new())
         };
+        self.sync_ai_workspace_session_for_timeline(
+            selected_thread_id.as_deref(),
+            timeline_visible_row_ids.as_slice(),
+        );
+        if let Some(session) = self.ai_workspace_session.as_mut() {
+            // Phase 1 scaffolding: keep a live prototype snapshot warm while the painted
+            // surface is being wired into the AI timeline render path.
+            let prototype_viewport_height_px =
+                timeline_visible_row_ids.len().saturating_mul(72).max(1);
+            let _prototype_surface_snapshot =
+                session.surface_snapshot(0, prototype_viewport_height_px, 960);
+        }
         self.record_ai_visible_frame_timeline_rows_timing(timeline_rows_started_at.elapsed());
         let show_no_turns_empty_state = crate::app::render::ai_should_show_no_turns_empty_state(
             timeline_visible_row_ids.len(),
@@ -286,8 +302,9 @@ impl DiffViewer {
             selected_thread_in_progress,
         ) = {
             let composer_feedback_started_at = Instant::now();
-            let composer_feedback =
-                self.current_ai_composer_feedback_state_for_thread(resolved.current_thread_id.as_deref());
+            let composer_feedback = self.current_ai_composer_feedback_state_for_thread(
+                resolved.current_thread_id.as_deref(),
+            );
             self.record_ai_visible_frame_composer_feedback_timing(
                 composer_feedback_started_at.elapsed(),
             );
@@ -388,20 +405,22 @@ impl DiffViewer {
             let ai_managed_worktree_target = if selected_thread_start_mode
                 == Some(AiNewThreadStartMode::Worktree)
             {
-                selected_workspace_root.as_deref().and_then(|workspace_root| {
-                    workspace_target_summary_for_root(
-                        workspace_root,
-                        &self.workspace_targets,
-                        self.workspace_project_states
-                            .values()
-                            .map(|state| state.workspace_targets.as_slice()),
-                    )
-                    .filter(|target| {
-                        target.kind == hunk_git::worktree::WorkspaceTargetKind::LinkedWorktree
-                            && target.managed
+                selected_workspace_root
+                    .as_deref()
+                    .and_then(|workspace_root| {
+                        workspace_target_summary_for_root(
+                            workspace_root,
+                            &self.workspace_targets,
+                            self.workspace_project_states
+                                .values()
+                                .map(|state| state.workspace_targets.as_slice()),
+                        )
+                        .filter(|target| {
+                            target.kind == hunk_git::worktree::WorkspaceTargetKind::LinkedWorktree
+                                && target.managed
+                        })
+                        .cloned()
                     })
-                    .cloned()
-                })
             } else {
                 None
             };
@@ -491,9 +510,15 @@ impl DiffViewer {
                     },
                 });
             } else {
-                rows.extend(section.threads.iter().cloned().map(|thread| AiThreadSidebarRow {
-                    kind: AiThreadSidebarRowKind::Thread { thread },
-                }));
+                rows.extend(
+                    section
+                        .threads
+                        .iter()
+                        .cloned()
+                        .map(|thread| AiThreadSidebarRow {
+                            kind: AiThreadSidebarRowKind::Thread { thread },
+                        }),
+                );
             }
             if section.hidden_thread_count > 0 || section.expanded {
                 rows.push(AiThreadSidebarRow {
@@ -541,13 +566,17 @@ impl DiffViewer {
                 self.ai_workspace_states
                     .values()
                     .find_map(|state| {
-                        state.state_snapshot.threads.get(thread_id).filter(|thread| {
-                            ai_workspace_project_root_for_thread_root(
-                                std::path::Path::new(thread.cwd.as_str()),
-                                workspace_project_roots.as_slice(),
-                            )
-                            .is_some()
-                        })
+                        state
+                            .state_snapshot
+                            .threads
+                            .get(thread_id)
+                            .filter(|thread| {
+                                ai_workspace_project_root_for_thread_root(
+                                    std::path::Path::new(thread.cwd.as_str()),
+                                    workspace_project_roots.as_slice(),
+                                )
+                                .is_some()
+                            })
                     })
                     .cloned()
             })
@@ -565,12 +594,13 @@ impl DiffViewer {
             self.project_path.as_deref(),
             self.repo_root.as_deref(),
         );
-        self.ai_thread_workspace_root(thread_id).and_then(|thread_workspace_root| {
-            ai_workspace_project_root_for_thread_root(
-                thread_workspace_root.as_path(),
-                workspace_project_roots.as_slice(),
-            )
-        })
+        self.ai_thread_workspace_root(thread_id)
+            .and_then(|thread_workspace_root| {
+                ai_workspace_project_root_for_thread_root(
+                    thread_workspace_root.as_path(),
+                    workspace_project_roots.as_slice(),
+                )
+            })
     }
 
     fn ai_pending_approval(&self, request_id: &str) -> Option<AiPendingApproval> {
@@ -579,36 +609,29 @@ impl DiffViewer {
             .find(|approval| approval.request_id == request_id)
             .cloned()
             .or_else(|| {
-                self.ai_workspace_states
-                    .values()
-                    .find_map(|state| {
-                        state
-                            .pending_approvals
-                            .iter()
-                            .find(|approval| approval.request_id == request_id)
-                            .cloned()
-                    })
+                self.ai_workspace_states.values().find_map(|state| {
+                    state
+                        .pending_approvals
+                        .iter()
+                        .find(|approval| approval.request_id == request_id)
+                        .cloned()
+                })
             })
     }
 
-    fn ai_pending_user_input_request(
-        &self,
-        request_id: &str,
-    ) -> Option<AiPendingUserInputRequest> {
+    fn ai_pending_user_input_request(&self, request_id: &str) -> Option<AiPendingUserInputRequest> {
         self.ai_pending_user_inputs
             .iter()
             .find(|request| request.request_id == request_id)
             .cloned()
             .or_else(|| {
-                self.ai_workspace_states
-                    .values()
-                    .find_map(|state| {
-                        state
-                            .pending_user_inputs
-                            .iter()
-                            .find(|request| request.request_id == request_id)
-                            .cloned()
-                    })
+                self.ai_workspace_states.values().find_map(|state| {
+                    state
+                        .pending_user_inputs
+                        .iter()
+                        .find(|request| request.request_id == request_id)
+                        .cloned()
+                })
             })
     }
 
@@ -683,7 +706,11 @@ impl DiffViewer {
         self.ai_timeline_group_parent_by_child_row_id
             .get(row_id)
             .cloned()
-            .or_else(|| self.ai_timeline_rows_by_id.contains_key(row_id).then(|| row_id.to_string()))
+            .or_else(|| {
+                self.ai_timeline_rows_by_id
+                    .contains_key(row_id)
+                    .then(|| row_id.to_string())
+            })
     }
 
     pub(super) fn ai_timeline_visible_rows_for_thread(
@@ -763,15 +790,17 @@ impl DiffViewer {
                 .entry(turn.thread_id.clone())
                 .or_default()
                 .push((turn.last_sequence, diff_row_id.clone()));
-            rows_by_id.entry(diff_row_id.clone()).or_insert(AiTimelineRow {
-                id: diff_row_id,
-                thread_id: turn.thread_id.clone(),
-                turn_id: turn.id.clone(),
-                last_sequence: turn.last_sequence,
-                source: AiTimelineRowSource::TurnDiff {
-                    turn_key: turn_key.clone(),
-                },
-            });
+            rows_by_id
+                .entry(diff_row_id.clone())
+                .or_insert(AiTimelineRow {
+                    id: diff_row_id,
+                    thread_id: turn.thread_id.clone(),
+                    turn_id: turn.id.clone(),
+                    last_sequence: turn.last_sequence,
+                    source: AiTimelineRowSource::TurnDiff {
+                        turn_key: turn_key.clone(),
+                    },
+                });
         }
 
         for (turn_key, plan) in &self.ai_state_snapshot.turn_plans {
@@ -780,23 +809,24 @@ impl DiffViewer {
                 .entry(plan.thread_id.clone())
                 .or_default()
                 .push((plan.last_sequence, plan_row_id.clone()));
-            rows_by_id.entry(plan_row_id.clone()).or_insert(AiTimelineRow {
-                id: plan_row_id,
-                thread_id: plan.thread_id.clone(),
-                turn_id: plan.turn_id.clone(),
-                last_sequence: plan.last_sequence,
-                source: AiTimelineRowSource::TurnPlan {
-                    turn_key: turn_key.clone(),
-                },
-            });
+            rows_by_id
+                .entry(plan_row_id.clone())
+                .or_insert(AiTimelineRow {
+                    id: plan_row_id,
+                    thread_id: plan.thread_id.clone(),
+                    turn_id: plan.turn_id.clone(),
+                    last_sequence: plan.last_sequence,
+                    source: AiTimelineRowSource::TurnPlan {
+                        turn_key: turn_key.clone(),
+                    },
+                });
         }
 
         let base_row_ids_by_thread = base_rows_by_thread
             .into_iter()
             .map(|(thread_id, mut entries)| {
-                entries.sort_by(|left, right| {
-                    left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1))
-                });
+                entries
+                    .sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
                 entries.dedup_by(|left, right| left.1 == right.1);
                 let ids = entries
                     .into_iter()
@@ -842,7 +872,12 @@ impl DiffViewer {
         self.record_ai_timeline_index_rebuild_timing(rebuild_started_at.elapsed());
     }
 
-    fn refresh_ai_timeline_follow_output_from_scroll(&mut self) {
+    pub(super) fn refresh_ai_timeline_follow_output_from_scroll(&mut self) {
+        if self.ai_workspace_session.is_some() {
+            self.refresh_ai_timeline_follow_output_from_surface_scroll();
+            return;
+        }
+
         let row_count = self.ai_timeline_list_state.item_count();
         let scroll_offset_y = self
             .ai_timeline_list_state
@@ -859,8 +894,15 @@ impl DiffViewer {
     }
 
     fn flush_ai_timeline_scroll_request(&mut self) {
-        if self.ai_scroll_timeline_to_bottom && self.ai_timeline_list_state.item_count() > 0 {
-            self.scroll_ai_timeline_list_to_bottom();
+        if self.ai_scroll_timeline_to_bottom
+            && ((self.ai_workspace_session.is_some())
+                || self.ai_timeline_list_state.item_count() > 0)
+        {
+            if self.ai_workspace_session.is_some() {
+                self.ai_workspace_surface_scroll_handle.scroll_to_bottom();
+            } else {
+                self.scroll_ai_timeline_list_to_bottom();
+            }
             self.ai_scroll_timeline_to_bottom = false;
         }
     }
@@ -917,7 +959,11 @@ impl DiffViewer {
         cx.notify();
     }
 
-    pub(super) fn ai_show_full_timeline_action(&mut self, thread_id: String, cx: &mut Context<Self>) {
+    pub(super) fn ai_show_full_timeline_action(
+        &mut self,
+        thread_id: String,
+        cx: &mut Context<Self>,
+    ) {
         let total_turn_count = self.ai_timeline_turn_ids(thread_id.as_str()).len();
         if total_turn_count == 0 {
             return;
@@ -982,7 +1028,12 @@ impl DiffViewer {
             workspace_key
                 .as_deref()
                 .and_then(|workspace_key| self.ai_workspace_states.get(workspace_key))
-                .and_then(|state| state.pending_user_input_answers.get(request_id.as_str()).cloned())
+                .and_then(|state| {
+                    state
+                        .pending_user_input_answers
+                        .get(request_id.as_str())
+                        .cloned()
+                })
         }
         .unwrap_or_else(|| normalized_user_input_answers(&request, None));
         let request_thread_id = request.thread_id.clone();
@@ -1013,6 +1064,8 @@ fn ai_turn_keys_with_file_change_items(
         .items
         .values()
         .filter(|item| item.kind == "fileChange")
-        .map(|item| hunk_codex::state::turn_storage_key(item.thread_id.as_str(), item.turn_id.as_str()))
+        .map(|item| {
+            hunk_codex::state::turn_storage_key(item.thread_id.as_str(), item.turn_id.as_str())
+        })
         .collect()
 }

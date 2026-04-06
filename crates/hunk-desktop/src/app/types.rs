@@ -89,7 +89,9 @@ impl FileEditorTab {
         Self {
             id,
             path,
-            files_editor: Rc::new(RefCell::new(crate::app::native_files_editor::FilesEditor::new())),
+            files_editor: Rc::new(RefCell::new(
+                crate::app::native_files_editor::FilesEditor::new(),
+            )),
             loading: false,
             error: None,
             dirty: false,
@@ -457,6 +459,11 @@ struct AiPerfWindow {
     timeline_list_sync_visible_rows_total: u64,
     timeline_list_render: AiPerfDurationStats,
     timeline_list_render_visible_rows_total: u64,
+    workspace_session_rebuild: AiPerfDurationStats,
+    workspace_surface_geometry_rebuild: AiPerfDurationStats,
+    workspace_surface_paint: AiPerfDurationStats,
+    workspace_surface_visible_blocks_total: u64,
+    workspace_surface_hit_tests: u32,
     timeline_row_render: AiPerfDurationStats,
     timeline_row_skipped: u32,
     message_row_render: AiPerfDurationStats,
@@ -543,7 +550,9 @@ pub(crate) struct AiPendingSteer {
 pub(crate) enum AiQueuedUserMessageStatus {
     #[default]
     Queued,
-    PendingConfirmation { accepted_after_sequence: u64 },
+    PendingConfirmation {
+        accepted_after_sequence: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -57,6 +57,7 @@ include!("ai_loading.rs");
 include!("ai.rs");
 include!("ai_composer.rs");
 include!("ai_timeline_list_view.rs");
+include!("ai_workspace_surface.rs");
 include!("ai_workspace_sections.rs");
 include!("ai_helpers.rs");
 include!("settings.rs");

@@ -163,6 +163,8 @@ mod ai_composer_completion;
 mod ai_paths;
 mod ai_thread_catalog_scheduler;
 mod ai_thread_flow;
+mod ai_workspace_session;
+mod ai_workspace_surface;
 mod branch_activation;
 mod branch_picker;
 mod comment_overlay;
@@ -1377,6 +1379,10 @@ struct DiffViewer {
     ai_thread_sidebar_rows: Vec<AiThreadSidebarRow>,
     ai_thread_sidebar_list_state: ListState,
     ai_thread_sidebar_row_count: usize,
+    ai_workspace_session: Option<ai_workspace_session::AiWorkspaceSession>,
+    ai_workspace_surface_scroll_handle: ScrollHandle,
+    ai_workspace_surface_last_scroll_offset: Option<Point<Pixels>>,
+    ai_workspace_selection: Option<ai_workspace_session::AiWorkspaceSelection>,
     ai_timeline_list_view: Option<Entity<render::AiTimelineListView>>,
     ai_timeline_list_state: ListState,
     ai_timeline_list_row_count: usize,
