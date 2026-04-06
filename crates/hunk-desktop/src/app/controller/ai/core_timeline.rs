@@ -100,7 +100,7 @@ impl DiffViewer {
         )
     }
 
-    pub(super) fn ai_open_review_tab(&mut self, cx: &mut Context<Self>) {
+    fn ai_sync_review_compare_to_selected_thread(&mut self, cx: &mut Context<Self>) {
         if let Some(selected_thread_id) = self.ai_selected_thread_id.clone() {
             if let Some(project_root) = self.ai_thread_project_root(selected_thread_id.as_str())
                 && self.project_path.as_ref() != Some(&project_root)
@@ -124,7 +124,6 @@ impl DiffViewer {
         {
             self.update_review_compare_selection(left_source_id, right_source_id, cx);
         }
-        self.set_workspace_view_mode(WorkspaceViewMode::Diff, cx);
     }
 
     pub(crate) fn ai_threads_for_current_workspace(&self) -> Vec<ThreadSummary> {
@@ -270,6 +269,10 @@ impl DiffViewer {
         } else {
             (0, 0, 0, Vec::new())
         };
+        let inline_review_selected_row_id = selected_thread_id
+            .as_deref()
+            .and_then(|thread_id| self.current_ai_inline_review_row_id_for_thread(thread_id))
+            .map(str::to_string);
         self.sync_ai_workspace_session_for_timeline(
             selected_thread_id.as_deref(),
             timeline_visible_row_ids.as_slice(),
@@ -468,6 +471,8 @@ impl DiffViewer {
             timeline_visible_turn_count,
             timeline_hidden_turn_count,
             timeline_visible_row_ids: timeline_visible_row_ids.into(),
+            timeline_follow_output: self.ai_timeline_follow_output,
+            inline_review_selected_row_id,
             timeline_loading,
             show_select_thread_empty_state,
             show_no_turns_empty_state,
@@ -869,55 +874,33 @@ impl DiffViewer {
         self.ai_timeline_rows_by_id = rows_by_id;
         self.ai_timeline_groups_by_id = groups_by_id;
         self.ai_timeline_group_parent_by_child_row_id = parent_by_child_row_id;
+        let timeline_row_ids_by_thread = self.ai_timeline_row_ids_by_thread.clone();
+        let valid_diff_row_ids = self
+            .ai_timeline_rows_by_id
+            .iter()
+            .filter_map(|(row_id, row)| {
+                matches!(row.source, AiTimelineRowSource::TurnDiff { .. }).then_some(row_id.clone())
+            })
+            .collect::<BTreeSet<_>>();
+        self.ai_inline_review_selected_row_id_by_thread
+            .retain(|thread_id, row_id| {
+                timeline_row_ids_by_thread
+                    .get(thread_id)
+                    .is_some_and(|row_ids| row_ids.iter().any(|candidate| candidate == row_id))
+                    && valid_diff_row_ids.contains(row_id)
+            });
         self.record_ai_timeline_index_rebuild_timing(rebuild_started_at.elapsed());
     }
 
     pub(super) fn refresh_ai_timeline_follow_output_from_scroll(&mut self) {
-        if self.ai_workspace_session.is_some() {
-            self.refresh_ai_timeline_follow_output_from_surface_scroll();
-            return;
-        }
-
-        let row_count = self.ai_timeline_list_state.item_count();
-        let scroll_offset_y = self
-            .ai_timeline_list_state
-            .scroll_px_offset_for_scrollbar()
-            .y
-            .as_f32();
-        let max_scroll_offset_y = self
-            .ai_timeline_list_state
-            .max_offset_for_scrollbar()
-            .y
-            .as_f32();
-        self.ai_timeline_follow_output =
-            should_follow_timeline_output(row_count, scroll_offset_y, max_scroll_offset_y);
+        self.refresh_ai_timeline_follow_output_from_surface_scroll();
     }
 
     fn flush_ai_timeline_scroll_request(&mut self) {
-        if self.ai_scroll_timeline_to_bottom
-            && ((self.ai_workspace_session.is_some())
-                || self.ai_timeline_list_state.item_count() > 0)
-        {
-            if self.ai_workspace_session.is_some() {
-                self.ai_workspace_surface_scroll_handle.scroll_to_bottom();
-            } else {
-                self.scroll_ai_timeline_list_to_bottom();
-            }
+        if self.ai_scroll_timeline_to_bottom && self.ai_selected_thread_id.is_some() {
+            self.ai_workspace_surface_scroll_handle.scroll_to_bottom();
             self.ai_scroll_timeline_to_bottom = false;
         }
-    }
-
-    fn scroll_ai_timeline_list_to_bottom(&self) {
-        let row_count = self.ai_timeline_list_state.item_count();
-        if row_count == 0 {
-            return;
-        }
-        // Use an end-of-list logical offset instead of reveal-item because reveal-item relies on
-        // measured row heights; immediately after a reset, rows are unmeasured (height=0).
-        self.ai_timeline_list_state.scroll_to(ListOffset {
-            item_ix: row_count,
-            offset_in_item: px(0.),
-        });
     }
 
     pub(super) fn ai_visible_pending_approvals(&self) -> Vec<AiPendingApproval> {
@@ -952,8 +935,6 @@ impl DiffViewer {
         self.invalidate_ai_visible_frame_state_with_reason("timeline");
         if self.ai_selected_thread_id.as_deref() == Some(thread_id.as_str()) {
             self.ai_text_selection = None;
-            let visible_row_ids = current_ai_renderable_visible_row_ids(self, thread_id.as_str());
-            reset_ai_timeline_list_measurements(self, visible_row_ids.len());
             self.flush_ai_timeline_scroll_request();
         }
         cx.notify();
@@ -973,8 +954,6 @@ impl DiffViewer {
         self.invalidate_ai_visible_frame_state_with_reason("timeline");
         if self.ai_selected_thread_id.as_deref() == Some(thread_id.as_str()) {
             self.ai_text_selection = None;
-            let visible_row_ids = current_ai_renderable_visible_row_ids(self, thread_id.as_str());
-            reset_ai_timeline_list_measurements(self, visible_row_ids.len());
             self.flush_ai_timeline_scroll_request();
         }
         cx.notify();

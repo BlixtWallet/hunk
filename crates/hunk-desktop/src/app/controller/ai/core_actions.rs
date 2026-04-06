@@ -146,7 +146,6 @@ impl DiffViewer {
         } else {
             self.clear_ai_composer_input(window, cx);
         }
-        reset_ai_timeline_list_measurements(self, 0);
         self.focus_ai_composer_input(window, cx);
         cx.notify();
     }
@@ -370,8 +369,6 @@ impl DiffViewer {
             skill_bindings,
         );
         self.clear_ai_composer_input(window, cx);
-        let visible_row_ids = current_ai_renderable_visible_row_ids(self, thread_id.as_str());
-        reset_ai_timeline_list_measurements(self, visible_row_ids.len());
         self.ai_timeline_follow_output = true;
         self.ai_scroll_timeline_to_bottom = true;
         self.flush_ai_timeline_scroll_request();
@@ -406,8 +403,6 @@ impl DiffViewer {
             state.set_value(queued.prompt, window, cx);
             state.focus(window, cx);
         });
-        let visible_row_ids = current_ai_renderable_visible_row_ids(self, thread_id.as_str());
-        reset_ai_timeline_list_measurements(self, visible_row_ids.len());
         cx.notify();
     }
 
@@ -785,8 +780,6 @@ impl DiffViewer {
         if previous_draft_key != self.current_ai_composer_draft_key() {
             self.restore_ai_visible_composer_from_current_draft_in_window(window, cx);
         }
-        let visible_row_ids = current_ai_renderable_visible_row_ids(self, thread_id.as_str());
-        reset_ai_timeline_list_measurements(self, visible_row_ids.len());
         self.flush_ai_timeline_scroll_request();
         self.sync_ai_session_selection_from_state();
         self.send_ai_worker_command(AiWorkerCommand::SelectThread { thread_id }, cx);
@@ -819,6 +812,7 @@ impl DiffViewer {
         self.ai_toggle_thread_bookmark_action(thread_id, cx);
     }
 
+    #[allow(dead_code)]
     pub(super) fn ai_toggle_timeline_row_expansion_action(
         &mut self,
         row_id: String,
@@ -837,10 +831,6 @@ impl DiffViewer {
             self.ai_expanded_timeline_row_ids.insert(row_id);
         }
         self.invalidate_ai_visible_frame_state_with_reason("timeline");
-        if let Some(selected_thread_id) = self.ai_selected_thread_id.as_deref() {
-            let visible_row_ids = current_ai_renderable_visible_row_ids(self, selected_thread_id);
-            reset_ai_timeline_list_measurements(self, visible_row_ids.len());
-        }
         cx.notify();
     }
 }

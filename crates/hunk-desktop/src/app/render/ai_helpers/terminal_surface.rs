@@ -879,8 +879,9 @@ fn ai_terminal_push_text_run(
 fn ai_terminal_selection_surfaces(
     lines: &[AiTerminalPaintLine],
 ) -> Arc<[AiTextSelectionSurfaceSpec]> {
-    ai_text_selection_surfaces(
-        lines.iter()
+    Arc::<[AiTextSelectionSurfaceSpec]>::from(
+        lines
+            .iter()
             .enumerate()
             .map(|(row_index, line)| {
                 let surface =
@@ -891,7 +892,7 @@ fn ai_terminal_selection_surfaces(
                     surface.with_separator_before("\n")
                 }
             })
-            .collect(),
+            .collect::<Vec<_>>(),
     )
 }
 

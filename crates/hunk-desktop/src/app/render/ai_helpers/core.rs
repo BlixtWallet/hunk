@@ -277,62 +277,6 @@ fn render_ai_thread_sidebar_row(
         .into_any_element()
 }
 
-fn ai_item_status_label(status: ItemStatus) -> &'static str {
-    match status {
-        ItemStatus::Started => "started",
-        ItemStatus::Streaming => "streaming",
-        ItemStatus::Completed => "completed",
-    }
-}
-
-fn ai_item_status_color(status: ItemStatus, theme: &gpui_component::Theme) -> Hsla {
-    match status {
-        ItemStatus::Started => theme.muted_foreground,
-        ItemStatus::Streaming => theme.accent,
-        ItemStatus::Completed => theme.success,
-    }
-}
-
-fn ai_item_display_label(kind: &str) -> &str {
-    match kind {
-        "userMessage" => "User",
-        "agentMessage" => "Agent",
-        "commandExecution" => "Command",
-        "fileChange" => "File Change",
-        "plan" => "Plan",
-        "reasoning" => "Reasoning",
-        "mcpToolCall" => "MCP Tool Call",
-        "dynamicToolCall" => "Tool Call",
-        "collabAgentToolCall" => "Collab Tool Call",
-        "webSearch" => "Web Search",
-        "imageView" => "Image View",
-        "enteredReviewMode" => "Review Mode Entered",
-        "exitedReviewMode" => "Review Mode Exited",
-        "contextCompaction" => "Context Compaction",
-        _ => kind,
-    }
-}
-
-#[cfg(test)]
-fn ai_truncate_multiline_content(content: &str, max_lines: usize) -> (String, bool) {
-    if max_lines == 0 {
-        return (String::new(), !content.is_empty());
-    }
-
-    let lines = content.lines().collect::<Vec<_>>();
-    if lines.len() <= max_lines {
-        return (content.to_string(), false);
-    }
-
-    let mut truncated = lines
-        .into_iter()
-        .take(max_lines)
-        .collect::<Vec<_>>()
-        .join("\n");
-    truncated.push_str("\n...");
-    (truncated, true)
-}
-
 fn ai_approval_kind_label(kind: AiApprovalKind) -> &'static str {
     match kind {
         AiApprovalKind::CommandExecution => "Command Execution Approval",

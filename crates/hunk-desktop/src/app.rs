@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -1371,6 +1371,7 @@ struct DiffViewer {
     ai_interrupt_restore_queued_thread_ids: BTreeSet<String>,
     ai_scroll_timeline_to_bottom: bool,
     ai_timeline_follow_output: bool,
+    ai_inline_review_selected_row_id_by_thread: BTreeMap<String, String>,
     ai_git_progress: Option<AiGitProgressState>,
     ai_thread_title_refresh_state_by_thread: BTreeMap<String, AiThreadTitleRefreshState>,
     ai_expanded_thread_sidebar_project_roots: BTreeSet<String>,
@@ -1383,16 +1384,12 @@ struct DiffViewer {
     ai_workspace_surface_scroll_handle: ScrollHandle,
     ai_workspace_surface_last_scroll_offset: Option<Point<Pixels>>,
     ai_workspace_selection: Option<ai_workspace_session::AiWorkspaceSelection>,
-    ai_timeline_list_view: Option<Entity<render::AiTimelineListView>>,
-    ai_timeline_list_state: ListState,
-    ai_timeline_list_row_count: usize,
     ai_timeline_visible_turn_limit_by_thread: BTreeMap<String, usize>,
     ai_timeline_turn_ids_by_thread: BTreeMap<String, Vec<String>>,
     ai_timeline_row_ids_by_thread: BTreeMap<String, Vec<String>>,
     ai_timeline_rows_by_id: BTreeMap<String, AiTimelineRow>,
     ai_timeline_groups_by_id: BTreeMap<String, AiTimelineGroup>,
     ai_timeline_group_parent_by_child_row_id: BTreeMap<String, String>,
-    ai_markdown_row_cache: Mutex<BTreeMap<String, AiMarkdownRowCacheEntry>>,
     ai_in_progress_turn_started_at: BTreeMap<String, Instant>,
     ai_composer_activity_elapsed_second: Option<u64>,
     ai_expanded_timeline_row_ids: BTreeSet<String>,

@@ -470,6 +470,7 @@ impl DiffViewer {
             ai_interrupt_restore_queued_thread_ids: BTreeSet::new(),
             ai_scroll_timeline_to_bottom: false,
             ai_timeline_follow_output: true,
+            ai_inline_review_selected_row_id_by_thread: BTreeMap::new(),
             ai_git_progress: None,
             ai_thread_title_refresh_state_by_thread: BTreeMap::new(),
             ai_expanded_thread_sidebar_project_roots: BTreeSet::new(),
@@ -482,16 +483,12 @@ impl DiffViewer {
             ai_workspace_surface_scroll_handle: ScrollHandle::default(),
             ai_workspace_surface_last_scroll_offset: None,
             ai_workspace_selection: None,
-            ai_timeline_list_view: None,
-            ai_timeline_list_state: ListState::new(0, ListAlignment::Top, px(360.0)),
-            ai_timeline_list_row_count: 0,
             ai_timeline_visible_turn_limit_by_thread: BTreeMap::new(),
             ai_timeline_turn_ids_by_thread: BTreeMap::new(),
             ai_timeline_row_ids_by_thread: BTreeMap::new(),
             ai_timeline_rows_by_id: BTreeMap::new(),
             ai_timeline_groups_by_id: BTreeMap::new(),
             ai_timeline_group_parent_by_child_row_id: BTreeMap::new(),
-            ai_markdown_row_cache: Mutex::new(BTreeMap::new()),
             ai_in_progress_turn_started_at: BTreeMap::new(),
             ai_composer_activity_elapsed_second: None,
             ai_expanded_timeline_row_ids: BTreeSet::new(),
@@ -913,8 +910,6 @@ impl DiffViewer {
         )
         .detach();
 
-        view.initialize_ai_timeline_list_view(cx);
-        view.install_scroll_handlers(cx);
         view.subscribe_review_compare_picker_states(cx);
 
         view.update_branch_picker_state(window, cx);
@@ -944,40 +939,6 @@ impl DiffViewer {
         view.maybe_schedule_startup_update_check(cx);
         view.restart_periodic_update_checks(cx);
         view
-    }
-
-    fn install_scroll_handlers(&self, cx: &mut Context<Self>) {
-        let weak_view = cx.entity().downgrade();
-
-        self.ai_timeline_list_state.set_scroll_handler({
-            let weak_view = weak_view.clone();
-            move |_, _, cx| {
-                let weak_view = weak_view.clone();
-                cx.defer(move |cx| {
-                    let Some(view) = weak_view.upgrade() else {
-                        return;
-                    };
-                    view.update(cx, |this, cx| {
-                        let previous_follow_output = this.ai_timeline_follow_output;
-                        this.refresh_ai_timeline_follow_output_from_scroll();
-                        if this.ai_timeline_follow_output != previous_follow_output {
-                            cx.notify();
-                        }
-                    });
-                });
-            }
-        });
-    }
-
-    fn initialize_ai_timeline_list_view(&mut self, cx: &mut Context<Self>) {
-        if self.ai_timeline_list_view.is_some() {
-            return;
-        }
-
-        let root_view = cx.entity().downgrade();
-        let list_state = self.ai_timeline_list_state.clone();
-        self.ai_timeline_list_view =
-            Some(cx.new(|_| render::AiTimelineListView::new(root_view, list_state)));
     }
 
     fn prewarm_preview_highlighting(&self, cx: &mut Context<Self>) {

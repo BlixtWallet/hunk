@@ -383,6 +383,8 @@ struct AiVisibleFrameState {
     timeline_visible_turn_count: usize,
     timeline_hidden_turn_count: usize,
     timeline_visible_row_ids: Arc<[String]>,
+    timeline_follow_output: bool,
+    inline_review_selected_row_id: Option<String>,
     timeline_loading: bool,
     show_select_thread_empty_state: bool,
     show_no_turns_empty_state: bool,
@@ -418,15 +420,6 @@ impl AiPerfDurationStats {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AiPerfTimelineRowKind {
-    Message,
-    Tool,
-    Group,
-    Diff,
-    Plan,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AiPerfSidebarRowKind {
     ProjectHeader,
     Thread,
@@ -453,36 +446,11 @@ struct AiPerfWindow {
     thread_sidebar_empty_project_row_render: AiPerfDurationStats,
     thread_sidebar_project_footer_row_render: AiPerfDurationStats,
     timeline_index_rebuild: AiPerfDurationStats,
-    timeline_list_sync_count: u32,
-    timeline_list_sync_row_ids_changed: u32,
-    timeline_list_sync_follow_output_changed: u32,
-    timeline_list_sync_visible_rows_total: u64,
-    timeline_list_render: AiPerfDurationStats,
-    timeline_list_render_visible_rows_total: u64,
     workspace_session_rebuild: AiPerfDurationStats,
     workspace_surface_geometry_rebuild: AiPerfDurationStats,
     workspace_surface_paint: AiPerfDurationStats,
     workspace_surface_visible_blocks_total: u64,
     workspace_surface_hit_tests: u32,
-    timeline_row_render: AiPerfDurationStats,
-    timeline_row_skipped: u32,
-    message_row_render: AiPerfDurationStats,
-    tool_row_render: AiPerfDurationStats,
-    group_row_render: AiPerfDurationStats,
-    diff_row_render: AiPerfDurationStats,
-    plan_row_render: AiPerfDurationStats,
-    markdown_cache_hits: u32,
-    markdown_cache_misses: u32,
-    markdown_comrak_parse: AiPerfDurationStats,
-    markdown_transform: AiPerfDurationStats,
-    markdown_code_highlight: AiPerfDurationStats,
-    markdown_code_block_count_total: u64,
-    markdown_code_char_count_total: u64,
-    markdown_parse: AiPerfDurationStats,
-    markdown_selection_surfaces: AiPerfDurationStats,
-    markdown_render_build: AiPerfDurationStats,
-    markdown_render_block_count_total: u64,
-    markdown_render_char_count_total: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -583,6 +551,7 @@ struct AiWorkspaceState {
     queued_messages: Vec<AiQueuedUserMessage>,
     interrupt_restore_queued_thread_ids: BTreeSet<String>,
     timeline_follow_output: bool,
+    inline_review_selected_row_id_by_thread: BTreeMap<String, String>,
     thread_title_refresh_state_by_thread: BTreeMap<String, AiThreadTitleRefreshState>,
     timeline_visible_turn_limit_by_thread: BTreeMap<String, usize>,
     in_progress_turn_started_at: BTreeMap<String, Instant>,
@@ -632,6 +601,7 @@ impl Default for AiWorkspaceState {
             queued_messages: Vec::new(),
             interrupt_restore_queued_thread_ids: BTreeSet::new(),
             timeline_follow_output: true,
+            inline_review_selected_row_id_by_thread: BTreeMap::new(),
             thread_title_refresh_state_by_thread: BTreeMap::new(),
             timeline_visible_turn_limit_by_thread: BTreeMap::new(),
             in_progress_turn_started_at: BTreeMap::new(),
@@ -817,13 +787,6 @@ impl AiTextSelectionSurfaceSpec {
         self.separator_before = separator_before.into();
         self
     }
-}
-
-#[derive(Debug, Clone)]
-struct AiMarkdownRowCacheEntry {
-    markdown: String,
-    blocks: Arc<[MarkdownPreviewBlock]>,
-    selection_surfaces: Arc<[AiTextSelectionSurfaceSpec]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

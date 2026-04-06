@@ -10,11 +10,7 @@ impl DiffViewer {
             .and_then(|_| self.current_review_surface_snapshot().cloned())
     }
 
-    fn render_review_workspace_surface(
-        &mut self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn render_review_workspace_surface(&mut self, cx: &mut Context<Self>) -> AnyElement {
         if self.repo_discovery_failed {
             return self.render_open_project_empty_state(cx);
         }
@@ -35,6 +31,7 @@ impl DiffViewer {
         }
         if self.repo_root.is_some()
             && self.workspace_view_mode != WorkspaceViewMode::Diff
+            && !self.ai_inline_review_is_open()
             && self.files.is_empty()
         {
             return v_flex()
@@ -96,9 +93,10 @@ impl DiffViewer {
                 v_flex()
                     .flex_1()
                     .min_h_0()
-                    .when(self.workspace_view_mode == WorkspaceViewMode::Diff, |this| {
-                        this.child(self.render_review_compare_controls(cx))
-                    })
+                    .when(
+                        self.workspace_view_mode == WorkspaceViewMode::Diff,
+                        |this| this.child(self.render_review_compare_controls(cx)),
+                    )
                     .when(self.editor_search_visible, |this| {
                         this.child(self.render_workspace_search_bar(
                             view.clone(),
@@ -148,7 +146,9 @@ impl DiffViewer {
                                                 div()
                                                     .size_full()
                                                     .on_scroll_wheel(
-                                                        cx.listener(Self::on_diff_list_scroll_wheel),
+                                                        cx.listener(
+                                                            Self::on_diff_list_scroll_wheel,
+                                                        ),
                                                     )
                                                     .child(scroller),
                                             )
@@ -164,7 +164,8 @@ impl DiffViewer {
                                                             .w(scrollbar_size)
                                                             .child(
                                                                 Scrollbar::vertical(
-                                                                    &self.review_surface
+                                                                    &self
+                                                                        .review_surface
                                                                         .diff_scroll_handle,
                                                                 )
                                                                 .scrollbar_show(
@@ -264,13 +265,16 @@ impl DiffViewer {
                     .relative()
                     .w_full()
                     .h(px(surface.viewport.total_surface_height_px as f32))
-                    .when_some(surface.viewport.visible_pixel_range(), |this, visible_pixel_range| {
-                        this.child(self.render_review_workspace_surface_child(
-                            surface,
-                            visible_pixel_range,
-                            cx,
-                        ))
-                    }),
+                    .when_some(
+                        surface.viewport.visible_pixel_range(),
+                        |this, visible_pixel_range| {
+                            this.child(self.render_review_workspace_surface_child(
+                                surface,
+                                visible_pixel_range,
+                                cx,
+                            ))
+                        },
+                    ),
             )
             .into_any_element()
     }
@@ -288,12 +292,9 @@ impl DiffViewer {
             .unwrap_or_default();
         let layout = self.diff_column_layout();
         let chrome = hunk_diff_chrome(cx.theme(), cx.theme().mode.is_dark());
-        let sticky_file_can_view = surface
-            .sticky_file_header
-            .as_ref()
-            .is_some_and(|header| {
-                self.can_open_file_in_files_workspace(header.path.as_str(), header.status)
-            });
+        let sticky_file_can_view = surface.sticky_file_header.as_ref().is_some_and(|header| {
+            self.can_open_file_in_files_workspace(header.path.as_str(), header.status)
+        });
 
         div()
             .id("review-workspace-viewport")
@@ -320,35 +321,34 @@ impl DiffViewer {
                 ))
                 .into_any_element(),
             )
-            .when_some(surface.active_comment_editor_overlay.as_ref(), |this, overlay| {
-                this.child(self.render_active_row_comment_overlay(
-                    overlay.row_index,
-                    overlay.top_px,
-                    cx,
-                ))
-            })
+            .when_some(
+                surface.active_comment_editor_overlay.as_ref(),
+                |this, overlay| {
+                    this.child(self.render_active_row_comment_overlay(
+                        overlay.row_index,
+                        overlay.top_px,
+                        cx,
+                    ))
+                },
+            )
             .into_any_element()
     }
 
     fn render_diff_workspace_screen(
         &mut self,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let is_dark = cx.theme().mode.is_dark();
         let terminal_state = self.files_terminal_panel_state();
         let view = cx.entity();
-        let review_surface = self.render_review_workspace_surface(window, cx);
-        let workspace = self.render_tree_workspace_screen("hunk-diff-workspace", review_surface, cx);
+        let review_surface = self.render_review_workspace_surface(cx);
+        let workspace =
+            self.render_tree_workspace_screen("hunk-diff-workspace", review_surface, cx);
 
         v_flex()
             .size_full()
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .child(workspace),
-            )
+            .child(div().flex_1().min_h_0().child(workspace))
             .when(terminal_state.open, |this| {
                 this.child(
                     self.render_workspace_terminal_panel(view, &terminal_state, is_dark, cx)

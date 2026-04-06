@@ -324,6 +324,11 @@ impl DiffViewer {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.workspace_view_mode == WorkspaceViewMode::Ai
+            && self.ai_move_workspace_selection_by(1, cx)
+        {
+            return;
+        }
         if self.workspace_view_mode != WorkspaceViewMode::Diff {
             return;
         }
@@ -336,6 +341,11 @@ impl DiffViewer {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.workspace_view_mode == WorkspaceViewMode::Ai
+            && self.ai_move_workspace_selection_by(-1, cx)
+        {
+            return;
+        }
         if self.workspace_view_mode != WorkspaceViewMode::Diff {
             return;
         }

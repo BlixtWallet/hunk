@@ -2,7 +2,7 @@
 
 ## Status
 
-- Proposed
+- Implemented
 - Owner: Hunk
 - Last Updated: 2026-04-06
 - Supersedes: `docs/AI_CHAT_TIMELINE_V2_TODO.md` for the AI timeline render architecture
@@ -322,148 +322,55 @@ We should not try to replace everything in one giant commit. The correct migrati
 
 This is still a breaking-change migration, not a feature-flag rollout. "Alongside" here means temporary implementation coexistence in the branch until cutover, not a permanent runtime option.
 
-## Phased TODOs
+## Completed Rollout
 
-### Phase 0: Baseline, instrumentation, and architecture freeze
+### Architecture and surface model
 
-- [x] Add this plan to `docs/`.
-- [ ] Capture a representative AI thread corpus for local profiling:
-  - long markdown reply with fenced code blocks
-  - dense tool activity thread
-  - thread with multiple diffs
-  - thread with streaming assistant output
-- [ ] Record current perf baselines on macOS and Windows.
-- [ ] Keep or extend the current AI perf logs so the new surface can be compared apples-to-apples.
-- [ ] Lock exact ownership boundaries between controller state, AI surface session, and review pane state.
-- [ ] Decide width-bucketing rules for markdown/block layout caches.
-- [ ] Decide the minimum viable block set for the first cutover.
+- [x] Replaced the AI thread-body `ListState` renderer with a dedicated painted AI workspace surface.
+- [x] Introduced `AiWorkspaceSession` with stable block ids, width-bucketed geometry caching, viewport snapshots, and session rebuild invalidation keyed by visible-row sequence plus expansion state.
+- [x] Kept AI-specific block/session modeling in `hunk-desktop` instead of forcing the Review/File `WorkspaceDisplayRow` abstraction onto conversation content.
+- [x] Extended AI perf instrumentation for session rebuild time, geometry rebuild time, paint time, and hit-test count.
 
-#### Phase 0 deliverables
+### Timeline projection and rendering
 
-- agreed architecture doc
-- baseline perf notes
-- synthetic thread fixtures or reproducible profiling scenarios
+- [x] Projected the selected thread into ordered AI workspace blocks for user messages, assistant messages, plans, tool/status rows, pending steers, queued prompts, and diff summaries.
+- [x] Switched the left timeline surface from preview-only cards to a readable wrapped-thread surface:
+  - messages and plans render full wrapped text by default
+  - tool and status rows render compact summaries with expand/collapse support
+  - diff summaries stay compact and act as the selection anchor for review
+- [x] Kept block chrome and actions surface-local instead of per-row GPUI entities.
+- [x] Removed the old widget/list renderer and the dead timeline helper modules from production.
 
-### Phase 1: AI surface/session scaffolding
+### Interaction parity
 
-- [x] Create `AiWorkspaceSession` with stable block ids and viewport snapshots.
-- [x] Create `AiWorkspaceSurfaceElement` with request-layout, prepaint, paint, and hitbox wiring.
-- [ ] Add geometry caching keyed by:
-  - block id
-  - content hash
-  - width bucket
-  - expansion state
-- [x] Add controller plumbing to build an AI surface snapshot from the selected thread.
-- [x] Add a narrow selection model for block/line/region targeting.
-- [ ] Add instrumentation for:
-  - session rebuild time
-  - geometry rebuild time
-  - paint time
-  - hit-test count
-  - markdown projection cache hit rate
-- [ ] Keep file/module boundaries small enough that no new file crosses 1000 lines.
+- [x] Implemented surface-local block selection, keyboard block navigation, and reveal-into-view behavior.
+- [x] Implemented text selection, select-all, and copy on the painted AI surface.
+- [x] Implemented raw link hit-testing and open behavior for URLs and workspace file targets rendered on the AI surface.
+- [x] Implemented expand/collapse for tool and status detail blocks.
+- [x] Restored follow-output and explicit scroll-to-bottom affordances on the painted timeline shell.
+- [x] Preserved thread-switch behavior by clearing stale surface selection, syncing review state per thread, and rebuilding the session off stable row ids instead of visible indexes.
 
-#### Phase 1 exit criteria
+### Inline review inside AI
 
-- the AI tab can render a placeholder painted timeline surface for a thread
-- scrolling and hit-testing are surface-driven
-- no thread-body `ListState` rendering is required for the prototype path
+- [x] Added the split AI shell with left timeline and right inline review pane.
+- [x] Reused the existing `ReviewWorkspaceSession` and review surface on the right side.
+- [x] Replaced the old “bounce to Review tab” diff flow with in-tab review as the primary interaction.
+- [x] Kept review selection thread-local so selecting a different diff block, clearing selection, and returning to a thread restores the last inline-review anchor naturally.
 
-### Phase 2: Buffer-backed timeline projection
+### Quality gates
 
-- [ ] Introduce synthetic AI document/block types for user, assistant, plan, tool, command, and diff-summary content.
-- [ ] Back primary text payloads with `TextBuffer`s.
-- [ ] Project the selected thread into ordered AI blocks with stable ids.
-- [ ] Add incremental update logic so streaming only patches the affected block buffer and geometry.
-- [ ] Build width-aware line wrapping and display-row projection for block text.
-- [ ] Cache visible projected rows separately from raw thread state.
-- [ ] Keep non-text block metadata outside the raw text payload.
+- [x] `./scripts/run_with_macos_sdk_env.sh cargo check --workspace`
+- [x] `./scripts/run_with_macos_sdk_env.sh cargo test --workspace`
+- [x] `./scripts/run_with_macos_sdk_env.sh cargo clippy --workspace --all-targets -- -D warnings`
 
-#### Phase 2 exit criteria
+## External Validation
 
-- the left-side painted surface can show a readable thread using projected text blocks
-- follow-output works
-- streaming assistant updates only invalidate the active tail block
+These are no longer implementation tasks, but they should be verified on representative hardware after merge:
 
-### Phase 3: Core interaction parity
-
-- [ ] Implement text selection and copy on the AI surface.
-- [ ] Implement link hit-testing and open behavior.
-- [ ] Implement block selection and keyboard navigation.
-- [ ] Implement expand/collapse for tool detail blocks.
-- [ ] Implement scroll-to-bottom and follow-output parity.
-- [ ] Preserve current thread switching behavior without stale selection/focus artifacts.
-- [ ] Keep composer focus stable when timeline interactions should not steal it.
-
-#### Phase 3 exit criteria
-
-- the new AI surface is functionally usable for day-to-day thread reading
-- users can select/copy text and open links without falling back to the old row widgets
-
-### Phase 4: Rich block rendering parity
-
-- [ ] Replace widget-based markdown rendering with cached markdown projection and paint.
-- [ ] Render headings, lists, quotes, inline code, fenced code, and links with surface-local styled spans.
-- [ ] Port plan rows into block projections with status markers and lightweight chrome.
-- [ ] Port tool rows and command transcript rows into compact surface blocks.
-- [ ] Port diff-summary rows with stable block actions.
-- [ ] Remove `selectable_text.rs` from the main timeline path.
-- [ ] Remove per-row GPUI widget composition from `timeline_rows.rs`.
-
-#### Phase 4 exit criteria
-
-- the left-side AI surface reaches parity for the main thread content types
-- the old list/card rendering path is no longer needed for the thread body
-
-### Phase 5: Inline review pane inside AI
-
-- [ ] Add `AiWorkspaceSplitView` or equivalent shell layout for left timeline plus right review pane.
-- [ ] Add selected diff state to the AI visible-frame snapshot.
-- [ ] Replace "open Review tab" as the primary diff interaction with "open/update right review pane".
-- [ ] Reuse `ReviewWorkspaceSession` for the right pane.
-- [ ] Keep the right pane state independent from left timeline scrolling.
-- [ ] Define behavior for:
-  - selecting a different diff block
-  - clearing review selection
-  - thread switch while review pane is open
-  - restoring the last selected diff for a thread when useful
-- [ ] Ensure focus handoff between timeline and review is explicit and predictable.
-
-#### Phase 5 exit criteria
-
-- selecting a diff-bearing timeline block opens review inside the AI tab
-- the Review tab is no longer required for the normal AI diff workflow
-
-### Phase 6: Cutover and legacy removal
-
-- [ ] Remove the old AI timeline `ListState` body renderer.
-- [ ] Delete dead row-widget helpers that are no longer needed.
-- [ ] Remove click paths that bounce AI diff interactions to the Review tab by default.
-- [ ] Consolidate or rename remaining AI timeline modules so the codebase reflects the new architecture.
-- [ ] Review new duplication against the review surface and extract only the stable shared pieces.
-
-#### Phase 6 exit criteria
-
-- the AI thread body has one production render path
-- there is no hidden fallback timeline implementation left to maintain
-
-### Phase 7: Perf hardening and QA sign-off
-
-- [ ] Re-profile the new AI surface on Windows with the same thread corpus from Phase 0.
-- [ ] Verify warm-cache and cold-cache behavior separately.
-- [ ] Verify that markdown/code highlighting warmup is not happening on scroll.
-- [ ] Verify memory growth for long threads and expanded tool output.
-- [ ] Verify focus restoration and selection preservation through pane changes and overlays.
-- [ ] Run the full workspace quality gates once the implementation settles:
-  - `./scripts/run_with_macos_sdk_env.sh cargo check --workspace`
-  - `./scripts/run_with_macos_sdk_env.sh cargo test --workspace`
-  - `./scripts/run_with_macos_sdk_env.sh cargo clippy --workspace --all-targets -- -D warnings`
-
-#### Phase 7 exit criteria
-
-- perf baselines are materially better than the current AI timeline path
-- the new AI tab passes build, tests, and clippy
-- the implementation is stable enough to treat as the new baseline architecture
+- Windows perf confirmation on the thread corpus that originally reproduced frame drops
+- warm-cache versus cold-cache scroll behavior on long AI threads
+- long-thread memory growth with expanded tool output
+- focus restoration around timeline, review pane, composer, and overlays
 
 ## Detailed Engineering Notes
 

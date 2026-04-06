@@ -17,7 +17,9 @@ impl DiffViewer {
             })
             .collect::<BTreeSet<_>>();
 
-        if let Some(row_ix) = self.hovered_comment_row.filter(|row_ix| self.row_supports_comments(*row_ix))
+        if let Some(row_ix) = self
+            .hovered_comment_row
+            .filter(|row_ix| self.row_supports_comments(*row_ix))
         {
             comment_affordance_rows.insert(row_ix);
         }
@@ -89,7 +91,7 @@ impl DiffViewer {
             .is_none_or(|snapshot| {
                 snapshot.scroll_top_px != scroll_top_px
                     || snapshot.viewport_height_px != viewport_height_px
-        });
+            });
         if needs_refresh {
             let surface_options = self.review_surface_snapshot_options();
             let has_display_rows = self
@@ -134,10 +136,9 @@ impl DiffViewer {
         viewport_height_px: usize,
         overscan_rows: usize,
     ) -> bool {
-        let Some(visible_row_range) = session.visible_row_range_for_viewport(
-            scroll_top_px,
-            viewport_height_px,
-        ) else {
+        let Some(visible_row_range) =
+            session.visible_row_range_for_viewport(scroll_top_px, viewport_height_px)
+        else {
             return false;
         };
         let first_visible_row = visible_row_range.start.saturating_sub(overscan_rows);
@@ -164,11 +165,7 @@ impl DiffViewer {
             .max(Pixels::ZERO)
             .as_f32()
             .round() as usize;
-        if self.seed_review_surface_display_rows_for_range(
-            scroll_top_px,
-            viewport_height_px,
-            8,
-        ) {
+        if self.seed_review_surface_display_rows_for_range(scroll_top_px, viewport_height_px, 8) {
             return true;
         }
         self.seed_review_surface_display_rows_full()
@@ -265,7 +262,7 @@ impl DiffViewer {
     pub(super) fn current_review_surface_snapshot(
         &self,
     ) -> Option<&review_workspace_session::ReviewWorkspaceSurfaceSnapshot> {
-        if self.workspace_view_mode == WorkspaceViewMode::Diff {
+        if self.uses_review_workspace_sections_surface() {
             return self.review_surface.last_surface_snapshot.as_ref();
         }
 
@@ -275,7 +272,7 @@ impl DiffViewer {
     pub(super) fn current_review_visible_state(
         &self,
     ) -> Option<review_workspace_session::ReviewWorkspaceVisibleState> {
-        if self.workspace_view_mode == WorkspaceViewMode::Diff {
+        if self.uses_review_workspace_sections_surface() {
             return self
                 .current_review_surface_snapshot()
                 .map(|snapshot| snapshot.visible_state.clone());
@@ -296,7 +293,8 @@ impl DiffViewer {
     }
 
     pub(super) fn uses_review_workspace_sections_surface(&self) -> bool {
-        self.workspace_view_mode == WorkspaceViewMode::Diff && self.review_workspace_session.is_some()
+        (self.workspace_view_mode == WorkspaceViewMode::Diff || self.ai_inline_review_is_open())
+            && self.review_workspace_session.is_some()
     }
 
     pub(super) fn current_review_surface_top_row(&self) -> Option<usize> {
@@ -309,7 +307,8 @@ impl DiffViewer {
             return None;
         }
 
-        self.current_review_visible_state().and_then(|state| state.top_row)
+        self.current_review_visible_state()
+            .and_then(|state| state.top_row)
     }
 
     pub(super) fn current_review_visible_row_range(&self) -> Option<std::ops::Range<usize>> {
@@ -327,7 +326,7 @@ impl DiffViewer {
     }
 
     pub(super) fn current_review_surface_scroll_offset(&self) -> Point<Pixels> {
-        if self.workspace_view_mode == WorkspaceViewMode::Diff {
+        if self.workspace_view_mode == WorkspaceViewMode::Diff || self.ai_inline_review_is_open() {
             return self.review_surface.diff_scroll_handle.offset();
         }
 
@@ -335,7 +334,7 @@ impl DiffViewer {
     }
 
     pub(super) fn active_diff_row_count(&self) -> usize {
-        if self.workspace_view_mode == WorkspaceViewMode::Diff {
+        if self.workspace_view_mode == WorkspaceViewMode::Diff || self.ai_inline_review_is_open() {
             self.review_workspace_session
                 .as_ref()
                 .map(|session| session.row_count())
@@ -392,8 +391,10 @@ impl DiffViewer {
             .auto_refresh_interval_ms
             .clamp(250, Self::AUTO_REFRESH_MAX_INTERVAL_MS);
         let base_ms = configured_ms.min(Self::AUTO_REFRESH_QUICK_PROBE_MS);
-        let backoff_factor =
-            1_u64 << self.auto_refresh_unmodified_streak.min(Self::AUTO_REFRESH_BACKOFF_STEPS);
+        let backoff_factor = 1_u64
+            << self
+                .auto_refresh_unmodified_streak
+                .min(Self::AUTO_REFRESH_BACKOFF_STEPS);
         let interval_ms = base_ms
             .saturating_mul(backoff_factor)
             .min(configured_ms)
@@ -488,12 +489,9 @@ impl DiffViewer {
             ".git/HEAD" | ".git/packed-refs" | ".git/reftable"
         ) || relative_path.starts_with(".git/refs/")
             || relative_path.starts_with(".git/logs/")
-            || relative_path.ends_with("/HEAD")
-                && relative_path.starts_with(".git/worktrees/")
-            || relative_path.contains("/refs/")
-                && relative_path.starts_with(".git/worktrees/")
-            || relative_path.contains("/logs/")
-                && relative_path.starts_with(".git/worktrees/")
+            || relative_path.ends_with("/HEAD") && relative_path.starts_with(".git/worktrees/")
+            || relative_path.contains("/refs/") && relative_path.starts_with(".git/worktrees/")
+            || relative_path.contains("/logs/") && relative_path.starts_with(".git/worktrees/")
     }
 
     fn repo_watch_dirty_path(
@@ -544,16 +542,18 @@ impl DiffViewer {
         }
 
         match ignore_matcher {
-            Some(ignore_matcher) => match ignore_matcher.filter_non_ignored_paths(candidates.as_slice()) {
-                Ok(paths) => paths,
-                Err(err) => {
-                    warn!(
-                        "failed to filter ignored repo watch paths for {}: {err:#}",
-                        repo_root.display()
-                    );
-                    candidates.into_iter().map(|(path, _)| path).collect()
+            Some(ignore_matcher) => {
+                match ignore_matcher.filter_non_ignored_paths(candidates.as_slice()) {
+                    Ok(paths) => paths,
+                    Err(err) => {
+                        warn!(
+                            "failed to filter ignored repo watch paths for {}: {err:#}",
+                            repo_root.display()
+                        );
+                        candidates.into_iter().map(|(path, _)| path).collect()
+                    }
                 }
-            },
+            }
             None => candidates.into_iter().map(|(path, _)| path).collect(),
         }
     }
@@ -578,13 +578,12 @@ impl DiffViewer {
         event_paths.iter().any(|path| {
             Self::is_repo_watch_metadata_path(path, primary_root)
                 || Self::is_repo_watch_metadata_path(path, git_workspace_root)
-        })
-            || !Self::repo_watch_non_ignored_dirty_paths(
-                event_paths,
-                Some(git_workspace_root),
-                ignore_matcher,
-            )
-                .is_empty()
+        }) || !Self::repo_watch_non_ignored_dirty_paths(
+            event_paths,
+            Some(git_workspace_root),
+            ignore_matcher,
+        )
+        .is_empty()
     }
 
     fn should_process_repo_watch_event(event: &notify::Event) -> bool {
@@ -643,14 +642,20 @@ impl DiffViewer {
         let mut watcher = match watcher {
             Ok(watcher) => watcher,
             Err(err) => {
-                error!("failed to start file watch for {}: {err}", watch_roots_for_cb);
+                error!(
+                    "failed to start file watch for {}: {err}",
+                    watch_roots_for_cb
+                );
                 return;
             }
         };
 
         for watch_root in &watch_roots {
             if let Err(err) = watcher.watch(watch_root, notify::RecursiveMode::Recursive) {
-                error!("failed to watch repository at {}: {err}", watch_root.display());
+                error!(
+                    "failed to watch repository at {}: {err}",
+                    watch_root.display()
+                );
                 return;
             }
         }
@@ -667,7 +672,9 @@ impl DiffViewer {
         });
         let git_workspace_ignore_matcher = git_workspace_root
             .as_ref()
-            .filter(|git_workspace_root| primary_root.as_deref() != Some(git_workspace_root.as_path()))
+            .filter(|git_workspace_root| {
+                primary_root.as_deref() != Some(git_workspace_root.as_path())
+            })
             .and_then(|root| {
                 hunk_git::git::RepoIgnoreMatcher::open(root.as_path())
                     .map_err(|err| {
@@ -689,15 +696,19 @@ impl DiffViewer {
                     continue;
                 }
 
-                let metadata_changed =
-                    Self::repo_watch_metadata_changed(event.paths.as_slice(), primary_root.as_deref());
+                let metadata_changed = Self::repo_watch_metadata_changed(
+                    event.paths.as_slice(),
+                    primary_root.as_deref(),
+                );
                 let recent_commits_changed = Self::repo_watch_recent_commits_changed(
                     event.paths.as_slice(),
                     primary_root.as_deref(),
                 );
                 let git_workspace_metadata_changed = git_workspace_root
                     .as_deref()
-                    .filter(|git_workspace_root| primary_root.as_deref() != Some(*git_workspace_root))
+                    .filter(|git_workspace_root| {
+                        primary_root.as_deref() != Some(*git_workspace_root)
+                    })
                     .is_some_and(|git_workspace_root| {
                         Self::repo_watch_metadata_changed(
                             event.paths.as_slice(),
@@ -706,7 +717,9 @@ impl DiffViewer {
                     });
                 let git_workspace_recent_commits_changed = git_workspace_root
                     .as_deref()
-                    .filter(|git_workspace_root| primary_root.as_deref() != Some(*git_workspace_root))
+                    .filter(|git_workspace_root| {
+                        primary_root.as_deref() != Some(*git_workspace_root)
+                    })
                     .is_some_and(|git_workspace_root| {
                         Self::repo_watch_recent_commits_changed(
                             event.paths.as_slice(),
@@ -738,9 +751,7 @@ impl DiffViewer {
                     let primary_root = primary_root.clone();
                     let git_workspace_root = git_workspace_root.clone();
                     this.update(cx, move |this, cx| {
-                        if metadata_changed
-                            && let Some(primary_root) = primary_root.as_ref()
-                        {
+                        if metadata_changed && let Some(primary_root) = primary_root.as_ref() {
                             invalidate_repo_metadata_caches(primary_root.as_path());
                         }
                         if git_workspace_metadata_changed
@@ -959,30 +970,35 @@ fn projected_workspace_display_rows(
             search_highlights: row.search_highlights.clone(),
         })
         .collect::<Vec<_>>();
-    projected_review_workspace_side_rows(crate::app::native_files_editor::WorkspaceProjectedRenderSnapshot {
-        projection: snapshot,
-        visible_display_rows,
-        syntax_by_display_row: BTreeMap::new(),
-        line_number_digits: 1,
-    }).map(|rows| {
+    projected_review_workspace_side_rows(
+        crate::app::native_files_editor::WorkspaceProjectedRenderSnapshot {
+            projection: snapshot,
+            visible_display_rows,
+            syntax_by_display_row: BTreeMap::new(),
+            line_number_digits: 1,
+        },
+    )
+    .map(|rows| {
         rows.rows
             .into_iter()
-            .map(|row| review_workspace_session::ReviewWorkspaceDisplayRowEntry {
-                display_row_index: row.display_row_index,
-                row_index: row.row_index,
-                raw_row_range: row.raw_row_range,
-                left: row.row.clone(),
-                right: hunk_editor::WorkspaceDisplayRow {
-                    row_index: row.display_row_index,
-                    location: None,
-                    raw_start_column: 0,
-                    raw_end_column: 0,
-                    raw_column_offsets: vec![0],
-                    text: String::new(),
-                    whitespace_markers: Vec::new(),
-                    search_highlights: Vec::new(),
+            .map(
+                |row| review_workspace_session::ReviewWorkspaceDisplayRowEntry {
+                    display_row_index: row.display_row_index,
+                    row_index: row.row_index,
+                    raw_row_range: row.raw_row_range,
+                    left: row.row.clone(),
+                    right: hunk_editor::WorkspaceDisplayRow {
+                        row_index: row.display_row_index,
+                        location: None,
+                        raw_start_column: 0,
+                        raw_end_column: 0,
+                        raw_column_offsets: vec![0],
+                        text: String::new(),
+                        whitespace_markers: Vec::new(),
+                        search_highlights: Vec::new(),
+                    },
                 },
-            })
+            )
             .collect()
     })
 }
@@ -1066,50 +1082,48 @@ mod review_projection_tests {
 
     #[test]
     fn projected_workspace_rows_convert_when_mapping_is_one_to_one() {
-        let rows = projected_workspace_display_rows(
-            hunk_editor::WorkspaceProjectedSnapshot {
-                viewport: hunk_editor::Viewport {
-                    first_visible_row: 0,
-                    visible_row_count: 2,
-                    horizontal_offset: 0,
-                },
-                total_display_rows: 2,
-                visible_rows: vec![
-                    hunk_editor::WorkspaceProjectedRow {
-                        row_index: 0,
-                        workspace_row_range: Some(4..5),
-                        location: None,
-                        kind: hunk_editor::DisplayRowKind::Text,
-                        raw_start_column: 0,
-                        raw_end_column: 3,
-                        raw_column_offsets: vec![0, 1, 2, 3],
-                        start_column: 0,
-                        end_column: 3,
-                        text: "abc".to_string(),
-                        is_wrapped: false,
-                        whitespace_markers: Vec::new(),
-                        search_highlights: Vec::new(),
-                        overlays: Vec::new(),
-                    },
-                    hunk_editor::WorkspaceProjectedRow {
-                        row_index: 1,
-                        workspace_row_range: Some(5..6),
-                        location: None,
-                        kind: hunk_editor::DisplayRowKind::Text,
-                        raw_start_column: 0,
-                        raw_end_column: 2,
-                        raw_column_offsets: vec![0, 1, 2],
-                        start_column: 0,
-                        end_column: 2,
-                        text: "de".to_string(),
-                        is_wrapped: false,
-                        whitespace_markers: Vec::new(),
-                        search_highlights: Vec::new(),
-                        overlays: Vec::new(),
-                    },
-                ],
+        let rows = projected_workspace_display_rows(hunk_editor::WorkspaceProjectedSnapshot {
+            viewport: hunk_editor::Viewport {
+                first_visible_row: 0,
+                visible_row_count: 2,
+                horizontal_offset: 0,
             },
-        )
+            total_display_rows: 2,
+            visible_rows: vec![
+                hunk_editor::WorkspaceProjectedRow {
+                    row_index: 0,
+                    workspace_row_range: Some(4..5),
+                    location: None,
+                    kind: hunk_editor::DisplayRowKind::Text,
+                    raw_start_column: 0,
+                    raw_end_column: 3,
+                    raw_column_offsets: vec![0, 1, 2, 3],
+                    start_column: 0,
+                    end_column: 3,
+                    text: "abc".to_string(),
+                    is_wrapped: false,
+                    whitespace_markers: Vec::new(),
+                    search_highlights: Vec::new(),
+                    overlays: Vec::new(),
+                },
+                hunk_editor::WorkspaceProjectedRow {
+                    row_index: 1,
+                    workspace_row_range: Some(5..6),
+                    location: None,
+                    kind: hunk_editor::DisplayRowKind::Text,
+                    raw_start_column: 0,
+                    raw_end_column: 2,
+                    raw_column_offsets: vec![0, 1, 2],
+                    start_column: 0,
+                    end_column: 2,
+                    text: "de".to_string(),
+                    is_wrapped: false,
+                    whitespace_markers: Vec::new(),
+                    search_highlights: Vec::new(),
+                    overlays: Vec::new(),
+                },
+            ],
+        })
         .expect("one-to-one rows should convert");
 
         assert_eq!(
@@ -1122,50 +1136,48 @@ mod review_projection_tests {
 
     #[test]
     fn projected_workspace_rows_preserve_duplicate_raw_row_mappings() {
-        let rows = projected_workspace_display_rows(
-            hunk_editor::WorkspaceProjectedSnapshot {
-                viewport: hunk_editor::Viewport {
-                    first_visible_row: 0,
-                    visible_row_count: 2,
-                    horizontal_offset: 0,
-                },
-                total_display_rows: 2,
-                visible_rows: vec![
-                    hunk_editor::WorkspaceProjectedRow {
-                        row_index: 0,
-                        workspace_row_range: Some(4..5),
-                        location: None,
-                        kind: hunk_editor::DisplayRowKind::Text,
-                        raw_start_column: 0,
-                        raw_end_column: 80,
-                        raw_column_offsets: vec![0; 81],
-                        start_column: 0,
-                        end_column: 80,
-                        text: "left".to_string(),
-                        is_wrapped: false,
-                        whitespace_markers: Vec::new(),
-                        search_highlights: Vec::new(),
-                        overlays: Vec::new(),
-                    },
-                    hunk_editor::WorkspaceProjectedRow {
-                        row_index: 1,
-                        workspace_row_range: Some(4..5),
-                        location: None,
-                        kind: hunk_editor::DisplayRowKind::Text,
-                        raw_start_column: 80,
-                        raw_end_column: 120,
-                        raw_column_offsets: vec![0; 41],
-                        start_column: 80,
-                        end_column: 120,
-                        text: "right".to_string(),
-                        is_wrapped: true,
-                        whitespace_markers: Vec::new(),
-                        search_highlights: Vec::new(),
-                        overlays: Vec::new(),
-                    },
-                ],
+        let rows = projected_workspace_display_rows(hunk_editor::WorkspaceProjectedSnapshot {
+            viewport: hunk_editor::Viewport {
+                first_visible_row: 0,
+                visible_row_count: 2,
+                horizontal_offset: 0,
             },
-        );
+            total_display_rows: 2,
+            visible_rows: vec![
+                hunk_editor::WorkspaceProjectedRow {
+                    row_index: 0,
+                    workspace_row_range: Some(4..5),
+                    location: None,
+                    kind: hunk_editor::DisplayRowKind::Text,
+                    raw_start_column: 0,
+                    raw_end_column: 80,
+                    raw_column_offsets: vec![0; 81],
+                    start_column: 0,
+                    end_column: 80,
+                    text: "left".to_string(),
+                    is_wrapped: false,
+                    whitespace_markers: Vec::new(),
+                    search_highlights: Vec::new(),
+                    overlays: Vec::new(),
+                },
+                hunk_editor::WorkspaceProjectedRow {
+                    row_index: 1,
+                    workspace_row_range: Some(4..5),
+                    location: None,
+                    kind: hunk_editor::DisplayRowKind::Text,
+                    raw_start_column: 80,
+                    raw_end_column: 120,
+                    raw_column_offsets: vec![0; 41],
+                    start_column: 80,
+                    end_column: 120,
+                    text: "right".to_string(),
+                    is_wrapped: true,
+                    whitespace_markers: Vec::new(),
+                    search_highlights: Vec::new(),
+                    overlays: Vec::new(),
+                },
+            ],
+        });
 
         let rows = rows.expect("projected rows should preserve wrapped display rows");
         assert_eq!(rows.len(), 2);
@@ -1179,34 +1191,32 @@ mod review_projection_tests {
 
     #[test]
     fn projected_workspace_rows_preserve_multi_row_raw_ranges() {
-        let rows = projected_workspace_display_rows(
-            hunk_editor::WorkspaceProjectedSnapshot {
-                viewport: hunk_editor::Viewport {
-                    first_visible_row: 0,
-                    visible_row_count: 1,
-                    horizontal_offset: 0,
-                },
-                total_display_rows: 1,
-                visible_rows: vec![hunk_editor::WorkspaceProjectedRow {
-                    row_index: 0,
-                    workspace_row_range: Some(4..7),
-                    location: None,
-                    kind: hunk_editor::DisplayRowKind::FoldPlaceholder {
-                        hidden_line_count: 2,
-                    },
-                    raw_start_column: 0,
-                    raw_end_column: 18,
-                    raw_column_offsets: (0..=18).collect(),
-                    start_column: 0,
-                    end_column: 18,
-                    text: "… 2 hidden lines".to_string(),
-                    is_wrapped: false,
-                    whitespace_markers: Vec::new(),
-                    search_highlights: Vec::new(),
-                    overlays: Vec::new(),
-                }],
+        let rows = projected_workspace_display_rows(hunk_editor::WorkspaceProjectedSnapshot {
+            viewport: hunk_editor::Viewport {
+                first_visible_row: 0,
+                visible_row_count: 1,
+                horizontal_offset: 0,
             },
-        )
+            total_display_rows: 1,
+            visible_rows: vec![hunk_editor::WorkspaceProjectedRow {
+                row_index: 0,
+                workspace_row_range: Some(4..7),
+                location: None,
+                kind: hunk_editor::DisplayRowKind::FoldPlaceholder {
+                    hidden_line_count: 2,
+                },
+                raw_start_column: 0,
+                raw_end_column: 18,
+                raw_column_offsets: (0..=18).collect(),
+                start_column: 0,
+                end_column: 18,
+                text: "… 2 hidden lines".to_string(),
+                is_wrapped: false,
+                whitespace_markers: Vec::new(),
+                search_highlights: Vec::new(),
+                overlays: Vec::new(),
+            }],
+        })
         .expect("fold placeholder rows should convert");
 
         assert_eq!(rows.len(), 1);
@@ -1250,7 +1260,10 @@ mod review_projection_tests {
         let entries = review_workspace_display_row_entries(&left_rows, &right_rows);
 
         assert_eq!(
-            entries.iter().map(|entry| entry.row_index).collect::<Vec<_>>(),
+            entries
+                .iter()
+                .map(|entry| entry.row_index)
+                .collect::<Vec<_>>(),
             vec![4, 5]
         );
         assert_eq!(
@@ -1266,92 +1279,92 @@ mod review_projection_tests {
     fn projected_review_workspace_side_rows_merge_by_display_row_index() {
         let left = projected_review_workspace_side_rows(test_render_snapshot_from_projected(
             hunk_editor::WorkspaceProjectedSnapshot {
-            viewport: hunk_editor::Viewport {
-                first_visible_row: 0,
-                visible_row_count: 2,
-                horizontal_offset: 0,
+                viewport: hunk_editor::Viewport {
+                    first_visible_row: 0,
+                    visible_row_count: 2,
+                    horizontal_offset: 0,
+                },
+                total_display_rows: 2,
+                visible_rows: vec![
+                    hunk_editor::WorkspaceProjectedRow {
+                        row_index: 0,
+                        workspace_row_range: Some(4..5),
+                        location: None,
+                        kind: hunk_editor::DisplayRowKind::Text,
+                        raw_start_column: 0,
+                        raw_end_column: 5,
+                        raw_column_offsets: vec![0, 1, 2, 3, 4, 5],
+                        start_column: 0,
+                        end_column: 5,
+                        text: "left".to_string(),
+                        is_wrapped: false,
+                        whitespace_markers: Vec::new(),
+                        search_highlights: Vec::new(),
+                        overlays: Vec::new(),
+                    },
+                    hunk_editor::WorkspaceProjectedRow {
+                        row_index: 1,
+                        workspace_row_range: Some(4..5),
+                        location: None,
+                        kind: hunk_editor::DisplayRowKind::Text,
+                        raw_start_column: 5,
+                        raw_end_column: 9,
+                        raw_column_offsets: vec![0, 1, 2, 3, 4],
+                        start_column: 5,
+                        end_column: 9,
+                        text: "wrap".to_string(),
+                        is_wrapped: true,
+                        whitespace_markers: Vec::new(),
+                        search_highlights: Vec::new(),
+                        overlays: Vec::new(),
+                    },
+                ],
             },
-            total_display_rows: 2,
-            visible_rows: vec![
-                hunk_editor::WorkspaceProjectedRow {
-                    row_index: 0,
-                    workspace_row_range: Some(4..5),
-                    location: None,
-                    kind: hunk_editor::DisplayRowKind::Text,
-                    raw_start_column: 0,
-                    raw_end_column: 5,
-                    raw_column_offsets: vec![0, 1, 2, 3, 4, 5],
-                    start_column: 0,
-                    end_column: 5,
-                    text: "left".to_string(),
-                    is_wrapped: false,
-                    whitespace_markers: Vec::new(),
-                    search_highlights: Vec::new(),
-                    overlays: Vec::new(),
-                },
-                hunk_editor::WorkspaceProjectedRow {
-                    row_index: 1,
-                    workspace_row_range: Some(4..5),
-                    location: None,
-                    kind: hunk_editor::DisplayRowKind::Text,
-                    raw_start_column: 5,
-                    raw_end_column: 9,
-                    raw_column_offsets: vec![0, 1, 2, 3, 4],
-                    start_column: 5,
-                    end_column: 9,
-                    text: "wrap".to_string(),
-                    is_wrapped: true,
-                    whitespace_markers: Vec::new(),
-                    search_highlights: Vec::new(),
-                    overlays: Vec::new(),
-                },
-            ],
-        },
         ))
         .expect("left projected rows should build");
         let right = projected_review_workspace_side_rows(test_render_snapshot_from_projected(
             hunk_editor::WorkspaceProjectedSnapshot {
-            viewport: hunk_editor::Viewport {
-                first_visible_row: 0,
-                visible_row_count: 2,
-                horizontal_offset: 0,
+                viewport: hunk_editor::Viewport {
+                    first_visible_row: 0,
+                    visible_row_count: 2,
+                    horizontal_offset: 0,
+                },
+                total_display_rows: 2,
+                visible_rows: vec![
+                    hunk_editor::WorkspaceProjectedRow {
+                        row_index: 0,
+                        workspace_row_range: Some(4..5),
+                        location: None,
+                        kind: hunk_editor::DisplayRowKind::Text,
+                        raw_start_column: 0,
+                        raw_end_column: 5,
+                        raw_column_offsets: vec![0, 1, 2, 3, 4, 5],
+                        start_column: 0,
+                        end_column: 5,
+                        text: "right".to_string(),
+                        is_wrapped: false,
+                        whitespace_markers: Vec::new(),
+                        search_highlights: Vec::new(),
+                        overlays: Vec::new(),
+                    },
+                    hunk_editor::WorkspaceProjectedRow {
+                        row_index: 1,
+                        workspace_row_range: Some(4..5),
+                        location: None,
+                        kind: hunk_editor::DisplayRowKind::Text,
+                        raw_start_column: 5,
+                        raw_end_column: 9,
+                        raw_column_offsets: vec![0, 1, 2, 3, 4],
+                        start_column: 5,
+                        end_column: 9,
+                        text: "cell".to_string(),
+                        is_wrapped: true,
+                        whitespace_markers: Vec::new(),
+                        search_highlights: Vec::new(),
+                        overlays: Vec::new(),
+                    },
+                ],
             },
-            total_display_rows: 2,
-            visible_rows: vec![
-                hunk_editor::WorkspaceProjectedRow {
-                    row_index: 0,
-                    workspace_row_range: Some(4..5),
-                    location: None,
-                    kind: hunk_editor::DisplayRowKind::Text,
-                    raw_start_column: 0,
-                    raw_end_column: 5,
-                    raw_column_offsets: vec![0, 1, 2, 3, 4, 5],
-                    start_column: 0,
-                    end_column: 5,
-                    text: "right".to_string(),
-                    is_wrapped: false,
-                    whitespace_markers: Vec::new(),
-                    search_highlights: Vec::new(),
-                    overlays: Vec::new(),
-                },
-                hunk_editor::WorkspaceProjectedRow {
-                    row_index: 1,
-                    workspace_row_range: Some(4..5),
-                    location: None,
-                    kind: hunk_editor::DisplayRowKind::Text,
-                    raw_start_column: 5,
-                    raw_end_column: 9,
-                    raw_column_offsets: vec![0, 1, 2, 3, 4],
-                    start_column: 5,
-                    end_column: 9,
-                    text: "cell".to_string(),
-                    is_wrapped: true,
-                    whitespace_markers: Vec::new(),
-                    search_highlights: Vec::new(),
-                    overlays: Vec::new(),
-                },
-            ],
-        },
         ))
         .expect("right projected rows should build");
 
@@ -1575,12 +1588,12 @@ mod tests {
 
     #[test]
     fn repo_watch_ignores_access_events() {
-        assert!(!DiffViewer::should_process_repo_watch_event(
-            &Event::new(EventKind::Access(AccessKind::Open(AccessMode::Read)))
-        ));
-        assert!(!DiffViewer::should_process_repo_watch_event(
-            &Event::new(EventKind::Access(AccessKind::Close(AccessMode::Write)))
-        ));
+        assert!(!DiffViewer::should_process_repo_watch_event(&Event::new(
+            EventKind::Access(AccessKind::Open(AccessMode::Read))
+        )));
+        assert!(!DiffViewer::should_process_repo_watch_event(&Event::new(
+            EventKind::Access(AccessKind::Close(AccessMode::Write))
+        )));
     }
 
     #[test]
@@ -1595,5 +1608,4 @@ mod tests {
             EventKind::Remove(RemoveKind::File)
         )));
     }
-
 }

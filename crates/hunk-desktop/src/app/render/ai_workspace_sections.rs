@@ -11,6 +11,7 @@ struct AiTimelinePanelState {
     show_worktree_base_branch_picker: bool,
     selected_worktree_base_branch: String,
     selected_thread_id: Option<String>,
+    inline_review_selected_row_id: Option<String>,
     selected_thread_start_mode: Option<AiNewThreadStartMode>,
     pending_approvals: Arc<[AiPendingApproval]>,
     pending_user_inputs: Arc<[AiPendingUserInputRequest]>,
@@ -19,10 +20,10 @@ struct AiTimelinePanelState {
     timeline_visible_turn_count: usize,
     timeline_hidden_turn_count: usize,
     timeline_visible_row_ids: Arc<[String]>,
+    timeline_follow_output: bool,
     timeline_loading: bool,
     show_select_thread_empty_state: bool,
     show_no_turns_empty_state: bool,
-    ai_timeline_follow_output: bool,
     ai_publish_blocker: Option<String>,
     ai_publish_disabled: bool,
     ai_commit_and_push_loading: bool,
@@ -1129,41 +1130,10 @@ impl DiffViewer {
     ) -> AnyElement {
         let workspace_surface = self.render_ai_workspace_surface_scroller(cx);
         let uses_workspace_surface = workspace_surface.is_some();
-        let timeline_list_view = self
-            .ai_timeline_list_view
-            .get_or_insert_with(|| {
-                cx.new(|_| {
-                    AiTimelineListView::new(view.downgrade(), self.ai_timeline_list_state.clone())
-                })
-            })
-            .clone();
-        let (row_ids_changed, follow_output_changed) = {
-            let list_view_state = timeline_list_view.read(cx);
-            (
-                list_view_state.timeline_visible_row_ids.as_ref()
-                    != state.timeline_visible_row_ids.as_ref(),
-                list_view_state.ai_timeline_follow_output != state.ai_timeline_follow_output,
-            )
-        };
-        self.record_ai_timeline_list_sync(
-            row_ids_changed,
-            follow_output_changed,
-            state.timeline_visible_row_ids.len(),
-        );
-        if workspace_surface.is_none() {
-            timeline_list_view.update(cx, |this: &mut AiTimelineListView, cx| {
-                this.sync_state(
-                    state.timeline_visible_row_ids.clone(),
-                    state.ai_timeline_follow_output,
-                    cx,
-                );
-            });
-        }
-        let timeline_body = (!state.timeline_visible_row_ids.is_empty()).then(|| {
-            workspace_surface.unwrap_or_else(|| timeline_list_view.clone().into_any_element())
-        });
+        let timeline_body = (!state.timeline_visible_row_ids.is_empty())
+            .then(|| workspace_surface.unwrap_or_else(|| div().size_full().into_any_element()));
 
-        v_flex()
+        let timeline_column = v_flex()
             .flex_1()
             .min_h_0()
             .w_full()
@@ -1276,9 +1246,116 @@ impl DiffViewer {
                                         .scrollbar_show(ScrollbarShow::Always),
                                     ),
                             )
+                            .when(!state.timeline_follow_output, |this| {
+                                this.child(
+                                    div()
+                                        .absolute()
+                                        .right(px(24.0))
+                                        .bottom(px(12.0))
+                                        .left_0()
+                                        .flex()
+                                        .justify_center()
+                                        .child({
+                                            let view = view.clone();
+                                            Button::new("ai-workspace-scroll-to-bottom")
+                                                .compact()
+                                                .primary()
+                                                .with_size(gpui_component::Size::Small)
+                                                .icon(Icon::new(IconName::ChevronDown).size(px(14.0)))
+                                                .tooltip("Scroll to the bottom")
+                                                .on_click(move |_, _, cx| {
+                                                    view.update(cx, |this, cx| {
+                                                        this.ai_scroll_timeline_to_bottom_action(cx);
+                                                    });
+                                                })
+                                        }),
+                                )
+                            })
                         }),
                 )
-            })
+            });
+
+        if state.inline_review_selected_row_id.is_some() {
+            return h_resizable("hunk-ai-timeline-review-split")
+                .child(
+                    resizable_panel()
+                        .size(px(720.0))
+                        .size_range(px(420.0)..px(1280.0))
+                        .child(timeline_column),
+                )
+                .child(
+                    resizable_panel()
+                        .size(px(640.0))
+                        .size_range(px(360.0)..px(1280.0))
+                        .child(self.render_ai_inline_review_pane(view, is_dark, cx)),
+                )
+                .into_any_element();
+        }
+
+        timeline_column.into_any_element()
+    }
+
+    fn render_ai_inline_review_pane(
+        &mut self,
+        view: Entity<Self>,
+        is_dark: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        v_flex()
+            .size_full()
+            .min_h_0()
+            .rounded_lg()
+            .border_1()
+            .border_color(hunk_opacity(cx.theme().border, is_dark, 0.86, 0.74))
+            .bg(hunk_opacity(cx.theme().background, is_dark, 0.96, 1.0))
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .px_3()
+                    .py_2()
+                    .border_b_1()
+                    .border_color(cx.theme().border)
+                    .child(
+                        v_flex()
+                            .gap_0p5()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_semibold()
+                                    .text_color(cx.theme().foreground)
+                                    .child("Review"),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child("Selected AI diff"),
+                            ),
+                    )
+                    .child({
+                        let view = view.clone();
+                        Button::new("ai-inline-review-close")
+                            .compact()
+                            .ghost()
+                            .with_size(gpui_component::Size::Small)
+                            .rounded(px(8.0))
+                            .label("Close")
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.ai_close_inline_review_action(cx);
+                                });
+                            })
+                    }),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .child(self.render_review_workspace_surface(cx)),
+            )
             .into_any_element()
     }
 }

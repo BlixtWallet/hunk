@@ -42,6 +42,7 @@ pub(crate) enum HunkAccentTone {
     Neutral,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HunkDisclosureColors {
     pub title: Hsla,
@@ -408,6 +409,7 @@ pub(crate) fn hunk_toolbar_chip(theme: &Theme, is_dark: bool) -> HunkSurfaceColo
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn hunk_disclosure_row(theme: &Theme, is_dark: bool) -> HunkDisclosureColors {
     let title = hunk_opacity(theme.foreground, is_dark, 0.78, 0.74);
     HunkDisclosureColors {

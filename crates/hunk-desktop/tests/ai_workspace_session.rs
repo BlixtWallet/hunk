@@ -8,6 +8,7 @@ use ai_workspace_session::{
     AI_WORKSPACE_SURFACE_BLOCK_SIDE_PADDING_PX, AI_WORKSPACE_SURFACE_BLOCK_TOP_PADDING_PX,
     AiWorkspaceBlock, AiWorkspaceBlockKind, AiWorkspaceBlockRole, AiWorkspaceSelection,
     AiWorkspaceSelectionRegion, AiWorkspaceSession, AiWorkspaceSourceRow,
+    ai_workspace_text_layout_for_block,
 };
 
 fn block(id: &str, kind: AiWorkspaceBlockKind, preview: &str) -> AiWorkspaceBlock {
@@ -24,6 +25,14 @@ fn block(id: &str, kind: AiWorkspaceBlockKind, preview: &str) -> AiWorkspaceBloc
             AiWorkspaceBlockKind::Status => AiWorkspaceBlockRole::System,
         },
         kind,
+        expandable: matches!(
+            kind,
+            AiWorkspaceBlockKind::Tool | AiWorkspaceBlockKind::Status
+        ),
+        expanded: matches!(
+            kind,
+            AiWorkspaceBlockKind::Message | AiWorkspaceBlockKind::Plan
+        ),
         title: id.to_string(),
         preview: preview.to_string(),
         last_sequence: 1,
@@ -71,33 +80,33 @@ fn surface_snapshot_projects_visible_blocks_and_total_height() {
     let snapshot = session.surface_snapshot(0, 220, 640);
 
     assert_eq!(snapshot.viewport.visible_blocks.len(), 3);
+    let first = snapshot
+        .viewport
+        .visible_blocks
+        .first()
+        .expect("first visible block");
+    let second = snapshot
+        .viewport
+        .visible_blocks
+        .get(1)
+        .expect("second visible block");
+    let third = snapshot
+        .viewport
+        .visible_blocks
+        .get(2)
+        .expect("third visible block");
+    assert_eq!(first.top_px, AI_WORKSPACE_SURFACE_BLOCK_TOP_PADDING_PX);
     assert_eq!(
-        snapshot
-            .viewport
-            .visible_blocks
-            .first()
-            .expect("first visible block")
-            .top_px,
-        AI_WORKSPACE_SURFACE_BLOCK_TOP_PADDING_PX
+        second.top_px,
+        first.top_px + first.height_px + AI_WORKSPACE_SURFACE_BLOCK_GAP_PX
     );
     assert_eq!(
-        snapshot
-            .viewport
-            .visible_blocks
-            .get(1)
-            .expect("second visible block")
-            .top_px,
-        AI_WORKSPACE_SURFACE_BLOCK_TOP_PADDING_PX + 72 + AI_WORKSPACE_SURFACE_BLOCK_GAP_PX
+        third.top_px,
+        second.top_px + second.height_px + AI_WORKSPACE_SURFACE_BLOCK_GAP_PX
     );
     assert_eq!(
         snapshot.viewport.total_surface_height_px,
-        AI_WORKSPACE_SURFACE_BLOCK_TOP_PADDING_PX
-            + 72
-            + AI_WORKSPACE_SURFACE_BLOCK_GAP_PX
-            + 60
-            + AI_WORKSPACE_SURFACE_BLOCK_GAP_PX
-            + 56
-            + AI_WORKSPACE_SURFACE_BLOCK_BOTTOM_PADDING_PX
+        third.top_px + third.height_px + AI_WORKSPACE_SURFACE_BLOCK_BOTTOM_PADDING_PX
     );
 }
 
@@ -141,6 +150,8 @@ fn surface_snapshot_supports_all_block_kinds_and_roles() {
                 source_row_id: "row-user".to_string(),
                 role: AiWorkspaceBlockRole::User,
                 kind: AiWorkspaceBlockKind::Message,
+                expandable: false,
+                expanded: true,
                 title: "You".to_string(),
                 preview: "prompt".to_string(),
                 last_sequence: 1,
@@ -174,13 +185,7 @@ fn surface_snapshot_supports_all_block_kinds_and_roles() {
 
 #[test]
 fn selection_matches_block_and_helpers_remain_addressable() {
-    let selection = AiWorkspaceSelection {
-        block_id: "row-2".to_string(),
-        block_kind: AiWorkspaceBlockKind::DiffSummary,
-        line_index: Some(1),
-        region: AiWorkspaceSelectionRegion::Preview,
-    };
-    let session = AiWorkspaceSession::new(
+    let mut session = AiWorkspaceSession::new(
         "thread-1",
         source_rows(&[("row-1", 1), ("row-2", 2)]),
         vec![
@@ -188,6 +193,12 @@ fn selection_matches_block_and_helpers_remain_addressable() {
             block("row-2", AiWorkspaceBlockKind::DiffSummary, "diff preview"),
         ],
     );
+    let selection = AiWorkspaceSelection {
+        block_id: "row-2".to_string(),
+        block_kind: AiWorkspaceBlockKind::DiffSummary,
+        line_index: Some(1),
+        region: AiWorkspaceSelectionRegion::Preview,
+    };
 
     assert!(selection.matches_block("row-2"));
     assert!(!selection.matches_block("row-1"));
@@ -200,5 +211,92 @@ fn selection_matches_block_and_helpers_remain_addressable() {
         AiWorkspaceSelectionRegion::Title
     );
     assert_eq!(session.block_count(), 2);
+    assert_eq!(session.block_index("row-2"), Some(1));
+    assert_eq!(
+        session.block_at(0).map(|block| block.id.as_str()),
+        Some("row-1")
+    );
+    assert_eq!(
+        session.block("row-2").map(|block| block.preview.as_str()),
+        Some("diff preview")
+    );
+    let geometry = session
+        .block_geometry("row-2", 640)
+        .expect("row-2 geometry should exist");
+    assert!(geometry.top_px >= AI_WORKSPACE_SURFACE_BLOCK_TOP_PADDING_PX);
+    assert!(geometry.bottom_px() >= geometry.top_px);
     assert_eq!(AI_WORKSPACE_SURFACE_BLOCK_SIDE_PADDING_PX, 16);
+}
+
+#[test]
+fn narrower_widths_increase_wrapped_height() {
+    let block = AiWorkspaceBlock {
+        id: "row-1".to_string(),
+        source_row_id: "row-1".to_string(),
+        role: AiWorkspaceBlockRole::Assistant,
+        kind: AiWorkspaceBlockKind::Message,
+        expandable: false,
+        expanded: true,
+        title: "Assistant".to_string(),
+        preview: "This is a longer assistant message preview that should wrap across multiple lines when the surface width gets narrower.".to_string(),
+        last_sequence: 1,
+    };
+
+    let wide = ai_workspace_text_layout_for_block(&block, 800);
+    let narrow = ai_workspace_text_layout_for_block(&block, 320);
+
+    assert!(wide.preview_lines.len() <= narrow.preview_lines.len());
+    assert!(wide.height_px <= narrow.height_px);
+}
+
+#[test]
+fn message_blocks_are_no_longer_limited_to_six_preview_lines() {
+    let preview = (1..=12)
+        .map(|line| format!("line {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let block = AiWorkspaceBlock {
+        id: "row-message".to_string(),
+        source_row_id: "row-message".to_string(),
+        role: AiWorkspaceBlockRole::Assistant,
+        kind: AiWorkspaceBlockKind::Message,
+        expandable: false,
+        expanded: true,
+        title: "Assistant".to_string(),
+        preview,
+        last_sequence: 1,
+    };
+
+    let layout = ai_workspace_text_layout_for_block(&block, 640);
+
+    assert!(layout.preview_lines.len() > 6);
+}
+
+#[test]
+fn expanded_tool_blocks_take_more_height_than_collapsed_tool_blocks() {
+    let preview = (1..=10)
+        .map(|line| format!("tool output line {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let collapsed = AiWorkspaceBlock {
+        id: "row-tool".to_string(),
+        source_row_id: "row-tool".to_string(),
+        role: AiWorkspaceBlockRole::Tool,
+        kind: AiWorkspaceBlockKind::Tool,
+        expandable: true,
+        expanded: false,
+        title: "Command".to_string(),
+        preview: preview.clone(),
+        last_sequence: 1,
+    };
+    let expanded = AiWorkspaceBlock {
+        expanded: true,
+        ..collapsed.clone()
+    };
+
+    let collapsed_layout = ai_workspace_text_layout_for_block(&collapsed, 640);
+    let expanded_layout = ai_workspace_text_layout_for_block(&expanded, 640);
+
+    assert!(collapsed_layout.preview_lines.len() < expanded_layout.preview_lines.len());
+    assert!(collapsed_layout.height_px < expanded_layout.height_px);
 }

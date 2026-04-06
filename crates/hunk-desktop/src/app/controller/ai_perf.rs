@@ -1,15 +1,4 @@
 impl AiPerfWindow {
-    fn record_timeline_row_render(&mut self, kind: AiPerfTimelineRowKind, duration: Duration) {
-        self.timeline_row_render.record(duration);
-        match kind {
-            AiPerfTimelineRowKind::Message => self.message_row_render.record(duration),
-            AiPerfTimelineRowKind::Tool => self.tool_row_render.record(duration),
-            AiPerfTimelineRowKind::Group => self.group_row_render.record(duration),
-            AiPerfTimelineRowKind::Diff => self.diff_row_render.record(duration),
-            AiPerfTimelineRowKind::Plan => self.plan_row_render.record(duration),
-        }
-    }
-
     fn record_thread_sidebar_row_render(&mut self, kind: AiPerfSidebarRowKind, duration: Duration) {
         self.thread_sidebar_row_render.record(duration);
         match kind {
@@ -126,42 +115,6 @@ impl DiffViewer {
         });
     }
 
-    pub(super) fn record_ai_timeline_list_sync(
-        &self,
-        row_ids_changed: bool,
-        follow_output_changed: bool,
-        visible_row_count: usize,
-    ) {
-        self.update_ai_perf_window(|window| {
-            window.timeline_list_sync_count = window.timeline_list_sync_count.saturating_add(1);
-            if row_ids_changed {
-                window.timeline_list_sync_row_ids_changed =
-                    window.timeline_list_sync_row_ids_changed.saturating_add(1);
-            }
-            if follow_output_changed {
-                window.timeline_list_sync_follow_output_changed = window
-                    .timeline_list_sync_follow_output_changed
-                    .saturating_add(1);
-            }
-            window.timeline_list_sync_visible_rows_total = window
-                .timeline_list_sync_visible_rows_total
-                .saturating_add(visible_row_count as u64);
-        });
-    }
-
-    pub(super) fn record_ai_timeline_list_render_timing(
-        &self,
-        duration: Duration,
-        visible_row_count: usize,
-    ) {
-        self.update_ai_perf_window(|window| {
-            window.timeline_list_render.record(duration);
-            window.timeline_list_render_visible_rows_total = window
-                .timeline_list_render_visible_rows_total
-                .saturating_add(visible_row_count as u64);
-        });
-    }
-
     pub(super) fn record_ai_workspace_session_rebuild_timing(&self, duration: Duration) {
         self.update_ai_perf_window(|window| {
             window.workspace_session_rebuild.record(duration);
@@ -191,76 +144,6 @@ impl DiffViewer {
         self.update_ai_perf_window(|window| {
             window.workspace_surface_hit_tests =
                 window.workspace_surface_hit_tests.saturating_add(1);
-        });
-    }
-
-    pub(super) fn record_ai_timeline_row_render_timing(
-        &self,
-        kind: AiPerfTimelineRowKind,
-        duration: Duration,
-    ) {
-        self.update_ai_perf_window(|window| {
-            window.record_timeline_row_render(kind, duration);
-        });
-    }
-
-    pub(super) fn record_ai_timeline_row_skipped(&self) {
-        self.update_ai_perf_window(|window| {
-            window.timeline_row_skipped = window.timeline_row_skipped.saturating_add(1);
-        });
-    }
-
-    pub(super) fn record_ai_markdown_cache_hit(&self) {
-        self.update_ai_perf_window(|window| {
-            window.markdown_cache_hits = window.markdown_cache_hits.saturating_add(1);
-        });
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn record_ai_markdown_cache_miss(
-        &self,
-        parse_duration: Duration,
-        comrak_parse_duration: Duration,
-        transform_duration: Duration,
-        code_highlight_duration: Duration,
-        code_block_count: usize,
-        code_char_count: usize,
-        selection_surface_duration: Duration,
-    ) {
-        self.update_ai_perf_window(|window| {
-            window.markdown_cache_misses = window.markdown_cache_misses.saturating_add(1);
-            window.markdown_parse.record(parse_duration);
-            window.markdown_comrak_parse.record(comrak_parse_duration);
-            window.markdown_transform.record(transform_duration);
-            window
-                .markdown_code_highlight
-                .record(code_highlight_duration);
-            window.markdown_code_block_count_total = window
-                .markdown_code_block_count_total
-                .saturating_add(code_block_count as u64);
-            window.markdown_code_char_count_total = window
-                .markdown_code_char_count_total
-                .saturating_add(code_char_count as u64);
-            window
-                .markdown_selection_surfaces
-                .record(selection_surface_duration);
-        });
-    }
-
-    pub(super) fn record_ai_markdown_render_build(
-        &self,
-        duration: Duration,
-        block_count: usize,
-        char_count: usize,
-    ) {
-        self.update_ai_perf_window(|window| {
-            window.markdown_render_build.record(duration);
-            window.markdown_render_block_count_total = window
-                .markdown_render_block_count_total
-                .saturating_add(block_count as u64);
-            window.markdown_render_char_count_total = window
-                .markdown_render_char_count_total
-                .saturating_add(char_count as u64);
         });
     }
 

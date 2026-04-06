@@ -18,12 +18,11 @@ impl DiffViewer {
             .round() as usize;
         let snapshot_result = {
             let session = self.ai_workspace_session.as_mut()?;
-            let snapshot_result = session.surface_snapshot_with_stats(
+            session.surface_snapshot_with_stats(
                 scroll_top_px,
                 viewport_height_px.max(1),
                 viewport_width_px.max(1),
-            );
-            snapshot_result
+            )
         };
         if let Some(duration) = snapshot_result.geometry_rebuild_duration {
             self.record_ai_workspace_surface_geometry_rebuild_timing(duration);
@@ -38,6 +37,10 @@ impl DiffViewer {
         let surface = self.current_ai_workspace_surface_snapshot()?;
         let scroll_handle = self.ai_workspace_surface_scroll_handle.clone();
         let viewport_height_px = surface.viewport.total_surface_height_px;
+        let workspace_root = self
+            .ai_workspace_cwd()
+            .or_else(|| self.selected_git_workspace_root())
+            .or_else(|| self.repo_root.clone());
 
         Some(
             div()
@@ -65,6 +68,7 @@ impl DiffViewer {
                                             selection: self.ai_workspace_selection.clone(),
                                             ui_font_family: cx.theme().font_family.clone(),
                                             mono_font_family: cx.theme().mono_font_family.clone(),
+                                            workspace_root: workspace_root.clone(),
                                         }
                                         .into_any_element(),
                                     ),

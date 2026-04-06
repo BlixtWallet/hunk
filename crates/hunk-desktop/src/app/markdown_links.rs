@@ -23,6 +23,7 @@ pub(crate) enum MarkdownLinkTarget {
     WorkspaceFile(MarkdownWorkspaceFileLink),
 }
 
+#[allow(dead_code)]
 pub(crate) fn markdown_inline_text_and_link_ranges(
     spans: &[MarkdownInlineSpan],
 ) -> (String, Vec<MarkdownLinkRange>) {
@@ -130,6 +131,7 @@ pub(crate) fn open_url_in_browser(url: &str) -> anyhow::Result<()> {
     ))
 }
 
+#[allow(dead_code)]
 fn push_markdown_link_range(
     link_ranges: &mut Vec<MarkdownLinkRange>,
     range: Range<usize>,

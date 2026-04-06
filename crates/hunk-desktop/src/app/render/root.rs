@@ -541,6 +541,7 @@ impl Render for DiffViewer {
             self.review_surface.last_diff_scroll_offset = Some(current_scroll_offset);
             self.last_scroll_activity_at = Instant::now();
             if let Some(visible_state) = self.refresh_review_surface_snapshot()
+                && self.workspace_view_mode == WorkspaceViewMode::Diff
                 && let Some(top_row) = visible_state.top_row
             {
                 self.sync_selected_file_from_visible_row(top_row, cx);

@@ -57,10 +57,6 @@ impl DiffViewer {
             &snapshot.state,
         );
         self.sync_ai_visible_composer_prompt_to_draft(cx);
-        let previous_visible_row_ids = previous_selected_thread
-            .as_deref()
-            .map(|thread_id| current_ai_renderable_visible_row_ids(self, thread_id))
-            .unwrap_or_default();
         let previous_selected_thread_sequence = previous_selected_thread
             .as_deref()
             .map(|thread_id| thread_latest_timeline_sequence(&self.ai_state_snapshot, thread_id))
@@ -239,28 +235,6 @@ impl DiffViewer {
             .filter_map(|row_id| self.ai_timeline_container_row_id(row_id.as_str()))
             .collect::<BTreeSet<_>>();
         self.ai_clear_text_selection_for_rows(&changed_row_ids, cx);
-
-        let next_visible_row_ids = self
-            .ai_selected_thread_id
-            .as_deref()
-            .map(|thread_id| current_ai_renderable_visible_row_ids(self, thread_id))
-            .unwrap_or_default();
-        if should_reset_ai_timeline_measurements(
-            previous_selected_thread.as_deref(),
-            self.ai_selected_thread_id.as_deref(),
-            previous_visible_row_ids.as_slice(),
-            next_visible_row_ids.as_slice(),
-            self.ai_timeline_list_row_count,
-        ) || changed_ai_rows_require_full_measurement_reset(self, &changed_row_ids)
-        {
-            reset_ai_timeline_list_measurements(self, next_visible_row_ids.len());
-        } else {
-            invalidate_ai_timeline_row_measurements(
-                self,
-                next_visible_row_ids.as_slice(),
-                &changed_row_ids,
-            );
-        }
         self.flush_ai_timeline_scroll_request();
 
         if visible_threads_removed {
@@ -895,6 +869,7 @@ impl DiffViewer {
             queued_messages: Vec::new(),
             interrupt_restore_queued_thread_ids: std::collections::BTreeSet::new(),
             timeline_follow_output: current_state.timeline_follow_output,
+            inline_review_selected_row_id_by_thread: std::collections::BTreeMap::new(),
             thread_title_refresh_state_by_thread: std::collections::BTreeMap::new(),
             timeline_visible_turn_limit_by_thread: std::collections::BTreeMap::new(),
             in_progress_turn_started_at: std::collections::BTreeMap::new(),

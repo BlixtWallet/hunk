@@ -1,9 +1,7 @@
 impl DiffViewer {
     fn resolve_ai_current_state(&self) -> AiResolvedCurrentState {
-        let selected_thread_workspace_root = self
-            .ai_selected_thread_id
-            .as_deref()
-            .and_then(|thread_id| {
+        let selected_thread_workspace_root =
+            self.ai_selected_thread_id.as_deref().and_then(|thread_id| {
                 self.ai_state_snapshot
                     .threads
                     .get(thread_id)
@@ -32,14 +30,14 @@ impl DiffViewer {
                     .map(|thread| std::path::PathBuf::from(thread.cwd.as_str()))
             })
             .or_else(|| selected_thread_workspace_root.clone());
-        let workspace_root = if self.ai_new_thread_draft_active || self.ai_pending_new_thread_selection
-        {
-            self.ai_draft_workspace_root()
-        } else {
-            current_thread_workspace_root
-                .clone()
-                .or_else(|| self.ai_draft_workspace_root())
-        };
+        let workspace_root =
+            if self.ai_new_thread_draft_active || self.ai_pending_new_thread_selection {
+                self.ai_draft_workspace_root()
+            } else {
+                current_thread_workspace_root
+                    .clone()
+                    .or_else(|| self.ai_draft_workspace_root())
+            };
         let workspace_key = workspace_root
             .as_ref()
             .map(|cwd| cwd.to_string_lossy().to_string());
@@ -134,11 +132,7 @@ impl DiffViewer {
         );
     }
 
-    fn ai_select_worktree_base_branch(
-        &mut self,
-        branch_name: String,
-        cx: &mut Context<Self>,
-    ) {
+    fn ai_select_worktree_base_branch(&mut self, branch_name: String, cx: &mut Context<Self>) {
         if self.ai_new_thread_start_mode != AiNewThreadStartMode::Worktree {
             return;
         }
@@ -230,7 +224,11 @@ impl DiffViewer {
                     .any(|target| target.id == *target_id)
             })
             .or_else(|| self.primary_workspace_target_id())
-            .or_else(|| self.workspace_targets.first().map(|target| target.id.clone()));
+            .or_else(|| {
+                self.workspace_targets
+                    .first()
+                    .map(|target| target.id.clone())
+            });
         if self.ai_draft_workspace_target_id != next_target_id {
             self.ai_draft_workspace_target_id = next_target_id;
         }
@@ -262,20 +260,17 @@ impl DiffViewer {
                 .values()
                 .map(|state| state.workspace_targets.as_slice()),
         )
-            .map(|target| target.display_name.clone())
-            .or_else(|| {
-                workspace_root
-                    .file_name()
-                    .map(|name| name.to_string_lossy().to_string())
-            })
-            .filter(|label| !label.is_empty())
-            .unwrap_or_else(|| workspace_root.display().to_string())
+        .map(|target| target.display_name.clone())
+        .or_else(|| {
+            workspace_root
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+        })
+        .filter(|label| !label.is_empty())
+        .unwrap_or_else(|| workspace_root.display().to_string())
     }
 
-    pub(crate) fn ai_thread_start_mode(
-        &self,
-        thread_id: &str,
-    ) -> Option<AiNewThreadStartMode> {
+    pub(crate) fn ai_thread_start_mode(&self, thread_id: &str) -> Option<AiNewThreadStartMode> {
         let thread = self.ai_thread_summary(thread_id)?;
         ai_thread_start_mode_for_workspace(
             self.repo_root.as_deref(),
@@ -330,18 +325,18 @@ impl DiffViewer {
                 .values()
                 .map(|state| state.workspace_targets.as_slice()),
         )
-            .map(|target| target.branch_name.clone())
-            .or_else(|| {
-                cached_workspace_branch_name_for_root(
-                    workspace_root,
-                    &self.state.git_workflow_cache_by_repo,
-                )
-            })
-            .unwrap_or_else(|| {
-                self.primary_checked_out_branch_name()
-                    .unwrap_or(self.branch_name.as_str())
-                    .to_string()
-            })
+        .map(|target| target.branch_name.clone())
+        .or_else(|| {
+            cached_workspace_branch_name_for_root(
+                workspace_root,
+                &self.state.git_workflow_cache_by_repo,
+            )
+        })
+        .unwrap_or_else(|| {
+            self.primary_checked_out_branch_name()
+                .unwrap_or(self.branch_name.as_str())
+                .to_string()
+        })
     }
 
     pub(super) fn ai_sync_workspace_preferences(&mut self, cx: &mut Context<Self>) {
@@ -369,11 +364,10 @@ impl DiffViewer {
     }
 
     fn sync_ai_workspace_preferences_from_state(&mut self) {
-        self.ai_mad_max_mode = workspace_mad_max_mode(&self.state, self.ai_workspace_key().as_deref());
-        self.ai_include_hidden_models = workspace_include_hidden_models(
-            &self.state,
-            self.ai_workspace_key().as_deref(),
-        );
+        self.ai_mad_max_mode =
+            workspace_mad_max_mode(&self.state, self.ai_workspace_key().as_deref());
+        self.ai_include_hidden_models =
+            workspace_include_hidden_models(&self.state, self.ai_workspace_key().as_deref());
     }
 
     fn resolve_codex_executable_path() -> std::path::PathBuf {
@@ -507,8 +501,15 @@ impl DiffViewer {
                 .ai_interrupt_restore_queued_thread_ids
                 .clone(),
             timeline_follow_output: self.ai_timeline_follow_output,
-            thread_title_refresh_state_by_thread: self.ai_thread_title_refresh_state_by_thread.clone(),
-            timeline_visible_turn_limit_by_thread: self.ai_timeline_visible_turn_limit_by_thread.clone(),
+            inline_review_selected_row_id_by_thread: self
+                .ai_inline_review_selected_row_id_by_thread
+                .clone(),
+            thread_title_refresh_state_by_thread: self
+                .ai_thread_title_refresh_state_by_thread
+                .clone(),
+            timeline_visible_turn_limit_by_thread: self
+                .ai_timeline_visible_turn_limit_by_thread
+                .clone(),
             in_progress_turn_started_at: self.ai_in_progress_turn_started_at.clone(),
             expanded_timeline_row_ids: self.ai_expanded_timeline_row_ids.clone(),
             pending_approvals: self.ai_pending_approvals.clone(),
@@ -564,6 +565,8 @@ impl DiffViewer {
         self.ai_interrupt_restore_queued_thread_ids = state.interrupt_restore_queued_thread_ids;
         self.ai_scroll_timeline_to_bottom = false;
         self.ai_timeline_follow_output = state.timeline_follow_output;
+        self.ai_inline_review_selected_row_id_by_thread =
+            state.inline_review_selected_row_id_by_thread;
         self.ai_thread_title_refresh_state_by_thread = state.thread_title_refresh_state_by_thread;
         self.ai_timeline_visible_turn_limit_by_thread = state.timeline_visible_turn_limit_by_thread;
         self.ai_in_progress_turn_started_at = state.in_progress_turn_started_at;
@@ -601,21 +604,28 @@ impl DiffViewer {
         self.ai_text_selection = None;
         self.rebuild_ai_timeline_indexes();
         self.sync_ai_in_progress_turn_started_at();
-        self.ai_composer_activity_elapsed_second = self.current_ai_composer_activity_elapsed_second();
+        self.ai_composer_activity_elapsed_second =
+            self.current_ai_composer_activity_elapsed_second();
         self.ai_thread_title_refresh_state_by_thread
             .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
         self.ai_timeline_visible_turn_limit_by_thread
+            .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
+        self.ai_inline_review_selected_row_id_by_thread
             .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
         self.ai_review_mode_thread_ids
             .retain(|thread_id| self.ai_state_snapshot.threads.contains_key(thread_id));
         self.sync_ai_pending_user_input_answers();
         self.ai_expanded_timeline_row_ids
             .retain(|row_id| self.ai_timeline_rows_by_id.contains_key(row_id));
-        if self.ai_pending_thread_start.as_ref().is_some_and(|pending| {
-            pending.thread_id.as_ref().is_some_and(|thread_id| {
-                ai_state_has_user_message_for_thread(&self.ai_state_snapshot, thread_id)
+        if self
+            .ai_pending_thread_start
+            .as_ref()
+            .is_some_and(|pending| {
+                pending.thread_id.as_ref().is_some_and(|thread_id| {
+                    ai_state_has_user_message_for_thread(&self.ai_state_snapshot, thread_id)
+                })
             })
-        }) {
+        {
             self.ai_pending_thread_start = None;
         }
         if self.ai_selected_thread_id.as_ref().is_some_and(|selected| {
@@ -648,7 +658,6 @@ impl DiffViewer {
         self.prune_ai_composer_drafts();
         self.prune_ai_composer_statuses();
         self.rebuild_ai_thread_sidebar_state();
-        reset_ai_timeline_list_measurements(self, 0);
     }
 
     fn store_current_ai_workspace_state(&mut self, workspace_key: Option<&str>) {
@@ -888,10 +897,7 @@ impl DiffViewer {
         Self::restore_ai_workspace_state_after_failure_for_state(state);
     }
 
-    fn apply_background_ai_workspace_fatal(
-        state: &mut AiWorkspaceState,
-        message: String,
-    ) {
+    fn apply_background_ai_workspace_fatal(state: &mut AiWorkspaceState, message: String) {
         Self::reset_background_ai_workspace_after_failure(state);
         state.status_message = Some("Codex integration failed".to_string());
         state.error_message = Some(message);
@@ -917,7 +923,8 @@ impl DiffViewer {
         let mut reconcile_queued_after_snapshot = false;
         self.update_background_ai_workspace_state(workspace_key, |state| match event {
             AiWorkerEventPayload::Snapshot(snapshot) => {
-                restored_pending_steers = Self::apply_ai_snapshot_to_workspace_state(state, *snapshot);
+                restored_pending_steers =
+                    Self::apply_ai_snapshot_to_workspace_state(state, *snapshot);
                 reconcile_queued_after_snapshot = true;
             }
             AiWorkerEventPayload::BootstrapCompleted => {
@@ -970,10 +977,8 @@ impl DiffViewer {
             }
             let _ = self.restore_ai_queued_messages_to_drafts(restored_queued_messages);
             for thread_id in ready_thread_ids {
-                let Some((accepted_after_sequence, session_overrides)) = self
-                    .ai_workspace_states
-                    .get(workspace_key)
-                    .map(|state| {
+                let Some((accepted_after_sequence, session_overrides)) =
+                    self.ai_workspace_states.get(workspace_key).map(|state| {
                         (
                             thread_latest_timeline_sequence(
                                 &state.state_snapshot,
@@ -1017,9 +1022,7 @@ impl DiffViewer {
                     false,
                     cx,
                 );
-                if !sent
-                    && let Some(state) = self.ai_workspace_states.get_mut(workspace_key)
-                {
+                if !sent && let Some(state) = self.ai_workspace_states.get_mut(workspace_key) {
                     reset_ai_queued_message_to_queued(
                         state.queued_messages.as_mut_slice(),
                         queued_ix,
@@ -1213,7 +1216,11 @@ impl DiffViewer {
             if !normalized.is_file() || !is_supported_ai_image_path(normalized.as_path()) {
                 continue;
             }
-            if draft.local_images.iter().any(|existing| existing == &normalized) {
+            if draft
+                .local_images
+                .iter()
+                .any(|existing| existing == &normalized)
+            {
                 continue;
             }
             draft.local_images.push(normalized);
@@ -1266,20 +1273,24 @@ fn cached_workspace_branch_name_for_root(
     workspace_root: &std::path::Path,
     workflow_cache_by_repo: &std::collections::BTreeMap<String, CachedWorkflowState>,
 ) -> Option<String> {
-    workflow_cache_by_repo.iter().find_map(|(project_key, workflow)| {
-        workflow
-            .branches
-            .iter()
-            .find(|branch| branch.attached_workspace_target_root.as_deref() == Some(workspace_root))
-            .map(|branch| branch.name.clone())
-            .or_else(|| {
-                let is_primary_root = workflow.root.as_deref() == Some(workspace_root)
-                    || std::path::Path::new(project_key.as_str()) == workspace_root;
-                is_primary_root
-                    .then(|| workflow.branch_name.trim())
-                    .filter(|branch_name| !branch_name.is_empty())
-                    .map(str::to_string)
-            })
+    workflow_cache_by_repo
+        .iter()
+        .find_map(|(project_key, workflow)| {
+            workflow
+                .branches
+                .iter()
+                .find(|branch| {
+                    branch.attached_workspace_target_root.as_deref() == Some(workspace_root)
+                })
+                .map(|branch| branch.name.clone())
+                .or_else(|| {
+                    let is_primary_root = workflow.root.as_deref() == Some(workspace_root)
+                        || std::path::Path::new(project_key.as_str()) == workspace_root;
+                    is_primary_root
+                        .then(|| workflow.branch_name.trim())
+                        .filter(|branch_name| !branch_name.is_empty())
+                        .map(str::to_string)
+                })
         })
 }
 
