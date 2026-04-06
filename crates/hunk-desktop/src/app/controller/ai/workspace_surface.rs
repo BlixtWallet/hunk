@@ -25,7 +25,7 @@ impl DiffViewer {
 
         let blocks = visible_row_ids
             .iter()
-            .filter_map(|row_id| self.ai_workspace_block_for_row(row_id.as_str()))
+            .flat_map(|row_id| self.ai_workspace_blocks_for_row(row_id.as_str()))
             .collect::<Vec<_>>();
         if self
             .ai_workspace_selection
@@ -42,16 +42,19 @@ impl DiffViewer {
         self.record_ai_workspace_session_rebuild_timing(rebuild_started_at.elapsed());
     }
 
-    fn ai_workspace_block_for_row(
+    fn ai_workspace_blocks_for_row(
         &self,
         row_id: &str,
-    ) -> Option<ai_workspace_session::AiWorkspaceBlock> {
+    ) -> Vec<ai_workspace_session::AiWorkspaceBlock> {
         if let Some(pending) = self.ai_pending_steer_for_row_id(row_id) {
-            return Some(ai_workspace_session::AiWorkspaceBlock {
+            return vec![ai_workspace_session::AiWorkspaceBlock {
                 id: row_id.to_string(),
                 source_row_id: row_id.to_string(),
                 role: ai_workspace_session::AiWorkspaceBlockRole::User,
                 kind: ai_workspace_session::AiWorkspaceBlockKind::Message,
+                nested: false,
+                mono_preview: false,
+                open_review_tab: false,
                 expandable: false,
                 expanded: true,
                 title: "You".to_string(),
@@ -60,14 +63,17 @@ impl DiffViewer {
                     pending.local_images.as_slice(),
                 ),
                 last_sequence: ai_workspace_pending_steer_signature(&pending),
-            });
+            }];
         }
         if let Some(queued) = self.ai_queued_message_for_row_id(row_id) {
-            return Some(ai_workspace_session::AiWorkspaceBlock {
+            return vec![ai_workspace_session::AiWorkspaceBlock {
                 id: row_id.to_string(),
                 source_row_id: row_id.to_string(),
                 role: ai_workspace_session::AiWorkspaceBlockRole::User,
                 kind: ai_workspace_session::AiWorkspaceBlockKind::Message,
+                nested: false,
+                mono_preview: false,
+                open_review_tab: false,
                 expandable: false,
                 expanded: true,
                 title: match queued.status {
@@ -81,73 +87,60 @@ impl DiffViewer {
                     queued.local_images.as_slice(),
                 ),
                 last_sequence: ai_workspace_queued_message_signature(&queued),
-            });
+            }];
         }
 
-        let row = self.ai_timeline_row(row_id)?;
-        let expanded = self.ai_workspace_row_is_expanded(row.id.as_str());
+        let Some(row) = self.ai_timeline_row(row_id) else {
+            return Vec::new();
+        };
         match &row.source {
             AiTimelineRowSource::Item { item_key } => {
-                let item = self.ai_state_snapshot.items.get(item_key.as_str())?;
-                let (kind, role, expandable) =
-                    ai_workspace_block_kind_and_role_for_item_kind(item.kind.as_str());
-                Some(ai_workspace_session::AiWorkspaceBlock {
-                    id: row.id.clone(),
-                    source_row_id: row.id.clone(),
-                    role,
-                    kind,
-                    expandable,
-                    expanded,
-                    title: ai_workspace_item_title(item.kind.as_str()).to_string(),
-                    preview: ai_workspace_item_preview_text(item, expanded),
-                    last_sequence: row.last_sequence,
-                })
+                self.ai_state_snapshot
+                    .items
+                    .get(item_key.as_str())
+                    .and_then(|item| self.ai_workspace_block_for_item_row(row, item, false))
+                    .into_iter()
+                    .collect()
             }
             AiTimelineRowSource::Group { group_id } => {
-                let group = self.ai_timeline_group(group_id.as_str())?;
-                Some(ai_workspace_session::AiWorkspaceBlock {
-                    id: row.id.clone(),
-                    source_row_id: row.id.clone(),
-                    role: ai_workspace_session::AiWorkspaceBlockRole::Tool,
-                    kind: ai_workspace_session::AiWorkspaceBlockKind::Group,
-                    expandable: false,
-                    expanded: false,
-                    title: group.title.clone(),
-                    preview: group
-                        .summary
-                        .as_deref()
-                        .map(ai_workspace_collapsed_preview_text)
-                        .unwrap_or_default(),
-                    last_sequence: row.last_sequence,
-                })
+                self.ai_timeline_group(group_id.as_str())
+                    .map(|group| self.ai_workspace_blocks_for_group_row(row, group))
+                    .unwrap_or_default()
             }
             AiTimelineRowSource::TurnDiff { turn_key } => {
-                let diff = self.ai_state_snapshot.turn_diffs.get(turn_key.as_str())?;
-                Some(ai_workspace_session::AiWorkspaceBlock {
-                    id: row.id.clone(),
-                    source_row_id: row.id.clone(),
-                    role: ai_workspace_session::AiWorkspaceBlockRole::Tool,
-                    kind: ai_workspace_session::AiWorkspaceBlockKind::DiffSummary,
-                    expandable: false,
-                    expanded: false,
-                    title: "Code Changes".to_string(),
-                    preview: ai_workspace_diff_preview(diff),
-                    last_sequence: row.last_sequence,
-                })
+                self.ai_state_snapshot
+                    .turn_diffs
+                    .get(turn_key.as_str())
+                    .map(|diff| vec![ai_workspace_diff_block(
+                        row.id.clone(),
+                        row.id.clone(),
+                        row.last_sequence,
+                        &crate::app::ai_workspace_timeline_projection::ai_workspace_turn_diff_summary(
+                            diff,
+                        ),
+                        false,
+                    )])
+                    .unwrap_or_default()
             }
             AiTimelineRowSource::TurnPlan { turn_key } => {
-                let plan = self.ai_state_snapshot.turn_plans.get(turn_key.as_str())?;
-                Some(ai_workspace_session::AiWorkspaceBlock {
+                self.ai_state_snapshot
+                    .turn_plans
+                    .get(turn_key.as_str())
+                    .map(|plan| vec![ai_workspace_session::AiWorkspaceBlock {
                     id: row.id.clone(),
                     source_row_id: row.id.clone(),
                     role: ai_workspace_session::AiWorkspaceBlockRole::Assistant,
                     kind: ai_workspace_session::AiWorkspaceBlockKind::Plan,
+                    nested: false,
+                    mono_preview: false,
+                    open_review_tab: false,
                     expandable: false,
                     expanded: true,
                     title: "Updated Plan".to_string(),
                     preview: ai_workspace_plan_preview(plan),
                     last_sequence: row.last_sequence,
-                })
+                    }])
+                    .unwrap_or_default()
             }
         }
     }
@@ -157,13 +150,8 @@ impl DiffViewer {
         selection: ai_workspace_session::AiWorkspaceSelection,
         cx: &mut Context<Self>,
     ) {
-        let block_kind = selection.block_kind;
-        let selected_block_id = selection.block_id.clone();
         self.ai_workspace_selection = Some(selection);
         self.ai_text_selection = None;
-        if block_kind == ai_workspace_session::AiWorkspaceBlockKind::DiffSummary {
-            self.ai_open_inline_review_for_row(selected_block_id, cx);
-        }
         cx.notify();
     }
 
@@ -237,12 +225,24 @@ impl DiffViewer {
         row_id: &str,
     ) -> Option<ai_workspace_session::AiWorkspaceSourceRow> {
         if let Some(row) = self.ai_timeline_row(row_id) {
-            return Some(ai_workspace_session::AiWorkspaceSourceRow {
-                row_id: row.id.clone(),
-                last_sequence: ai_workspace_row_signature(
+            let last_sequence = match &row.source {
+                AiTimelineRowSource::Group { group_id } => self
+                    .ai_timeline_group(group_id.as_str())
+                    .map(|group| self.ai_workspace_group_source_signature(row, group))
+                    .unwrap_or_else(|| {
+                        ai_workspace_row_signature(
+                            row.last_sequence,
+                            self.ai_workspace_row_is_expanded(row.id.as_str()),
+                        )
+                    }),
+                _ => ai_workspace_row_signature(
                     row.last_sequence,
                     self.ai_workspace_row_is_expanded(row.id.as_str()),
                 ),
+            };
+            return Some(ai_workspace_session::AiWorkspaceSourceRow {
+                row_id: row.id.clone(),
+                last_sequence,
             });
         }
         if let Some(pending) = self.ai_pending_steer_for_row_id(row_id) {
@@ -277,6 +277,7 @@ impl DiffViewer {
             .is_some()
     }
 
+    #[allow(dead_code)]
     pub(super) fn ai_open_inline_review_for_row(&mut self, row_id: String, cx: &mut Context<Self>) {
         let Some(thread_id) = self.ai_selected_thread_id.clone() else {
             return;
@@ -398,125 +399,257 @@ impl DiffViewer {
     }
 }
 
-fn ai_workspace_block_kind_and_role_for_item_kind(
-    kind: &str,
-) -> (
-    ai_workspace_session::AiWorkspaceBlockKind,
-    ai_workspace_session::AiWorkspaceBlockRole,
-    bool,
-) {
-    match kind {
-        "userMessage" => (
-            ai_workspace_session::AiWorkspaceBlockKind::Message,
-            ai_workspace_session::AiWorkspaceBlockRole::User,
-            false,
-        ),
-        "agentMessage" => (
-            ai_workspace_session::AiWorkspaceBlockKind::Message,
-            ai_workspace_session::AiWorkspaceBlockRole::Assistant,
-            false,
-        ),
-        "reasoning" => (
-            ai_workspace_session::AiWorkspaceBlockKind::Status,
-            ai_workspace_session::AiWorkspaceBlockRole::Assistant,
-            true,
-        ),
-        "plan" => (
-            ai_workspace_session::AiWorkspaceBlockKind::Plan,
-            ai_workspace_session::AiWorkspaceBlockRole::Assistant,
-            false,
-        ),
-        "webSearch"
-        | "dynamicToolCall"
-        | "mcpToolCall"
-        | "collabAgentToolCall"
-        | "commandExecution"
-        | "fileChange" => (
-            ai_workspace_session::AiWorkspaceBlockKind::Tool,
-            ai_workspace_session::AiWorkspaceBlockRole::Tool,
-            true,
-        ),
-        _ => (
-            ai_workspace_session::AiWorkspaceBlockKind::Status,
-            ai_workspace_session::AiWorkspaceBlockRole::System,
-            true,
-        ),
+impl DiffViewer {
+    fn ai_workspace_block_for_item_row(
+        &self,
+        row: &AiTimelineRow,
+        item: &hunk_codex::state::ItemSummary,
+        nested: bool,
+    ) -> Option<ai_workspace_session::AiWorkspaceBlock> {
+        let expanded = self.ai_workspace_row_is_expanded(row.id.as_str());
+        match item.kind.as_str() {
+            "userMessage" | "agentMessage" => Some(ai_workspace_session::AiWorkspaceBlock {
+                id: row.id.clone(),
+                source_row_id: row.id.clone(),
+                role: if item.kind == "userMessage" {
+                    ai_workspace_session::AiWorkspaceBlockRole::User
+                } else {
+                    ai_workspace_session::AiWorkspaceBlockRole::Assistant
+                },
+                kind: ai_workspace_session::AiWorkspaceBlockKind::Message,
+                nested,
+                mono_preview: false,
+                open_review_tab: false,
+                expandable: false,
+                expanded: true,
+                title: if item.kind == "userMessage" {
+                    "You".to_string()
+                } else {
+                    "Assistant".to_string()
+                },
+                preview: ai_workspace_message_preview(item),
+                last_sequence: row.last_sequence,
+            }),
+            "fileChange" => crate::app::ai_workspace_timeline_projection::ai_workspace_file_change_summary(item)
+                .map(|summary| {
+                    ai_workspace_diff_block(
+                        row.id.clone(),
+                        row.id.clone(),
+                        row.last_sequence,
+                        &summary,
+                        nested,
+                    )
+                }),
+            "commandExecution" => {
+                let raw_content_text = item.content.trim_end();
+                let command_details =
+                    crate::app::ai_workspace_timeline_projection::ai_workspace_command_execution_display_details(item);
+                let has_details = command_details.is_some() || !raw_content_text.is_empty();
+                let title = ai_workspace_tool_header_line(item, raw_content_text);
+                let preview = if expanded {
+                    command_details
+                        .as_ref()
+                        .map(|details| {
+                            crate::app::ai_workspace_timeline_projection::ai_workspace_command_execution_terminal_text(
+                                details,
+                                raw_content_text,
+                                Some(
+                                    crate::app::ai_workspace_timeline_projection::AI_WORKSPACE_COMMAND_PREVIEW_MAX_OUTPUT_LINES,
+                                ),
+                            )
+                            .0
+                        })
+                        .unwrap_or_else(|| ai_workspace_expanded_tool_text(raw_content_text))
+                } else {
+                    String::new()
+                };
+                Some(ai_workspace_session::AiWorkspaceBlock {
+                    id: row.id.clone(),
+                    source_row_id: row.id.clone(),
+                    role: ai_workspace_session::AiWorkspaceBlockRole::Tool,
+                    kind: ai_workspace_session::AiWorkspaceBlockKind::Tool,
+                    nested,
+                    mono_preview: true,
+                    open_review_tab: false,
+                    expandable: has_details,
+                    expanded,
+                    title,
+                    preview,
+                    last_sequence: row.last_sequence,
+                })
+            }
+            "reasoning" | "webSearch" | "dynamicToolCall" | "mcpToolCall"
+            | "collabAgentToolCall" => {
+                let details_text = crate::app::ai_workspace_timeline_projection::ai_workspace_timeline_item_details_json(item)
+                    .unwrap_or(item.content.as_str());
+                let details_text = details_text.trim();
+                let preview = if expanded {
+                    ai_workspace_expanded_tool_text(details_text)
+                } else {
+                    String::new()
+                };
+                let has_details = !details_text.is_empty();
+                Some(ai_workspace_session::AiWorkspaceBlock {
+                    id: row.id.clone(),
+                    source_row_id: row.id.clone(),
+                    role: if item.kind == "reasoning" || item.kind == "webSearch" {
+                        ai_workspace_session::AiWorkspaceBlockRole::Assistant
+                    } else if item.kind == "dynamicToolCall"
+                        || item.kind == "mcpToolCall"
+                        || item.kind == "collabAgentToolCall"
+                    {
+                        ai_workspace_session::AiWorkspaceBlockRole::Tool
+                    } else {
+                        ai_workspace_session::AiWorkspaceBlockRole::System
+                    },
+                    kind: if item.kind == "reasoning" {
+                        ai_workspace_session::AiWorkspaceBlockKind::Status
+                    } else {
+                        ai_workspace_session::AiWorkspaceBlockKind::Tool
+                    },
+                    nested,
+                    mono_preview: item.kind != "reasoning" && item.kind != "webSearch",
+                    open_review_tab: false,
+                    expandable: has_details,
+                    expanded,
+                    title: ai_workspace_tool_header_line(item, item.content.trim()),
+                    preview,
+                    last_sequence: row.last_sequence,
+                })
+            }
+            _ => Some(ai_workspace_session::AiWorkspaceBlock {
+                id: row.id.clone(),
+                source_row_id: row.id.clone(),
+                role: ai_workspace_session::AiWorkspaceBlockRole::System,
+                kind: ai_workspace_session::AiWorkspaceBlockKind::Status,
+                nested,
+                mono_preview: false,
+                open_review_tab: false,
+                expandable: false,
+                expanded: true,
+                title: ai_workspace_tool_header_line(item, item.content.trim()),
+                preview: String::new(),
+                last_sequence: row.last_sequence,
+            }),
+        }
     }
-}
 
-fn ai_workspace_item_title(kind: &str) -> &'static str {
-    match kind {
-        "userMessage" => "You",
-        "agentMessage" => "Assistant",
-        "reasoning" => "Thinking",
-        "plan" => "Plan",
-        "webSearch" => "Search",
-        "dynamicToolCall" | "mcpToolCall" | "collabAgentToolCall" => "Tool",
-        "commandExecution" => "Command",
-        "fileChange" => "Code Changes",
-        _ => "Update",
+    fn ai_workspace_blocks_for_group_row(
+        &self,
+        row: &AiTimelineRow,
+        group: &AiTimelineGroup,
+    ) -> Vec<ai_workspace_session::AiWorkspaceBlock> {
+        if group.kind == "file_change_batch"
+            && let Some(summary) = ai_workspace_file_change_group_summary(self, group)
+        {
+            return vec![ai_workspace_diff_block(
+                row.id.clone(),
+                row.id.clone(),
+                row.last_sequence,
+                &summary,
+                false,
+            )];
+        }
+
+        let expanded = self.ai_workspace_row_is_expanded(row.id.as_str());
+        let mut blocks = vec![ai_workspace_session::AiWorkspaceBlock {
+            id: row.id.clone(),
+            source_row_id: row.id.clone(),
+            role: ai_workspace_session::AiWorkspaceBlockRole::Tool,
+            kind: ai_workspace_session::AiWorkspaceBlockKind::Group,
+            nested: false,
+            mono_preview: false,
+            open_review_tab: false,
+            expandable: true,
+            expanded,
+            title: crate::app::ai_workspace_timeline_projection::ai_workspace_format_header_line(
+                group.title.as_str(),
+                group.summary.as_deref(),
+                None,
+            ),
+            preview: String::new(),
+            last_sequence: row.last_sequence,
+        }];
+
+        if !expanded {
+            return blocks;
+        }
+
+        blocks.extend(group.child_row_ids.iter().filter_map(|child_row_id| {
+            let child_row = self.ai_timeline_row(child_row_id.as_str())?;
+            let AiTimelineRowSource::Item { item_key } = &child_row.source else {
+                return None;
+            };
+            let item = self.ai_state_snapshot.items.get(item_key.as_str())?;
+            self.ai_workspace_block_for_item_row(child_row, item, true)
+        }));
+        blocks
     }
-}
 
-fn ai_workspace_item_preview_text(
-    item: &hunk_codex::state::ItemSummary,
-    expanded: bool,
-) -> String {
-    match item.kind.as_str() {
-        "userMessage" | "agentMessage" => item
-            .content
-            .trim()
-            .is_empty()
-            .then(|| {
-                item.display_metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.summary.as_deref())
-                    .map(ai_workspace_full_preview_text)
-            })
-            .flatten()
-            .unwrap_or_else(|| ai_workspace_full_preview_text(item.content.as_str())),
-        "reasoning"
-        | "webSearch"
-        | "dynamicToolCall"
-        | "mcpToolCall"
-        | "collabAgentToolCall"
-        | "commandExecution"
-        | "fileChange" => {
-            if expanded {
-                (!item.content.trim().is_empty())
-                    .then(|| ai_workspace_expanded_tool_text(item.content.as_str()))
-                    .or_else(|| {
-                        item.display_metadata
-                            .as_ref()
-                            .and_then(|metadata| metadata.summary.as_deref())
-                            .map(ai_workspace_full_preview_text)
-                    })
-                    .unwrap_or_else(|| ai_workspace_item_title(item.kind.as_str()).to_string())
-            } else {
-                item.display_metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.summary.as_deref())
-                    .map(ai_workspace_collapsed_preview_text)
-                    .filter(|value| !value.is_empty())
-                    .or_else(|| {
-                        (!item.content.trim().is_empty())
-                            .then(|| ai_workspace_collapsed_preview_text(item.content.as_str()))
-                    })
-                    .unwrap_or_else(|| ai_workspace_item_title(item.kind.as_str()).to_string())
+    fn ai_workspace_group_source_signature(
+        &self,
+        row: &AiTimelineRow,
+        group: &AiTimelineGroup,
+    ) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(
+            &ai_workspace_row_signature(
+                row.last_sequence,
+                self.ai_workspace_row_is_expanded(row.id.as_str()),
+            ),
+            &mut hasher,
+        );
+
+        if self.ai_workspace_row_is_expanded(row.id.as_str()) {
+            for child_row_id in &group.child_row_ids {
+                if let Some(child_row) = self.ai_timeline_row(child_row_id.as_str()) {
+                    std::hash::Hash::hash(
+                        &ai_workspace_row_signature(
+                            child_row.last_sequence,
+                            self.ai_workspace_row_is_expanded(child_row.id.as_str()),
+                        ),
+                        &mut hasher,
+                    );
+                }
             }
         }
-        _ => item
-            .display_metadata
-            .as_ref()
-            .and_then(|metadata| metadata.summary.as_deref())
-            .map(ai_workspace_collapsed_preview_text)
-            .filter(|value| !value.is_empty())
-            .or_else(|| {
-                (!item.content.trim().is_empty())
-                    .then(|| ai_workspace_collapsed_preview_text(item.content.as_str()))
-            })
-            .unwrap_or_else(|| ai_workspace_item_title(item.kind.as_str()).to_string()),
+
+        std::hash::Hasher::finish(&hasher)
     }
+}
+
+fn ai_workspace_message_preview(item: &hunk_codex::state::ItemSummary) -> String {
+    item.content
+        .trim()
+        .is_empty()
+        .then(|| {
+            item.display_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.summary.as_deref())
+                .map(ai_workspace_full_preview_text)
+        })
+        .flatten()
+        .unwrap_or_else(|| ai_workspace_full_preview_text(item.content.as_str()))
+}
+
+fn ai_workspace_tool_header_line(
+    item: &hunk_codex::state::ItemSummary,
+    content_text: &str,
+) -> String {
+    let title = crate::app::ai_workspace_timeline_projection::ai_workspace_tool_header_title(item);
+    let summary = crate::app::ai_workspace_timeline_projection::ai_workspace_tool_compact_summary(
+        item,
+        content_text,
+    );
+    let status = (item.status != hunk_codex::state::ItemStatus::Completed).then(|| {
+        crate::app::ai_workspace_timeline_projection::ai_workspace_item_status_label(item.status)
+    });
+
+    crate::app::ai_workspace_timeline_projection::ai_workspace_format_header_line(
+        title.as_str(),
+        summary.as_deref(),
+        status,
+    )
 }
 
 fn ai_workspace_plan_preview(plan: &hunk_codex::state::TurnPlanSummary) -> String {
@@ -546,169 +679,69 @@ fn ai_workspace_plan_preview(plan: &hunk_codex::state::TurnPlanSummary) -> Strin
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AiWorkspaceDiffFileSummary {
-    path: String,
-    added: usize,
-    removed: usize,
-}
+fn ai_workspace_diff_block(
+    block_id: String,
+    source_row_id: String,
+    last_sequence: u64,
+    summary: &crate::app::ai_workspace_timeline_projection::AiWorkspaceDiffSummary,
+    nested: bool,
+) -> ai_workspace_session::AiWorkspaceBlock {
+    let preview =
+        crate::app::ai_workspace_timeline_projection::ai_workspace_diff_summary_preview(summary);
+    let mut preview_lines = preview.lines();
+    let title = preview_lines
+        .next()
+        .map(str::to_string)
+        .unwrap_or_else(|| "Code Changes".to_string());
+    let preview = preview_lines.collect::<Vec<_>>().join("\n");
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AiWorkspaceDiffSummary {
-    files: Vec<AiWorkspaceDiffFileSummary>,
-    total_added: usize,
-    total_removed: usize,
-}
-
-fn ai_workspace_turn_diff_file_header_paths(line: &str) -> Option<(String, String)> {
-    let mut parts = line.split_whitespace();
-    match (parts.next(), parts.next(), parts.next(), parts.next()) {
-        (Some("diff"), Some("--git"), Some(old_path), Some(new_path)) => {
-            Some((old_path.to_string(), new_path.to_string()))
-        }
-        _ => None,
+    ai_workspace_session::AiWorkspaceBlock {
+        id: block_id,
+        source_row_id,
+        role: ai_workspace_session::AiWorkspaceBlockRole::Tool,
+        kind: ai_workspace_session::AiWorkspaceBlockKind::DiffSummary,
+        nested,
+        mono_preview: false,
+        open_review_tab: true,
+        expandable: false,
+        expanded: false,
+        title,
+        preview,
+        last_sequence,
     }
 }
 
-fn ai_workspace_turn_diff_display_path(old_path: &str, new_path: &str) -> String {
-    let normalized_new = new_path.strip_prefix("b/").unwrap_or(new_path);
-    if normalized_new != "/dev/null" {
-        return normalized_new.to_string();
-    }
-
-    let normalized_old = old_path.strip_prefix("a/").unwrap_or(old_path);
-    if normalized_old != "/dev/null" {
-        return normalized_old.to_string();
-    }
-
-    "changes".to_string()
-}
-
-fn ai_workspace_turn_diff_fallback_file(
-    files: &mut Vec<AiWorkspaceDiffFileSummary>,
-) -> &mut AiWorkspaceDiffFileSummary {
-    if files.is_empty() {
-        files.push(AiWorkspaceDiffFileSummary {
-            path: "changes".to_string(),
-            added: 0,
-            removed: 0,
-        });
-    }
-
-    files
-        .last_mut()
-        .expect("fallback diff file must exist after initialization")
-}
-
-fn ai_workspace_turn_diff_summary(diff_text: &str) -> AiWorkspaceDiffSummary {
-    let mut files = Vec::new();
-    let mut total_added = 0usize;
-    let mut total_removed = 0usize;
-
-    for line in diff_text.lines() {
-        if let Some((old_path, new_path)) = ai_workspace_turn_diff_file_header_paths(line) {
-            files.push(AiWorkspaceDiffFileSummary {
-                path: ai_workspace_turn_diff_display_path(old_path.as_str(), new_path.as_str()),
-                added: 0,
-                removed: 0,
-            });
-            continue;
-        }
-
-        if let Some(path) = line.strip_prefix("+++ ") {
-            let path = path.strip_prefix("b/").unwrap_or(path);
-            let file = ai_workspace_turn_diff_fallback_file(&mut files);
-            if file.path == "changes" && path != "/dev/null" {
-                file.path = path.to_string();
-            }
-            continue;
-        }
-
-        if let Some(path) = line.strip_prefix("--- ") {
-            let path = path.strip_prefix("a/").unwrap_or(path);
-            let file = ai_workspace_turn_diff_fallback_file(&mut files);
-            if file.path == "changes" && path != "/dev/null" {
-                file.path = path.to_string();
-            }
-            continue;
-        }
-
-        if line.starts_with("+++") || line.starts_with("---") {
-            continue;
-        }
-
-        if line.starts_with('+') {
-            let file = ai_workspace_turn_diff_fallback_file(&mut files);
-            file.added = file.added.saturating_add(1);
-            total_added = total_added.saturating_add(1);
-            continue;
-        }
-
-        if line.starts_with('-') {
-            let file = ai_workspace_turn_diff_fallback_file(&mut files);
-            file.removed = file.removed.saturating_add(1);
-            total_removed = total_removed.saturating_add(1);
-        }
-    }
-
-    if files.is_empty() && !diff_text.trim().is_empty() {
-        files.push(AiWorkspaceDiffFileSummary {
-            path: "changes".to_string(),
-            added: total_added,
-            removed: total_removed,
-        });
-    }
-
-    AiWorkspaceDiffSummary {
-        files,
-        total_added,
-        total_removed,
-    }
-}
-
-fn ai_workspace_diff_preview(diff: &str) -> String {
-    const AI_WORKSPACE_DIFF_VISIBLE_FILE_LIMIT: usize = 4;
-
-    let summary = ai_workspace_turn_diff_summary(diff);
-    if summary.files.is_empty() {
-        return "Diff ready".to_string();
-    }
-
-    let mut lines = summary
-        .files
-        .iter()
-        .take(AI_WORKSPACE_DIFF_VISIBLE_FILE_LIMIT)
-        .map(|file| format!("Edited {}  +{} -{}", file.path, file.added, file.removed))
-        .collect::<Vec<_>>();
-    let hidden_file_count = summary
-        .files
-        .len()
-        .saturating_sub(AI_WORKSPACE_DIFF_VISIBLE_FILE_LIMIT);
-    if hidden_file_count > 0 {
-        lines.push(format!("+{hidden_file_count} more files"));
-    }
-    let file_count_label = if summary.files.len() == 1 {
-        "1 file changed".to_string()
-    } else {
-        format!("{} files changed", summary.files.len())
+fn ai_workspace_file_change_group_summary(
+    this: &DiffViewer,
+    group: &AiTimelineGroup,
+) -> Option<crate::app::ai_workspace_timeline_projection::AiWorkspaceDiffSummary> {
+    let mut summary = crate::app::ai_workspace_timeline_projection::AiWorkspaceDiffSummary {
+        files: Vec::new(),
+        total_added: 0,
+        total_removed: 0,
     };
-    lines.push(format!(
-        "{file_count_label}, +{} -{}",
-        summary.total_added, summary.total_removed
-    ));
-    lines.join("\n")
-}
 
-fn ai_workspace_collapsed_preview_text(value: &str) -> String {
-    let normalized = value
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .take(8)
-        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
-        .collect::<Vec<_>>()
-        .join("\n");
-    truncate_ai_workspace_preview(normalized.as_str(), 480)
+    for child_row_id in &group.child_row_ids {
+        let row = this.ai_timeline_row(child_row_id.as_str())?;
+        let AiTimelineRowSource::Item { item_key } = &row.source else {
+            continue;
+        };
+        let item = this.ai_state_snapshot.items.get(item_key.as_str())?;
+        let item_summary =
+            crate::app::ai_workspace_timeline_projection::ai_workspace_file_change_summary(item)?;
+        for file in item_summary.files {
+            summary.total_added = summary.total_added.saturating_add(file.added);
+            summary.total_removed = summary.total_removed.saturating_add(file.removed);
+            if let Some(existing) = summary.files.iter_mut().find(|entry| entry.path == file.path) {
+                existing.added = existing.added.saturating_add(file.added);
+                existing.removed = existing.removed.saturating_add(file.removed);
+            } else {
+                summary.files.push(file);
+            }
+        }
+    }
+
+    (!summary.files.is_empty()).then_some(summary)
 }
 
 fn ai_workspace_full_preview_text(value: &str) -> String {

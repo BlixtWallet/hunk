@@ -129,6 +129,28 @@ That means Hunk should not copy a nonexistent Zed pattern. We should instead bui
 - Kept inline review in the AI tab while preserving the left-side timeline surface path.
 - Kept the new session/surface path cached and paint-first rather than reintroducing the legacy list renderer.
 
+## Reopened Parity Follow-up
+
+The screenshot review uncovered a second parity pass that was not optional. The new surface had kept the paint-first backend but was still projecting the old timeline into generic blocks, which changed real user-visible behavior.
+
+Confirmed regressions from the screenshot audit:
+
+- lane placement drifted left instead of staying inside the old centered content lane
+- grouped rows lost their old disclosure-header presentation and collapsed into generic stacked previews
+- command batches no longer summarized as a single group row with expandable nested command rows
+- command execution rows lost the old collapsed-header plus expandable transcript treatment
+- file-change rows lost the compact diff summary presentation and their old review-tab navigation
+- file-change groups stopped collapsing into one summary row and instead behaved like generic groups
+
+Follow-up parity work completed in the surface path:
+
+- restored centered lane math for assistant/tool rows and right-aligned user rows inside the old lane widths
+- restored disclosure-style group headers with inline summaries instead of stacked title/preview cards
+- restored nested child rows for expanded command, exploration, and collaboration groups
+- restored command execution projection to collapsed header plus expandable transcript body
+- restored file-change and diff rows to compact diff summaries that open the Review tab again
+- restored per-group and per-child invalidation signatures so expanded group content rebuilds when nested rows change
+
 ## Validation and Follow-up
 
 - Run manual parity QA against the old AI timeline on representative threads, especially long markdown-heavy and command-heavy turns.

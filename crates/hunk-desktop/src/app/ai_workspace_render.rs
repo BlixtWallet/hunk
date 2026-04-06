@@ -57,6 +57,7 @@ pub(crate) struct AiWorkspaceBlockHit {
     pub(crate) selection: ai_workspace_session::AiWorkspaceSelection,
     pub(crate) text_hit: Option<AiWorkspaceTextHit>,
     pub(crate) toggle_row_id: Option<String>,
+    pub(crate) open_review_tab: bool,
 }
 
 pub(crate) fn ai_workspace_hit_test(
@@ -136,6 +137,7 @@ pub(crate) fn ai_workspace_hit_test(
         selection,
         text_hit,
         toggle_row_id,
+        open_review_tab: block.block.open_review_tab,
     })
 }
 
@@ -181,6 +183,41 @@ pub(crate) fn paint_ai_workspace_block(
                 size: size(render_layout.block_bounds.size.width, px(1.0)),
             },
             border,
+        ));
+    }
+
+    if block.block.mono_preview && !block.text_layout.preview_lines.is_empty() {
+        let preview_bounds = Bounds {
+            origin: point(
+                render_layout.block_bounds.origin.x
+                    + px(ai_workspace_session::AI_WORKSPACE_BLOCK_TEXT_SIDE_PADDING_PX as f32),
+                render_layout.preview_origin_y - px(6.0),
+            ),
+            size: size(
+                render_layout.block_bounds.size.width
+                    - px(
+                        ai_workspace_session::AI_WORKSPACE_BLOCK_TEXT_SIDE_PADDING_PX as f32 * 2.0,
+                    ),
+                render_layout.preview_line_height * block.text_layout.preview_lines.len() as f32
+                    + px(12.0),
+            ),
+        };
+        window.paint_quad(fill(
+            preview_bounds,
+            crate::app::theme::hunk_blend(
+                cx.theme().background,
+                cx.theme().muted,
+                is_dark,
+                0.10,
+                0.14,
+            ),
+        ));
+        window.paint_quad(fill(
+            Bounds {
+                origin: preview_bounds.origin,
+                size: size(preview_bounds.size.width, px(1.0)),
+            },
+            crate::app::theme::hunk_opacity(cx.theme().border, is_dark, 0.85, 0.68),
         ));
     }
 
@@ -315,12 +352,23 @@ fn ai_workspace_block_render_layout(
     let block_height = px(block.height_px as f32);
     let horizontal_padding =
         px(ai_workspace_session::AI_WORKSPACE_SURFACE_BLOCK_SIDE_PADDING_PX as f32);
+    let lane_max_width = if role == ai_workspace_session::AiWorkspaceBlockRole::User {
+        crate::app::ai_workspace_timeline_projection::AI_WORKSPACE_USER_CONTENT_LANE_MAX_WIDTH_PX
+    } else {
+        crate::app::ai_workspace_timeline_projection::AI_WORKSPACE_CONTENT_LANE_MAX_WIDTH_PX
+    };
+    let lane_width = (bounds.size.width.as_f32() - horizontal_padding.as_f32() * 2.0)
+        .clamp(0.0, lane_max_width as f32);
+    let lane_x = bounds.origin.x + (bounds.size.width - px(lane_width)) / 2.0;
     let block_width = px(block.text_layout.block_width_px as f32);
+    let nested_indent = if block.block.nested {
+        px(16.0)
+    } else {
+        px(0.0)
+    };
     let block_x = match role {
-        ai_workspace_session::AiWorkspaceBlockRole::User => {
-            bounds.origin.x + bounds.size.width - horizontal_padding - block_width
-        }
-        _ => bounds.origin.x + horizontal_padding,
+        ai_workspace_session::AiWorkspaceBlockRole::User => lane_x + px(lane_width) - block_width,
+        _ => lane_x + nested_indent,
     };
     let block_bounds = Bounds {
         origin: point(block_x, bounds.origin.y + surface_top),

@@ -100,6 +100,11 @@ impl DiffViewer {
         )
     }
 
+    pub(super) fn ai_open_review_tab(&mut self, cx: &mut Context<Self>) {
+        self.ai_sync_review_compare_to_selected_thread(cx);
+        self.set_workspace_view_mode(WorkspaceViewMode::Diff, cx);
+    }
+
     fn ai_sync_review_compare_to_selected_thread(&mut self, cx: &mut Context<Self>) {
         if let Some(selected_thread_id) = self.ai_selected_thread_id.clone() {
             if let Some(project_root) = self.ai_thread_project_root(selected_thread_id.as_str())

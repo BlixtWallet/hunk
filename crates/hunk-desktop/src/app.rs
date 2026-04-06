@@ -166,6 +166,7 @@ mod ai_thread_flow;
 mod ai_workspace_render;
 mod ai_workspace_session;
 mod ai_workspace_surface;
+mod ai_workspace_timeline_projection;
 mod branch_activation;
 mod branch_picker;
 mod comment_overlay;

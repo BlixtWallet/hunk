@@ -40,6 +40,9 @@ pub(crate) struct AiWorkspaceBlock {
     pub(crate) source_row_id: String,
     pub(crate) role: AiWorkspaceBlockRole,
     pub(crate) kind: AiWorkspaceBlockKind,
+    pub(crate) nested: bool,
+    pub(crate) mono_preview: bool,
+    pub(crate) open_review_tab: bool,
     pub(crate) expandable: bool,
     pub(crate) expanded: bool,
     pub(crate) title: String,
@@ -318,7 +321,7 @@ pub(crate) fn ai_workspace_text_layout_for_block(
     } else {
         let preview_lines = ai_workspace_wrap_text(
             block.preview.as_str(),
-            ai_workspace_chars_per_line(text_width_px, false, false),
+            ai_workspace_chars_per_line(text_width_px, false, block.mono_preview),
             ai_workspace_preview_line_limit(block),
         );
         let preview_line_style_spans = if block.kind == AiWorkspaceBlockKind::Plan {
@@ -349,7 +352,14 @@ pub(crate) fn ai_workspace_text_layout_for_block(
         };
         (
             preview_lines.clone(),
-            vec![AiWorkspacePreviewLineKind::Normal; preview_lines.len()],
+            vec![
+                if block.mono_preview {
+                    AiWorkspacePreviewLineKind::Code
+                } else {
+                    AiWorkspacePreviewLineKind::Normal
+                };
+                preview_lines.len()
+            ],
             Vec::new(),
             preview_line_style_spans,
             Vec::new(),

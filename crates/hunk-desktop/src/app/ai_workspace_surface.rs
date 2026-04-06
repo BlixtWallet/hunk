@@ -114,6 +114,11 @@ impl Element for AiWorkspaceSurfaceElement {
                     cx.stop_propagation();
                     return;
                 }
+                if hit.open_review_tab && event.button == MouseButton::Left {
+                    this.ai_open_review_tab(cx);
+                    cx.stop_propagation();
+                    return;
+                }
 
                 let pressed_link = hit.text_hit.as_ref().and_then(|text_hit| {
                     text_hit
