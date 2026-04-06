@@ -258,6 +258,74 @@ fn apply_staged_update_replaces_macos_bundle_in_place() {
     );
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn detect_install_target_resolves_linux_bundle() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let current_executable =
+        create_fake_linux_bundle(tempdir.path(), "Hunk", "current-version", None);
+
+    let install_target =
+        detect_install_target(current_executable.as_path()).expect("install target");
+
+    match install_target {
+        UpdateInstallTarget::LinuxBundle {
+            install_root,
+            relaunch_executable,
+        } => {
+            assert_eq!(install_root, tempdir.path().join("Hunk"));
+            assert_eq!(relaunch_executable, current_executable);
+        }
+        other => panic!("expected Linux bundle install target, got {other:?}"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn apply_staged_update_syncs_linux_bundle_in_place() {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let current_executable = create_fake_linux_bundle(
+        tempdir.path(),
+        "Hunk",
+        "old-version",
+        Some(("old-only.txt", "old-only")),
+    );
+    let staged_archive = tempdir.path().join("Hunk-linux.tar.gz");
+    let replacement_bundle = tempdir.path().join("replacement").join("Hunk");
+    create_fake_linux_bundle(
+        replacement_bundle.parent().expect("replacement parent"),
+        "Hunk",
+        "new-version",
+        Some(("new-only.txt", "new-only")),
+    );
+    create_tar_gz_archive(
+        staged_archive.as_path(),
+        replacement_bundle.as_path(),
+        "Hunk",
+    );
+
+    let applied_update = apply_staged_update_from_current_executable(
+        current_executable.as_path(),
+        staged_archive.as_path(),
+        AssetFormat::Tarball,
+    )
+    .expect("apply staged update");
+
+    assert_eq!(
+        fs::read_to_string(tempdir.path().join("Hunk").join("version.txt")).expect("version file"),
+        "new-version",
+    );
+    assert!(tempdir.path().join("Hunk").join("new-only.txt").is_file());
+    assert!(!tempdir.path().join("Hunk").join("old-only.txt").exists());
+    assert_eq!(
+        applied_update,
+        AppliedUpdate {
+            relaunch_executable: current_executable,
+        }
+    );
+    assert!(!staged_archive.exists(), "staged archive should be removed");
+}
+
 #[cfg(target_os = "macos")]
 fn create_fake_macos_app(root: &Path, app_name: &str, version: &str) -> PathBuf {
     let app_path = root.join(app_name);
@@ -280,7 +348,35 @@ fn create_fake_macos_app_bundle(app_path: &Path, version: &str) {
     fs::write(resource_path, version).expect("write version resource");
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(target_os = "linux")]
+fn create_fake_linux_bundle(
+    root: &Path,
+    bundle_name: &str,
+    version: &str,
+    extra_file: Option<(&str, &str)>,
+) -> PathBuf {
+    let bundle_path = root.join(bundle_name);
+    let public_launcher = bundle_path.join("hunk-desktop");
+    let executable_path = bundle_path.join("hunk_desktop_bin");
+    let runtime_path = bundle_path
+        .join("codex-runtime")
+        .join("linux")
+        .join("codex");
+    let version_path = bundle_path.join("version.txt");
+    let library_dir = bundle_path.join("lib");
+    fs::create_dir_all(runtime_path.parent().expect("runtime parent")).expect("runtime dir");
+    fs::create_dir_all(library_dir.as_path()).expect("library dir");
+    fs::write(public_launcher, b"#!/usr/bin/env bash\nexit 0\n").expect("write launcher");
+    fs::write(&executable_path, b"#!/usr/bin/env bash\nexit 0\n").expect("write executable");
+    fs::write(runtime_path, b"#!/usr/bin/env bash\nexit 0\n").expect("write runtime");
+    fs::write(version_path, version).expect("write version file");
+    if let Some((path, contents)) = extra_file {
+        fs::write(bundle_path.join(path), contents).expect("write extra file");
+    }
+    executable_path
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn create_tar_gz_archive(archive_path: &Path, source_path: &Path, archive_name: &str) {
     let file = fs::File::create(archive_path).expect("create archive");
     let encoder = GzEncoder::new(file, Compression::default());

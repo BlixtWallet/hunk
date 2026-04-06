@@ -392,6 +392,15 @@ impl DiffViewer {
 
         let current_pid = std::process::id();
         let version = staged_update.version.clone();
+        #[cfg(target_os = "linux")]
+        if matches!(
+            install_target,
+            hunk_updater::UpdateInstallTarget::LinuxBundle { .. }
+        ) {
+            self.apply_linux_ready_update(current_executable, staged_update, cx);
+            return;
+        }
+
         match spawn_staged_update_apply(
             current_executable.as_path(),
             current_pid,
@@ -428,6 +437,64 @@ impl DiffViewer {
             cleanup_staged_update_files(&previous);
         }
         self.ready_update = next_update;
+    }
+
+    #[cfg(target_os = "linux")]
+    fn apply_linux_ready_update(
+        &mut self,
+        current_executable: std::path::PathBuf,
+        staged_update: hunk_updater::StagedUpdate,
+        cx: &mut Context<Self>,
+    ) {
+        let version = staged_update.version.clone();
+        self.update_status = UpdateStatus::Installing {
+            version: version.clone(),
+        };
+        self.git_status_message = Some(format!("Installing Hunk {version}..."));
+        cx.notify();
+
+        self.update_apply_task = cx.spawn(async move |this, cx| {
+            let staged_update_for_apply = staged_update.clone();
+            let result = cx.background_executor().spawn(async move {
+                hunk_updater::apply_staged_update_from_current_executable(
+                    current_executable.as_path(),
+                    staged_update_for_apply.package_path.as_path(),
+                    staged_update_for_apply.asset.format,
+                )
+            });
+
+            let result = result.await;
+            let Some(this) = this.upgrade() else {
+                return;
+            };
+
+            this.update(cx, |this, cx| match result {
+                Ok(applied_update) => {
+                    debug!(
+                        version,
+                        relaunch_executable = %applied_update.relaunch_executable.display(),
+                        "linux update installed; restarting through GPUI"
+                    );
+                    this.replace_ready_update(None);
+                    hunk_codex::host::begin_host_shutdown();
+                    hunk_codex::host::cleanup_tracked_hosts_for_shutdown();
+                    cx.set_restart_path(applied_update.relaunch_executable);
+                    cx.restart();
+                }
+                Err(err) => {
+                    error!("failed to install Linux update in-process: {err:#}");
+                    this.update_status = UpdateStatus::ReadyToRestart {
+                        version: version.clone(),
+                    };
+                    this.git_status_message = Some(format!("Update install failed: {err}"));
+                    Self::push_error_notification(
+                        format!("Update install failed: {err}"),
+                        cx,
+                    );
+                    cx.notify();
+                }
+            });
+        });
     }
 
     fn can_automatically_check_updates(&self) -> bool {
@@ -482,10 +549,12 @@ fn spawn_staged_update_apply(
     install_target: &hunk_updater::UpdateInstallTarget,
     staged_update: &hunk_updater::StagedUpdate,
 ) -> anyhow::Result<()> {
+    #[cfg(target_os = "linux")]
+    let _ = (current_executable, current_pid, staged_update);
+
     match install_target {
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        hunk_updater::UpdateInstallTarget::MacOsApp { .. }
-        | hunk_updater::UpdateInstallTarget::LinuxBundle { .. } => {
+        #[cfg(target_os = "macos")]
+        hunk_updater::UpdateInstallTarget::MacOsApp { .. } => {
             std::process::Command::new(current_executable)
                 .arg("--apply-staged-update")
                 .arg("--wait-pid")

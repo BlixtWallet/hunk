@@ -3,6 +3,8 @@ use std::env;
 use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
+use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -423,7 +425,7 @@ pub fn apply_staged_update_from_current_executable(
                     asset_format.as_str()
                 );
             }
-            apply_archive_replace(
+            apply_archive_sync_in_place(
                 staged_package_path,
                 install_root.as_path(),
                 locate_extracted_linux_bundle,
@@ -616,6 +618,7 @@ fn asset_url_file_name(url: &str) -> Option<String> {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn apply_archive_replace(
     staged_package_path: &Path,
     install_root: &Path,
@@ -644,6 +647,27 @@ fn apply_archive_replace(
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn apply_archive_sync_in_place(
+    staged_package_path: &Path,
+    install_root: &Path,
+    locate_replacement_root: fn(&Path) -> Result<PathBuf>,
+) -> Result<()> {
+    let staging_root = unique_sibling_path(install_root, ".update-staged");
+    fs::create_dir_all(staging_root.as_path())
+        .with_context(|| format!("failed to create staging root {}", staging_root.display()))?;
+
+    extract_tar_gz_archive(staged_package_path, staging_root.as_path())?;
+    let replacement_root = locate_replacement_root(staging_root.as_path())?;
+    sync_install_root_in_place(install_root, replacement_root.as_path())?;
+
+    if staging_root.exists() {
+        let _ = fs::remove_dir_all(staging_root.as_path());
+    }
+
+    Ok(())
+}
+
 fn extract_tar_gz_archive(archive_path: &Path, destination: &Path) -> Result<()> {
     let archive_file = File::open(archive_path)
         .with_context(|| format!("failed to open archive {}", archive_path.display()))?;
@@ -654,6 +678,7 @@ fn extract_tar_gz_archive(archive_path: &Path, destination: &Path) -> Result<()>
         .with_context(|| format!("failed to unpack archive into {}", destination.display()))
 }
 
+#[cfg(target_os = "macos")]
 fn replace_install_root(current_root: &Path, replacement_root: &Path) -> Result<()> {
     let backup_root = unique_sibling_path(current_root, ".update-backup");
     fs::rename(current_root, backup_root.as_path()).with_context(|| {
@@ -679,6 +704,48 @@ fn replace_install_root(current_root: &Path, replacement_root: &Path) -> Result<
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn sync_install_root_in_place(current_root: &Path, replacement_root: &Path) -> Result<()> {
+    let source = replacement_root.join(".");
+    let output = Command::new("rsync")
+        .args(["-a", "--delete"])
+        .arg(source.as_path())
+        .arg(current_root)
+        .output()
+        .map_err(|err| match err.kind() {
+            std::io::ErrorKind::NotFound => anyhow!(
+                "rsync is required for Linux auto-updates but is not installed. {}",
+                linux_rsync_install_hint()
+            ),
+            _ => anyhow!(err),
+        })
+        .with_context(|| {
+            format!(
+                "failed to run rsync while updating Linux bundle {}",
+                current_root.display()
+            )
+        })?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let details = if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        format!("rsync exited with status {}", output.status)
+    };
+
+    bail!(
+        "failed to sync Linux bundle into {}: {details}",
+        current_root.display()
+    );
+}
+
 fn unique_sibling_path(base_path: &Path, suffix: &str) -> PathBuf {
     let parent_directory = base_path.parent().unwrap_or_else(|| Path::new("."));
     let file_name = base_path
@@ -693,6 +760,50 @@ fn unique_sibling_path(base_path: &Path, suffix: &str) -> PathBuf {
         ".{file_name}{suffix}-{}-{timestamp_ms}",
         std::process::id()
     ))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_rsync_install_hint() -> &'static str {
+    let os_release = match fs::read_to_string("/etc/os-release") {
+        Ok(os_release) => os_release,
+        Err(_) => return "Please install rsync using your package manager.",
+    };
+
+    let mut distribution_ids = Vec::new();
+    for line in os_release.lines() {
+        let trimmed = line.trim();
+        if let Some(value) = trimmed.strip_prefix("ID=") {
+            distribution_ids.push(value.trim_matches('"').to_ascii_lowercase());
+        } else if let Some(value) = trimmed.strip_prefix("ID_LIKE=") {
+            for id in value.trim_matches('"').split_whitespace() {
+                distribution_ids.push(id.to_ascii_lowercase());
+            }
+        }
+    }
+
+    if distribution_ids
+        .iter()
+        .any(|distribution_id| distribution_id == "arch")
+    {
+        return "Install it with: sudo pacman -S rsync";
+    }
+    if distribution_ids
+        .iter()
+        .any(|distribution_id| distribution_id == "debian" || distribution_id == "ubuntu")
+    {
+        return "Install it with: sudo apt install rsync";
+    }
+    if distribution_ids.iter().any(|distribution_id| {
+        distribution_id == "fedora"
+            || distribution_id == "rhel"
+            || distribution_id == "centos"
+            || distribution_id == "rocky"
+            || distribution_id == "almalinux"
+    }) {
+        return "Install it with: sudo dnf install rsync";
+    }
+
+    "Please install rsync using your package manager."
 }
 
 #[cfg(target_os = "macos")]

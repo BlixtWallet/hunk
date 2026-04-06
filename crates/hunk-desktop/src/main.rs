@@ -47,6 +47,7 @@ fn run_with_platform_stack_workaround() -> Result<()> {
 
 fn run_app() -> Result<()> {
     ensure_hidden_windows_console();
+    ensure_valid_process_current_dir();
     let config = load_startup_config();
     if let Err(error) = terminal_env::maybe_hydrate_app_environment(&config) {
         eprintln!("failed to hydrate terminal environment: {error:#}");
@@ -74,6 +75,41 @@ fn run_app() -> Result<()> {
     install_process_signal_cleanup()?;
 
     app::run()
+}
+
+fn ensure_valid_process_current_dir() {
+    if std::env::current_dir().is_ok() {
+        return;
+    }
+
+    let fallback = dirs::home_dir()
+        .filter(|path| path.is_dir())
+        .or_else(|| {
+            let temp_dir = std::env::temp_dir();
+            temp_dir.is_dir().then_some(temp_dir)
+        })
+        .or_else(|| {
+            #[cfg(unix)]
+            {
+                Some(std::path::PathBuf::from("/"))
+            }
+            #[cfg(not(unix))]
+            {
+                None
+            }
+        });
+
+    let Some(fallback) = fallback else {
+        eprintln!("failed to recover from invalid process working directory");
+        return;
+    };
+
+    if let Err(error) = std::env::set_current_dir(fallback.as_path()) {
+        eprintln!(
+            "failed to recover from invalid process working directory using {}: {error:#}",
+            fallback.display()
+        );
+    }
 }
 
 #[cfg(target_os = "windows")]
