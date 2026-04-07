@@ -485,6 +485,13 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
             Some(SHORTCUT_CONTEXT_TREE_WORKSPACE),
         )
     }));
+    bindings.extend(shortcuts.toggle_sidebar_tree.iter().map(|shortcut| {
+        KeyBinding::new(
+            shortcut.as_str(),
+            ToggleSidebarTree,
+            Some(WorkspaceViewMode::Ai.shortcut_context()),
+        )
+    }));
     bindings.extend(
         shortcuts
             .switch_to_files_view
