@@ -251,8 +251,14 @@ Polish follow-up:
    Once thread-wide surfaces exist, keyboard and context-menu select-all should operate on the whole AI thread instead of falling back to the currently selected block.
 2. Make edge auto-scroll timer-driven instead of move-event-driven.
    Dragging should keep pulling the thread even if the pointer is held stationary just outside the viewport, which matches native editor selection behavior better than one-step-per-mousemove scrolling.
-   Snapshot creation should iterate visible geometry entries and index directly into the block slice instead of rescanning `self.blocks` for every visible block.
-5. Re-run full workspace verification, then commit and push once the regression fixes are green.
+
+Reviewer follow-up plan:
+
+1. Rebuild thread-wide selection surfaces from rendered text, not raw block payload.
+   The width-bucketed session cache should derive selection surfaces from `title_lines.join("\n")` and `preview_lines.join("\n")` so drag offsets, copy text, and visible text stay identical even for wrapped markdown-heavy messages.
+2. Restrict row invalidation to the active selection span.
+   `AiTextSelection` should only treat rows touched by the current anchor/head range as selected. Starting a thread-wide selection must not make unrelated rows eligible to clear the caret during streaming updates elsewhere in the thread.
+3. Re-run full workspace verification, then commit and push once the regression fixes are green.
 
 ## Validation and Follow-up
 

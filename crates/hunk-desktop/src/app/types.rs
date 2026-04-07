@@ -798,6 +798,7 @@ impl AiTextSelectionSurfaceSpec {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AiTextSelectionSurfaceRange {
+    row_id: String,
     surface_id: String,
     range: Range<usize>,
 }
@@ -813,7 +814,6 @@ struct AiPressedMarkdownLink {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AiTextSelection {
     row_id: String,
-    selected_row_ids: std::collections::BTreeSet<String>,
     surface_ranges: Vec<AiTextSelectionSurfaceRange>,
     full_text: String,
     anchor: usize,
@@ -830,7 +830,6 @@ impl AiTextSelection {
     ) -> Self {
         let mut full_text = String::new();
         let mut surface_ranges = Vec::with_capacity(surfaces.len());
-        let mut selected_row_ids = std::collections::BTreeSet::new();
         let mut anchor = None;
 
         for surface in surfaces {
@@ -838,8 +837,8 @@ impl AiTextSelection {
             let start = full_text.len();
             full_text.push_str(surface.text.as_str());
             let end = full_text.len();
-            selected_row_ids.insert(surface.row_id.clone());
             surface_ranges.push(AiTextSelectionSurfaceRange {
+                row_id: surface.row_id.clone(),
                 surface_id: surface.surface_id.clone(),
                 range: start..end,
             });
@@ -851,7 +850,6 @@ impl AiTextSelection {
         let clamped_index = clamp_utf8_boundary(&full_text, anchor.unwrap_or(0));
         Self {
             row_id,
-            selected_row_ids,
             surface_ranges,
             full_text,
             anchor: clamped_index,
@@ -911,9 +909,23 @@ impl AiTextSelection {
     }
 
     fn intersects_row_ids(&self, row_ids: &std::collections::BTreeSet<String>) -> bool {
-        self.selected_row_ids
+        let selection_range = self.range();
+        if selection_range.is_empty() {
+            return self
+                .surface_ranges
+                .iter()
+                .find(|surface| {
+                    self.anchor >= surface.range.start && self.anchor <= surface.range.end
+                })
+                .is_some_and(|surface| row_ids.contains(surface.row_id.as_str()));
+        }
+
+        self.surface_ranges
             .iter()
-            .any(|row_id| row_ids.contains(row_id.as_str()))
+            .filter(|surface| {
+                selection_range.start < surface.range.end && selection_range.end > surface.range.start
+            })
+            .any(|surface| row_ids.contains(surface.row_id.as_str()))
     }
 }
 

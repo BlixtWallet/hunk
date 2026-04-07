@@ -101,18 +101,40 @@ fn source_rows(entries: &[(&str, u64)]) -> Arc<[AiWorkspaceSourceRow]> {
 
 #[test]
 fn session_matches_source_thread_and_row_ids() {
-    let session = AiWorkspaceSession::new(
+    let mut session = AiWorkspaceSession::new(
         "thread-1",
         source_rows(&[("row-1", 1), ("row-2", 2)]),
         vec![block("row-1", AiWorkspaceBlockKind::Message, "preview")],
     );
 
     assert_eq!(session.selection_scope_id(), "ai-workspace-thread:thread-1");
-    assert_eq!(session.selection_surfaces().len(), 2);
+    assert_eq!(session.selection_surfaces_for_width(640).len(), 2);
     assert!(session.matches_source("thread-1", &source_rows(&[("row-1", 1), ("row-2", 2)])));
     assert!(!session.matches_source("thread-2", &source_rows(&[("row-1", 1), ("row-2", 2)])));
     assert!(!session.matches_source("thread-1", &source_rows(&[("row-1", 1)])));
     assert!(!session.matches_source("thread-1", &source_rows(&[("row-1", 1), ("row-2", 3)])));
+}
+
+#[test]
+fn selection_surfaces_follow_rendered_message_text() {
+    let mut session = AiWorkspaceSession::new(
+        "thread-1",
+        source_rows(&[("row-1", 1)]),
+        vec![block(
+            "row-1",
+            AiWorkspaceBlockKind::Message,
+            "**bold** and `inline`",
+        )],
+    );
+
+    let selection_surfaces = session.selection_surfaces_for_width(640);
+
+    assert_eq!(selection_surfaces.len(), 2);
+    assert_eq!(
+        selection_surfaces[1].surface_id,
+        "ai-workspace:row-1:preview"
+    );
+    assert_eq!(selection_surfaces[1].text, "bold and inline");
 }
 
 #[test]

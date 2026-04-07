@@ -214,9 +214,22 @@ impl DiffViewer {
     }
 
     pub(super) fn ai_select_all_workspace_thread_text(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some((selection_scope_id, selection_surfaces)) = self.ai_workspace_session.as_ref().map(
-            |session| (session.selection_scope_id().to_string(), session.selection_surfaces()),
-        ) else {
+        let viewport_width_px = self
+            .ai_workspace_surface_scroll_handle
+            .bounds()
+            .size
+            .width
+            .max(Pixels::ZERO)
+            .as_f32()
+            .round() as usize;
+        let Some((selection_scope_id, selection_surfaces)) =
+            self.ai_workspace_session.as_mut().map(|session| {
+                (
+                    session.selection_scope_id().to_string(),
+                    session.selection_surfaces_for_width(viewport_width_px.max(1)),
+                )
+            })
+        else {
             return false;
         };
         self.ai_select_all_text_for_surfaces(
