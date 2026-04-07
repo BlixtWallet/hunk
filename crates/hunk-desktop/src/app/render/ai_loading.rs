@@ -1,3 +1,5 @@
+const AI_LOADING_USER_CONTENT_LANE_MAX_WIDTH: f32 = 960.0;
+
 fn ai_loading_skeleton_block(
     width_px: f32,
     height_px: f32,
@@ -21,7 +23,7 @@ fn ai_timeline_transient_user_row_lane(row: AnyElement) -> AnyElement {
         .child(
             div()
                 .w_full()
-                .max_w(px(AI_TIMELINE_USER_CONTENT_LANE_MAX_WIDTH))
+                .max_w(px(AI_LOADING_USER_CONTENT_LANE_MAX_WIDTH))
                 .min_w_0()
                 .px_1()
                 .py_1p5()
@@ -441,167 +443,6 @@ fn render_ai_pending_thread_start(
                                     attachment_status,
                                     elapsed_seconds
                                 )),
-                        ),
-                ),
-        )
-        .into_any_element(),
-    )
-}
-
-fn render_ai_pending_steer(
-    pending: &AiPendingSteer,
-    is_dark: bool,
-    theme: &gpui_component::Theme,
-) -> AnyElement {
-    let pending_colors = hunk_pending_message(theme, is_dark);
-    let elapsed_seconds = pending.started_at.elapsed().as_secs();
-    let attachment_status = match pending.local_images.len() {
-        0 => "No attachments".to_string(),
-        1 => "1 attachment".to_string(),
-        count => format!("{count} attachments"),
-    };
-    let message_text = if pending.prompt.trim().is_empty() {
-        attachment_status.clone()
-    } else {
-        pending.prompt.clone()
-    };
-
-    ai_timeline_transient_user_row_lane(
-        h_flex()
-        .w_full()
-        .min_w_0()
-        .justify_end()
-        .child(
-            v_flex()
-                .max_w(px(680.0))
-                .w_full()
-                .min_w_0()
-                .gap_1p5()
-                .child(
-                    h_flex()
-                        .w_full()
-                        .min_w_0()
-                        .items_center()
-                        .justify_between()
-                        .gap_2()
-                        .child(
-                            div()
-                                .flex_none()
-                                .whitespace_nowrap()
-                                .text_xs()
-                                .font_semibold()
-                                .child("You"),
-                        ),
-                )
-                .child(
-                    div()
-                        .w_full()
-                        .min_w_0()
-                        .text_sm()
-                        .text_color(pending_colors.text)
-                        .whitespace_normal()
-                        .child(message_text),
-                )
-                .child(
-                    v_flex()
-                        .w_full()
-                        .min_w_0()
-                        .gap_0p5()
-                        .child(
-                            h_flex()
-                                .w_full()
-                                .min_w_0()
-                                .items_center()
-                                .gap_1p5()
-                                .child(
-                                    gpui_component::spinner::Spinner::new()
-                                        .with_size(gpui_component::Size::Small)
-                                        .color(pending_colors.meta),
-                                )
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(pending_colors.meta)
-                                        .child("Waiting to steer running turn..."),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .w_full()
-                                .min_w_0()
-                                .text_xs()
-                                .text_color(pending_colors.meta)
-                                .child(format!("{} | {}s", attachment_status, elapsed_seconds)),
-                        ),
-                ),
-        )
-        .into_any_element(),
-    )
-}
-
-fn render_ai_queued_message(
-    queued: &AiQueuedUserMessage,
-    is_dark: bool,
-    theme: &gpui_component::Theme,
-) -> AnyElement {
-    let pending_colors = hunk_pending_message(theme, is_dark);
-    let elapsed_seconds = queued.queued_at.elapsed().as_secs();
-    let attachment_status = match queued.local_images.len() {
-        0 => "No attachments".to_string(),
-        1 => "1 attachment".to_string(),
-        count => format!("{count} attachments"),
-    };
-    let message_text = if queued.prompt.trim().is_empty() {
-        attachment_status.clone()
-    } else {
-        queued.prompt.clone()
-    };
-
-    ai_timeline_transient_user_row_lane(
-        h_flex()
-        .w_full()
-        .min_w_0()
-        .justify_end()
-        .child(
-            v_flex()
-                .max_w(px(680.0))
-                .w_full()
-                .min_w_0()
-                .gap_1p5()
-                .child(
-                    div()
-                        .whitespace_nowrap()
-                        .text_xs()
-                        .font_semibold()
-                        .child("You"),
-                )
-                .child(
-                    div()
-                        .w_full()
-                        .min_w_0()
-                        .text_sm()
-                        .text_color(pending_colors.text)
-                        .whitespace_normal()
-                        .child(message_text),
-                )
-                .child(
-                    v_flex()
-                        .w_full()
-                        .min_w_0()
-                        .gap_0p5()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.accent)
-                                .child("queued, waiting for current turn to finish."),
-                        )
-                        .child(
-                            div()
-                                .w_full()
-                                .min_w_0()
-                                .text_xs()
-                                .text_color(pending_colors.meta)
-                                .child(format!("{} | {}s", attachment_status, elapsed_seconds)),
                         ),
                 ),
         )

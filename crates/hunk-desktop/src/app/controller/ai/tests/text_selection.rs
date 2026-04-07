@@ -88,3 +88,37 @@
         assert_eq!(selection.selected_text().as_deref(), Some("🙂"));
         assert_eq!(selection.range_for_surface("surface"), Some(1..5));
     }
+
+    #[test]
+    fn ai_workspace_selection_surfaces_join_title_and_preview_with_newline() {
+        let block = ai_workspace_session::AiWorkspaceBlock {
+            id: "row-1".to_string(),
+            source_row_id: "row-1".to_string(),
+            role: ai_workspace_session::AiWorkspaceBlockRole::Assistant,
+            kind: ai_workspace_session::AiWorkspaceBlockKind::Message,
+            nested: false,
+            mono_preview: false,
+            open_review_tab: false,
+            expandable: false,
+            expanded: true,
+            title: "Assistant".to_string(),
+            preview: "Hello from the workspace surface.".to_string(),
+            action_area: ai_workspace_session::AiWorkspaceBlockActionArea::Header,
+            copy_text: None,
+            copy_tooltip: None,
+            copy_success_message: None,
+            run_in_terminal_command: None,
+            run_in_terminal_cwd: None,
+            status_label: None,
+            status_color_role: None,
+            last_sequence: 1,
+        };
+
+        let surfaces = ai_workspace_selection_surfaces(&block);
+        assert_eq!(surfaces.len(), 2);
+        assert_eq!(surfaces[0].surface_id, "ai-workspace:row-1:title");
+        assert_eq!(surfaces[0].text, "Assistant");
+        assert_eq!(surfaces[1].surface_id, "ai-workspace:row-1:preview");
+        assert_eq!(surfaces[1].separator_before, "\n");
+        assert_eq!(surfaces[1].text, "Hello from the workspace surface.");
+    }

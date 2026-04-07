@@ -38,7 +38,10 @@ impl DiffViewer {
         match store.load_or_default() {
             Ok(state) => (Some(store), state),
             Err(err) => {
-                error!("failed to load app state from {}: {err:#}", store.path().display());
+                error!(
+                    "failed to load app state from {}: {err:#}",
+                    store.path().display()
+                );
                 (Some(store), AppState::default())
             }
         }
@@ -131,7 +134,11 @@ impl DiffViewer {
             return;
         };
         let cache_key = expected_root.to_string_lossy().to_string();
-        let Some(cache) = self.state.git_workflow_cache_by_repo.get(cache_key.as_str()).cloned()
+        let Some(cache) = self
+            .state
+            .git_workflow_cache_by_repo
+            .get(cache_key.as_str())
+            .cloned()
         else {
             return;
         };
@@ -256,7 +263,11 @@ impl DiffViewer {
             cached_unix_time: 0,
         };
 
-        if let Some(previous) = self.state.git_workflow_cache_by_repo.get(cache_key.as_str()) {
+        if let Some(previous) = self
+            .state
+            .git_workflow_cache_by_repo
+            .get(cache_key.as_str())
+        {
             let mut previous_without_time = previous.clone();
             previous_without_time.cached_unix_time = 0;
             if previous_without_time == cache {
@@ -361,11 +372,14 @@ impl DiffViewer {
                 cx,
             )
         });
-        let branch_input_state = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Create or activate branch")
+        let branch_input_state =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Create or activate branch"));
+        let commit_input_state = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line(true)
+                .rows(4)
+                .placeholder("Commit message")
         });
-        let commit_input_state = cx
-            .new(|cx| InputState::new(window, cx).multi_line(true).rows(4).placeholder("Commit message"));
         let files_editor = Rc::new(RefCell::new(
             crate::app::native_files_editor::FilesEditor::new(),
         ));
@@ -384,12 +398,10 @@ impl DiffViewer {
                 .rows(4)
                 .placeholder("Ask Codex anything, @ to add files, / for commands, $ for skills")
         });
-        let ai_terminal_input_state = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Run a command in this workspace")
-        });
-        let file_quick_open_input_state = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Type a file name or path")
-        });
+        let ai_terminal_input_state =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Run a command in this workspace"));
+        let file_quick_open_input_state =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Type a file name or path"));
         let editor_search_input_state =
             cx.new(|cx| InputState::new(window, cx).placeholder("Find in file"));
         let editor_replace_input_state =
@@ -458,6 +470,7 @@ impl DiffViewer {
             ai_interrupt_restore_queued_thread_ids: BTreeSet::new(),
             ai_scroll_timeline_to_bottom: false,
             ai_timeline_follow_output: true,
+            ai_inline_review_selected_row_id_by_thread: BTreeMap::new(),
             ai_git_progress: None,
             ai_thread_title_refresh_state_by_thread: BTreeMap::new(),
             ai_expanded_thread_sidebar_project_roots: BTreeSet::new(),
@@ -466,16 +479,17 @@ impl DiffViewer {
             ai_thread_sidebar_rows: Vec::new(),
             ai_thread_sidebar_list_state: ListState::new(0, ListAlignment::Top, px(40.0)),
             ai_thread_sidebar_row_count: 0,
-            ai_timeline_list_view: None,
-            ai_timeline_list_state: ListState::new(0, ListAlignment::Top, px(360.0)),
-            ai_timeline_list_row_count: 0,
+            ai_workspace_session: None,
+            ai_workspace_surface_scroll_handle: ScrollHandle::default(),
+            ai_workspace_surface_last_scroll_offset: None,
+            ai_hovered_workspace_block_id: None,
+            ai_workspace_selection: None,
             ai_timeline_visible_turn_limit_by_thread: BTreeMap::new(),
             ai_timeline_turn_ids_by_thread: BTreeMap::new(),
             ai_timeline_row_ids_by_thread: BTreeMap::new(),
             ai_timeline_rows_by_id: BTreeMap::new(),
             ai_timeline_groups_by_id: BTreeMap::new(),
             ai_timeline_group_parent_by_child_row_id: BTreeMap::new(),
-            ai_markdown_row_cache: Mutex::new(BTreeMap::new()),
             ai_in_progress_turn_started_at: BTreeMap::new(),
             ai_composer_activity_elapsed_second: None,
             ai_expanded_timeline_row_ids: BTreeSet::new(),
@@ -588,7 +602,8 @@ impl DiffViewer {
             ai_composer_status_by_draft: BTreeMap::new(),
             ai_composer_status_generation: 0,
             ai_composer_status_generation_by_key: BTreeMap::new(),
-            available_project_open_targets: crate::app::project_open::resolve_available_project_open_targets(),
+            available_project_open_targets:
+                crate::app::project_open::resolve_available_project_open_targets(),
             files: Vec::new(),
             file_status_by_path: BTreeMap::new(),
             project_picker_state,
@@ -801,8 +816,9 @@ impl DiffViewer {
                 return;
             };
             if let Some(action) = hunk_picker_action_for_keystroke(&event.keystroke) {
-                let handled =
-                    view.update(cx, |this, cx| this.handle_hunk_picker_keystroke(action, window, cx));
+                let handled = view.update(cx, |this, cx| {
+                    this.handle_hunk_picker_keystroke(action, window, cx)
+                });
                 if handled {
                     return;
                 }
@@ -848,7 +864,8 @@ impl DiffViewer {
         )
         .detach();
 
-        let ai_worktree_base_branch_picker_state = view.ai_worktree_base_branch_picker_state.clone();
+        let ai_worktree_base_branch_picker_state =
+            view.ai_worktree_base_branch_picker_state.clone();
         cx.subscribe(
             &ai_worktree_base_branch_picker_state,
             |this, _, event: &HunkPickerEvent<BranchPickerDelegate>, cx| {
@@ -894,8 +911,6 @@ impl DiffViewer {
         )
         .detach();
 
-        view.initialize_ai_timeline_list_view(cx);
-        view.install_scroll_handlers(cx);
         view.subscribe_review_compare_picker_states(cx);
 
         view.update_branch_picker_state(window, cx);
@@ -925,40 +940,6 @@ impl DiffViewer {
         view.maybe_schedule_startup_update_check(cx);
         view.restart_periodic_update_checks(cx);
         view
-    }
-
-    fn install_scroll_handlers(&self, cx: &mut Context<Self>) {
-        let weak_view = cx.entity().downgrade();
-
-        self.ai_timeline_list_state.set_scroll_handler({
-            let weak_view = weak_view.clone();
-            move |_, _, cx| {
-                let weak_view = weak_view.clone();
-                cx.defer(move |cx| {
-                    let Some(view) = weak_view.upgrade() else {
-                        return;
-                    };
-                    view.update(cx, |this, cx| {
-                        let previous_follow_output = this.ai_timeline_follow_output;
-                        this.refresh_ai_timeline_follow_output_from_scroll();
-                        if this.ai_timeline_follow_output != previous_follow_output {
-                            cx.notify();
-                        }
-                    });
-                });
-            }
-        });
-    }
-
-    fn initialize_ai_timeline_list_view(&mut self, cx: &mut Context<Self>) {
-        if self.ai_timeline_list_view.is_some() {
-            return;
-        }
-
-        let root_view = cx.entity().downgrade();
-        let list_state = self.ai_timeline_list_state.clone();
-        self.ai_timeline_list_view =
-            Some(cx.new(|_| render::AiTimelineListView::new(root_view, list_state)));
     }
 
     fn prewarm_preview_highlighting(&self, cx: &mut Context<Self>) {

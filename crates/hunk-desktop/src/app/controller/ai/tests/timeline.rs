@@ -280,39 +280,6 @@
     }
 
     #[test]
-    fn timeline_measurements_reset_when_thread_or_visible_rows_change() {
-        let row_ids = vec!["row-1".to_string(), "row-2".to_string()];
-        assert!(should_reset_ai_timeline_measurements(
-            Some("thread-1"),
-            Some("thread-2"),
-            row_ids.as_slice(),
-            row_ids.as_slice(),
-            row_ids.len(),
-        ));
-        assert!(should_reset_ai_timeline_measurements(
-            Some("thread-1"),
-            Some("thread-1"),
-            row_ids.as_slice(),
-            ["row-3".to_string(), "row-4".to_string()].as_slice(),
-            row_ids.len(),
-        ));
-        assert!(should_reset_ai_timeline_measurements(
-            Some("thread-1"),
-            Some("thread-1"),
-            row_ids.as_slice(),
-            row_ids.as_slice(),
-            0,
-        ));
-        assert!(!should_reset_ai_timeline_measurements(
-            Some("thread-1"),
-            Some("thread-1"),
-            row_ids.as_slice(),
-            row_ids.as_slice(),
-            row_ids.len(),
-        ));
-    }
-
-    #[test]
     fn timeline_grouping_merges_contiguous_exploration_rows() {
         let thread_id = "thread-1";
         let turn_id = "turn-1";

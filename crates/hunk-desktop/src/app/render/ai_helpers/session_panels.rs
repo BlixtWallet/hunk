@@ -361,26 +361,6 @@ fn ai_account_summary(
     }
 }
 
-#[cfg(test)]
-fn ai_rate_limit_summary(
-    rate_limits: Option<&codex_app_server_protocol::RateLimitSnapshot>,
-    rate_limits_loading: bool,
-) -> (String, String) {
-    if rate_limits_loading {
-        return ("5h: loading".to_string(), "weekly: loading".to_string());
-    }
-
-    let Some(snapshot) = rate_limits else {
-        return ("5h: unavailable".to_string(), "weekly: unavailable".to_string());
-    };
-
-    let (five_hour_window, weekly_window) = ai_rate_limit_windows(snapshot);
-    (
-        ai_rate_limit_window_summary("5h", five_hour_window.as_ref()),
-        ai_rate_limit_window_summary("weekly", weekly_window.as_ref()),
-    )
-}
-
 fn ai_rate_limit_windows(
     snapshot: &codex_app_server_protocol::RateLimitSnapshot,
 ) -> (
@@ -418,51 +398,6 @@ fn ai_rate_limit_windows(
     (five_hour, weekly)
 }
 
-#[cfg(test)]
-fn ai_rate_limit_window_summary(
-    label: &str,
-    window: Option<&codex_app_server_protocol::RateLimitWindow>,
-) -> String {
-    let Some(window) = window else {
-        return format!("{label}: unavailable");
-    };
-
-    let resets_at = window
-        .resets_at
-        .map(ai_format_rate_limit_reset_timestamp)
-        .unwrap_or_else(|| "unknown".to_string());
-    format!("{label}: {}% used, resets at {resets_at}", window.used_percent)
-}
-
-#[cfg(test)]
-fn ai_format_rate_limit_reset_timestamp(unix_seconds: i64) -> String {
-    let Ok(utc_datetime) = time::OffsetDateTime::from_unix_timestamp(unix_seconds) else {
-        return unix_seconds.to_string();
-    };
-
-    match time::UtcOffset::current_local_offset() {
-        Ok(offset) => {
-            let local_datetime = utc_datetime.to_offset(offset);
-            format!(
-                "{} (Local {})",
-                ai_format_human_datetime(local_datetime),
-                ai_format_utc_offset(offset),
-            )
-        }
-        Err(_) => format!("{} (UTC)", ai_format_human_datetime(utc_datetime)),
-    }
-}
-
-#[cfg(test)]
-fn ai_format_human_datetime(datetime: time::OffsetDateTime) -> String {
-    let month = ai_month_short(datetime.month());
-    let day = datetime.day();
-    let year = datetime.year();
-    let minute = datetime.minute();
-    let (hour, meridiem) = ai_hour_and_meridiem(datetime.hour());
-    format!("{month} {day}, {year} {hour:02}:{minute:02} {meridiem}")
-}
-
 fn ai_month_short(month: time::Month) -> &'static str {
     match month {
         time::Month::January => "Jan",
@@ -487,16 +422,6 @@ fn ai_hour_and_meridiem(hour_24: u8) -> (u8, &'static str) {
         12 => (12, "PM"),
         _ => (hour_24 - 12, "PM"),
     }
-}
-
-#[cfg(test)]
-fn ai_format_utc_offset(offset: time::UtcOffset) -> String {
-    let total_seconds = offset.whole_seconds();
-    let sign = if total_seconds < 0 { '-' } else { '+' };
-    let absolute_seconds = total_seconds.unsigned_abs();
-    let hours = absolute_seconds / 3600;
-    let minutes = (absolute_seconds % 3600) / 60;
-    format!("UTC{sign}{hours:02}:{minutes:02}")
 }
 
 fn ai_model_picker_label(

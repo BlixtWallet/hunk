@@ -56,9 +56,8 @@ impl DiffViewer {
         let ai_view_state = ai_view_state.unwrap_or_else(|| self.visible_ai_frame_state());
         let show_global_loading_overlay = self.ai_bootstrap_loading;
         let selected_thread_id = ai_view_state.selected_thread_id.clone();
-        let (selected_thread_mode_for_picker, thread_mode_picker_editable) = self
-            .ai_thread_mode_picker_state(ai_view_state.selected_thread_start_mode);
-        let ai_timeline_follow_output = self.ai_timeline_follow_output;
+        let (selected_thread_mode_for_picker, thread_mode_picker_editable) =
+            self.ai_thread_mode_picker_state(ai_view_state.selected_thread_start_mode);
         let composer_attachment_paths = ai_view_state.composer_attachment_paths.clone();
         let composer_attachment_count = composer_attachment_paths.len();
         let ai_commit_and_push_loading = self.git_action_loading_named("Commit and Push");
@@ -86,6 +85,7 @@ impl DiffViewer {
             show_worktree_base_branch_picker: ai_view_state.show_worktree_base_branch_picker,
             selected_worktree_base_branch: ai_view_state.selected_worktree_base_branch.clone(),
             selected_thread_id: selected_thread_id.clone(),
+            inline_review_selected_row_id: ai_view_state.inline_review_selected_row_id.clone(),
             selected_thread_start_mode: ai_view_state.selected_thread_start_mode,
             pending_approvals: ai_view_state.pending_approvals.clone(),
             pending_user_inputs: ai_view_state.pending_user_inputs.clone(),
@@ -97,7 +97,6 @@ impl DiffViewer {
             timeline_loading: ai_view_state.timeline_loading,
             show_select_thread_empty_state: ai_view_state.show_select_thread_empty_state,
             show_no_turns_empty_state: ai_view_state.show_no_turns_empty_state,
-            ai_timeline_follow_output,
             ai_publish_blocker: ai_view_state.ai_publish_blocker.clone(),
             ai_publish_disabled: ai_view_state.ai_publish_disabled,
             ai_commit_and_push_loading,
@@ -321,7 +320,9 @@ fn render_ai_usage_row(
                 .font_family(cx.theme().mono_font_family.clone())
                 .text_color(cx.theme().foreground)
                 .child(match reset_label {
-                    Some(reset_label) => format!("{remaining_percent}% left (resets {reset_label})"),
+                    Some(reset_label) => {
+                        format!("{remaining_percent}% left (resets {reset_label})")
+                    }
                     None => "Unavailable".to_string(),
                 }),
         )

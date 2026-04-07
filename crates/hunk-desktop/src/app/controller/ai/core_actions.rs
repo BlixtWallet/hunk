@@ -113,11 +113,7 @@ impl DiffViewer {
         self.send_ai_worker_command(AiWorkerCommand::LogoutAccount, cx);
     }
 
-    pub(super) fn ai_create_thread_action(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn ai_create_thread_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let previous_workspace_key = self.ai_workspace_key();
         let draft_start_mode = self.ai_new_thread_start_mode;
         let draft_worktree_base_branch_name = self.ai_worktree_base_branch_name.clone();
@@ -150,7 +146,6 @@ impl DiffViewer {
         } else {
             self.clear_ai_composer_input(window, cx);
         }
-        reset_ai_timeline_list_measurements(self, 0);
         self.focus_ai_composer_input(window, cx);
         cx.notify();
     }
@@ -191,9 +186,11 @@ impl DiffViewer {
             return;
         }
         self.ai_new_thread_start_mode = start_mode;
-        self.ai_draft_workspace_target_id = self
-            .primary_workspace_target_id()
-            .or_else(|| self.workspace_targets.first().map(|target| target.id.clone()));
+        self.ai_draft_workspace_target_id = self.primary_workspace_target_id().or_else(|| {
+            self.workspace_targets
+                .first()
+                .map(|target| target.id.clone())
+        });
         self.sync_ai_worktree_base_branch_from_repo();
         self.sync_ai_worktree_base_branch_picker_state(cx);
         cx.notify();
@@ -205,13 +202,17 @@ impl DiffViewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(project_root) = self.ai_visible_project_root().or_else(|| self.primary_repo_root())
+        let Some(project_root) = self
+            .ai_visible_project_root()
+            .or_else(|| self.primary_repo_root())
         else {
             self.ai_new_thread_start_mode = start_mode;
             self.ai_draft_workspace_root_override = None;
-            self.ai_draft_workspace_target_id = self
-                .primary_workspace_target_id()
-                .or_else(|| self.workspace_targets.first().map(|target| target.id.clone()));
+            self.ai_draft_workspace_target_id = self.primary_workspace_target_id().or_else(|| {
+                self.workspace_targets
+                    .first()
+                    .map(|target| target.id.clone())
+            });
             self.sync_ai_worktree_base_branch_from_repo();
             self.sync_ai_worktree_base_branch_picker_state(cx);
             self.sync_ai_workspace_target_from_catalog(cx);
@@ -230,21 +231,20 @@ impl DiffViewer {
     ) {
         self.ai_new_thread_start_mode = start_mode;
         self.ai_draft_workspace_root_override = Some(project_root.clone());
-        self.ai_draft_workspace_target_id = hunk_git::worktree::list_workspace_targets(
-            project_root.as_path(),
-        )
-        .ok()
-        .and_then(|targets| {
-            targets
-                .into_iter()
-                .find(|target| {
-                    matches!(
-                        target.kind,
-                        hunk_git::worktree::WorkspaceTargetKind::PrimaryCheckout
-                    )
-                })
-                .map(|target| target.id)
-        });
+        self.ai_draft_workspace_target_id =
+            hunk_git::worktree::list_workspace_targets(project_root.as_path())
+                .ok()
+                .and_then(|targets| {
+                    targets
+                        .into_iter()
+                        .find(|target| {
+                            matches!(
+                                target.kind,
+                                hunk_git::worktree::WorkspaceTargetKind::PrimaryCheckout
+                            )
+                        })
+                        .map(|target| target.id)
+                });
         if start_mode == AiNewThreadStartMode::Worktree {
             let project_matches_non_ai_root = self
                 .primary_repo_root()
@@ -265,11 +265,7 @@ impl DiffViewer {
         self.ai_create_thread_action(window, cx);
     }
 
-    pub(super) fn ai_send_prompt_action(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn ai_send_prompt_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.ai_review_mode_active {
             self.ai_start_review_action(window, cx);
             return;
@@ -323,7 +319,9 @@ impl DiffViewer {
         window.prevent_default();
         cx.stop_propagation();
         match shortcut {
-            AiComposerShortcut::QueuePrompt => self.ai_queue_prompt_action(&AiQueuePrompt, window, cx),
+            AiComposerShortcut::QueuePrompt => {
+                self.ai_queue_prompt_action(&AiQueuePrompt, window, cx)
+            }
             AiComposerShortcut::EditLastQueuedPrompt => {
                 self.ai_edit_last_queued_prompt_action(&AiEditLastQueuedPrompt, window, cx)
             }
@@ -345,7 +343,10 @@ impl DiffViewer {
             return;
         };
 
-        if self.current_ai_in_progress_turn_id(thread_id.as_str()).is_none() {
+        if self
+            .current_ai_in_progress_turn_id(thread_id.as_str())
+            .is_none()
+        {
             self.ai_send_prompt_action(window, cx);
             return;
         }
@@ -368,8 +369,6 @@ impl DiffViewer {
             skill_bindings,
         );
         self.clear_ai_composer_input(window, cx);
-        let visible_row_ids = current_ai_renderable_visible_row_ids(self, thread_id.as_str());
-        reset_ai_timeline_list_measurements(self, visible_row_ids.len());
         self.ai_timeline_follow_output = true;
         self.ai_scroll_timeline_to_bottom = true;
         self.flush_ai_timeline_scroll_request();
@@ -404,8 +403,6 @@ impl DiffViewer {
             state.set_value(queued.prompt, window, cx);
             state.focus(window, cx);
         });
-        let visible_row_ids = current_ai_renderable_visible_row_ids(self, thread_id.as_str());
-        reset_ai_timeline_list_measurements(self, visible_row_ids.len());
         cx.notify();
     }
 
@@ -432,9 +429,10 @@ impl DiffViewer {
                 Err(err) => {
                     if let Some(this) = this.upgrade() {
                         this.update(cx, |this, cx| {
-                            this.set_current_ai_composer_status(format!(
-                                "Failed to open image picker: {err:#}"
-                            ), cx);
+                            this.set_current_ai_composer_status(
+                                format!("Failed to open image picker: {err:#}"),
+                                cx,
+                            );
                             cx.notify();
                         });
                     }
@@ -449,9 +447,7 @@ impl DiffViewer {
                     if added > 0 {
                         this.invalidate_ai_visible_frame_state_with_reason("thread");
                     }
-                    if let Some(message) =
-                        ai_attachment_status_message(selected_count, added)
-                    {
+                    if let Some(message) = ai_attachment_status_message(selected_count, added) {
                         this.set_current_ai_composer_status(message, cx);
                     }
                     cx.notify();
@@ -508,11 +504,7 @@ impl DiffViewer {
         cx.notify();
     }
 
-    pub(super) fn ai_start_review_action(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn ai_start_review_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.start_current_ai_review(cx) {
             return;
         }
@@ -532,7 +524,12 @@ impl DiffViewer {
             return false;
         };
 
-        let instructions = self.ai_composer_input_state.read(cx).value().trim().to_string();
+        let instructions = self
+            .ai_composer_input_state
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
         let instructions = if instructions.is_empty() {
             "Review the current working-copy changes for correctness and regressions.".to_string()
         } else {
@@ -556,7 +553,10 @@ impl DiffViewer {
         let Some(thread_id) = self.current_ai_thread_id() else {
             return Some("Select a thread before starting review.".to_string());
         };
-        if self.current_ai_in_progress_turn_id(thread_id.as_str()).is_some() {
+        if self
+            .current_ai_in_progress_turn_id(thread_id.as_str())
+            .is_some()
+        {
             return Some("Wait for the current run to finish or interrupt it first.".to_string());
         }
         None
@@ -673,10 +673,7 @@ impl DiffViewer {
         }
         self.ai_review_mode_active = false;
         self.ai_selected_collaboration_mode = selection;
-        if let Some(mask) = ai_collaboration_mode_mask(
-            &self.ai_collaboration_modes,
-            selection,
-        ) {
+        if let Some(mask) = ai_collaboration_mode_mask(&self.ai_collaboration_modes, selection) {
             if let Some(model) = mask.model.as_ref() {
                 self.ai_selected_model = Some(model.clone());
             }
@@ -765,6 +762,8 @@ impl DiffViewer {
         self.ai_handle_workspace_change_to(previous_workspace_key, next_workspace_key, cx);
         self.ai_timeline_follow_output = true;
         self.ai_scroll_timeline_to_bottom = true;
+        self.ai_workspace_selection = None;
+        self.ai_workspace_surface_last_scroll_offset = None;
         self.ai_expanded_timeline_row_ids.clear();
         self.ai_text_selection = None;
         self.ai_new_thread_draft_active = false;
@@ -781,8 +780,6 @@ impl DiffViewer {
         if previous_draft_key != self.current_ai_composer_draft_key() {
             self.restore_ai_visible_composer_from_current_draft_in_window(window, cx);
         }
-        let visible_row_ids = current_ai_renderable_visible_row_ids(self, thread_id.as_str());
-        reset_ai_timeline_list_measurements(self, visible_row_ids.len());
         self.flush_ai_timeline_scroll_request();
         self.sync_ai_session_selection_from_state();
         self.send_ai_worker_command(AiWorkerCommand::SelectThread { thread_id }, cx);
@@ -811,14 +808,11 @@ impl DiffViewer {
         ) {}
     }
 
-    pub(super) fn ai_toggle_thread_bookmark(
-        &mut self,
-        thread_id: String,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn ai_toggle_thread_bookmark(&mut self, thread_id: String, cx: &mut Context<Self>) {
         self.ai_toggle_thread_bookmark_action(thread_id, cx);
     }
 
+    #[allow(dead_code)]
     pub(super) fn ai_toggle_timeline_row_expansion_action(
         &mut self,
         row_id: String,
@@ -827,7 +821,9 @@ impl DiffViewer {
         let changed_row_id = self
             .ai_timeline_container_row_id(row_id.as_str())
             .unwrap_or_else(|| row_id.clone());
-        let changed_row_ids = [changed_row_id.clone()].into_iter().collect::<BTreeSet<_>>();
+        let changed_row_ids = [changed_row_id.clone()]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
         self.ai_clear_text_selection_for_rows(&changed_row_ids, cx);
         if self.ai_expanded_timeline_row_ids.contains(row_id.as_str()) {
             self.ai_expanded_timeline_row_ids.remove(row_id.as_str());
@@ -835,13 +831,8 @@ impl DiffViewer {
             self.ai_expanded_timeline_row_ids.insert(row_id);
         }
         self.invalidate_ai_visible_frame_state_with_reason("timeline");
-        if let Some(selected_thread_id) = self.ai_selected_thread_id.as_deref() {
-            let visible_row_ids = current_ai_renderable_visible_row_ids(self, selected_thread_id);
-            reset_ai_timeline_list_measurements(self, visible_row_ids.len());
-        }
         cx.notify();
     }
-
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -856,12 +847,11 @@ pub(super) fn ai_composer_shortcut_for_keystroke(
     let modifiers = &keystroke.modifiers;
     match keystroke.key.as_str() {
         "tab" if !modifiers.modified() => Some(AiComposerShortcut::QueuePrompt),
-        "up"
-            if modifiers.control
-                && !modifiers.alt
-                && modifiers.shift
-                && !modifiers.platform
-                && !modifiers.function =>
+        "up" if modifiers.control
+            && !modifiers.alt
+            && modifiers.shift
+            && !modifiers.platform
+            && !modifiers.function =>
         {
             Some(AiComposerShortcut::EditLastQueuedPrompt)
         }

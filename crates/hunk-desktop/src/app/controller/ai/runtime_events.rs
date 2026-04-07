@@ -199,9 +199,6 @@ impl DiffViewer {
                 let pending_thread_id = pending.thread_id.clone();
                 self.ai_pending_steers.push(pending);
                 if self.current_ai_thread_id().as_deref() == Some(pending_thread_id.as_str()) {
-                    let visible_row_ids =
-                        current_ai_renderable_visible_row_ids(self, pending_thread_id.as_str());
-                    reset_ai_timeline_list_measurements(self, visible_row_ids.len());
                     self.ai_timeline_follow_output = true;
                     self.ai_scroll_timeline_to_bottom = true;
                 }

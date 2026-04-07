@@ -1,4 +1,20 @@
 impl DiffViewer {
+    pub(super) fn ai_copy_text_action(
+        &mut self,
+        text: String,
+        success_message: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        gpui_component::WindowExt::push_notification(
+            window,
+            crate::app::notifications::success(success_message),
+            cx,
+        );
+        cx.notify();
+    }
+
     pub(super) fn ai_set_pressed_markdown_link(
         &mut self,
         pressed_link: Option<AiPressedMarkdownLink>,
@@ -21,22 +37,6 @@ impl DiffViewer {
 
     pub(super) fn ai_take_pressed_markdown_link(&mut self) -> Option<AiPressedMarkdownLink> {
         self.ai_pressed_markdown_link.take()
-    }
-
-    pub(super) fn ai_copy_text_action(
-        &mut self,
-        text: String,
-        success_message: &'static str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
-        gpui_component::WindowExt::push_notification(
-            window,
-            crate::app::notifications::success(success_message),
-            cx,
-        );
-        cx.notify();
     }
 
     pub(super) fn ai_text_selection_range_for_surface(
@@ -157,11 +157,12 @@ impl DiffViewer {
     }
 
     pub(super) fn ai_copy_selected_text(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(selection_text) = self
+        let selection_text = self
             .ai_text_selection
             .as_ref()
             .and_then(AiTextSelection::selected_text)
-        else {
+            .or_else(|| self.current_ai_workspace_selected_text());
+        let Some(selection_text) = selection_text else {
             return false;
         };
 
@@ -170,17 +171,18 @@ impl DiffViewer {
     }
 
     pub(super) fn ai_select_all_text(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(selection) = self.ai_text_selection.as_mut() else {
-            return false;
-        };
-        if selection.full_text.is_empty() {
-            return false;
+        if let Some(selection) = self.ai_text_selection.as_mut() {
+            if selection.full_text.is_empty() {
+                return false;
+            }
+
+            selection.select_all();
+            self.ai_sync_primary_text_selection(cx);
+            cx.notify();
+            return true;
         }
 
-        selection.select_all();
-        self.ai_sync_primary_text_selection(cx);
-        cx.notify();
-        true
+        self.ai_select_all_workspace_block_text(cx)
     }
 
     pub(super) fn ai_select_all_text_for_surfaces(
