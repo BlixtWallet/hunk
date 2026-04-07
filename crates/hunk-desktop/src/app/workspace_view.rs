@@ -20,6 +20,19 @@ pub(crate) enum WorkspaceSidebarKind {
     AiThreads,
 }
 
+impl WorkspaceSidebarKind {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Files | Self::Review => "file tree",
+            Self::AiThreads => "threads",
+        }
+    }
+
+    pub(crate) const fn uses_repo_tree(self) -> bool {
+        matches!(self, Self::Files | Self::Review)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum WorkspaceSwitchAction {
     Files,

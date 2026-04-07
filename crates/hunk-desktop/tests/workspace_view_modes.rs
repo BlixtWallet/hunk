@@ -75,6 +75,16 @@ fn collapsible_sidebar_kind_is_distinct_per_workspace() {
 }
 
 #[test]
+fn workspace_sidebar_kinds_expose_expected_behavior() {
+    assert_eq!(WorkspaceSidebarKind::Files.label(), "file tree");
+    assert_eq!(WorkspaceSidebarKind::Review.label(), "file tree");
+    assert_eq!(WorkspaceSidebarKind::AiThreads.label(), "threads");
+    assert!(WorkspaceSidebarKind::Files.uses_repo_tree());
+    assert!(WorkspaceSidebarKind::Review.uses_repo_tree());
+    assert!(!WorkspaceSidebarKind::AiThreads.uses_repo_tree());
+}
+
+#[test]
 fn ai_mode_hides_primary_workspace_toolbar_treatment() {
     assert!(!WorkspaceViewMode::Ai.shows_toolbar_workspace_identity());
     assert!(!WorkspaceViewMode::Ai.shows_toolbar_change_summary());

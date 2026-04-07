@@ -114,10 +114,23 @@ impl DiffViewer {
     }
 
     fn sidebar_collapsed_for_mode(&self, mode: WorkspaceViewMode) -> Option<bool> {
-        match mode.collapsible_sidebar_kind()? {
-            WorkspaceSidebarKind::Files => Some(self.files_sidebar_collapsed),
-            WorkspaceSidebarKind::Review => Some(self.review_sidebar_collapsed),
-            WorkspaceSidebarKind::AiThreads => Some(self.ai_thread_sidebar_collapsed),
+        mode.collapsible_sidebar_kind()
+            .map(|kind| self.sidebar_collapsed_for_kind(kind))
+    }
+
+    fn sidebar_collapsed_for_kind(&self, kind: WorkspaceSidebarKind) -> bool {
+        match kind {
+            WorkspaceSidebarKind::Files => self.files_sidebar_collapsed,
+            WorkspaceSidebarKind::Review => self.review_sidebar_collapsed,
+            WorkspaceSidebarKind::AiThreads => self.ai_thread_sidebar_collapsed,
+        }
+    }
+
+    fn set_sidebar_collapsed_for_kind(&mut self, kind: WorkspaceSidebarKind, collapsed: bool) {
+        match kind {
+            WorkspaceSidebarKind::Files => self.files_sidebar_collapsed = collapsed,
+            WorkspaceSidebarKind::Review => self.review_sidebar_collapsed = collapsed,
+            WorkspaceSidebarKind::AiThreads => self.ai_thread_sidebar_collapsed = collapsed,
         }
     }
 
@@ -126,39 +139,23 @@ impl DiffViewer {
     }
 
     pub(crate) fn active_sidebar_label(&self) -> Option<&'static str> {
-        match self.workspace_view_mode.collapsible_sidebar_kind()? {
-            WorkspaceSidebarKind::Files | WorkspaceSidebarKind::Review => Some("file tree"),
-            WorkspaceSidebarKind::AiThreads => Some("threads"),
-        }
+        self.workspace_view_mode
+            .collapsible_sidebar_kind()
+            .map(WorkspaceSidebarKind::label)
     }
 
     pub(super) fn toggle_active_sidebar(&mut self, cx: &mut Context<Self>) {
-        match self.workspace_view_mode.collapsible_sidebar_kind() {
-            Some(WorkspaceSidebarKind::Files) => self.toggle_files_sidebar(cx),
-            Some(WorkspaceSidebarKind::Review) => self.toggle_review_sidebar(cx),
-            Some(WorkspaceSidebarKind::AiThreads) => self.toggle_ai_thread_sidebar(cx),
-            None => {}
+        if let Some(kind) = self.workspace_view_mode.collapsible_sidebar_kind() {
+            self.toggle_sidebar_kind(kind, cx);
         }
     }
 
-    fn toggle_files_sidebar(&mut self, cx: &mut Context<Self>) {
-        self.files_sidebar_collapsed = !self.files_sidebar_collapsed;
-        if !self.files_sidebar_collapsed && self.repo_tree.nodes.is_empty() && !self.repo_tree.loading {
+    fn toggle_sidebar_kind(&mut self, kind: WorkspaceSidebarKind, cx: &mut Context<Self>) {
+        let collapsed = !self.sidebar_collapsed_for_kind(kind);
+        self.set_sidebar_collapsed_for_kind(kind, collapsed);
+        if kind.uses_repo_tree() && !collapsed && self.repo_tree.nodes.is_empty() && !self.repo_tree.loading {
             self.request_repo_tree_reload(cx);
         }
-        cx.notify();
-    }
-
-    fn toggle_review_sidebar(&mut self, cx: &mut Context<Self>) {
-        self.review_sidebar_collapsed = !self.review_sidebar_collapsed;
-        if !self.review_sidebar_collapsed && self.repo_tree.nodes.is_empty() && !self.repo_tree.loading {
-            self.request_repo_tree_reload(cx);
-        }
-        cx.notify();
-    }
-
-    fn toggle_ai_thread_sidebar(&mut self, cx: &mut Context<Self>) {
-        self.ai_thread_sidebar_collapsed = !self.ai_thread_sidebar_collapsed;
         cx.notify();
     }
 
