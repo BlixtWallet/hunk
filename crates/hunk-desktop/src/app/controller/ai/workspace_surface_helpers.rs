@@ -197,6 +197,7 @@ fn ai_workspace_prompt_preview(prompt: &str, local_images: &[PathBuf]) -> String
     ai_workspace_full_preview_text(content.as_str())
 }
 
+#[cfg(test)]
 fn ai_workspace_selection_surfaces(
     block: &ai_workspace_session::AiWorkspaceBlock,
 ) -> Arc<[AiTextSelectionSurfaceSpec]> {

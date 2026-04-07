@@ -244,6 +244,13 @@ Implementation plan:
    When the pointer leaves the top or bottom of the AI timeline while dragging, the surface should scroll and continue extending the selection as new blocks enter the viewport.
 6. Add focused coverage for cross-block selection.
    Tests need to cover forward and reverse multi-block selection, row-invalidation clearing, and drag clamping behavior.
+
+Polish follow-up:
+
+1. Promote `Select all` in the AI timeline to thread scope.
+   Once thread-wide surfaces exist, keyboard and context-menu select-all should operate on the whole AI thread instead of falling back to the currently selected block.
+2. Make edge auto-scroll timer-driven instead of move-event-driven.
+   Dragging should keep pulling the thread even if the pointer is held stationary just outside the viewport, which matches native editor selection behavior better than one-step-per-mousemove scrolling.
    Snapshot creation should iterate visible geometry entries and index directly into the block slice instead of rescanning `self.blocks` for every visible block.
 5. Re-run full workspace verification, then commit and push once the regression fixes are green.
 

@@ -189,6 +189,8 @@ impl DiffViewer {
     ) {
         self.ai_workspace_selection = Some(selection);
         self.ai_text_selection = None;
+        self.ai_text_selection_drag_pointer = None;
+        self.ai_text_selection_auto_scroll_task = Task::ready(());
         cx.notify();
     }
 
@@ -211,17 +213,17 @@ impl DiffViewer {
         (!sections.is_empty()).then(|| sections.join("\n"))
     }
 
-    pub(super) fn ai_select_all_workspace_block_text(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some((block_id, surfaces)) = self.ai_workspace_selected_block().map(|block| {
-            (block.id.clone(), ai_workspace_selection_surfaces(block))
-        }) else {
+    pub(super) fn ai_select_all_workspace_thread_text(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some((selection_scope_id, selection_surfaces)) = self.ai_workspace_session.as_ref().map(
+            |session| (session.selection_scope_id().to_string(), session.selection_surfaces()),
+        ) else {
             return false;
         };
-        if surfaces.is_empty() {
-            return false;
-        }
-
-        self.ai_select_all_text_for_surfaces(block_id.as_str(), surfaces, cx)
+        self.ai_select_all_text_for_surfaces(
+            selection_scope_id.as_str(),
+            selection_surfaces,
+            cx,
+        )
     }
 
     pub(super) fn ai_move_workspace_selection_by(
@@ -432,6 +434,80 @@ impl DiffViewer {
             .set_offset(point(px(0.), -px(next_scroll_top_px)));
         self.refresh_ai_timeline_follow_output_from_surface_scroll();
         true
+    }
+
+    pub(super) fn ai_drive_workspace_text_selection_auto_scroll(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(pointer_position) = self.ai_text_selection_drag_pointer else {
+            return false;
+        };
+        let viewport_bounds = self.ai_workspace_surface_scroll_handle.bounds();
+        if !self.ai_auto_scroll_workspace_text_selection_drag(pointer_position, viewport_bounds) {
+            return false;
+        }
+
+        let viewport_height_px = viewport_bounds
+            .size
+            .height
+            .max(Pixels::ZERO)
+            .as_f32()
+            .round() as usize;
+        let viewport_width_px = viewport_bounds
+            .size
+            .width
+            .max(Pixels::ZERO)
+            .as_f32()
+            .round() as usize;
+        let scroll_top_px = self.current_ai_workspace_surface_scroll_top_px();
+        let Some(snapshot) = self.ai_workspace_session.as_mut().map(|session| {
+            session
+                .surface_snapshot_with_stats(
+                    scroll_top_px,
+                    viewport_height_px.max(1),
+                    viewport_width_px.max(1),
+                )
+                .snapshot
+        }) else {
+            return false;
+        };
+        let workspace_root = self
+            .ai_workspace_cwd()
+            .or_else(|| self.selected_git_workspace_root())
+            .or_else(|| self.repo_root.clone());
+        let Some(text_hit) = crate::app::ai_workspace_render::ai_workspace_drag_text_hit(
+            &snapshot,
+            pointer_position,
+            viewport_bounds,
+            workspace_root.as_deref(),
+        ) else {
+            return false;
+        };
+        self.ai_update_text_selection(text_hit.surface_id.as_str(), text_hit.index, cx);
+        true
+    }
+
+    pub(super) fn ai_schedule_workspace_text_selection_auto_scroll(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) {
+        self.ai_text_selection_auto_scroll_task = cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(16))
+                    .await;
+                let keep_running = this
+                    .update(cx, |this, cx| {
+                        this.ai_text_selection.as_ref().is_some_and(|selection| selection.dragging)
+                            && this.ai_drive_workspace_text_selection_auto_scroll(cx)
+                    })
+                    .unwrap_or(false);
+                if !keep_running {
+                    break;
+                }
+            }
+        });
     }
 
     fn ai_reveal_workspace_block_if_needed(&mut self, block_id: &str) {

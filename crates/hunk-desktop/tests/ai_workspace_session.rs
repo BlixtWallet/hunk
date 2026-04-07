@@ -107,6 +107,8 @@ fn session_matches_source_thread_and_row_ids() {
         vec![block("row-1", AiWorkspaceBlockKind::Message, "preview")],
     );
 
+    assert_eq!(session.selection_scope_id(), "ai-workspace-thread:thread-1");
+    assert_eq!(session.selection_surfaces().len(), 2);
     assert!(session.matches_source("thread-1", &source_rows(&[("row-1", 1), ("row-2", 2)])));
     assert!(!session.matches_source("thread-2", &source_rows(&[("row-1", 1), ("row-2", 2)])));
     assert!(!session.matches_source("thread-1", &source_rows(&[("row-1", 1)])));
@@ -128,6 +130,10 @@ fn surface_snapshot_projects_visible_blocks_and_total_height() {
     let snapshot = session.surface_snapshot_with_stats(0, 220, 640).snapshot;
 
     assert_eq!(snapshot.viewport.visible_blocks.len(), 3);
+    assert_eq!(snapshot.selection_scope_id, "ai-workspace-thread:thread-1");
+    assert_eq!(snapshot.selection_surfaces.len(), 5);
+    assert_eq!(snapshot.selection_surfaces[1].separator_before, "\n");
+    assert_eq!(snapshot.selection_surfaces[2].separator_before, "\n\n");
     let first = snapshot
         .viewport
         .visible_blocks

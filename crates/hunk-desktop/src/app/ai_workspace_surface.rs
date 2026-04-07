@@ -139,6 +139,7 @@ impl Element for AiWorkspaceSurfaceElement {
                 this.ai_set_pressed_markdown_link(pressed_link);
                 this.ai_select_workspace_selection(hit.selection.clone(), cx);
                 if let Some(text_hit) = hit.text_hit.as_ref() {
+                    this.ai_set_text_selection_drag_pointer(event.position);
                     this.ai_begin_text_selection(
                         snapshot.selection_scope_id.clone(),
                         text_hit.selection_surfaces.clone(),
@@ -147,6 +148,7 @@ impl Element for AiWorkspaceSurfaceElement {
                         window,
                         cx,
                     );
+                    this.ai_schedule_workspace_text_selection_auto_scroll(cx);
                 }
                 cx.stop_propagation();
             });
@@ -172,10 +174,14 @@ impl Element for AiWorkspaceSurfaceElement {
                 .is_some_and(|selection| selection.dragging);
             if dragging_selection {
                 view_for_mouse_move.update(cx, |this, _| {
+                    this.ai_set_text_selection_drag_pointer(event.position);
                     this.ai_auto_scroll_workspace_text_selection_drag(
                         event.position,
                         hitbox_for_mouse_move.bounds,
                     );
+                });
+                view_for_mouse_move.update(cx, |this, cx| {
+                    this.ai_schedule_workspace_text_selection_auto_scroll(cx);
                 });
 
                 if let Some(text_hit) = ai_workspace_drag_text_hit(
@@ -228,6 +234,7 @@ impl Element for AiWorkspaceSurfaceElement {
             }
 
             view_for_mouse_up.update(cx, |this, cx| {
+                this.ai_clear_text_selection_drag_pointer();
                 this.ai_end_text_selection(cx);
                 if !hitbox_for_mouse_up.is_hovered(window) {
                     let _ = this.ai_take_pressed_markdown_link();

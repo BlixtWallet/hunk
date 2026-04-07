@@ -248,6 +248,14 @@ impl AiWorkspaceSession {
         self.blocks.len()
     }
 
+    pub(crate) fn selection_scope_id(&self) -> &str {
+        self.selection_scope_id.as_str()
+    }
+
+    pub(crate) fn selection_surfaces(&self) -> Arc<[AiTextSelectionSurfaceSpec]> {
+        self.selection_surfaces.clone()
+    }
+
     pub(crate) fn block(&self, block_id: &str) -> Option<&AiWorkspaceBlock> {
         self.blocks.iter().find(|block| block.id == block_id)
     }
