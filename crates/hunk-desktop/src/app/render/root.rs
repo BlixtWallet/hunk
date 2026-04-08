@@ -565,6 +565,17 @@ impl Render for DiffViewer {
                 self.last_scroll_activity_at = Instant::now();
                 self.refresh_ai_timeline_follow_output_from_scroll();
             }
+            if self.ai_inline_review_is_open() {
+                let current_inline_review_scroll_offset =
+                    self.current_ai_inline_review_surface_scroll_offset();
+                if self.ai_inline_review_surface.last_diff_scroll_offset
+                    != Some(current_inline_review_scroll_offset)
+                {
+                    self.ai_inline_review_surface.last_diff_scroll_offset =
+                        Some(current_inline_review_scroll_offset);
+                    self.last_scroll_activity_at = Instant::now();
+                }
+            }
         }
         if self.ignore_next_frame_sample {
             self.ignore_next_frame_sample = false;

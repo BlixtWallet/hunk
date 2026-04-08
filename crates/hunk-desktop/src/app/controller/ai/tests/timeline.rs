@@ -160,6 +160,77 @@
     }
 
     #[test]
+    fn inline_review_support_includes_file_change_rows_and_groups() {
+        let item_row = AiTimelineRow {
+            id: "item:file-change".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            last_sequence: 1,
+            source: AiTimelineRowSource::Item {
+                item_key: "item-1".to_string(),
+            },
+        };
+        let group_row = AiTimelineRow {
+            id: "group:file-change".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            last_sequence: 2,
+            source: AiTimelineRowSource::Group {
+                group_id: "group-1".to_string(),
+            },
+        };
+        let turn_diff_row = AiTimelineRow {
+            id: "turn-diff:turn-1".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            last_sequence: 3,
+            source: AiTimelineRowSource::TurnDiff {
+                turn_key: "turn-1".to_string(),
+            },
+        };
+        let plan_row = AiTimelineRow {
+            id: "turn-plan:turn-1".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            last_sequence: 4,
+            source: AiTimelineRowSource::TurnPlan {
+                turn_key: "turn-1".to_string(),
+            },
+        };
+
+        assert!(ai_timeline_row_supports_inline_review(
+            &item_row,
+            Some("fileChange"),
+            None,
+        ));
+        assert!(ai_timeline_row_supports_inline_review(
+            &group_row,
+            None,
+            Some("file_change_batch"),
+        ));
+        assert!(ai_timeline_row_supports_inline_review(
+            &turn_diff_row,
+            None,
+            None,
+        ));
+        assert!(!ai_timeline_row_supports_inline_review(
+            &item_row,
+            Some("commandExecution"),
+            None,
+        ));
+        assert!(!ai_timeline_row_supports_inline_review(
+            &group_row,
+            None,
+            Some("collaboration_batch"),
+        ));
+        assert!(!ai_timeline_row_supports_inline_review(
+            &plan_row,
+            None,
+            None,
+        ));
+    }
+
+    #[test]
     fn timeline_row_ids_with_height_changes_tracks_streamed_item_and_diff_updates() {
         let mut previous = AiState::default();
         previous.turns.insert(

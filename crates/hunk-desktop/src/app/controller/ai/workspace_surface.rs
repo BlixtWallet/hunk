@@ -1,3 +1,16 @@
+fn ai_timeline_row_supports_inline_review(
+    row: &AiTimelineRow,
+    item_kind: Option<&str>,
+    group_kind: Option<&str>,
+) -> bool {
+    match &row.source {
+        AiTimelineRowSource::TurnDiff { .. } => true,
+        AiTimelineRowSource::Item { .. } => item_kind == Some("fileChange"),
+        AiTimelineRowSource::Group { .. } => group_kind == Some("file_change_batch"),
+        AiTimelineRowSource::TurnPlan { .. } => false,
+    }
+}
+
 impl DiffViewer {
     fn sync_ai_workspace_session_for_timeline(
         &mut self,
@@ -329,7 +342,25 @@ impl DiffViewer {
             .is_some()
     }
 
-    #[allow(dead_code)]
+    pub(super) fn ai_row_supports_inline_review(&self, row: &AiTimelineRow) -> bool {
+        let item_kind = match &row.source {
+            AiTimelineRowSource::Item { item_key } => self
+                .ai_state_snapshot
+                .items
+                .get(item_key.as_str())
+                .map(|item| item.kind.as_str()),
+            _ => None,
+        };
+        let group_kind = match &row.source {
+            AiTimelineRowSource::Group { group_id } => self
+                .ai_timeline_group(group_id.as_str())
+                .map(|group| group.kind.as_str()),
+            _ => None,
+        };
+
+        ai_timeline_row_supports_inline_review(row, item_kind, group_kind)
+    }
+
     pub(super) fn ai_open_inline_review_for_row(&mut self, row_id: String, cx: &mut Context<Self>) {
         let Some(thread_id) = self.ai_selected_thread_id.clone() else {
             return;
@@ -337,12 +368,19 @@ impl DiffViewer {
         let Some(row) = self.ai_timeline_row(row_id.as_str()) else {
             return;
         };
-        if !matches!(row.source, AiTimelineRowSource::TurnDiff { .. }) {
+        if !self.ai_row_supports_inline_review(row) {
             return;
         }
 
+        let changed_row = self
+            .ai_inline_review_selected_row_id_by_thread
+            .get(thread_id.as_str())
+            .is_none_or(|current| current != &row_id);
         self.ai_inline_review_selected_row_id_by_thread
             .insert(thread_id, row_id);
+        if changed_row {
+            self.ai_inline_review_surface.clear_runtime_state();
+        }
         self.ai_sync_review_compare_to_selected_thread(cx);
         self.invalidate_ai_visible_frame_state_with_reason("timeline");
         cx.notify();
@@ -357,6 +395,7 @@ impl DiffViewer {
             .remove(thread_id)
             .is_some()
         {
+            self.ai_inline_review_surface.clear_runtime_state();
             self.invalidate_ai_visible_frame_state_with_reason("timeline");
             cx.notify();
         }

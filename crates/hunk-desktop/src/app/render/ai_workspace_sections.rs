@@ -1222,6 +1222,7 @@ impl DiffViewer {
         let timeline_column = v_flex()
             .flex_1()
             .min_h_0()
+            .min_w_0()
             .w_full()
             .gap_2()
             .when(state.show_no_turns_empty_state, |this| {
@@ -1366,18 +1367,42 @@ impl DiffViewer {
             });
 
         if state.inline_review_selected_row_id.is_some() {
-            return h_resizable("hunk-ai-timeline-review-split")
+            return div()
+                .flex_1()
+                .min_h_0()
+                .min_w_0()
+                .w_full()
                 .child(
-                    resizable_panel()
-                        .size(px(720.0))
-                        .size_range(px(420.0)..px(1280.0))
-                        .child(timeline_column),
-                )
-                .child(
-                    resizable_panel()
-                        .size(px(640.0))
-                        .size_range(px(360.0)..px(1280.0))
-                        .child(self.render_ai_inline_review_pane(view, is_dark, cx)),
+                    h_resizable("hunk-ai-timeline-review-split")
+                        .size_full()
+                        .child(
+                            resizable_panel()
+                                .size(px(720.0))
+                                .size_range(px(420.0)..px(1280.0))
+                                .child(
+                                    div()
+                                        .size_full()
+                                        .min_h_0()
+                                        .min_w_0()
+                                        .child(timeline_column),
+                                ),
+                        )
+                        .child(
+                            resizable_panel()
+                                .size(px(640.0))
+                                .size_range(px(360.0)..px(1280.0))
+                                .child(
+                                    div()
+                                        .size_full()
+                                        .min_h_0()
+                                        .min_w_0()
+                                        .child(
+                                            self.render_ai_inline_review_pane(
+                                                view, is_dark, cx,
+                                            ),
+                                        ),
+                                ),
+                        ),
                 )
                 .into_any_element();
         }
@@ -1416,35 +1441,54 @@ impl DiffViewer {
                                     .text_sm()
                                     .font_semibold()
                                     .text_color(cx.theme().foreground)
-                                    .child("Review"),
+                                    .child("Diff"),
                             )
                             .child(
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("Selected AI diff"),
+                                    .child("Right-side AI diff pane"),
                             ),
                     )
-                    .child({
-                        let view = view.clone();
-                        Button::new("ai-inline-review-close")
-                            .compact()
-                            .ghost()
-                            .with_size(gpui_component::Size::Small)
-                            .rounded(px(8.0))
-                            .label("Close")
-                            .on_click(move |_, _, cx| {
-                                view.update(cx, |this, cx| {
-                                    this.ai_close_inline_review_action(cx);
-                                });
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .gap_2()
+                            .child({
+                                let view = view.clone();
+                                Button::new("ai-inline-review-open-review")
+                                    .compact()
+                                    .ghost()
+                                    .with_size(gpui_component::Size::Small)
+                                    .rounded(px(8.0))
+                                    .label("Open in Review")
+                                    .on_click(move |_, _, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.ai_open_review_tab(cx);
+                                        });
+                                    })
                             })
-                    }),
+                            .child({
+                                let view = view.clone();
+                                Button::new("ai-inline-review-close")
+                                    .compact()
+                                    .ghost()
+                                    .with_size(gpui_component::Size::Small)
+                                    .rounded(px(8.0))
+                                    .label("Close")
+                                    .on_click(move |_, _, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.ai_close_inline_review_action(cx);
+                                        });
+                                    })
+                            }),
+                    ),
             )
             .child(
                 div()
                     .flex_1()
                     .min_h_0()
-                    .child(self.render_review_workspace_surface(cx)),
+                    .child(self.render_ai_inline_review_surface(cx)),
             )
             .into_any_element()
     }

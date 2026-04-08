@@ -150,7 +150,7 @@ impl Element for AiWorkspaceSurfaceElement {
                     return;
                 }
                 if hit.open_review_tab && event.button == MouseButton::Left {
-                    this.ai_open_review_tab(cx);
+                    this.ai_open_inline_review_for_row(hit.selection.block_id.clone(), cx);
                     cx.stop_propagation();
                     return;
                 }

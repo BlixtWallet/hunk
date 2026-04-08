@@ -293,7 +293,7 @@ impl DiffViewer {
     }
 
     pub(super) fn uses_review_workspace_sections_surface(&self) -> bool {
-        (self.workspace_view_mode == WorkspaceViewMode::Diff || self.ai_inline_review_is_open())
+        self.workspace_view_mode == WorkspaceViewMode::Diff
             && self.review_workspace_session.is_some()
     }
 
@@ -326,7 +326,7 @@ impl DiffViewer {
     }
 
     pub(super) fn current_review_surface_scroll_offset(&self) -> Point<Pixels> {
-        if self.workspace_view_mode == WorkspaceViewMode::Diff || self.ai_inline_review_is_open() {
+        if self.workspace_view_mode == WorkspaceViewMode::Diff {
             return self.review_surface.diff_scroll_handle.offset();
         }
 

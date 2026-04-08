@@ -160,6 +160,7 @@ const AI_COMPOSER_STATUS_AUTO_DISMISS_DELAY: Duration = Duration::from_secs(5);
 mod ai_bookmarks;
 mod ai_composer_commands;
 mod ai_composer_completion;
+mod ai_inline_review;
 mod ai_paths;
 mod ai_thread_catalog_scheduler;
 mod ai_thread_flow;
@@ -1320,6 +1321,28 @@ impl ReviewWorkspaceSurfaceState {
     }
 }
 
+struct AiInlineReviewSurfaceState {
+    diff_scroll_handle: ScrollHandle,
+    last_diff_scroll_offset: Option<Point<Pixels>>,
+    geometry: Option<ai_inline_review::AiInlineReviewDisplayGeometry>,
+}
+
+impl AiInlineReviewSurfaceState {
+    fn new() -> Self {
+        Self {
+            diff_scroll_handle: ScrollHandle::default(),
+            last_diff_scroll_offset: None,
+            geometry: None,
+        }
+    }
+
+    fn clear_runtime_state(&mut self) {
+        self.last_diff_scroll_offset = None;
+        self.geometry = None;
+        self.diff_scroll_handle.set_offset(point(px(0.), px(0.)));
+    }
+}
+
 struct DiffViewer {
     config_store: Option<ConfigStore>,
     config: AppConfig,
@@ -1394,6 +1417,7 @@ struct DiffViewer {
     ai_workspace_session: Option<ai_workspace_session::AiWorkspaceSession>,
     ai_workspace_surface_scroll_handle: ScrollHandle,
     ai_workspace_surface_last_scroll_offset: Option<Point<Pixels>>,
+    ai_inline_review_surface: AiInlineReviewSurfaceState,
     ai_hovered_workspace_block_id: Option<String>,
     ai_workspace_selection: Option<ai_workspace_session::AiWorkspaceSelection>,
     ai_timeline_visible_turn_limit_by_thread: BTreeMap<String, usize>,
