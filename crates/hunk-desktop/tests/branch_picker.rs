@@ -40,6 +40,7 @@ fn branch(name: &str, is_current: bool, tip_unix_time: Option<i64>) -> LocalBran
     LocalBranch {
         name: name.to_string(),
         is_current,
+        is_remote_tracking: false,
         tip_unix_time,
         attached_workspace_target_id: None,
         attached_workspace_target_root: None,
@@ -110,6 +111,7 @@ fn occupied_branch_detail_mentions_worktree_label() {
         LocalBranch {
             name: "feature/auth".to_string(),
             is_current: false,
+            is_remote_tracking: false,
             tip_unix_time: Some(now - 3 * 60),
             attached_workspace_target_id: Some("worktree:worktree-2".to_string()),
             attached_workspace_target_root: None,
@@ -120,4 +122,24 @@ fn occupied_branch_detail_mentions_worktree_label() {
     let details = branch_detail_labels(&branches);
     assert_eq!(details[0], "5m ago");
     assert_eq!(details[1], "Checked out in worktree-2 • 3m ago");
+}
+
+#[test]
+fn remote_branch_detail_mentions_remote_name() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock should be after unix epoch")
+        .as_secs() as i64;
+    let branches = vec![LocalBranch {
+        name: "origin/feature/pr-123".to_string(),
+        is_current: false,
+        is_remote_tracking: true,
+        tip_unix_time: Some(now - 2 * 60),
+        attached_workspace_target_id: None,
+        attached_workspace_target_root: None,
+        attached_workspace_target_label: None,
+    }];
+
+    let details = branch_detail_labels(&branches);
+    assert_eq!(details[0], "Remote branch from origin • 2m ago");
 }

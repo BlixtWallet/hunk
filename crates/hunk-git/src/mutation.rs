@@ -15,6 +15,14 @@ enum WorktreeChange {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct RemoteTrackingBranchSource {
+    remote_name: String,
+    remote_branch_name: String,
+    local_branch_name: String,
+    target_commit_id: git2::Oid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreatedCommit {
     pub commit_id: String,
     pub subject: String,
@@ -75,27 +83,34 @@ pub fn activate_or_create_branch(
         ));
     }
 
-    if repo
+    let target_branch_name = if repo
         .find_branch(branch_name, git2::BranchType::Local)
-        .is_err()
-        && let Some(head_commit) = current_head_commit(&repo)?
+        .is_ok()
     {
-        repo.branch(branch_name, &head_commit, false)
-            .with_context(|| format!("failed to create branch '{branch_name}'"))?;
-    }
+        branch_name.to_string()
+    } else if let Some(remote_source) = resolve_remote_tracking_branch_source(&repo, branch_name)? {
+        create_local_branch_from_remote_tracking(&repo, &remote_source)?;
+        remote_source.local_branch_name
+    } else {
+        if let Some(head_commit) = current_head_commit(&repo)? {
+            repo.branch(branch_name, &head_commit, false)
+                .with_context(|| format!("failed to create branch '{branch_name}'"))?;
+        }
+        branch_name.to_string()
+    };
 
-    let target_ref = format!("refs/heads/{branch_name}");
+    let target_ref = format!("refs/heads/{target_branch_name}");
     repo.set_head(target_ref.as_str())
-        .with_context(|| format!("failed to activate branch '{branch_name}'"))?;
+        .with_context(|| format!("failed to activate branch '{target_branch_name}'"))?;
 
     if repo
-        .find_branch(branch_name, git2::BranchType::Local)
+        .find_branch(target_branch_name.as_str(), git2::BranchType::Local)
         .is_ok()
     {
         let mut checkout = git2::build::CheckoutBuilder::new();
         checkout.force();
         repo.checkout_head(Some(&mut checkout))
-            .with_context(|| format!("failed to check out branch '{branch_name}'"))?;
+            .with_context(|| format!("failed to check out branch '{target_branch_name}'"))?;
     }
 
     Ok(())
@@ -415,6 +430,70 @@ fn commit_paths_internal(
 
 fn open_repo(repo_root: &Path) -> Result<git2::Repository> {
     open_git2_repo(repo_root)
+}
+
+fn resolve_remote_tracking_branch_source(
+    repo: &git2::Repository,
+    branch_name: &str,
+) -> Result<Option<RemoteTrackingBranchSource>> {
+    let branch = match repo.find_branch(branch_name, git2::BranchType::Remote) {
+        Ok(branch) => branch,
+        Err(err) if err.code() == git2::ErrorCode::NotFound => return Ok(None),
+        Err(err) => return Err(err.into()),
+    };
+
+    let Some((remote_name, remote_branch_name)) = branch_name.split_once('/') else {
+        return Ok(None);
+    };
+    if remote_name.is_empty() || remote_branch_name.is_empty() || remote_branch_name == "HEAD" {
+        return Ok(None);
+    }
+
+    let target_commit_id = branch
+        .into_reference()
+        .peel_to_commit()
+        .with_context(|| format!("failed to resolve remote-tracking branch '{branch_name}'"))?
+        .id();
+    Ok(Some(RemoteTrackingBranchSource {
+        remote_name: remote_name.to_string(),
+        remote_branch_name: remote_branch_name.to_string(),
+        local_branch_name: remote_branch_name.to_string(),
+        target_commit_id,
+    }))
+}
+
+fn create_local_branch_from_remote_tracking(
+    repo: &git2::Repository,
+    source: &RemoteTrackingBranchSource,
+) -> Result<()> {
+    let local_branch_name = source.local_branch_name.as_str();
+    if repo
+        .find_branch(local_branch_name, git2::BranchType::Local)
+        .is_ok()
+    {
+        return Ok(());
+    }
+
+    let commit = repo
+        .find_commit(source.target_commit_id)
+        .with_context(|| format!("failed to load remote commit {}", source.target_commit_id))?;
+    repo.branch(local_branch_name, &commit, false)
+        .with_context(|| format!("failed to create branch '{local_branch_name}' from remote"))?;
+
+    let mut local_branch = repo
+        .find_branch(local_branch_name, git2::BranchType::Local)
+        .with_context(|| format!("failed to load branch '{local_branch_name}' after creation"))?;
+    local_branch
+        .set_upstream(Some(
+            format!("{}/{}", source.remote_name, source.remote_branch_name).as_str(),
+        ))
+        .with_context(|| {
+            format!(
+                "failed to set upstream for branch '{local_branch_name}' to '{}/{}'",
+                source.remote_name, source.remote_branch_name
+            )
+        })?;
+    Ok(())
 }
 
 fn ensure_has_staged_index_changes(repo: &git2::Repository) -> Result<()> {

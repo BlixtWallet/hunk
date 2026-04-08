@@ -241,6 +241,10 @@ fn matched_branch_items(items: &[BranchPickerItem], query: &str) -> Vec<BranchPi
 
 fn branch_detail_label(branch: &LocalBranch) -> String {
     let relative_time = relative_time_label(branch.tip_unix_time);
+    if branch.is_remote_tracking {
+        let remote_name = branch.name.split('/').next().unwrap_or("remote");
+        return format!("Remote branch from {remote_name} • {relative_time}");
+    }
     match (
         branch.is_current,
         branch.attached_workspace_target_label.as_deref(),

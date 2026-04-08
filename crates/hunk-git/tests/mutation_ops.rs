@@ -9,6 +9,7 @@ use hunk_git::mutation::{
     commit_selected_paths, commit_selected_paths_with_details, restore_working_copy_paths,
     stage_paths, staged_index_context_for_ai, unstage_paths, working_copy_context_for_ai,
 };
+use hunk_git::network::{fetch_remote_branches, push_current_branch};
 use tempfile::TempDir;
 
 #[test]
@@ -105,6 +106,41 @@ fn activating_branch_rejects_hidden_index_changes() -> Result<()> {
     let err = activate_or_create_branch(fixture.root(), "feature", false)
         .expect_err("hidden index changes should block branch switch");
     assert!(err.to_string().contains("staged index changes"));
+    Ok(())
+}
+
+#[test]
+fn activating_remote_tracking_branch_creates_local_branch_with_upstream() -> Result<()> {
+    let fixture = TempGitRepo::new()?;
+    fixture.configure_signature()?;
+    fixture.write_file("tracked.txt", "base\n")?;
+    fixture.commit_all_git2("initial")?;
+    let remote_root = fixture.create_bare_remote("origin")?;
+    fixture.checkout_branch("feature/base")?;
+    push_current_branch(fixture.root(), "feature/base", false)?;
+
+    let peer = TempGitRepo::clone_from(fixture.root(), "peer")?;
+    peer.configure_signature()?;
+    peer.set_remote_url("origin", remote_root.to_string_lossy().as_ref())?;
+    peer.checkout_branch("feature/pr-456")?;
+    peer.write_file("tracked.txt", "remote-only\n")?;
+    peer.commit_all_git2("remote branch")?;
+    peer.push_to_remote("origin", "feature/pr-456", "feature/pr-456")?;
+
+    fetch_remote_branches(fixture.root())?;
+    activate_or_create_branch(fixture.root(), "origin/feature/pr-456", false)?;
+
+    let snapshot = load_workflow_snapshot(fixture.root())?;
+    assert_eq!(snapshot.branch_name, "feature/pr-456");
+    assert_eq!(
+        fs::read_to_string(fixture.root().join("tracked.txt"))?,
+        "remote-only\n"
+    );
+
+    let repo = fixture.repository()?;
+    let local_branch = repo.find_branch("feature/pr-456", BranchType::Local)?;
+    let upstream = local_branch.upstream()?;
+    assert_eq!(upstream.name()?, Some("origin/feature/pr-456"));
     Ok(())
 }
 
@@ -583,6 +619,17 @@ impl TempGitRepo {
         })
     }
 
+    fn clone_from(source: &Path, name: &str) -> Result<Self> {
+        let tempdir = tempfile::tempdir()?;
+        let root = tempdir.path().join(name);
+        let repo = Repository::clone(source.to_string_lossy().as_ref(), root.as_path())?;
+        drop(repo);
+        Ok(Self {
+            _tempdir: tempdir,
+            root: fs::canonicalize(root)?,
+        })
+    }
+
     fn root(&self) -> &Path {
         &self.root
     }
@@ -675,6 +722,39 @@ impl TempGitRepo {
         let mut index = repo.index()?;
         index.add_path(Path::new(relative))?;
         index.write()?;
+        Ok(())
+    }
+
+    fn create_bare_remote(&self, name: &str) -> Result<PathBuf> {
+        let remote_root = self._tempdir.path().join(format!("{name}.git"));
+        Repository::init_bare(remote_root.as_path())?;
+        let repo = self.repository()?;
+        if repo.find_remote(name).is_err() {
+            repo.remote(name, remote_root.to_string_lossy().as_ref())?;
+        }
+        Ok(remote_root)
+    }
+
+    fn set_remote_url(&self, name: &str, url: &str) -> Result<()> {
+        let repo = self.repository()?;
+        repo.remote_set_url(name, url)?;
+        Ok(())
+    }
+
+    fn push_to_remote(
+        &self,
+        remote_name: &str,
+        local_branch_name: &str,
+        remote_branch_name: &str,
+    ) -> Result<()> {
+        let repo = self.repository()?;
+        let mut remote = repo.find_remote(remote_name)?;
+        remote.push(
+            &[format!(
+                "refs/heads/{local_branch_name}:refs/heads/{remote_branch_name}"
+            )],
+            None,
+        )?;
         Ok(())
     }
 

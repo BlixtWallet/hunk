@@ -203,9 +203,20 @@ pub(super) fn post_git_action_refresh_plan(
     action_name: &str,
     selected_root_is_primary: bool,
 ) -> GitActionRefreshPlan {
+    if action_name == "Fetch remote branches" {
+        return GitActionRefreshPlan {
+            refresh_primary_snapshot: false,
+            refresh_git_workspace: true,
+            refresh_recent_commits: false,
+        };
+    }
+
     git_action_refresh_plan(
         selected_root_is_primary,
-        matches!(action_name, "Activate branch" | "Sync branch"),
+        matches!(
+            action_name,
+            "Activate branch" | "Sync branch" | "Pull branch --rebase"
+        ),
     )
 }
 

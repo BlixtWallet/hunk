@@ -593,6 +593,14 @@ impl DiffViewer {
             && !self.git_rail_controls_busy()
     }
 
+    pub(super) fn can_pull_current_branch_with_rebase_for_ui(&self) -> bool {
+        self.can_sync_current_branch_for_ui()
+    }
+
+    pub(super) fn can_fetch_remote_branches_for_ui(&self) -> bool {
+        self.selected_git_workspace_root().is_some() && !self.git_rail_controls_busy()
+    }
+
     pub(super) fn can_publish_current_branch_for_ui(&self) -> bool {
         self.can_run_active_branch_actions_for_ui()
             && !self.git_workspace.branch_has_upstream
@@ -838,26 +846,29 @@ impl DiffViewer {
         }
     }
 
-    pub(super) fn publish_current_branch(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn publish_current_branch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.can_run_active_branch_actions() {
-            let message = "Activate a branch before publishing.".to_string();
-            self.git_status_message = Some(message.clone());
-            Self::push_warning_notification(message, None, cx);
-            cx.notify();
+            self.set_git_warning_message(
+                "Activate a branch before publishing.".to_string(),
+                Some(window),
+                cx,
+            );
             return;
         }
         if !self.tracking_area_clean() {
-            let message = "Commit or discard working tree changes before publishing.".to_string();
-            self.git_status_message = Some(message.clone());
-            Self::push_warning_notification(message, None, cx);
-            cx.notify();
+            self.set_git_warning_message(
+                "Commit or discard working tree changes before publishing.".to_string(),
+                Some(window),
+                cx,
+            );
             return;
         }
         if self.git_workspace.branch_has_upstream {
-            let message = "Branch is already published.".to_string();
-            self.git_status_message = Some(message.clone());
-            Self::push_warning_notification(message, None, cx);
-            cx.notify();
+            self.set_git_warning_message(
+                "Branch is already published.".to_string(),
+                Some(window),
+                cx,
+            );
             return;
         }
         if self.git_controls_busy() {
@@ -871,26 +882,25 @@ impl DiffViewer {
         });
     }
 
-    pub(super) fn push_current_branch(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn push_current_branch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.can_run_active_branch_actions() {
-            let message = "Activate a branch before pushing.".to_string();
-            self.git_status_message = Some(message.clone());
-            Self::push_warning_notification(message, None, cx);
-            cx.notify();
+            self.set_git_warning_message(
+                "Activate a branch before pushing.".to_string(),
+                Some(window),
+                cx,
+            );
             return;
         }
         if !self.git_workspace.branch_has_upstream {
-            let message = "Publish this branch before pushing.".to_string();
-            self.git_status_message = Some(message.clone());
-            Self::push_warning_notification(message, None, cx);
-            cx.notify();
+            self.set_git_warning_message(
+                "Publish this branch before pushing.".to_string(),
+                Some(window),
+                cx,
+            );
             return;
         }
         if self.git_workspace.branch_ahead_count == 0 {
-            let message = "No commits to push.".to_string();
-            self.git_status_message = Some(message.clone());
-            Self::push_warning_notification(message, None, cx);
-            cx.notify();
+            self.set_git_warning_message("No commits to push.".to_string(), Some(window), cx);
             return;
         }
         if self.git_controls_busy() {
@@ -904,26 +914,33 @@ impl DiffViewer {
         });
     }
 
-    pub(super) fn sync_current_branch_from_remote(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn sync_current_branch_from_remote(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if !self.can_run_active_branch_actions() {
-            let message = "Activate a branch before syncing.".to_string();
-            self.git_status_message = Some(message.clone());
-            Self::push_warning_notification(message, None, cx);
-            cx.notify();
+            self.set_git_warning_message(
+                "Activate a branch before syncing.".to_string(),
+                Some(window),
+                cx,
+            );
             return;
         }
         if !self.git_workspace.branch_has_upstream {
-            let message = "No upstream branch to sync from.".to_string();
-            self.git_status_message = Some(message.clone());
-            Self::push_warning_notification(message, None, cx);
-            cx.notify();
+            self.set_git_warning_message(
+                "No upstream branch to sync from.".to_string(),
+                Some(window),
+                cx,
+            );
             return;
         }
         if !self.tracking_area_clean() {
-            let message = "Commit or discard working tree changes before syncing.".to_string();
-            self.git_status_message = Some(message.clone());
-            Self::push_warning_notification(message, None, cx);
-            cx.notify();
+            self.set_git_warning_message(
+                "Commit or discard working tree changes before syncing.".to_string(),
+                Some(window),
+                cx,
+            );
             return;
         }
         if self.git_controls_busy() {
@@ -938,12 +955,76 @@ impl DiffViewer {
         });
     }
 
-    pub(super) fn open_current_branch_review_url(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn pull_current_branch_with_rebase(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.can_run_active_branch_actions() {
+            self.set_git_warning_message(
+                "Activate a branch before pulling with rebase.".to_string(),
+                Some(window),
+                cx,
+            );
+            return;
+        }
+        if !self.git_workspace.branch_has_upstream {
+            self.set_git_warning_message(
+                "No upstream branch to pull from.".to_string(),
+                Some(window),
+                cx,
+            );
+            return;
+        }
+        if !self.tracking_area_clean() {
+            self.set_git_warning_message(
+                "Commit or discard working tree changes before pulling with rebase.".to_string(),
+                Some(window),
+                cx,
+            );
+            return;
+        }
+        if self.git_controls_busy() {
+            return;
+        }
+
+        let branch_name = self.git_workspace.branch_name.clone();
+
+        self.run_git_action("Pull branch --rebase", cx, move |repo_root| {
+            pull_branch_with_rebase(&repo_root, &branch_name)?;
+            Ok(format!("Rebased branch {} onto upstream", branch_name))
+        });
+    }
+
+    pub(super) fn fetch_remote_branches(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.selected_git_workspace_root().is_none() {
+            self.set_git_warning_message("No Git repository available.".to_string(), Some(window), cx);
+            return;
+        }
+        if self.git_controls_busy() {
+            return;
+        }
+
+        self.run_git_action("Fetch remote branches", cx, move |repo_root| {
+            let fetched_remote_count = fetch_remote_branches(&repo_root)?;
+            Ok(match fetched_remote_count {
+                1 => "Fetched remote branches from 1 remote".to_string(),
+                count => format!("Fetched remote branches from {count} remotes"),
+            })
+        });
+    }
+
+    pub(super) fn open_current_branch_review_url(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(reason) = self.active_review_action_blocker() {
-            let message = format!("Open PR/MR unavailable: {reason}");
-            self.git_status_message = Some(message.clone());
-            Self::push_warning_notification(message, None, cx);
-            cx.notify();
+            self.set_git_warning_message(
+                format!("Open PR/MR unavailable: {reason}"),
+                Some(window),
+                cx,
+            );
             return;
         }
         self.run_review_url_action_for_branch(
@@ -953,12 +1034,17 @@ impl DiffViewer {
         );
     }
 
-    pub(super) fn copy_current_branch_review_url(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn copy_current_branch_review_url(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(reason) = self.active_review_action_blocker() {
-            let message = format!("Copy review URL unavailable: {reason}");
-            self.git_status_message = Some(message.clone());
-            Self::push_warning_notification(message, None, cx);
-            cx.notify();
+            self.set_git_warning_message(
+                format!("Copy review URL unavailable: {reason}"),
+                Some(window),
+                cx,
+            );
             return;
         }
         self.run_review_url_action_for_branch(

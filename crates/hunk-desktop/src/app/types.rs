@@ -690,6 +690,7 @@ struct GitWorkspaceState {
     branch_ahead_count: usize,
     branch_behind_count: usize,
     working_copy_commit_id: Option<String>,
+    remote_branches: Vec<LocalBranch>,
     branches: Vec<LocalBranch>,
     files: Vec<ChangedFile>,
     file_status_by_path: BTreeMap<String, FileStatus>,

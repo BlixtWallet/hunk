@@ -257,6 +257,7 @@ mod ai_tests {
         LocalBranch {
             name: name.to_string(),
             is_current,
+            is_remote_tracking: false,
             tip_unix_time: None,
             attached_workspace_target_id: None,
             attached_workspace_target_root: None,
