@@ -546,8 +546,9 @@ impl DiffViewer {
     }
 
     fn active_diff_contains_path(&self, path: &str) -> bool {
-        if self.workspace_view_mode == WorkspaceViewMode::Diff
-            && let Some(session) = self.review_workspace_session.as_ref()
+        if (self.workspace_view_mode == WorkspaceViewMode::Diff
+            || (self.workspace_view_mode == WorkspaceViewMode::Ai && self.ai_inline_review_is_open()))
+            && let Some(session) = self.active_review_workspace_session()
         {
             return session.contains_path(path);
         }
@@ -556,8 +557,9 @@ impl DiffViewer {
     }
 
     fn active_diff_first_path(&self) -> Option<String> {
-        if self.workspace_view_mode == WorkspaceViewMode::Diff
-            && let Some(session) = self.review_workspace_session.as_ref()
+        if (self.workspace_view_mode == WorkspaceViewMode::Diff
+            || (self.workspace_view_mode == WorkspaceViewMode::Ai && self.ai_inline_review_is_open()))
+            && let Some(session) = self.active_review_workspace_session()
         {
             return session.first_path().map(ToString::to_string);
         }
@@ -566,8 +568,7 @@ impl DiffViewer {
     }
 
     pub(crate) fn active_diff_file_range_for_path(&self, path: &str) -> Option<FileRowRange> {
-        self.review_workspace_session
-            .as_ref()
+        self.active_review_workspace_session()
             .and_then(|session| session.file_range_for_path(path))
             .map(|range| FileRowRange {
                 path: range.path.clone(),
@@ -580,8 +581,7 @@ impl DiffViewer {
         &self,
         row_ix: usize,
     ) -> Option<FileRowRange> {
-        self.review_workspace_session
-            .as_ref()
+        self.active_review_workspace_session()
             .and_then(|session| session.file_at_or_after_surface_row(row_ix))
             .map(|range| FileRowRange {
                 path: range.path.clone(),

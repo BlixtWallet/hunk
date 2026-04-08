@@ -1,347 +1,548 @@
-# AI Right-Side In-Tab Diff Implementation Plan
+# AI Right-Side Diff Viewer Implementation Plan
 
 ## Status
 
-- Proposed
+- Implemented
 - Owner: Hunk
-- Last Updated: 2026-04-07
+- Last Updated: 2026-04-08
 - Follow-on to: `docs/AI_TIMELINE_WORKSPACE_SURFACE_PLAN.md`
 
 ## Summary
 
-Hunk should let users inspect AI-generated file changes without leaving the AI workspace.
+Hunk should let users inspect diffs inside the AI workspace without leaving the AI tab, and the AI tab must keep those diffs useful even after the work has been committed and pushed.
 
 The target UX is:
 
-- clicking a diff or file-change summary in the AI timeline opens a diff pane on the right inside the AI tab
+- clicking a diff or file-change block in the AI timeline opens a right-side diff viewer inside the AI tab
 - the AI timeline and composer stay on the left
-- the right-side pane renders a unified up-and-down diff, not the Review tab's side-by-side layout
-- the right-side pane header includes an `Open in Review` action for the full Review experience
-- syntax highlighting and change emphasis should match Review quality by reusing the existing compare/session/highlighting pipeline
+- the right-side pane renders a unified stacked diff with Review-quality syntax highlighting
+- the pane supports two AI-only source modes:
+  - `AI Diff`
+  - `Working Tree`
+- `AI Diff` is the default mode when the pane is opened from the AI timeline and renders historical turn patch data for the selected block
+- `Working Tree` is an explicit alternate mode that shows the live current worktree diff for the selected thread/workspace
+- `Open in Review` remains available for the full side-by-side Review experience
+- the AI workspace toolbar gets a diff-viewer button beside the existing “open in editor” control, and `Cmd/Ctrl+D` opens the viewer in `Working Tree` mode
 
-The important architectural constraint is that we should reuse the existing review compare loading and syntax/highlight machinery, but we should not reuse the side-by-side Review surface state as-is. The AI right-side pane needs its own renderer and surface state because it is width-constrained and intentionally unified rather than split.
+The core product rule is:
+
+- Review stays live and current
+- AI stays historical by default, but can switch to live working-tree diff on demand
+
+That split solves the current blank-diff problem without changing Review semantics.
 
 ## Product Definition
 
 ### V1 behavior
 
 - Clicking an AI diff-summary row opens the right-side in-tab diff pane instead of switching tabs.
-- The right pane is resizable and closable.
-- The pane renders the selected thread's compare snapshot in a unified stacked layout.
-- The pane is read-only.
-- `Open in Review` switches to the Review tab for side-by-side diffing, search, comments, and the rest of the existing review workflow.
+- The pane is resizable and closable.
+- The pane defaults to `AI Diff` mode when opened from AI timeline diff rows.
+- `AI Diff` renders a historical turn diff for the selected row even if the worktree is now clean.
+- `Working Tree` renders the live current diff for the selected thread/workspace.
+- Users can switch between `AI Diff` and `Working Tree` from the right-side pane header.
+- The AI toolbar includes a diff-viewer icon button that opens the right-side pane in `Working Tree` mode for the current thread/workspace.
+- `Cmd/Ctrl+D` opens the AI diff viewer in `Working Tree` mode while the AI workspace is focused.
+- `Open in Review` still switches to the Review tab, which continues to show the live side-by-side compare.
 
 ### V1 non-goals
 
-- No inline comments inside the AI right-side pane.
-- No Review-tab search UI inside the AI pane.
-- No attempt to make the AI pane side-by-side.
-- No new diff-loading pipeline sourced only from timeline summary text.
-- No turn-scoped historical diff reconstruction unless the existing thread compare model proves insufficient.
+- No historical diff mode inside the Review tab.
+- No inline comments inside the AI pane.
+- No AI-pane side-by-side diff layout.
+- No search UI inside the AI pane.
+- No true cumulative thread diff in V1.
+- No attempt to keep Review and AI using one shared viewport or one shared session instance.
+
+## Why The Old Model Is Not Enough
+
+The current AI pane reuses the Review compare session. That produces a live compare:
+
+- branch/base on the left
+- current workspace target on the right
+
+That is correct for Review, but it breaks the AI workspace once a turn has already been committed or pushed:
+
+- the timeline block still advertises code changes
+- clicking it opens a blank live diff because the working tree no longer contains the changes
+
+This is acceptable in Review, where “current repo state” is the point. It is not acceptable in AI, where the user is often trying to inspect what happened in a specific turn or batch after the fact.
 
 ## Current Code Findings
 
-The codebase already contains most of the scaffolding for this feature:
+The codebase already contains the critical primitives we need:
 
-- `crates/hunk-desktop/src/app/render/ai_workspace_sections.rs` already has a dormant right-side split and pane chrome for in-tab review.
-- `crates/hunk-desktop/src/app/controller/ai/workspace_surface.rs` already has thread-scoped right-pane review selection state and an unused `ai_open_inline_review_for_row(...)`.
-- `crates/hunk-desktop/src/app/ai_workspace_surface.rs` still routes diff-summary clicks to `ai_open_review_tab(...)`, so the user is pushed into the Review tab instead of opening the inline pane.
-- `crates/hunk-desktop/src/app/review_workspace_session.rs` already builds the compare-session model, projected display rows, syntax spans, changed ranges, sticky headers, and viewport snapshots we want to reuse.
-- `crates/hunk-desktop/src/app/controller/review_compare.rs` already owns compare-source resolution and `ReviewWorkspaceSession::from_compare_snapshot(...)`.
-- `crates/hunk-desktop/src/app/render/review_workspace_code_row.rs` already has the text-run construction logic that maps syntax spans and changed ranges into painted code rows.
+- `crates/hunk-codex/src/state.rs` stores raw historical turn patch text in `turn_diffs`
+- `crates/hunk-desktop/src/app/ai_workspace_timeline_projection.rs` already summarizes:
+  - turn-level unified patch text
+  - file-change item summaries
+  - grouped file-change summaries
+- `crates/hunk-desktop/src/app/review_workspace_session.rs` already builds the high-quality diff session from `CompareSnapshot`
+- `crates/hunk-desktop/src/app/ai_inline_review.rs` and `render/ai_inline_review_surface.rs` already render a unified stacked pane from `ReviewWorkspaceSession`
 
-The main missing piece is not data loading. The main missing piece is a dedicated AI-side surface that consumes the same review session data but renders it as a unified stacked diff in the right-side pane.
+The missing piece is source ownership:
 
-## Constraints And Assumptions
-
-- Keep production diff loading and Git behavior on the existing review/hunk-git path. Do not add a second Git diff implementation just for AI.
-- Preserve the 8ms frame budget target by staying virtualized and paint-driven.
-- Reuse existing syntax/highlight output so the AI pane is not a lower-fidelity preview.
-- Keep files under 1000 lines by splitting new inline-diff code into dedicated modules instead of growing `review_workspace_session.rs` or `ai_workspace_sections.rs` indefinitely.
-- V1 assumes the AI right-side diff pane shows the same compare snapshot the Review tab would show for the selected thread/workspace. That preserves current semantics and avoids inventing turn-specific patch reconstruction in the first pass.
+- the AI pane currently reads from the shared `review_workspace_session`
+- the AI pane needs its own session source so it can switch between:
+  - historical AI snapshot
+  - live working-tree snapshot
 
 ## Chosen Architecture
 
-### 1. Reuse compare loading and review session data
+### 1. Keep Review semantics unchanged
 
-Keep these as the canonical diff source:
+The Review tab remains the canonical live compare surface:
 
-- compare-source resolution in `controller/review_compare.rs`
+- compare source resolution stays in `controller/review_compare.rs`
+- Git diff loading stays in `crates/hunk-git`
+- Review continues to show the current workspace-target compare
+
+### 2. Make the AI pane source-aware
+
+The AI pane needs an explicit source mode and session lifetime separate from Review.
+
+Recommended mode enum:
+
+- `AiInlineDiffSourceMode::Historical`
+- `AiInlineDiffSourceMode::WorkingTree`
+
+Recommended selected-source enum:
+
+- `Turn { turn_key: String }`
+- `Item { item_key: String }`
+- `Group { group_id: String }`
+
+Recommended AI session ownership:
+
+- add `ai_inline_review_session: Option<ReviewWorkspaceSession>`
+- add AI-only loading/error/session metadata
+- keep `review_workspace_session` dedicated to Review
+
+This avoids cross-contamination between:
+
+- Review live compare state
+- AI historical diff state
+- AI working-tree mode
+
+### 3. Reuse the Review session pipeline, not the Review tab state
+
+We should continue reusing:
+
 - `CompareSnapshot`
-- `ReviewWorkspaceSession`
-- existing display-row generation and syntax span generation
-- existing `DiffRowSegmentCache` and syntax/change highlighting pipeline
+- `ReviewWorkspaceSession::from_compare_snapshot(...)`
+- syntax highlighting caches
+- diff row segment caches
+- unified AI pane renderer
 
-This is the highest-leverage reuse point and keeps syntax/highlight quality aligned with Review.
+We should not reuse:
 
-### 2. Split surface state from diff data
+- `review_workspace_session` as the only loaded session
+- Review scroll state
+- Review selected compare pair as the only source of truth for the AI pane
 
-The current `ReviewWorkspaceSurfaceState` is tuned for side-by-side review and mixes together:
+### 4. Historical diff should be the default in AI
 
-- scroll handle
-- split ratio
-- row selection
-- cached review viewport snapshot
-- display owner/editor handles
+Historical AI diffs should be built from persisted turn patch artifacts:
 
-That coupling is fine for the Review tab, but it is the wrong shape for the AI right-side pane. The AI pane needs a separate surface state because:
+- `TurnDiff` rows use `turn_diffs[turn_key]`
+- `fileChange` rows resolve to their parent turn and use that turn’s persisted unified patch text
+- `file_change_batch` group rows resolve to their parent turn and use that turn’s persisted unified patch text
 
-- it has different viewport geometry
-- it should not share side-by-side split settings
-- it should not share Review-tab scroll/selection state
-- it will render unified rows rather than split columns
+This is the default AI experience because it stays stable after commits and pushes, and it avoids depending on transient live worktree state.
 
-The plan is:
+### 5. Working-tree diff is an explicit alternate view
 
-- keep one shared diff/session owner for producing display rows and syntax spans
-- add a separate AI right-pane diff surface state for scroll, cached pane snapshot, and pane selection
+The AI pane also needs a live worktree mode for users who want to compare the current repo state without switching tabs.
 
-### 3. Add a unified right-pane diff viewport model
+That mode should:
 
-The AI right-side pane should not render the Review tab's left/right viewport directly. Instead it should build an AI-specific viewport snapshot from the already-projected review display rows.
+- reuse the existing Review compare-selection logic for the selected thread/workspace
+- build a live `CompareSnapshot` through the existing Git path
+- stay in the AI pane
 
-That model should contain unified row variants such as:
+## Historical Diff Model
 
-- file header
-- hunk header
-- context row
-- removed row
-- added row
-- meta row
+### V1 scope: row-anchored historical diffs
 
-This lets the AI pane stay readable in a narrower column while still using the exact same syntax and changed-range data the Review path already computes.
+V1 should support historical diffs for:
 
-## Detailed Implementation Plan
+- `TurnDiff` rows
+- single `fileChange` item rows
+- grouped `file_change_batch` rows
 
-### Phase 1. Wire the existing right-side pane shell to the right interaction
+This matches the user-visible AI timeline structure and the currently clickable rows. In V1, the clicked row selects the historical anchor, but the rendered historical snapshot is the persisted turn diff for that row’s turn.
 
-Goal: make AI diff-summary clicks open the existing right-side split-pane shell instead of switching tabs.
+### V1 does not implement cumulative thread-level diffs
 
-Changes:
+True thread-level cumulative diffs are not a good V1 target because we do not currently persist a canonical:
 
-- Replace the current diff-summary click action in `ai_workspace_surface.rs`.
-- Route diff-summary clicks to `ai_open_inline_review_for_row(...)`.
-- Reserve `ai_open_review_tab(...)` for the explicit header button inside the right-side pane.
-- Keep `ai_inline_review_selected_row_id_by_thread` as the thread-scoped open/close state for V1.
+- thread start snapshot
+- turn-by-turn workspace base snapshot
+- cumulative patch application history with strong ordering guarantees for a full thread replay
 
-Recommended cleanup:
+We can add a thread-level feature later once we decide what a “thread diff” should mean exactly.
 
-- Replace the generic `open_review_tab: bool` on `AiWorkspaceBlock` with a more explicit primary action enum, for example:
-  - `None`
-  - `OpenInlineReviewPane`
-- This avoids the current ambiguity where the only action available on a diff-summary row is a tab switch.
+## Snapshot Construction Strategy
+
+### Historical turn diff snapshot
+
+Input:
+
+- unified patch text from `AiState.turn_diffs[turn_key]`
+
+Output:
+
+- synthetic `CompareSnapshot`
+
+Construction approach:
+
+- split the unified patch into per-file patches
+- derive changed file paths and statuses from patch headers
+- compute line stats per file from the patch text
+- populate:
+  - `files`
+  - `file_line_stats`
+  - `overall_line_stats`
+  - `patches_by_path`
+
+Then:
+
+- build `ReviewWorkspaceSession::from_compare_snapshot(...)`
+- render in the AI pane using the existing unified AI surface
+
+### Historical file-change and grouped-batch snapshots
+
+Input:
+
+- clicked `fileChange` row or grouped `file_change_batch` row
+
+Output:
+
+- synthetic `CompareSnapshot`
+
+Construction approach:
+
+- resolve the clicked row back to its parent turn
+- load the persisted unified patch text from `AiState.turn_diffs[turn_key]`
+- parse that unified patch exactly once into per-file snapshot entries
+
+This keeps AI historical rendering stable after commits/pushes and avoids reconstructing patches from per-item payloads that may not remain canonical over time.
+
+### Working-tree snapshot
+
+Use the existing Review compare-selection pipeline:
+
+- selected thread workspace root
+- worktree/current-branch default pair
+- existing Git compare loading in `crates/hunk-git`
+
+This mode should not introduce a second Git diff implementation.
+
+## UI And Interaction Plan
+
+### Right-side pane header
+
+The AI diff pane header should include:
+
+- title, for example `Diff`
+- source chip or subtitle:
+  - `AI Diff`
+  - `Working Tree`
+- mode switch control
+- `Open in Review`
+- `Close`
+
+Recommended V1 control:
+
+- a compact segmented control or paired icon/text buttons:
+  - `AI Diff`
+  - `Working Tree`
+
+### AI toolbar button
+
+In AI mode, add a diff-viewer button in the top-right toolbar cluster:
+
+- place it immediately to the left of the existing “open workspace in preferred editor” action
+- use an icon-only presentation
+- tooltip should explain:
+  - `Open working tree diff (Cmd/Ctrl+D)`
+
+Behavior:
+
+- if a current AI thread/workspace can resolve to a valid diff source, open the pane in `Working Tree` mode
+- if the pane is already open in `AI Diff`, switch it in place to `Working Tree`
+- if the pane is already open in `Working Tree`, keep it open
+- if there is no eligible AI diff source for the current thread, keep the button disabled
+
+### Keyboard shortcut
+
+Add a new action, for example:
+
+- `OpenAiWorkingTreeDiffViewer`
+
+Bind it in the AI workspace to:
+
+- `cmd-d` on macOS
+- `ctrl-d` elsewhere
+
+Expected behavior:
+
+- only active in `AiWorkspace`
+- opens the right-side pane in `Working Tree` mode
+- reuses the last selected/open row for the current thread when possible
+
+### AI timeline block behavior
+
+Clicking a diff-summary block in the AI timeline should:
+
+- open the AI pane if it is closed
+- select the clicked historical diff source
+- switch the pane into `AI Diff` mode
+
+The pane header should offer `Working Tree` as a switch from that point.
+
+### Switching modes
+
+When the user switches between `AI Diff` and `Working Tree`:
+
+- keep the pane open
+- keep the selected AI row/thread anchor
+- rebuild only the AI pane session source
+- do not switch tabs
+
+## Detailed Engineering To-Do List
+
+### Task 1. Update the documented product contract
+
+Goal:
+
+- make the AI pane’s source semantics explicit before code changes continue
+
+To-do:
+
+- document the AI-vs-Working-Tree mode split
+- document toolbar button placement and shortcut behavior
+- document that Review stays live/current
 
 Expected file touches:
 
-- `crates/hunk-desktop/src/app/ai_workspace_session.rs`
-- `crates/hunk-desktop/src/app/ai_workspace_render.rs`
-- `crates/hunk-desktop/src/app/ai_workspace_surface.rs`
-- `crates/hunk-desktop/src/app/controller/ai/workspace_surface.rs`
-- `crates/hunk-desktop/src/app/render/ai_workspace_sections.rs`
+- `docs/AI_INLINE_DIFF_IMPLEMENTATION_PLAN.md`
 
-### Phase 2. Factor shared diff-display ownership away from Review-tab-only surface state
+### Task 2. Add AI diff-viewer source state
 
-Goal: let both the Review tab and AI right-side pane consume the same compare session and display rows without sharing scroll/layout state.
+Goal:
 
-Changes:
+- give the AI pane enough state to know what to render and how
 
-- Lift the display-row producer currently hidden behind `ReviewWorkspaceSurfaceOwner` into a shared owner/coordinator object.
-- Keep one shared source of:
-  - left/right workspace editors
-  - `build_display_rows_for_viewport(...)`
-  - syntax spans by display row
-- Leave `ReviewWorkspaceSurfaceState` responsible only for Review-tab viewport state.
-- Introduce an `AiInlineReviewSurfaceState` for:
-  - scroll handle
-  - cached inline viewport snapshot
-  - inline line-number width state
-  - inline selected row/path if needed
+To-do:
 
-Why this matters:
-
-- It preserves reuse where it is valuable.
-- It prevents AI and Review from fighting over one scroll position and one viewport cache.
-- It avoids forcing unified rendering into a side-by-side state object.
+- add AI-only source mode enum
+- add AI-only selected source descriptor enum
+- add AI-only loaded session/error/loading state
+- preserve existing thread-scoped selected row state
 
 Expected file touches:
 
 - `crates/hunk-desktop/src/app.rs`
-- `crates/hunk-desktop/src/app/controller/review_compare.rs`
-- `crates/hunk-desktop/src/app/controller/core_runtime.rs`
+- `crates/hunk-desktop/src/app/controller/core_bootstrap.rs`
 - `crates/hunk-desktop/src/app/controller/ai/core_workspace.rs`
 
-### Phase 3. Build an AI-specific unified viewport snapshot for the right-side pane
+### Task 3. Build historical AI snapshots from stored diff artifacts
 
-Goal: transform the existing review display-row output into stacked right-pane rows without recomputing syntax.
+Goal:
 
-Recommended structure:
+- convert AI row data into a synthetic `CompareSnapshot`
 
-- Add a new module such as `crates/hunk-desktop/src/app/ai_inline_review_session.rs`.
-- Keep `review_workspace_session.rs` focused on shared compare/session logic.
-- Build the AI right-pane viewport from:
-  - `ReviewWorkspaceSession`
-  - shared display rows
-  - shared syntax spans
-  - shared changed-range caches
+To-do:
 
-Projection rules:
-
-- Preserve file headers and hunk headers.
-- For unchanged/context lines, emit one unified row that shows both old and new line numbers.
-- For removed-only rows, emit one removed row.
-- For added-only rows, emit one added row.
-- For modified pairs, emit two visual rows in order:
-  - removed
-  - added
-- Preserve wrapped display-row order by projecting from `ReviewWorkspaceDisplayRowEntry` rather than reconstructing from raw patch text.
-
-Important detail:
-
-- The AI right-side pane should consume the existing display-row/syntax-span output, not raw diff-summary text from the AI timeline row.
-- That is what keeps syntax highlighting, wrapping, and changed-range emphasis aligned with the Review tab.
+- add a dedicated builder module, for example:
+  - `crates/hunk-desktop/src/app/ai_inline_review_snapshot.rs`
+- implement:
+  - turn diff patch parsing
+  - row-to-turn resolution for historical AI rows
+- reuse existing diff/session parsing and line-stat computation where possible
 
 Expected file touches:
 
-- New: `crates/hunk-desktop/src/app/ai_inline_review_session.rs`
-- `crates/hunk-desktop/src/app/review_workspace_session.rs`
-- `crates/hunk-desktop/src/app/controller/core_runtime.rs`
+- New: `crates/hunk-desktop/src/app/ai_inline_review_snapshot.rs`
+- `crates/hunk-desktop/src/app/ai_workspace_timeline_projection.rs` if helper extraction is needed
 
-### Phase 4. Extract shared text-run building for syntax and changed-range painting
+### Task 4. Load AI historical sessions without touching Review state
 
-Goal: avoid duplicating the logic that turns syntax spans and changed ranges into painted runs.
+Goal:
 
-Changes:
+- make the AI pane render from its own session source
 
-- Extract the reusable portion of `build_review_workspace_text_runs(...)` from `render/review_workspace_code_row.rs` into a small shared helper.
-- Reuse the same theme-token mapping and changed-range background treatment in both renderers.
-- Keep Review-side rendering side-by-side and AI-side rendering unified, but both should draw from the same text styling helper.
+To-do:
 
-This gives the AI right-side pane:
-
-- the same syntax token palette
-- the same intraline changed highlighting quality
-- the same future color fixes whenever Review changes
-
-Expected file touches:
-
-- `crates/hunk-desktop/src/app/render/review_workspace_code_row.rs`
-- New helper module under `crates/hunk-desktop/src/app/render/`
-
-### Phase 5. Render the AI right-side diff pane
-
-Goal: replace the placeholder Review-surface embedding with a dedicated unified AI right-side diff surface.
-
-Recommended structure:
-
-- Add a renderer such as `crates/hunk-desktop/src/app/render/ai_inline_review_surface.rs`.
-- Keep the existing `h_resizable(...)` split in `ai_workspace_sections.rs`.
-- Use a dedicated scroll handle for the right-side diff body.
-
-Pane header should include:
-
-- title, for example `Diff`
-- short compare/source subtitle
-- `Open in Review`
-- `Close`
-
-Pane body should include:
-
-- virtualized painted viewport
-- sticky file headers
-- compact unified gutters
-- syntax-highlighted code rows
-- added/removed/context row backgrounds aligned with Review colors
-- loading, empty, and error states derived from the shared compare/session state
-
-V1 intentionally omits:
-
-- search bar
-- comment affordances
-- file-tree navigation inside the pane
-
-Those remain reasons to jump to Review.
+- add AI pane session refresh logic for:
+  - `Historical`
+  - `WorkingTree`
+- in historical mode:
+  - build synthetic snapshot from AI row source
+  - create `ReviewWorkspaceSession` from that snapshot
+- in working-tree mode:
+  - reuse current Review compare-selection logic
+  - build a live snapshot through the Git path
+- store the resulting session in AI-only state
 
 Expected file touches:
 
-- New: `crates/hunk-desktop/src/app/render/ai_inline_review_surface.rs`
+- `crates/hunk-desktop/src/app/controller/ai/workspace_surface.rs`
+- `crates/hunk-desktop/src/app/controller/ai/core_timeline.rs`
+- possibly a new AI-specific controller file if this logic grows
+
+### Task 5. Decouple AI rendering from `review_workspace_session`
+
+Goal:
+
+- stop the AI pane from reading the Review tab’s live session directly
+
+To-do:
+
+- update `render/ai_inline_review_surface.rs` to read from `ai_inline_review_session`
+- keep geometry, scroll, and syntax cache behavior the same
+- preserve virtualization and sticky headers
+
+Expected file touches:
+
+- `crates/hunk-desktop/src/app/render/ai_inline_review_surface.rs`
+
+### Task 6. Add AI pane mode switching UI
+
+Goal:
+
+- let users switch between historical and working-tree diffs without leaving AI
+
+To-do:
+
+- add `AI Diff` and `Working Tree` controls to the AI pane header
+- default to `AI Diff` when the pane opens from a timeline block
+- allow `Working Tree` mode to rebuild the AI pane session in place
+
+Expected file touches:
+
 - `crates/hunk-desktop/src/app/render/ai_workspace_sections.rs`
-- `crates/hunk-desktop/src/app/theme.rs` if any new diff colors are required
-- `crates/hunk-desktop/src/app/workspace_surface.rs` if shared hit-testing helpers are worth extracting
+- AI controller files for action handlers
 
-### Phase 6. Hook up navigation and lifecycle rules
+### Task 7. Add toolbar button and shortcut
 
-Goal: make the feature feel predictable and not fragile.
+Goal:
 
-Rules:
+- let users open the working-tree diff viewer from the AI toolbar and keyboard
 
-- Opening a diff-summary row syncs compare selection to the selected thread/workspace, but keeps `WorkspaceViewMode::Ai`.
-- `Open in Review` reuses the existing `ai_open_review_tab(...)` flow.
-- Switching threads closes the pane if the selected row is no longer valid.
-- If compare loading starts again, the inline pane should show loading rather than stale content.
-- If the selected diff row disappears from the thread, clear the right-pane diff selection.
+To-do:
 
-Nice-to-have but not required for V1:
+- add a new global action:
+  - `OpenAiWorkingTreeDiffViewer`
+- add key bindings:
+  - `cmd-d`
+  - `ctrl-d`
+- render the toolbar icon button in AI mode beside the editor-open action
+- disable it when there is no valid AI diff source
 
-- persist the right-pane width
-- persist right-pane selected file/row per thread
+Expected file touches:
 
-### Phase 7. Testing and verification
+- `crates/hunk-desktop/src/app.rs`
+- `crates/hunk-desktop/src/app/render/toolbar.rs`
+- AI controller action handler files
+- config/keybinding files if shortcuts are centrally declared there
 
-Add targeted tests before running the full workspace verification pass.
+### Task 8. Refine open/close lifecycle behavior
 
-Unit and render tests:
+Goal:
 
-- `ai_workspace_render_tests.rs`
-  - diff-summary click opens the right-side pane instead of switching tabs
-  - non-diff blocks do not trigger inline review
-- controller tests under `controller/ai/tests`
-  - thread-scoped right-pane review selection persists correctly
-  - invalid selected rows are pruned when timeline rows rebuild
-- new inline review snapshot tests
-  - modified line pair renders as removed then added
-  - unchanged lines render once with both line numbers
-  - file and hunk headers remain stable
-  - syntax spans survive projection into unified rows
+- make the pane feel predictable across thread switches and stale rows
 
-Manual QA checklist:
+To-do:
 
-- open diff from AI without losing composer draft or thread position
-- resize pane and confirm timeline/composer remain usable
-- open full Review from the pane header
-- verify Rust, TS/JS, Markdown, and shell diffs show syntax colors
-- verify large diffs stay smooth while scrolling
+- closing the pane should preserve the last selected source per thread
+- toolbar reopen should restore the last selected row anchor and open in `Working Tree`
+- switching threads should update availability and preserve per-thread memory
+- if a selected row disappears, clear only that thread’s invalid source
+- if historical data is missing, show a clear empty/error state instead of a blank pane
 
-End-of-task verification:
+Expected file touches:
 
-- run workspace build once
-- run workspace clippy once
-- run the relevant tests once
+- `crates/hunk-desktop/src/app/controller/ai/core_workspace.rs`
+- `crates/hunk-desktop/src/app/controller/ai/core_timeline.rs`
+- `crates/hunk-desktop/src/app/controller/ai/workspace_surface.rs`
+
+### Task 9. Testing
+
+Goal:
+
+- cover the new source semantics and avoid regressions
+
+To-do:
+
+- add snapshot-construction tests for:
+  - turn diffs
+- add controller tests for:
+  - default AI pane mode is `AI Diff`
+  - switching to `Working Tree` rebuilds correctly
+  - committed historical turns still render
+  - toolbar/shortcut open working-tree mode for the current thread/workspace
+- keep existing Review behavior tests intact
+
+Expected file touches:
+
+- `crates/hunk-desktop/src/app/controller/ai/tests/runtime_path_and_session.rs`
+- `crates/hunk-desktop/src/app/controller/ai/tests/timeline.rs`
+- New AI historical snapshot tests if needed
 
 ## Risks
 
-### Shared owner refactor risk
+### Risk 1. Repeated edits to the same file inside one grouped batch
 
-Pulling display-row generation out of `ReviewWorkspaceSurfaceState` touches a central path. Keep the refactor small and mechanical before adding the unified right-pane renderer.
+If a grouped file-change batch contains multiple diffs for the same file, composing them into one patch may be tricky.
 
-### Unified-row projection complexity
+Mitigation:
 
-Projecting wrapped left/right display rows into a readable unified stream is the trickiest logic in the feature. That should be isolated in its own module with dedicated tests.
+- isolate patch-composition logic
+- add tests
+- allow a conservative V1 fallback if necessary
 
-### Accidental second diff pipeline
+### Risk 2. Session duplication cost
 
-Do not render the AI pane from timeline summary strings or ad hoc patch parsing. That would immediately diverge from Review quality and create two syntax/highlight paths to maintain.
+Separate AI and Review sessions can increase memory and loading work.
+
+Mitigation:
+
+- only load the AI session when the pane is open
+- keep virtualization and segment caching unchanged
+- reuse the existing `ReviewWorkspaceSession` implementation rather than duplicating renderer logic
+
+### Risk 3. Confusing source semantics
+
+Users may not understand whether they are seeing historical or live data.
+
+Mitigation:
+
+- explicit mode labels
+- toolbar tooltip
+- clear pane subtitle
 
 ## Open Questions
 
-- Is the current thread-level compare snapshot sufficient for V1, or do we eventually need true turn-scoped historical diffs?
-- Should the AI right-side pane expose file-header `Open file` actions in V1, or should that remain Review-only?
-- Do we want to persist right-pane width and selected file per thread in the first pass, or keep V1 stateless beyond open/closed row selection?
+- For grouped `file_change_batch` rows, should repeated edits to the same file be rendered as:
+  - one composed file patch
+  - multiple file sections in sequence
+- When the toolbar button opens the pane and no diff row has ever been selected in the thread, should it:
+  - pick the newest available diff row automatically
+  - stay disabled until the user clicks a timeline block
 
-## Recommended Order Of Work
+Recommended V1 answer:
 
-1. Wire diff-summary clicks to the existing right-pane selection state.
-2. Split shared diff-display ownership from per-surface state.
-3. Add the unified inline snapshot/projection module.
-4. Extract shared text-run painting helpers.
-5. Render the new AI right-side diff pane and header actions.
-6. Add tests, then run build/clippy/test verification once at the end.
+- pick the newest available diff row automatically so the toolbar button is useful immediately
+
+## Recommended Delivery Order
+
+1. Land the doc and product contract.
+2. Add AI pane source state and AI-only session ownership.
+3. Implement historical snapshot builders.
+4. Repoint AI pane rendering to the AI-only session.
+5. Add source-mode switcher in the pane header.
+6. Add toolbar button and `Cmd/Ctrl+D`.
+7. Add regression tests.
+8. Run plain `cargo build --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test -p hunk-desktop`.

@@ -115,6 +115,42 @@ impl Element for AiInlineReviewSurfaceElement {
 }
 
 impl DiffViewer {
+    fn render_ai_inline_review_status_surface(&self, cx: &mut Context<Self>) -> AnyElement {
+        if self.current_ai_inline_review_mode() == AiInlineReviewMode::WorkingTree {
+            return self.render_review_workspace_status_surface(cx);
+        }
+
+        let message = self
+            .ai_inline_review_error
+            .clone()
+            .or_else(|| self.ai_inline_review_status_message.clone())
+            .unwrap_or_else(|| {
+                if self.ai_inline_review_session.is_some() {
+                    "AI diff loaded, but the inline surface is unavailable. Reopen the diff to reload."
+                        .to_string()
+                } else {
+                    "Select an AI code-change block to load a historical diff.".to_string()
+                }
+            });
+
+        div()
+            .size_full()
+            .child(
+                v_flex()
+                    .size_full()
+                    .items_center()
+                    .justify_center()
+                    .px_4()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(message),
+                    ),
+            )
+            .into_any_element()
+    }
+
     fn current_ai_inline_review_surface_scroll_top_px(&self) -> usize {
         self.ai_inline_review_surface
             .diff_scroll_handle
@@ -137,17 +173,17 @@ impl DiffViewer {
     fn current_ai_inline_review_surface_snapshot(
         &mut self,
     ) -> Option<crate::app::ai_inline_review::AiInlineReviewSurfaceSnapshot> {
+        self.ai_sync_historical_inline_review_session_if_needed();
         let scroll_top_px = self.current_ai_inline_review_surface_scroll_top_px();
         let viewport_bounds = self.ai_inline_review_surface.diff_scroll_handle.bounds();
         let viewport_height_px = viewport_bounds.size.height.max(Pixels::ZERO).as_f32().round()
             as usize;
+        let session_row_count = self.active_review_workspace_session()?.row_count();
 
         if self.ai_inline_review_surface.geometry.as_ref().is_none_or(|geometry| {
-            self.review_workspace_session
-                .as_ref()
-                .is_some_and(|session| geometry.row_count() != session.row_count())
+            geometry.row_count() != session_row_count
         }) {
-            let session = self.review_workspace_session.as_ref()?;
+            let session = self.active_review_workspace_session()?;
             self.ai_inline_review_surface.geometry =
                 Some(crate::app::ai_inline_review::AiInlineReviewDisplayGeometry::build(
                     session,
@@ -159,7 +195,7 @@ impl DiffViewer {
             scroll_top_px,
             viewport_height_px.max(1),
             crate::app::ai_inline_review::AI_INLINE_REVIEW_OVERSCAN_ROWS,
-        ) && let Some(session) = self.review_workspace_session.as_mut()
+        ) && let Some(session) = self.active_review_workspace_session_mut()
         {
             crate::app::ai_inline_review::ensure_ai_inline_review_visible_row_caches(
                 session,
@@ -167,7 +203,7 @@ impl DiffViewer {
             );
         }
 
-        let session = self.review_workspace_session.as_ref()?;
+        let session = self.active_review_workspace_session()?;
         Some(crate::app::ai_inline_review::build_ai_inline_review_surface_snapshot(
             &geometry,
             session,
@@ -182,8 +218,7 @@ impl DiffViewer {
         let scroll_handle = self.ai_inline_review_surface.diff_scroll_handle.clone();
         let scrollbar_size = px(AI_INLINE_REVIEW_SCROLLBAR_SIZE);
         let (old_digits, new_digits) = self
-            .review_workspace_session
-            .as_ref()
+            .active_review_workspace_session()
             .map(|session| session.line_number_digit_widths())
             .unwrap_or((DIFF_LINE_NUMBER_MIN_DIGITS, DIFF_LINE_NUMBER_MIN_DIGITS));
         let old_line_number_width = crate::app::data::line_number_column_width(old_digits);
@@ -253,7 +288,7 @@ impl DiffViewer {
                 .into_any_element();
         }
 
-        self.render_review_workspace_status_surface(cx)
+        self.render_ai_inline_review_status_surface(cx)
     }
 }
 
@@ -440,6 +475,10 @@ fn paint_ai_inline_review_meta_row(
         },
         meta.border,
     ));
+    if row_kind == DiffRowKind::HunkHeader {
+        return;
+    }
+
     window.paint_quad(fill(
         Bounds {
             origin: bounds.origin,
@@ -447,10 +486,6 @@ fn paint_ai_inline_review_meta_row(
         },
         meta.accent,
     ));
-
-    if row_kind == DiffRowKind::HunkHeader && text.trim().is_empty() {
-        return;
-    }
 
     let text_style = gpui::TextStyle {
         color: meta.foreground,

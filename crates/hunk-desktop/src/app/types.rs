@@ -266,6 +266,30 @@ struct AiResolvedCurrentState {
     workspace_key: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum AiInlineReviewMode {
+    #[default]
+    Historical,
+    WorkingTree,
+}
+
+impl AiInlineReviewMode {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Historical => "AI Diff",
+            Self::WorkingTree => "Working Tree",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AiInlineReviewLoadedState {
+    thread_id: String,
+    row_id: String,
+    row_last_sequence: u64,
+    mode: AiInlineReviewMode,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AiPromptSkillReference {
     pub(crate) name: String,
@@ -551,6 +575,7 @@ struct AiWorkspaceState {
     interrupt_restore_queued_thread_ids: BTreeSet<String>,
     timeline_follow_output: bool,
     inline_review_selected_row_id_by_thread: BTreeMap<String, String>,
+    inline_review_mode_by_thread: BTreeMap<String, AiInlineReviewMode>,
     thread_title_refresh_state_by_thread: BTreeMap<String, AiThreadTitleRefreshState>,
     timeline_visible_turn_limit_by_thread: BTreeMap<String, usize>,
     in_progress_turn_started_at: BTreeMap<String, Instant>,
@@ -601,6 +626,7 @@ impl Default for AiWorkspaceState {
             interrupt_restore_queued_thread_ids: BTreeSet::new(),
             timeline_follow_output: true,
             inline_review_selected_row_id_by_thread: BTreeMap::new(),
+            inline_review_mode_by_thread: BTreeMap::new(),
             thread_title_refresh_state_by_thread: BTreeMap::new(),
             timeline_visible_turn_limit_by_thread: BTreeMap::new(),
             in_progress_turn_started_at: BTreeMap::new(),

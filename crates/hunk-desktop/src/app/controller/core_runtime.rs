@@ -1,4 +1,38 @@
 impl DiffViewer {
+    pub(super) fn active_review_workspace_session(
+        &self,
+    ) -> Option<&review_workspace_session::ReviewWorkspaceSession> {
+        if self.workspace_view_mode == WorkspaceViewMode::Ai && self.ai_inline_review_is_open() {
+            return match self.current_ai_inline_review_mode() {
+                AiInlineReviewMode::Historical => self.ai_inline_review_session.as_ref(),
+                AiInlineReviewMode::WorkingTree => self.review_workspace_session.as_ref(),
+            };
+        }
+
+        if self.workspace_view_mode == WorkspaceViewMode::Diff {
+            return self.review_workspace_session.as_ref();
+        }
+
+        None
+    }
+
+    pub(super) fn active_review_workspace_session_mut(
+        &mut self,
+    ) -> Option<&mut review_workspace_session::ReviewWorkspaceSession> {
+        if self.workspace_view_mode == WorkspaceViewMode::Ai && self.ai_inline_review_is_open() {
+            return match self.current_ai_inline_review_mode() {
+                AiInlineReviewMode::Historical => self.ai_inline_review_session.as_mut(),
+                AiInlineReviewMode::WorkingTree => self.review_workspace_session.as_mut(),
+            };
+        }
+
+        if self.workspace_view_mode == WorkspaceViewMode::Diff {
+            return self.review_workspace_session.as_mut();
+        }
+
+        None
+    }
+
     pub(super) fn review_surface_snapshot_options(
         &self,
     ) -> review_workspace_session::ReviewWorkspaceSurfaceOptions {
@@ -31,8 +65,7 @@ impl DiffViewer {
             comment_affordance_rows.insert(row_ix);
         }
         let view_file_enabled_paths = self
-            .review_workspace_session
-            .as_ref()
+            .active_review_workspace_session()
             .map(|session| {
                 session
                     .file_ranges()
@@ -46,8 +79,7 @@ impl DiffViewer {
             .unwrap_or_default();
 
         let search_highlight_columns_by_row = self
-            .review_workspace_session
-            .as_ref()
+            .active_review_workspace_session()
             .map(|session| {
                 session.build_search_highlight_columns_by_row(
                     &self.review_surface.workspace_search_matches,
@@ -335,8 +367,7 @@ impl DiffViewer {
 
     pub(super) fn active_diff_row_count(&self) -> usize {
         if self.workspace_view_mode == WorkspaceViewMode::Diff || self.ai_inline_review_is_open() {
-            self.review_workspace_session
-                .as_ref()
+            self.active_review_workspace_session()
                 .map(|session| session.row_count())
                 .unwrap_or(0)
         } else {
@@ -345,20 +376,20 @@ impl DiffViewer {
     }
 
     pub(super) fn active_diff_row(&self, row_ix: usize) -> Option<&SideBySideRow> {
-        (self.workspace_view_mode == WorkspaceViewMode::Diff)
+        (self.workspace_view_mode == WorkspaceViewMode::Diff
+            || (self.workspace_view_mode == WorkspaceViewMode::Ai && self.ai_inline_review_is_open()))
             .then(|| {
-                self.review_workspace_session
-                    .as_ref()
+                self.active_review_workspace_session()
                     .and_then(|session| session.row(row_ix))
             })
             .flatten()
     }
 
     pub(super) fn active_diff_row_metadata(&self, row_ix: usize) -> Option<&DiffStreamRowMeta> {
-        (self.workspace_view_mode == WorkspaceViewMode::Diff)
+        (self.workspace_view_mode == WorkspaceViewMode::Diff
+            || (self.workspace_view_mode == WorkspaceViewMode::Ai && self.ai_inline_review_is_open()))
             .then(|| {
-                self.review_workspace_session
-                    .as_ref()
+                self.active_review_workspace_session()
                     .and_then(|session| session.row_metadata(row_ix))
             })
             .flatten()

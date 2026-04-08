@@ -504,6 +504,7 @@ impl DiffViewer {
             inline_review_selected_row_id_by_thread: self
                 .ai_inline_review_selected_row_id_by_thread
                 .clone(),
+            inline_review_mode_by_thread: self.ai_inline_review_mode_by_thread.clone(),
             thread_title_refresh_state_by_thread: self
                 .ai_thread_title_refresh_state_by_thread
                 .clone(),
@@ -567,6 +568,12 @@ impl DiffViewer {
         self.ai_timeline_follow_output = state.timeline_follow_output;
         self.ai_inline_review_selected_row_id_by_thread =
             state.inline_review_selected_row_id_by_thread;
+        self.ai_inline_review_mode_by_thread = state.inline_review_mode_by_thread;
+        self.ai_inline_review_session = None;
+        self.ai_inline_review_loaded_state = None;
+        self.ai_inline_review_error = None;
+        self.ai_inline_review_status_message = None;
+        self.ai_inline_review_surface.clear_runtime_state();
         self.ai_thread_title_refresh_state_by_thread = state.thread_title_refresh_state_by_thread;
         self.ai_timeline_visible_turn_limit_by_thread = state.timeline_visible_turn_limit_by_thread;
         self.ai_in_progress_turn_started_at = state.in_progress_turn_started_at;
@@ -613,6 +620,8 @@ impl DiffViewer {
         self.ai_timeline_visible_turn_limit_by_thread
             .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
         self.ai_inline_review_selected_row_id_by_thread
+            .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
+        self.ai_inline_review_mode_by_thread
             .retain(|thread_id, _| self.ai_state_snapshot.threads.contains_key(thread_id));
         self.ai_review_mode_thread_ids
             .retain(|thread_id| self.ai_state_snapshot.threads.contains_key(thread_id));

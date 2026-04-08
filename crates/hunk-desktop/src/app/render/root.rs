@@ -609,6 +609,7 @@ impl Render for DiffViewer {
             .on_action(cx.listener(Self::ai_toggle_terminal_drawer_shortcut_action))
             .on_action(cx.listener(Self::ai_new_thread_action))
             .on_action(cx.listener(Self::ai_new_worktree_thread_shortcut_action))
+            .on_action(cx.listener(Self::ai_open_working_tree_diff_viewer_action))
             .on_action(cx.listener(Self::open_project_action))
             .on_action(cx.listener(Self::quick_open_file_action))
             .on_action(cx.listener(Self::save_current_file_action))

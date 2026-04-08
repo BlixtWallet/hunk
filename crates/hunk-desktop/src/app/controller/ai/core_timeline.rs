@@ -103,6 +103,10 @@ impl DiffViewer {
     pub(super) fn ai_open_review_tab(&mut self, cx: &mut Context<Self>) {
         self.ai_sync_review_compare_to_selected_thread(cx);
         self.set_workspace_view_mode(WorkspaceViewMode::Diff, cx);
+        if !self.review_compare_loading && !self.should_reuse_loaded_review_compare() {
+            self.scroll_selected_after_reload = true;
+            self.request_review_compare_refresh(cx);
+        }
     }
 
     fn ai_sync_review_compare_to_selected_thread(&mut self, cx: &mut Context<Self>) {
@@ -131,6 +135,7 @@ impl DiffViewer {
         }
 
         if self.ai_inline_review_is_open()
+            && self.current_ai_inline_review_mode() == AiInlineReviewMode::WorkingTree
             && !self.review_compare_loading
             && !self.should_reuse_loaded_review_compare()
         {

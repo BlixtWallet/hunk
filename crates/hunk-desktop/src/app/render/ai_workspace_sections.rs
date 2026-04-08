@@ -917,6 +917,38 @@ impl DiffViewer {
                                     .child(format!("Branch: {}", state.active_branch)),
                             )
                             .child({
+                        let view = view.clone();
+                        let diff_button_enabled = self.ai_can_open_inline_review_for_current_thread();
+                        let diff_button_active =
+                            self.ai_inline_review_is_open()
+                                && self.current_ai_inline_review_mode()
+                                    == AiInlineReviewMode::WorkingTree;
+                        Button::new("ai-open-working-tree-diff")
+                            .compact()
+                            .outline()
+                            .with_size(gpui_component::Size::Small)
+                            .rounded(px(8.0))
+                            .icon(Icon::new(HunkIconName::FileDiff).size(px(14.0)))
+                            .tooltip(if diff_button_enabled {
+                                if diff_button_active {
+                                    "Close working tree diff (Cmd/Ctrl+D)"
+                                } else {
+                                    "Open working tree diff (Cmd/Ctrl+D)"
+                                }
+                            } else {
+                                "No AI diff is available for the current thread yet"
+                            })
+                            .disabled(!diff_button_enabled)
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.ai_toggle_inline_review_for_current_thread_in_mode(
+                                        AiInlineReviewMode::WorkingTree,
+                                        cx,
+                                    );
+                                });
+                            })
+                    })
+                            .child({
                         let view_for_primary = view.clone();
                         let view_for_menu = view.clone();
                         let available_project_open_targets =
@@ -1415,6 +1447,11 @@ impl DiffViewer {
         is_dark: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let current_mode = self.current_ai_inline_review_mode();
+        let pane_subtitle = match current_mode {
+            AiInlineReviewMode::Historical => "Historical AI diff for the selected turn",
+            AiInlineReviewMode::WorkingTree => "Current working tree diff for this thread workspace",
+        };
         v_flex()
             .size_full()
             .min_h_0()
@@ -1446,13 +1483,57 @@ impl DiffViewer {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("Right-side AI diff pane"),
+                                    .child(pane_subtitle),
                             ),
                     )
                     .child(
                         h_flex()
                             .items_center()
                             .gap_2()
+                            .child({
+                                let active = current_mode == AiInlineReviewMode::Historical;
+                                let view = view.clone();
+                                let button = Button::new("ai-inline-review-mode-historical")
+                                    .compact()
+                                    .with_size(gpui_component::Size::Small)
+                                    .rounded(px(8.0))
+                                    .label(AiInlineReviewMode::Historical.label());
+                                if active {
+                                    button.outline()
+                                } else {
+                                    button.ghost()
+                                }
+                                .on_click(move |_, _, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.ai_set_inline_review_mode(
+                                            AiInlineReviewMode::Historical,
+                                            cx,
+                                        );
+                                    });
+                                })
+                            })
+                            .child({
+                                let active = current_mode == AiInlineReviewMode::WorkingTree;
+                                let view = view.clone();
+                                let button = Button::new("ai-inline-review-mode-working-tree")
+                                    .compact()
+                                    .with_size(gpui_component::Size::Small)
+                                    .rounded(px(8.0))
+                                    .label(AiInlineReviewMode::WorkingTree.label());
+                                if active {
+                                    button.outline()
+                                } else {
+                                    button.ghost()
+                                }
+                                .on_click(move |_, _, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.ai_set_inline_review_mode(
+                                            AiInlineReviewMode::WorkingTree,
+                                            cx,
+                                        );
+                                    });
+                                })
+                            })
                             .child({
                                 let view = view.clone();
                                 Button::new("ai-inline-review-open-review")

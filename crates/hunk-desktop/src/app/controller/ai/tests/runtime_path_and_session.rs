@@ -108,6 +108,38 @@ fn review_compare_selection_ids_for_workspace_root_prefers_worktree_branch_over_
 }
 
 #[test]
+fn review_compare_selection_ids_for_workspace_root_uses_primary_checkout_branch_for_regular_projects() {
+    let mut primary = workspace_target(
+        "primary",
+        WorkspaceTargetKind::PrimaryCheckout,
+        "/repo",
+        "Primary Checkout",
+    );
+    primary.branch_name = "feature/local".to_string();
+
+    let workspace_targets = vec![primary.clone()];
+    let sources = vec![
+        ReviewCompareSourceOption::from_workspace_target(&primary),
+        ReviewCompareSourceOption::from_branch(&local_branch("main", false)),
+        ReviewCompareSourceOption::from_branch(&local_branch("feature/local", true)),
+    ];
+
+    assert_eq!(
+        review_compare_selection_ids_for_workspace_root(
+            &sources,
+            &workspace_targets,
+            std::path::Path::new("/repo"),
+            Some("main"),
+            Some("main"),
+        ),
+        Some((
+            Some("branch:feature/local".to_string()),
+            Some(sources[0].id.clone()),
+        )),
+    );
+}
+
+#[test]
 fn review_compare_selection_ids_for_workspace_root_falls_back_to_base_branch_when_worktree_branch_is_missing() {
     let mut primary = workspace_target(
         "primary",

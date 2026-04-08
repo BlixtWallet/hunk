@@ -2,7 +2,7 @@ set windows-shell := ["pwsh", "-Command"]
 set export
 
 start-mac:
-    ./scripts/run_with_macos_sdk_env.sh cargo run -p hunk-desktop
+    cargo run -p hunk-desktop
 
 start-windows:
     pwsh ./scripts/run_windows_dev.ps1

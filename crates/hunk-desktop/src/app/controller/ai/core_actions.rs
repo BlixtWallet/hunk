@@ -176,6 +176,21 @@ impl DiffViewer {
         self.ai_start_thread_draft(AiNewThreadStartMode::Worktree, window, cx);
     }
 
+    pub(super) fn ai_open_working_tree_diff_viewer_action(
+        &mut self,
+        _: &AiOpenWorkingTreeDiffViewer,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.workspace_view_mode != WorkspaceViewMode::Ai {
+            return;
+        }
+        self.ai_toggle_inline_review_for_current_thread_in_mode(
+            AiInlineReviewMode::WorkingTree,
+            cx,
+        );
+    }
+
     pub(super) fn ai_select_new_thread_start_mode_action(
         &mut self,
         start_mode: AiNewThreadStartMode,
