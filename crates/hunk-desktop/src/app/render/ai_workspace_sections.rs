@@ -1374,13 +1374,12 @@ impl DiffViewer {
                 .w_full()
                 .child(
                     h_resizable("hunk-ai-timeline-review-split")
-                        .size_full()
                         .child(
                             resizable_panel()
                                 .size(px(720.0))
                                 .size_range(px(420.0)..px(1280.0))
                                 .child(
-                                    div()
+                                    v_flex()
                                         .size_full()
                                         .min_h_0()
                                         .min_w_0()
