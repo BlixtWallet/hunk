@@ -67,7 +67,7 @@ fn background_branch_name_for_worktree_skips_missing_generation() {
 }
 
 #[test]
-fn review_compare_selection_ids_for_workspace_root_prefers_base_branch_over_worktree_branch() {
+fn review_compare_selection_ids_for_workspace_root_prefers_worktree_branch_over_base_branch() {
     let mut primary = workspace_target(
         "primary",
         WorkspaceTargetKind::PrimaryCheckout,
@@ -100,12 +100,47 @@ fn review_compare_selection_ids_for_workspace_root_prefers_base_branch_over_work
             Some("main"),
             Some("main"),
         ),
-        Some((Some("branch:main".to_string()), Some(sources[1].id.clone()))),
+        Some((
+            Some("branch:feature/task-1".to_string()),
+            Some(sources[1].id.clone()),
+        )),
     );
 }
 
 #[test]
-fn review_compare_selection_ids_for_workspace_root_falls_back_to_worktree_branch() {
+fn review_compare_selection_ids_for_workspace_root_uses_primary_checkout_branch_for_regular_projects() {
+    let mut primary = workspace_target(
+        "primary",
+        WorkspaceTargetKind::PrimaryCheckout,
+        "/repo",
+        "Primary Checkout",
+    );
+    primary.branch_name = "feature/local".to_string();
+
+    let workspace_targets = vec![primary.clone()];
+    let sources = vec![
+        ReviewCompareSourceOption::from_workspace_target(&primary),
+        ReviewCompareSourceOption::from_branch(&local_branch("main", false)),
+        ReviewCompareSourceOption::from_branch(&local_branch("feature/local", true)),
+    ];
+
+    assert_eq!(
+        review_compare_selection_ids_for_workspace_root(
+            &sources,
+            &workspace_targets,
+            std::path::Path::new("/repo"),
+            Some("main"),
+            Some("main"),
+        ),
+        Some((
+            Some("branch:feature/local".to_string()),
+            Some(sources[0].id.clone()),
+        )),
+    );
+}
+
+#[test]
+fn review_compare_selection_ids_for_workspace_root_falls_back_to_base_branch_when_worktree_branch_is_missing() {
     let mut primary = workspace_target(
         "primary",
         WorkspaceTargetKind::PrimaryCheckout,
@@ -126,7 +161,7 @@ fn review_compare_selection_ids_for_workspace_root_falls_back_to_worktree_branch
     let sources = vec![
         ReviewCompareSourceOption::from_workspace_target(&primary),
         ReviewCompareSourceOption::from_workspace_target(&worktree),
-        ReviewCompareSourceOption::from_branch(&local_branch("feature/task-1", true)),
+        ReviewCompareSourceOption::from_branch(&local_branch("main", false)),
     ];
 
     assert_eq!(
@@ -137,15 +172,12 @@ fn review_compare_selection_ids_for_workspace_root_falls_back_to_worktree_branch
             Some("release/1.0"),
             Some("main"),
         ),
-        Some((
-            Some("branch:feature/task-1".to_string()),
-            Some(sources[1].id.clone()),
-        )),
+        Some((Some("branch:main".to_string()), Some(sources[1].id.clone()))),
     );
 }
 
 #[test]
-fn selected_git_workspace_review_compare_selection_ids_uses_active_workspace_target() {
+fn selected_git_workspace_review_compare_selection_ids_uses_worktree_branch_by_default() {
     let mut primary = workspace_target(
         "primary",
         WorkspaceTargetKind::PrimaryCheckout,
@@ -177,7 +209,10 @@ fn selected_git_workspace_review_compare_selection_ids_uses_active_workspace_tar
             Some(std::path::Path::new("/repo/worktrees/task-1")),
             Some("main"),
         ),
-        Some((Some("branch:main".to_string()), Some(sources[1].id.clone()))),
+        Some((
+            Some("branch:feature/task-1".to_string()),
+            Some(sources[1].id.clone()),
+        )),
     );
 }
 

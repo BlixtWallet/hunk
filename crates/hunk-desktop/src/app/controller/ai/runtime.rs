@@ -872,6 +872,7 @@ impl DiffViewer {
             interrupt_restore_queued_thread_ids: std::collections::BTreeSet::new(),
             timeline_follow_output: current_state.timeline_follow_output,
             inline_review_selected_row_id_by_thread: std::collections::BTreeMap::new(),
+            inline_review_mode_by_thread: std::collections::BTreeMap::new(),
             thread_title_refresh_state_by_thread: std::collections::BTreeMap::new(),
             timeline_visible_turn_limit_by_thread: std::collections::BTreeMap::new(),
             in_progress_turn_started_at: std::collections::BTreeMap::new(),

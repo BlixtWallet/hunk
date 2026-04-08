@@ -378,6 +378,7 @@
         assert!(!seeded.timeline_follow_output);
         assert!(seeded.thread_title_refresh_state_by_thread.is_empty());
         assert!(seeded.expanded_timeline_row_ids.is_empty());
+        assert!(seeded.inline_review_mode_by_thread.is_empty());
         assert_eq!(seeded.models.len(), 1);
         assert_eq!(seeded.selected_model.as_deref(), Some("gpt-5"));
         assert_eq!(seeded.selected_effort.as_deref(), Some("high"));

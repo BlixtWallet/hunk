@@ -917,6 +917,38 @@ impl DiffViewer {
                                     .child(format!("Branch: {}", state.active_branch)),
                             )
                             .child({
+                        let view = view.clone();
+                        let diff_button_enabled = self.ai_can_open_inline_review_for_current_thread();
+                        let diff_button_active =
+                            self.ai_inline_review_is_open()
+                                && self.current_ai_inline_review_mode()
+                                    == AiInlineReviewMode::WorkingTree;
+                        Button::new("ai-open-working-tree-diff")
+                            .compact()
+                            .outline()
+                            .with_size(gpui_component::Size::Small)
+                            .rounded(px(8.0))
+                            .icon(Icon::new(HunkIconName::FileDiff).size(px(14.0)))
+                            .tooltip(if diff_button_enabled {
+                                if diff_button_active {
+                                    "Close working tree diff (Cmd/Ctrl+D)"
+                                } else {
+                                    "Open working tree diff (Cmd/Ctrl+D)"
+                                }
+                            } else {
+                                "No AI diff is available for the current thread yet"
+                            })
+                            .disabled(!diff_button_enabled)
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.ai_toggle_inline_review_for_current_thread_in_mode(
+                                        AiInlineReviewMode::WorkingTree,
+                                        cx,
+                                    );
+                                });
+                            })
+                    })
+                            .child({
                         let view_for_primary = view.clone();
                         let view_for_menu = view.clone();
                         let available_project_open_targets =
@@ -1222,6 +1254,7 @@ impl DiffViewer {
         let timeline_column = v_flex()
             .flex_1()
             .min_h_0()
+            .min_w_0()
             .w_full()
             .gap_2()
             .when(state.show_no_turns_empty_state, |this| {
@@ -1366,18 +1399,41 @@ impl DiffViewer {
             });
 
         if state.inline_review_selected_row_id.is_some() {
-            return h_resizable("hunk-ai-timeline-review-split")
+            return div()
+                .flex_1()
+                .min_h_0()
+                .min_w_0()
+                .w_full()
                 .child(
-                    resizable_panel()
-                        .size(px(720.0))
-                        .size_range(px(420.0)..px(1280.0))
-                        .child(timeline_column),
-                )
-                .child(
-                    resizable_panel()
-                        .size(px(640.0))
-                        .size_range(px(360.0)..px(1280.0))
-                        .child(self.render_ai_inline_review_pane(view, is_dark, cx)),
+                    h_resizable("hunk-ai-timeline-review-split")
+                        .child(
+                            resizable_panel()
+                                .size(px(720.0))
+                                .size_range(px(420.0)..px(1280.0))
+                                .child(
+                                    v_flex()
+                                        .size_full()
+                                        .min_h_0()
+                                        .min_w_0()
+                                        .child(timeline_column),
+                                ),
+                        )
+                        .child(
+                            resizable_panel()
+                                .size(px(640.0))
+                                .size_range(px(360.0)..px(1280.0))
+                                .child(
+                                    div()
+                                        .size_full()
+                                        .min_h_0()
+                                        .min_w_0()
+                                        .child(
+                                            self.render_ai_inline_review_pane(
+                                                view, is_dark, cx,
+                                            ),
+                                        ),
+                                ),
+                        ),
                 )
                 .into_any_element();
         }
@@ -1391,6 +1447,11 @@ impl DiffViewer {
         is_dark: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let current_mode = self.current_ai_inline_review_mode();
+        let pane_subtitle = match current_mode {
+            AiInlineReviewMode::Historical => "Historical AI diff for the selected turn",
+            AiInlineReviewMode::WorkingTree => "Current working tree diff for this thread workspace",
+        };
         v_flex()
             .size_full()
             .min_h_0()
@@ -1416,35 +1477,98 @@ impl DiffViewer {
                                     .text_sm()
                                     .font_semibold()
                                     .text_color(cx.theme().foreground)
-                                    .child("Review"),
+                                    .child("Diff"),
                             )
                             .child(
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("Selected AI diff"),
+                                    .child(pane_subtitle),
                             ),
                     )
-                    .child({
-                        let view = view.clone();
-                        Button::new("ai-inline-review-close")
-                            .compact()
-                            .ghost()
-                            .with_size(gpui_component::Size::Small)
-                            .rounded(px(8.0))
-                            .label("Close")
-                            .on_click(move |_, _, cx| {
-                                view.update(cx, |this, cx| {
-                                    this.ai_close_inline_review_action(cx);
-                                });
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .gap_2()
+                            .child({
+                                let active = current_mode == AiInlineReviewMode::Historical;
+                                let view = view.clone();
+                                let button = Button::new("ai-inline-review-mode-historical")
+                                    .compact()
+                                    .with_size(gpui_component::Size::Small)
+                                    .rounded(px(8.0))
+                                    .label(AiInlineReviewMode::Historical.label());
+                                if active {
+                                    button.outline()
+                                } else {
+                                    button.ghost()
+                                }
+                                .on_click(move |_, _, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.ai_set_inline_review_mode(
+                                            AiInlineReviewMode::Historical,
+                                            cx,
+                                        );
+                                    });
+                                })
                             })
-                    }),
+                            .child({
+                                let active = current_mode == AiInlineReviewMode::WorkingTree;
+                                let view = view.clone();
+                                let button = Button::new("ai-inline-review-mode-working-tree")
+                                    .compact()
+                                    .with_size(gpui_component::Size::Small)
+                                    .rounded(px(8.0))
+                                    .label(AiInlineReviewMode::WorkingTree.label());
+                                if active {
+                                    button.outline()
+                                } else {
+                                    button.ghost()
+                                }
+                                .on_click(move |_, _, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.ai_set_inline_review_mode(
+                                            AiInlineReviewMode::WorkingTree,
+                                            cx,
+                                        );
+                                    });
+                                })
+                            })
+                            .child({
+                                let view = view.clone();
+                                Button::new("ai-inline-review-open-review")
+                                    .compact()
+                                    .ghost()
+                                    .with_size(gpui_component::Size::Small)
+                                    .rounded(px(8.0))
+                                    .label("Open in Review")
+                                    .on_click(move |_, _, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.ai_open_review_tab(cx);
+                                        });
+                                    })
+                            })
+                            .child({
+                                let view = view.clone();
+                                Button::new("ai-inline-review-close")
+                                    .compact()
+                                    .ghost()
+                                    .with_size(gpui_component::Size::Small)
+                                    .rounded(px(8.0))
+                                    .label("Close")
+                                    .on_click(move |_, _, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.ai_close_inline_review_action(cx);
+                                        });
+                                    })
+                            }),
+                    ),
             )
             .child(
                 div()
                     .flex_1()
                     .min_h_0()
-                    .child(self.render_review_workspace_surface(cx)),
+                    .child(self.render_ai_inline_review_surface(cx)),
             )
             .into_any_element()
     }

@@ -160,6 +160,297 @@
     }
 
     #[test]
+    fn inline_review_support_includes_file_change_rows_and_groups() {
+        let item_row = AiTimelineRow {
+            id: "item:file-change".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            last_sequence: 1,
+            source: AiTimelineRowSource::Item {
+                item_key: "item-1".to_string(),
+            },
+        };
+        let group_row = AiTimelineRow {
+            id: "group:file-change".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            last_sequence: 2,
+            source: AiTimelineRowSource::Group {
+                group_id: "group-1".to_string(),
+            },
+        };
+        let turn_diff_row = AiTimelineRow {
+            id: "turn-diff:turn-1".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            last_sequence: 3,
+            source: AiTimelineRowSource::TurnDiff {
+                turn_key: "turn-1".to_string(),
+            },
+        };
+        let plan_row = AiTimelineRow {
+            id: "turn-plan:turn-1".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            last_sequence: 4,
+            source: AiTimelineRowSource::TurnPlan {
+                turn_key: "turn-1".to_string(),
+            },
+        };
+
+        assert!(ai_timeline_row_supports_inline_review(
+            &item_row,
+            Some("fileChange"),
+            None,
+        ));
+        assert!(ai_timeline_row_supports_inline_review(
+            &group_row,
+            None,
+            Some("file_change_batch"),
+        ));
+        assert!(ai_timeline_row_supports_inline_review(
+            &turn_diff_row,
+            None,
+            None,
+        ));
+        assert!(!ai_timeline_row_supports_inline_review(
+            &item_row,
+            Some("commandExecution"),
+            None,
+        ));
+        assert!(!ai_timeline_row_supports_inline_review(
+            &group_row,
+            None,
+            Some("collaboration_batch"),
+        ));
+        assert!(!ai_timeline_row_supports_inline_review(
+            &plan_row,
+            None,
+            None,
+        ));
+    }
+
+    #[test]
+    fn resolved_inline_review_row_id_preserves_selected_supported_row() {
+        let selected_row_id = "item:file-change".to_string();
+        let visible_row_ids = vec![
+            "turn-plan:turn-1".to_string(),
+            selected_row_id.clone(),
+            "turn-diff:turn-1".to_string(),
+        ];
+        let rows_by_id = BTreeMap::from([
+            (
+                "turn-plan:turn-1".to_string(),
+                AiTimelineRow {
+                    id: "turn-plan:turn-1".to_string(),
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-1".to_string(),
+                    last_sequence: 1,
+                    source: AiTimelineRowSource::TurnPlan {
+                        turn_key: "thread-1::turn-1".to_string(),
+                    },
+                },
+            ),
+            (
+                selected_row_id.clone(),
+                AiTimelineRow {
+                    id: selected_row_id.clone(),
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-1".to_string(),
+                    last_sequence: 2,
+                    source: AiTimelineRowSource::Item {
+                        item_key: "thread-1::turn-1::item-1".to_string(),
+                    },
+                },
+            ),
+            (
+                "turn-diff:turn-1".to_string(),
+                AiTimelineRow {
+                    id: "turn-diff:turn-1".to_string(),
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-1".to_string(),
+                    last_sequence: 3,
+                    source: AiTimelineRowSource::TurnDiff {
+                        turn_key: "thread-1::turn-1".to_string(),
+                    },
+                },
+            ),
+        ]);
+
+        let resolved = ai_resolved_inline_review_row_id_for_visible_rows(
+            Some(selected_row_id.as_str()),
+            visible_row_ids.as_slice(),
+            &rows_by_id,
+            |row| !matches!(row.source, AiTimelineRowSource::TurnPlan { .. }),
+        );
+
+        assert_eq!(resolved.as_deref(), Some(selected_row_id.as_str()));
+    }
+
+    #[test]
+    fn resolved_inline_review_row_id_falls_back_to_latest_supported_visible_row() {
+        let visible_row_ids = vec![
+            "turn-plan:turn-1".to_string(),
+            "group:file-change".to_string(),
+            "turn-diff:turn-2".to_string(),
+        ];
+        let rows_by_id = BTreeMap::from([
+            (
+                "turn-plan:turn-1".to_string(),
+                AiTimelineRow {
+                    id: "turn-plan:turn-1".to_string(),
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-1".to_string(),
+                    last_sequence: 1,
+                    source: AiTimelineRowSource::TurnPlan {
+                        turn_key: "thread-1::turn-1".to_string(),
+                    },
+                },
+            ),
+            (
+                "group:file-change".to_string(),
+                AiTimelineRow {
+                    id: "group:file-change".to_string(),
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-1".to_string(),
+                    last_sequence: 2,
+                    source: AiTimelineRowSource::Group {
+                        group_id: "group-1".to_string(),
+                    },
+                },
+            ),
+            (
+                "turn-diff:turn-2".to_string(),
+                AiTimelineRow {
+                    id: "turn-diff:turn-2".to_string(),
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-2".to_string(),
+                    last_sequence: 3,
+                    source: AiTimelineRowSource::TurnDiff {
+                        turn_key: "thread-1::turn-2".to_string(),
+                    },
+                },
+            ),
+        ]);
+
+        let resolved = ai_resolved_inline_review_row_id_for_visible_rows(
+            Some("turn-plan:turn-1"),
+            visible_row_ids.as_slice(),
+            &rows_by_id,
+            |row| !matches!(row.source, AiTimelineRowSource::TurnPlan { .. }),
+        );
+
+        assert_eq!(resolved.as_deref(), Some("turn-diff:turn-2"));
+        assert_eq!(
+            ai_latest_supported_inline_review_row_id_for_visible_rows(
+                visible_row_ids.as_slice(),
+                &rows_by_id,
+                |row| !matches!(row.source, AiTimelineRowSource::TurnPlan { .. }),
+            )
+            .as_deref(),
+            Some("turn-diff:turn-2"),
+        );
+    }
+
+    #[test]
+    fn historical_inline_review_turn_key_matches_parent_turn_for_all_supported_row_types() {
+        let turn_key = hunk_codex::state::turn_storage_key("thread-1", "turn-7");
+        let item_row = AiTimelineRow {
+            id: "item:file-change".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-7".to_string(),
+            last_sequence: 1,
+            source: AiTimelineRowSource::Item {
+                item_key: "thread-1::turn-7::item-1".to_string(),
+            },
+        };
+        let group_row = AiTimelineRow {
+            id: "group:file-change".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-7".to_string(),
+            last_sequence: 2,
+            source: AiTimelineRowSource::Group {
+                group_id: "group-1".to_string(),
+            },
+        };
+        let turn_diff_row = AiTimelineRow {
+            id: "turn-diff:turn-7".to_string(),
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-7".to_string(),
+            last_sequence: 3,
+            source: AiTimelineRowSource::TurnDiff {
+                turn_key: turn_key.clone(),
+            },
+        };
+
+        assert_eq!(ai_historical_turn_diff_key_for_row(&item_row), turn_key);
+        assert_eq!(ai_historical_turn_diff_key_for_row(&group_row), turn_key);
+        assert_eq!(ai_historical_turn_diff_key_for_row(&turn_diff_row), turn_key);
+    }
+
+    #[test]
+    fn working_tree_toggle_closes_only_when_that_mode_is_already_open() {
+        assert_eq!(
+            ai_inline_review_toggle_target_mode(
+                false,
+                AiInlineReviewMode::Historical,
+                AiInlineReviewMode::WorkingTree,
+            ),
+            Some(AiInlineReviewMode::WorkingTree),
+        );
+        assert_eq!(
+            ai_inline_review_toggle_target_mode(
+                true,
+                AiInlineReviewMode::Historical,
+                AiInlineReviewMode::WorkingTree,
+            ),
+            Some(AiInlineReviewMode::WorkingTree),
+        );
+        assert_eq!(
+            ai_inline_review_toggle_target_mode(
+                true,
+                AiInlineReviewMode::WorkingTree,
+                AiInlineReviewMode::WorkingTree,
+            ),
+            None,
+        );
+    }
+
+    #[test]
+    fn historical_inline_review_loaded_state_tracks_turn_diff_sequence() {
+        let before = ai_historical_inline_review_loaded_state("thread-1", "row-1", 7, Some(11));
+        let after = ai_historical_inline_review_loaded_state("thread-1", "row-1", 7, Some(12));
+        let missing = ai_historical_inline_review_loaded_state("thread-1", "row-1", 7, None);
+
+        assert_ne!(before, after);
+        assert_ne!(before, missing);
+    }
+
+    #[test]
+    fn only_working_tree_inline_review_uses_review_compare_session() {
+        assert!(ai_inline_review_uses_review_compare_session_for_surface(
+            WorkspaceViewMode::Ai,
+            true,
+            AiInlineReviewMode::WorkingTree,
+        ));
+        assert!(!ai_inline_review_uses_review_compare_session_for_surface(
+            WorkspaceViewMode::Ai,
+            true,
+            AiInlineReviewMode::Historical,
+        ));
+        assert!(!ai_inline_review_uses_review_compare_session_for_surface(
+            WorkspaceViewMode::Diff,
+            true,
+            AiInlineReviewMode::WorkingTree,
+        ));
+        assert!(!ai_inline_review_uses_review_compare_session_for_surface(
+            WorkspaceViewMode::Ai,
+            false,
+            AiInlineReviewMode::WorkingTree,
+        ));
+    }
+
+    #[test]
     fn timeline_row_ids_with_height_changes_tracks_streamed_item_and_diff_updates() {
         let mut previous = AiState::default();
         previous.turns.insert(

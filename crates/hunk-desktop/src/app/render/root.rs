@@ -565,6 +565,17 @@ impl Render for DiffViewer {
                 self.last_scroll_activity_at = Instant::now();
                 self.refresh_ai_timeline_follow_output_from_scroll();
             }
+            if self.ai_inline_review_is_open() {
+                let current_inline_review_scroll_offset =
+                    self.current_ai_inline_review_surface_scroll_offset();
+                if self.ai_inline_review_surface.last_diff_scroll_offset
+                    != Some(current_inline_review_scroll_offset)
+                {
+                    self.ai_inline_review_surface.last_diff_scroll_offset =
+                        Some(current_inline_review_scroll_offset);
+                    self.last_scroll_activity_at = Instant::now();
+                }
+            }
         }
         if self.ignore_next_frame_sample {
             self.ignore_next_frame_sample = false;
@@ -598,6 +609,7 @@ impl Render for DiffViewer {
             .on_action(cx.listener(Self::ai_toggle_terminal_drawer_shortcut_action))
             .on_action(cx.listener(Self::ai_new_thread_action))
             .on_action(cx.listener(Self::ai_new_worktree_thread_shortcut_action))
+            .on_action(cx.listener(Self::ai_open_working_tree_diff_viewer_action))
             .on_action(cx.listener(Self::open_project_action))
             .on_action(cx.listener(Self::quick_open_file_action))
             .on_action(cx.listener(Self::save_current_file_action))

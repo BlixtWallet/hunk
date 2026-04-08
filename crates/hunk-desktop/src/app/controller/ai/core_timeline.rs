@@ -103,6 +103,10 @@ impl DiffViewer {
     pub(super) fn ai_open_review_tab(&mut self, cx: &mut Context<Self>) {
         self.ai_sync_review_compare_to_selected_thread(cx);
         self.set_workspace_view_mode(WorkspaceViewMode::Diff, cx);
+        if !self.review_compare_loading && !self.should_reuse_loaded_review_compare() {
+            self.scroll_selected_after_reload = true;
+            self.request_review_compare_refresh(cx);
+        }
     }
 
     fn ai_sync_review_compare_to_selected_thread(&mut self, cx: &mut Context<Self>) {
@@ -128,6 +132,15 @@ impl DiffViewer {
             self.ai_selected_thread_review_compare_selection()
         {
             self.update_review_compare_selection(left_source_id, right_source_id, cx);
+        }
+
+        if self.ai_inline_review_is_open()
+            && self.current_ai_inline_review_mode() == AiInlineReviewMode::WorkingTree
+            && !self.review_compare_loading
+            && !self.should_reuse_loaded_review_compare()
+        {
+            self.scroll_selected_after_reload = true;
+            self.request_review_compare_refresh(cx);
         }
     }
 
@@ -871,11 +884,12 @@ impl DiffViewer {
         self.ai_timeline_groups_by_id = groups_by_id;
         self.ai_timeline_group_parent_by_child_row_id = parent_by_child_row_id;
         let timeline_row_ids_by_thread = self.ai_timeline_row_ids_by_thread.clone();
-        let valid_diff_row_ids = self
+        let valid_inline_review_row_ids = self
             .ai_timeline_rows_by_id
             .iter()
             .filter_map(|(row_id, row)| {
-                matches!(row.source, AiTimelineRowSource::TurnDiff { .. }).then_some(row_id.clone())
+                self.ai_row_supports_inline_review(row)
+                    .then_some(row_id.clone())
             })
             .collect::<BTreeSet<_>>();
         self.ai_inline_review_selected_row_id_by_thread
@@ -883,7 +897,7 @@ impl DiffViewer {
                 timeline_row_ids_by_thread
                     .get(thread_id)
                     .is_some_and(|row_ids| row_ids.iter().any(|candidate| candidate == row_id))
-                    && valid_diff_row_ids.contains(row_id)
+                    && valid_inline_review_row_ids.contains(row_id)
             });
         self.record_ai_timeline_index_rebuild_timing(rebuild_started_at.elapsed());
     }

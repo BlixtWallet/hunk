@@ -22,7 +22,7 @@ impl DiffViewer {
     }
 
     fn scroll_to_file_start(&mut self, path: &str) {
-        if let Some(session) = self.review_workspace_session.as_ref()
+        if let Some(session) = self.active_review_workspace_session()
             && let Some(top_offset_px) = session
                 .file_range_for_path(path)
                 .and_then(|range| session.row_top_offset_px(range.start_row))
@@ -50,9 +50,10 @@ impl DiffViewer {
             self.request_visible_row_range_segment_prefetch(visible_range, false, cx);
         }
 
-        let Some((next_path, next_status)) = (if self.workspace_view_mode == WorkspaceViewMode::Diff {
-            self.review_workspace_session
-                .as_ref()
+        let Some((next_path, next_status)) = (if self.workspace_view_mode == WorkspaceViewMode::Diff
+            || (self.workspace_view_mode == WorkspaceViewMode::Ai && self.ai_inline_review_is_open())
+        {
+            self.active_review_workspace_session()
                 .and_then(|session| {
                     session
                         .path_at_surface_row(row_ix)
@@ -252,8 +253,9 @@ impl DiffViewer {
     }
 
     fn selected_file_from_row_metadata(&self, row_ix: usize) -> Option<(String, FileStatus)> {
-        if self.workspace_view_mode == WorkspaceViewMode::Diff
-            && let Some(session) = self.review_workspace_session.as_ref()
+        if (self.workspace_view_mode == WorkspaceViewMode::Diff
+            || (self.workspace_view_mode == WorkspaceViewMode::Ai && self.ai_inline_review_is_open()))
+            && let Some(session) = self.active_review_workspace_session()
             && let Some(path) = session.path_at_surface_row(row_ix)
         {
             let status = session
@@ -312,6 +314,7 @@ impl DiffViewer {
         self.recompute_diff_layout();
         self.review_surface.clear_workspace_surface_snapshot();
         self.review_surface.last_prefetched_visible_row_range = None;
+        self.ai_inline_review_surface.clear_runtime_state();
     }
 
     fn apply_loaded_review_workspace_surface(&mut self) {
@@ -322,11 +325,12 @@ impl DiffViewer {
         self.recompute_diff_layout();
         self.review_surface.clear_workspace_surface_snapshot();
         self.review_surface.last_prefetched_visible_row_range = None;
+        self.ai_inline_review_surface.clear_runtime_state();
     }
 
     fn recompute_diff_layout(&mut self) {
         if self.uses_review_workspace_sections_surface()
-            && let Some(session) = self.review_workspace_session.as_ref()
+            && let Some(session) = self.active_review_workspace_session()
         {
             let (max_left_line_digits, max_right_line_digits) =
                 session.line_number_digit_widths();

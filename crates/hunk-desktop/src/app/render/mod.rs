@@ -44,6 +44,7 @@ include!("comments.rs");
 include!("syntax_colors.rs");
 include!("diff.rs");
 include!("review_workspace_code_row.rs");
+include!("ai_inline_review_surface.rs");
 include!("review_workspace_section.rs");
 include!("review_workspace_surface.rs");
 include!("context_menu.rs");

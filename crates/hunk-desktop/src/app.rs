@@ -160,6 +160,8 @@ const AI_COMPOSER_STATUS_AUTO_DISMISS_DELAY: Duration = Duration::from_secs(5);
 mod ai_bookmarks;
 mod ai_composer_commands;
 mod ai_composer_completion;
+mod ai_inline_review;
+mod ai_inline_review_snapshot;
 mod ai_paths;
 mod ai_thread_catalog_scheduler;
 mod ai_thread_flow;
@@ -231,6 +233,7 @@ actions!(
         AiTerminalSendEnd,
         AiNewThread,
         AiNewWorktreeThread,
+        AiOpenWorkingTreeDiffViewer,
         AiQueuePrompt,
         AiEditLastQueuedPrompt,
         AiInterruptSelectedTurn,
@@ -608,6 +611,16 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
     bindings.push(KeyBinding::new(
         "ctrl-shift-n",
         AiNewWorktreeThread,
+        Some(WorkspaceViewMode::Ai.shortcut_context()),
+    ));
+    bindings.push(KeyBinding::new(
+        "cmd-d",
+        AiOpenWorkingTreeDiffViewer,
+        Some(WorkspaceViewMode::Ai.shortcut_context()),
+    ));
+    bindings.push(KeyBinding::new(
+        "ctrl-d",
+        AiOpenWorkingTreeDiffViewer,
         Some(WorkspaceViewMode::Ai.shortcut_context()),
     ));
     bindings.extend(
@@ -1320,6 +1333,32 @@ impl ReviewWorkspaceSurfaceState {
     }
 }
 
+struct AiInlineReviewSurfaceState {
+    diff_scroll_handle: ScrollHandle,
+    last_diff_scroll_offset: Option<Point<Pixels>>,
+    geometry: Option<ai_inline_review::AiInlineReviewDisplayGeometry>,
+}
+
+impl AiInlineReviewSurfaceState {
+    fn new() -> Self {
+        Self {
+            diff_scroll_handle: ScrollHandle::default(),
+            last_diff_scroll_offset: None,
+            geometry: None,
+        }
+    }
+
+    fn invalidate_geometry(&mut self) {
+        self.geometry = None;
+    }
+
+    fn clear_runtime_state(&mut self) {
+        self.last_diff_scroll_offset = None;
+        self.geometry = None;
+        self.diff_scroll_handle.set_offset(point(px(0.), px(0.)));
+    }
+}
+
 struct DiffViewer {
     config_store: Option<ConfigStore>,
     config: AppConfig,
@@ -1383,6 +1422,11 @@ struct DiffViewer {
     ai_scroll_timeline_to_bottom: bool,
     ai_timeline_follow_output: bool,
     ai_inline_review_selected_row_id_by_thread: BTreeMap<String, String>,
+    ai_inline_review_mode_by_thread: BTreeMap<String, AiInlineReviewMode>,
+    ai_inline_review_session: Option<review_workspace_session::ReviewWorkspaceSession>,
+    ai_inline_review_loaded_state: Option<AiInlineReviewLoadedState>,
+    ai_inline_review_error: Option<String>,
+    ai_inline_review_status_message: Option<String>,
     ai_git_progress: Option<AiGitProgressState>,
     ai_thread_title_refresh_state_by_thread: BTreeMap<String, AiThreadTitleRefreshState>,
     ai_expanded_thread_sidebar_project_roots: BTreeSet<String>,
@@ -1394,6 +1438,7 @@ struct DiffViewer {
     ai_workspace_session: Option<ai_workspace_session::AiWorkspaceSession>,
     ai_workspace_surface_scroll_handle: ScrollHandle,
     ai_workspace_surface_last_scroll_offset: Option<Point<Pixels>>,
+    ai_inline_review_surface: AiInlineReviewSurfaceState,
     ai_hovered_workspace_block_id: Option<String>,
     ai_workspace_selection: Option<ai_workspace_session::AiWorkspaceSelection>,
     ai_timeline_visible_turn_limit_by_thread: BTreeMap<String, usize>,

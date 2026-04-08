@@ -175,7 +175,7 @@ impl DiffViewer {
         }
         self.select_row(row_ix, extend_selection, cx);
         let target_row = row_ix.min(row_count.saturating_sub(1));
-        if let Some(session) = self.review_workspace_session.as_ref()
+        if let Some(session) = self.active_review_workspace_session()
             && let Some(top_offset_px) = session.row_top_offset_px(target_row)
         {
             self.review_surface
@@ -275,7 +275,7 @@ impl DiffViewer {
     }
 
     fn select_file_relative(&mut self, direction: isize, cx: &mut Context<Self>) {
-        let Some(session) = self.review_workspace_session.as_ref() else {
+        let Some(session) = self.active_review_workspace_session() else {
             return;
         };
 

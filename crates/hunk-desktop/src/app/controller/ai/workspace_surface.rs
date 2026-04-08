@@ -1,4 +1,245 @@
+fn ai_timeline_row_supports_inline_review(
+    row: &AiTimelineRow,
+    item_kind: Option<&str>,
+    group_kind: Option<&str>,
+) -> bool {
+    match &row.source {
+        AiTimelineRowSource::TurnDiff { .. } => true,
+        AiTimelineRowSource::Item { .. } => item_kind == Some("fileChange"),
+        AiTimelineRowSource::Group { .. } => group_kind == Some("file_change_batch"),
+        AiTimelineRowSource::TurnPlan { .. } => false,
+    }
+}
+
+fn ai_historical_turn_diff_key_for_row(row: &AiTimelineRow) -> String {
+    hunk_codex::state::turn_storage_key(row.thread_id.as_str(), row.turn_id.as_str())
+}
+
+fn ai_latest_supported_inline_review_row_id_for_visible_rows<F>(
+    visible_row_ids: &[String],
+    rows_by_id: &std::collections::BTreeMap<String, AiTimelineRow>,
+    mut supports_inline_review: F,
+) -> Option<String>
+where
+    F: FnMut(&AiTimelineRow) -> bool,
+{
+    visible_row_ids
+        .iter()
+        .rev()
+        .find_map(|row_id| {
+            rows_by_id
+                .get(row_id)
+                .filter(|row| supports_inline_review(row))
+                .map(|row| row.id.clone())
+        })
+}
+
+fn ai_resolved_inline_review_row_id_for_visible_rows<F>(
+    selected_row_id: Option<&str>,
+    visible_row_ids: &[String],
+    rows_by_id: &std::collections::BTreeMap<String, AiTimelineRow>,
+    mut supports_inline_review: F,
+) -> Option<String>
+where
+    F: FnMut(&AiTimelineRow) -> bool,
+{
+    selected_row_id
+        .and_then(|row_id| rows_by_id.get(row_id))
+        .filter(|row| supports_inline_review(row))
+        .map(|row| row.id.clone())
+        .or_else(|| {
+            ai_latest_supported_inline_review_row_id_for_visible_rows(
+                visible_row_ids,
+                rows_by_id,
+                supports_inline_review,
+            )
+        })
+}
+
+fn ai_inline_review_toggle_target_mode(
+    is_open: bool,
+    current_mode: AiInlineReviewMode,
+    requested_mode: AiInlineReviewMode,
+) -> Option<AiInlineReviewMode> {
+    if is_open && current_mode == requested_mode {
+        None
+    } else {
+        Some(requested_mode)
+    }
+}
+
+fn ai_inline_review_uses_review_compare_session_for_surface(
+    workspace_view_mode: WorkspaceViewMode,
+    is_open: bool,
+    current_mode: AiInlineReviewMode,
+) -> bool {
+    workspace_view_mode == WorkspaceViewMode::Ai
+        && is_open
+        && current_mode == AiInlineReviewMode::WorkingTree
+}
+
+fn ai_historical_inline_review_loaded_state(
+    thread_id: &str,
+    row_id: &str,
+    row_last_sequence: u64,
+    turn_diff_last_sequence: Option<u64>,
+) -> AiInlineReviewLoadedState {
+    AiInlineReviewLoadedState {
+        thread_id: thread_id.to_string(),
+        row_id: row_id.to_string(),
+        row_last_sequence,
+        turn_diff_last_sequence,
+        mode: AiInlineReviewMode::Historical,
+    }
+}
+
 impl DiffViewer {
+    pub(super) fn ai_inline_review_mode_for_thread(&self, thread_id: &str) -> AiInlineReviewMode {
+        self.ai_inline_review_mode_by_thread
+            .get(thread_id)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub(super) fn current_ai_inline_review_mode(&self) -> AiInlineReviewMode {
+        self.ai_selected_thread_id
+            .as_deref()
+            .map(|thread_id| self.ai_inline_review_mode_for_thread(thread_id))
+            .unwrap_or_default()
+    }
+
+    pub(super) fn ai_inline_review_uses_review_compare_session(&self) -> bool {
+        ai_inline_review_uses_review_compare_session_for_surface(
+            self.workspace_view_mode,
+            self.ai_inline_review_is_open(),
+            self.current_ai_inline_review_mode(),
+        )
+    }
+
+    fn ai_clear_inline_review_loaded_state(&mut self) {
+        self.ai_inline_review_session = None;
+        self.ai_inline_review_loaded_state = None;
+        self.ai_inline_review_error = None;
+        self.ai_inline_review_status_message = None;
+    }
+
+    fn ai_resolve_inline_review_row_id_for_thread(
+        &self,
+        thread_id: &str,
+    ) -> Option<String> {
+        let visible_row_ids = self.ai_timeline_visible_rows_for_thread(thread_id).3;
+        ai_resolved_inline_review_row_id_for_visible_rows(
+            self.current_ai_inline_review_row_id_for_thread(thread_id),
+            visible_row_ids.as_slice(),
+            &self.ai_timeline_rows_by_id,
+            |row| self.ai_row_supports_inline_review(row),
+        )
+    }
+
+    pub(super) fn ai_can_open_inline_review_for_current_thread(&self) -> bool {
+        self.current_ai_thread_id()
+            .as_deref()
+            .and_then(|thread_id| self.ai_resolve_inline_review_row_id_for_thread(thread_id))
+            .is_some()
+    }
+
+    pub(super) fn ai_sync_historical_inline_review_session_if_needed(&mut self) {
+        if self.workspace_view_mode != WorkspaceViewMode::Ai
+            || !self.ai_inline_review_is_open()
+            || self.current_ai_inline_review_mode() != AiInlineReviewMode::Historical
+        {
+            return;
+        }
+
+        let Some(thread_id) = self.ai_selected_thread_id.clone() else {
+            self.ai_clear_inline_review_loaded_state();
+            return;
+        };
+        let Some(row_id) = self
+            .current_ai_inline_review_row_id_for_thread(thread_id.as_str())
+            .map(str::to_string)
+        else {
+            self.ai_clear_inline_review_loaded_state();
+            return;
+        };
+        let Some(row) = self.ai_timeline_row(row_id.as_str()).cloned() else {
+            self.ai_clear_inline_review_loaded_state();
+            return;
+        };
+
+        let turn_key = ai_historical_turn_diff_key_for_row(&row);
+        let turn_diff_last_sequence = self.ai_state_snapshot.turn_diff_sequence(turn_key.as_str());
+        let next_loaded_state = ai_historical_inline_review_loaded_state(
+            thread_id.as_str(),
+            row_id.as_str(),
+            row.last_sequence,
+            turn_diff_last_sequence,
+        );
+        if self.ai_inline_review_loaded_state.as_ref() == Some(&next_loaded_state) {
+            return;
+        }
+
+        let preserve_scroll = self
+            .ai_inline_review_loaded_state
+            .as_ref()
+            .is_some_and(|loaded| {
+                loaded.thread_id == next_loaded_state.thread_id
+                    && loaded.row_id == next_loaded_state.row_id
+                    && loaded.mode == next_loaded_state.mode
+            });
+        if preserve_scroll {
+            self.ai_inline_review_surface.invalidate_geometry();
+        } else {
+            self.ai_inline_review_surface.clear_runtime_state();
+        }
+
+        let Some(diff) = self.ai_state_snapshot.turn_diffs.get(turn_key.as_str()) else {
+            self.ai_inline_review_session = None;
+            self.ai_inline_review_loaded_state = Some(next_loaded_state);
+            self.ai_inline_review_error = None;
+            self.ai_inline_review_status_message = Some(
+                "Historical AI diff is not loaded for this turn yet. This can happen after restart or before the thread has replayed its patch snapshot. Try Working Tree for the current repo state."
+                    .to_string(),
+            );
+            return;
+        };
+
+        let snapshot = crate::app::ai_inline_review_snapshot::compare_snapshot_from_turn_diff(diff);
+        if snapshot.files.is_empty() {
+            self.ai_inline_review_session = None;
+            self.ai_inline_review_loaded_state = Some(next_loaded_state);
+            self.ai_inline_review_error = None;
+            self.ai_inline_review_status_message =
+                Some("This AI turn did not capture any file changes.".to_string());
+            return;
+        }
+
+        let stream = crate::app::data::build_diff_stream_from_patch_map(
+            &snapshot.files,
+            &std::collections::BTreeSet::new(),
+            &snapshot.file_line_stats,
+            &snapshot.patches_by_path,
+            &std::collections::BTreeSet::new(),
+        );
+        match crate::app::review_workspace_session::ReviewWorkspaceSession::from_compare_snapshot(
+            &snapshot,
+            &std::collections::BTreeSet::new(),
+        ) {
+            Ok(session) => {
+                self.ai_inline_review_session = Some(session.with_render_stream(&stream));
+                self.ai_inline_review_loaded_state = Some(next_loaded_state);
+                self.ai_inline_review_error = None;
+                self.ai_inline_review_status_message = None;
+            }
+            Err(err) => {
+                self.ai_inline_review_session = None;
+                self.ai_inline_review_loaded_state = Some(next_loaded_state);
+                self.ai_inline_review_error = Some(err.to_string());
+                self.ai_inline_review_status_message = None;
+            }
+        }
+    }
+
     fn sync_ai_workspace_session_for_timeline(
         &mut self,
         selected_thread_id: Option<&str>,
@@ -329,21 +570,117 @@ impl DiffViewer {
             .is_some()
     }
 
-    #[allow(dead_code)]
+    pub(super) fn ai_row_supports_inline_review(&self, row: &AiTimelineRow) -> bool {
+        let item_kind = match &row.source {
+            AiTimelineRowSource::Item { item_key } => self
+                .ai_state_snapshot
+                .items
+                .get(item_key.as_str())
+                .map(|item| item.kind.as_str()),
+            _ => None,
+        };
+        let group_kind = match &row.source {
+            AiTimelineRowSource::Group { group_id } => self
+                .ai_timeline_group(group_id.as_str())
+                .map(|group| group.kind.as_str()),
+            _ => None,
+        };
+
+        ai_timeline_row_supports_inline_review(row, item_kind, group_kind)
+    }
+
     pub(super) fn ai_open_inline_review_for_row(&mut self, row_id: String, cx: &mut Context<Self>) {
+        self.ai_open_inline_review_for_row_in_mode(row_id, AiInlineReviewMode::Historical, cx);
+    }
+
+    fn ai_open_inline_review_for_row_in_mode(
+        &mut self,
+        row_id: String,
+        mode: AiInlineReviewMode,
+        cx: &mut Context<Self>,
+    ) {
         let Some(thread_id) = self.ai_selected_thread_id.clone() else {
             return;
         };
         let Some(row) = self.ai_timeline_row(row_id.as_str()) else {
             return;
         };
-        if !matches!(row.source, AiTimelineRowSource::TurnDiff { .. }) {
+        if !self.ai_row_supports_inline_review(row) {
             return;
         }
 
+        let changed_row = self
+            .ai_inline_review_selected_row_id_by_thread
+            .get(thread_id.as_str())
+            .is_none_or(|current| current != &row_id);
+        let changed_mode = self.ai_inline_review_mode_for_thread(thread_id.as_str()) != mode;
         self.ai_inline_review_selected_row_id_by_thread
-            .insert(thread_id, row_id);
+            .insert(thread_id.clone(), row_id.clone());
+        self.ai_inline_review_mode_by_thread
+            .insert(thread_id.clone(), mode);
+        if changed_row || changed_mode {
+            self.ai_inline_review_surface.clear_runtime_state();
+        }
+        if changed_row || changed_mode {
+            self.ai_clear_inline_review_loaded_state();
+        }
         self.ai_sync_review_compare_to_selected_thread(cx);
+        self.ai_sync_historical_inline_review_session_if_needed();
+        self.invalidate_ai_visible_frame_state_with_reason("timeline");
+        cx.notify();
+    }
+
+    pub(super) fn ai_open_inline_review_for_current_thread_in_mode(
+        &mut self,
+        mode: AiInlineReviewMode,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(thread_id) = self.current_ai_thread_id() else {
+            return;
+        };
+        if self.ai_selected_thread_id.as_deref() != Some(thread_id.as_str()) {
+            self.ai_selected_thread_id = Some(thread_id.clone());
+        }
+        let Some(row_id) = self.ai_resolve_inline_review_row_id_for_thread(thread_id.as_str()) else {
+            return;
+        };
+        self.ai_open_inline_review_for_row_in_mode(row_id, mode, cx);
+    }
+
+    pub(super) fn ai_toggle_inline_review_for_current_thread_in_mode(
+        &mut self,
+        mode: AiInlineReviewMode,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(target_mode) = ai_inline_review_toggle_target_mode(
+            self.ai_inline_review_is_open(),
+            self.current_ai_inline_review_mode(),
+            mode,
+        ) else {
+            self.ai_close_inline_review_action(cx);
+            return;
+        };
+
+        self.ai_open_inline_review_for_current_thread_in_mode(target_mode, cx);
+    }
+
+    pub(super) fn ai_set_inline_review_mode(
+        &mut self,
+        mode: AiInlineReviewMode,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(thread_id) = self.ai_selected_thread_id.clone() else {
+            return;
+        };
+        if self.ai_inline_review_mode_for_thread(thread_id.as_str()) == mode {
+            return;
+        }
+        self.ai_inline_review_mode_by_thread
+            .insert(thread_id, mode);
+        self.ai_inline_review_surface.clear_runtime_state();
+        self.ai_clear_inline_review_loaded_state();
+        self.ai_sync_review_compare_to_selected_thread(cx);
+        self.ai_sync_historical_inline_review_session_if_needed();
         self.invalidate_ai_visible_frame_state_with_reason("timeline");
         cx.notify();
     }
@@ -357,6 +694,8 @@ impl DiffViewer {
             .remove(thread_id)
             .is_some()
         {
+            self.ai_clear_inline_review_loaded_state();
+            self.ai_inline_review_surface.clear_runtime_state();
             self.invalidate_ai_visible_frame_state_with_reason("timeline");
             cx.notify();
         }
