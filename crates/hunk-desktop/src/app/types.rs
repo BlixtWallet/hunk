@@ -287,6 +287,7 @@ struct AiInlineReviewLoadedState {
     thread_id: String,
     row_id: String,
     row_last_sequence: u64,
+    turn_diff_last_sequence: Option<u64>,
     mode: AiInlineReviewMode,
 }
 

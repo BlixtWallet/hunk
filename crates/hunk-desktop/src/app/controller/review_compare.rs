@@ -1165,7 +1165,9 @@ impl DiffViewer {
         self.review_loaded_right_source_id = None;
         self.review_loaded_collapsed_files.clear();
         self.review_loaded_reuse_token = None;
-        if self.workspace_view_mode == WorkspaceViewMode::Diff || self.ai_inline_review_is_open() {
+        if self.workspace_view_mode == WorkspaceViewMode::Diff
+            || self.ai_inline_review_uses_review_compare_session()
+        {
             self.scroll_selected_after_reload = true;
             self.request_review_compare_refresh(cx);
         } else {

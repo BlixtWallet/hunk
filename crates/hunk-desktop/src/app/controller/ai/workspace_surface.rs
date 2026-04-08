@@ -68,6 +68,31 @@ fn ai_inline_review_toggle_target_mode(
     }
 }
 
+fn ai_inline_review_uses_review_compare_session_for_surface(
+    workspace_view_mode: WorkspaceViewMode,
+    is_open: bool,
+    current_mode: AiInlineReviewMode,
+) -> bool {
+    workspace_view_mode == WorkspaceViewMode::Ai
+        && is_open
+        && current_mode == AiInlineReviewMode::WorkingTree
+}
+
+fn ai_historical_inline_review_loaded_state(
+    thread_id: &str,
+    row_id: &str,
+    row_last_sequence: u64,
+    turn_diff_last_sequence: Option<u64>,
+) -> AiInlineReviewLoadedState {
+    AiInlineReviewLoadedState {
+        thread_id: thread_id.to_string(),
+        row_id: row_id.to_string(),
+        row_last_sequence,
+        turn_diff_last_sequence,
+        mode: AiInlineReviewMode::Historical,
+    }
+}
+
 impl DiffViewer {
     pub(super) fn ai_inline_review_mode_for_thread(&self, thread_id: &str) -> AiInlineReviewMode {
         self.ai_inline_review_mode_by_thread
@@ -81,6 +106,14 @@ impl DiffViewer {
             .as_deref()
             .map(|thread_id| self.ai_inline_review_mode_for_thread(thread_id))
             .unwrap_or_default()
+    }
+
+    pub(super) fn ai_inline_review_uses_review_compare_session(&self) -> bool {
+        ai_inline_review_uses_review_compare_session_for_surface(
+            self.workspace_view_mode,
+            self.ai_inline_review_is_open(),
+            self.current_ai_inline_review_mode(),
+        )
     }
 
     fn ai_clear_inline_review_loaded_state(&mut self) {
@@ -134,12 +167,14 @@ impl DiffViewer {
             return;
         };
 
-        let next_loaded_state = AiInlineReviewLoadedState {
-            thread_id: thread_id.clone(),
-            row_id: row_id.clone(),
-            row_last_sequence: row.last_sequence,
-            mode: AiInlineReviewMode::Historical,
-        };
+        let turn_key = ai_historical_turn_diff_key_for_row(&row);
+        let turn_diff_last_sequence = self.ai_state_snapshot.turn_diff_sequence(turn_key.as_str());
+        let next_loaded_state = ai_historical_inline_review_loaded_state(
+            thread_id.as_str(),
+            row_id.as_str(),
+            row.last_sequence,
+            turn_diff_last_sequence,
+        );
         if self.ai_inline_review_loaded_state.as_ref() == Some(&next_loaded_state) {
             return;
         }
@@ -158,7 +193,6 @@ impl DiffViewer {
             self.ai_inline_review_surface.clear_runtime_state();
         }
 
-        let turn_key = ai_historical_turn_diff_key_for_row(&row);
         let Some(diff) = self.ai_state_snapshot.turn_diffs.get(turn_key.as_str()) else {
             self.ai_inline_review_session = None;
             self.ai_inline_review_loaded_state = Some(next_loaded_state);

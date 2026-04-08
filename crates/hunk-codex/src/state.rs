@@ -260,6 +260,10 @@ impl AiState {
         self.active_thread_by_cwd.get(cwd).map(String::as_str)
     }
 
+    pub fn turn_diff_sequence(&self, turn_key: &str) -> Option<u64> {
+        self.turn_diff_sequences.get(turn_key).copied()
+    }
+
     pub fn hydrate_active_thread_for_cwd<S>(
         &mut self,
         store: &S,

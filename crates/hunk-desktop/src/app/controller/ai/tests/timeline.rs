@@ -417,6 +417,40 @@
     }
 
     #[test]
+    fn historical_inline_review_loaded_state_tracks_turn_diff_sequence() {
+        let before = ai_historical_inline_review_loaded_state("thread-1", "row-1", 7, Some(11));
+        let after = ai_historical_inline_review_loaded_state("thread-1", "row-1", 7, Some(12));
+        let missing = ai_historical_inline_review_loaded_state("thread-1", "row-1", 7, None);
+
+        assert_ne!(before, after);
+        assert_ne!(before, missing);
+    }
+
+    #[test]
+    fn only_working_tree_inline_review_uses_review_compare_session() {
+        assert!(ai_inline_review_uses_review_compare_session_for_surface(
+            WorkspaceViewMode::Ai,
+            true,
+            AiInlineReviewMode::WorkingTree,
+        ));
+        assert!(!ai_inline_review_uses_review_compare_session_for_surface(
+            WorkspaceViewMode::Ai,
+            true,
+            AiInlineReviewMode::Historical,
+        ));
+        assert!(!ai_inline_review_uses_review_compare_session_for_surface(
+            WorkspaceViewMode::Diff,
+            true,
+            AiInlineReviewMode::WorkingTree,
+        ));
+        assert!(!ai_inline_review_uses_review_compare_session_for_surface(
+            WorkspaceViewMode::Ai,
+            false,
+            AiInlineReviewMode::WorkingTree,
+        ));
+    }
+
+    #[test]
     fn timeline_row_ids_with_height_changes_tracks_streamed_item_and_diff_updates() {
         let mut previous = AiState::default();
         previous.turns.insert(

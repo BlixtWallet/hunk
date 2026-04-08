@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use hunk_git::compare::CompareSnapshot;
 use hunk_git::git::{ChangedFile, FileStatus, LineStats};
 
+const SYNTHETIC_TURN_DIFF_PATH_BASENAME: &str = "historical-turn-diff.patch";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TurnDiffPatchSection {
     path: String,
@@ -19,7 +21,10 @@ pub(crate) fn compare_snapshot_from_turn_diff(diff: &str) -> CompareSnapshot {
 
     for section in split_turn_diff_sections(diff)
         .into_iter()
-        .filter_map(|section| parse_turn_diff_patch_section(section.as_str()))
+        .enumerate()
+        .filter_map(|(section_ix, section)| {
+            parse_turn_diff_patch_section(section.as_str(), section_ix)
+        })
     {
         if let Some(existing_patch) = patches_by_path.get_mut(section.path.as_str()) {
             if !existing_patch.ends_with('\n') {
@@ -59,15 +64,22 @@ pub(crate) fn compare_snapshot_from_turn_diff(diff: &str) -> CompareSnapshot {
 fn split_turn_diff_sections(diff: &str) -> Vec<String> {
     let mut sections = Vec::new();
     let mut current = String::new();
+    let mut current_has_hunk_header = false;
 
     for line in diff.lines() {
-        if line.starts_with("diff --git ") && !current.trim().is_empty() {
+        let starts_new_section = line.starts_with("diff --git ")
+            || (line.starts_with("--- ") && !current.trim().is_empty() && current_has_hunk_header);
+        if starts_new_section && !current.trim().is_empty() {
             sections.push(std::mem::take(&mut current));
+            current_has_hunk_header = false;
         }
         if !current.is_empty() {
             current.push('\n');
         }
         current.push_str(line);
+        if line.starts_with("@@") {
+            current_has_hunk_header = true;
+        }
     }
 
     if !current.trim().is_empty() {
@@ -77,9 +89,13 @@ fn split_turn_diff_sections(diff: &str) -> Vec<String> {
     sections
 }
 
-fn parse_turn_diff_patch_section(section: &str) -> Option<TurnDiffPatchSection> {
+fn parse_turn_diff_patch_section(section: &str, section_ix: usize) -> Option<TurnDiffPatchSection> {
     let lines = section.lines().collect::<Vec<_>>();
-    let (old_path, new_path) = diff_git_paths(lines.first().copied()?)?;
+    let (old_path, new_path) = lines
+        .first()
+        .and_then(|line| diff_git_paths(line))
+        .or_else(|| unified_patch_paths(lines.as_slice()))
+        .unwrap_or((None, None));
 
     let rename_from = lines
         .iter()
@@ -101,10 +117,16 @@ fn parse_turn_diff_patch_section(section: &str) -> Option<TurnDiffPatchSection> 
     let path = rename_to
         .clone()
         .or_else(|| pick_patch_display_path(old_path.as_deref(), new_path.as_deref()))
+        .or_else(|| {
+            lines
+                .iter()
+                .any(|line| line.starts_with("@@"))
+                .then(|| synthetic_turn_diff_path(section_ix))
+        })
         .filter(|path| !path.is_empty())?;
-    let status = if is_added {
+    let status = if is_added || (old_path.is_none() && new_path.is_some()) {
         FileStatus::Added
-    } else if is_deleted {
+    } else if is_deleted || (old_path.is_some() && new_path.is_none()) {
         FileStatus::Deleted
     } else if is_renamed {
         FileStatus::Renamed
@@ -118,6 +140,18 @@ fn parse_turn_diff_patch_section(section: &str) -> Option<TurnDiffPatchSection> 
         patch: section.to_string(),
         line_stats: unified_patch_line_stats(section),
     })
+}
+
+fn unified_patch_paths(lines: &[&str]) -> Option<(Option<String>, Option<String>)> {
+    let old_path = lines
+        .iter()
+        .find_map(|line| line.strip_prefix("--- "))
+        .and_then(normalize_patch_path);
+    let new_path = lines
+        .iter()
+        .find_map(|line| line.strip_prefix("+++ "))
+        .and_then(normalize_patch_path);
+    (old_path.is_some() || new_path.is_some()).then_some((old_path, new_path))
 }
 
 fn diff_git_paths(line: &str) -> Option<(Option<String>, Option<String>)> {
@@ -149,6 +183,17 @@ fn pick_patch_display_path(old_path: Option<&str>, new_path: Option<&str>) -> Op
         .filter(|path| *path != "/dev/null")
         .map(ToOwned::to_owned)
         .or_else(|| old_path.map(ToOwned::to_owned))
+}
+
+fn synthetic_turn_diff_path(section_ix: usize) -> String {
+    if section_ix == 0 {
+        return SYNTHETIC_TURN_DIFF_PATH_BASENAME.to_string();
+    }
+
+    format!(
+        "historical-turn-diff-{}.patch",
+        section_ix.saturating_add(1)
+    )
 }
 
 fn unified_patch_line_stats(diff: &str) -> LineStats {
@@ -261,5 +306,56 @@ diff --git a/src/lib.rs b/src/lib.rs
         assert_eq!(snapshot.file_line_stats["src/lib.rs"].removed, 2);
         assert!(snapshot.patches_by_path["src/lib.rs"].contains("@@ -1 +1 @@"));
         assert!(snapshot.patches_by_path["src/lib.rs"].contains("@@ -3 +3 @@"));
+    }
+
+    #[test]
+    fn compare_snapshot_from_headerless_turn_diff_recovers_paths() {
+        let diff = "\
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1 +1 @@
+-old
++new
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -5 +5 @@
+-before
++after
+";
+
+        let snapshot = compare_snapshot_from_turn_diff(diff);
+
+        assert_eq!(snapshot.files.len(), 2);
+        assert_eq!(snapshot.files[0].path, "src/lib.rs");
+        assert_eq!(snapshot.files[1].path, "src/main.rs");
+        assert_eq!(snapshot.overall_line_stats.added, 2);
+        assert_eq!(snapshot.overall_line_stats.removed, 2);
+    }
+
+    #[test]
+    fn compare_snapshot_from_pathless_turn_diff_uses_synthetic_file() {
+        let diff = "\
+@@ -1 +1 @@
+-old
++new
+";
+
+        let snapshot = compare_snapshot_from_turn_diff(diff);
+
+        assert_eq!(snapshot.files.len(), 1);
+        assert_eq!(snapshot.files[0].path, "historical-turn-diff.patch");
+        assert_eq!(snapshot.files[0].status, FileStatus::Modified);
+        assert_eq!(
+            snapshot.file_line_stats["historical-turn-diff.patch"].added,
+            1
+        );
+        assert_eq!(
+            snapshot.file_line_stats["historical-turn-diff.patch"].removed,
+            1
+        );
+        assert_eq!(
+            snapshot.patches_by_path["historical-turn-diff.patch"],
+            diff.trim_end()
+        );
     }
 }

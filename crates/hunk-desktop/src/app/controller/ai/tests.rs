@@ -14,7 +14,9 @@ mod ai_tests {
     use super::ai_branch_name_for_thread;
     use super::ai_completion_reload_workspace_root;
     use super::ai_historical_turn_diff_key_for_row;
+    use super::ai_historical_inline_review_loaded_state;
     use super::ai_inline_review_toggle_target_mode;
+    use super::ai_inline_review_uses_review_compare_session_for_surface;
     use super::ai_latest_supported_inline_review_row_id_for_visible_rows;
     use super::ai_prominent_worker_status_error;
     use super::ai_resolved_inline_review_row_id_for_visible_rows;
@@ -119,6 +121,7 @@ mod ai_tests {
     use crate::app::AiTimelineRowSource;
     use crate::app::AiWorkspaceState;
     use crate::app::DiffViewer;
+    use crate::app::WorkspaceViewMode;
     use codex_app_server_protocol::Model;
     use codex_app_server_protocol::ReasoningEffortOption;
     use codex_protocol::openai_models::ReasoningEffort;

@@ -190,12 +190,19 @@ impl DiffViewer {
                 ));
         }
 
-        let geometry = self.ai_inline_review_surface.geometry.clone()?;
-        if let Some(visible_row_range) = geometry.render_row_range_for_viewport(
-            scroll_top_px,
-            viewport_height_px.max(1),
-            crate::app::ai_inline_review::AI_INLINE_REVIEW_OVERSCAN_ROWS,
-        ) && let Some(session) = self.active_review_workspace_session_mut()
+        let visible_row_range = self
+            .ai_inline_review_surface
+            .geometry
+            .as_ref()
+            .and_then(|geometry| {
+                geometry.render_row_range_for_viewport(
+                    scroll_top_px,
+                    viewport_height_px.max(1),
+                    crate::app::ai_inline_review::AI_INLINE_REVIEW_OVERSCAN_ROWS,
+                )
+            });
+        if let Some(visible_row_range) = visible_row_range
+            && let Some(session) = self.active_review_workspace_session_mut()
         {
             crate::app::ai_inline_review::ensure_ai_inline_review_visible_row_caches(
                 session,
@@ -203,9 +210,10 @@ impl DiffViewer {
             );
         }
 
+        let geometry = self.ai_inline_review_surface.geometry.as_ref()?;
         let session = self.active_review_workspace_session()?;
         Some(crate::app::ai_inline_review::build_ai_inline_review_surface_snapshot(
-            &geometry,
+            geometry,
             session,
             scroll_top_px,
             viewport_height_px.max(1),
