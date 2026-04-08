@@ -144,6 +144,7 @@ fn app_state_round_trips_workspace_fields() {
                 branches: vec![CachedLocalBranchState {
                     name: "main".to_string(),
                     is_current: true,
+                    is_remote_tracking: false,
                     tip_unix_time: Some(1_711_111_111),
                     attached_workspace_target_id: Some("primary".to_string()),
                     attached_workspace_target_root: Some(PathBuf::from("/tmp/hunk-repo")),

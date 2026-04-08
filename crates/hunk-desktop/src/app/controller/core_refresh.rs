@@ -396,6 +396,36 @@ impl DiffViewer {
         );
     }
 
+    fn merged_git_workspace_branches(
+        mut local_branches: Vec<LocalBranch>,
+        remote_branches: &[LocalBranch],
+    ) -> Vec<LocalBranch> {
+        local_branches.extend(remote_branches.iter().cloned());
+        local_branches
+    }
+
+    fn current_git_workspace_local_branches(&self) -> Vec<LocalBranch> {
+        self.git_workspace
+            .branches
+            .iter()
+            .filter(|branch| !branch.is_remote_tracking)
+            .cloned()
+            .collect()
+    }
+
+    fn update_git_workspace_remote_branches(&mut self, remote_branches: Vec<LocalBranch>) {
+        let local_branches = if self.selected_git_workspace_root() == self.repo_root {
+            self.branches.clone()
+        } else {
+            self.current_git_workspace_local_branches()
+        };
+        self.git_workspace.remote_branches = remote_branches;
+        self.git_workspace.branches = Self::merged_git_workspace_branches(
+            local_branches,
+            &self.git_workspace.remote_branches,
+        );
+    }
+
     fn sync_git_workspace_with_primary_state(&mut self) {
         let Some(repo_root) = self.repo_root.clone() else {
             return;
@@ -410,7 +440,10 @@ impl DiffViewer {
         self.git_workspace.branch_has_upstream = self.branch_has_upstream;
         self.git_workspace.branch_ahead_count = self.branch_ahead_count;
         self.git_workspace.branch_behind_count = self.branch_behind_count;
-        self.git_workspace.branches = self.branches.clone();
+        self.git_workspace.branches = Self::merged_git_workspace_branches(
+            self.branches.clone(),
+            &self.git_workspace.remote_branches,
+        );
         self.git_workspace.files = self.files.clone();
         self.git_workspace.file_status_by_path = self.file_status_by_path.clone();
         self.git_workspace.file_line_stats = self.file_line_stats.clone();
@@ -454,6 +487,7 @@ impl DiffViewer {
         &mut self,
         root: PathBuf,
         snapshot: WorkflowSnapshot,
+        remote_branches: Vec<LocalBranch>,
         file_line_stats: BTreeMap<String, LineStats>,
         cx: &mut Context<Self>,
     ) {
@@ -477,7 +511,11 @@ impl DiffViewer {
         self.git_workspace.branch_has_upstream = branch_has_upstream;
         self.git_workspace.branch_ahead_count = branch_ahead_count;
         self.git_workspace.branch_behind_count = branch_behind_count;
-        self.git_workspace.branches = branches;
+        self.git_workspace.remote_branches = remote_branches;
+        self.git_workspace.branches = Self::merged_git_workspace_branches(
+            branches,
+            &self.git_workspace.remote_branches,
+        );
         self.git_workspace.files = files;
         self.git_workspace.file_status_by_path = self
             .git_workspace
@@ -570,6 +608,8 @@ impl DiffViewer {
                         refresh_root.as_path(),
                         previous_fingerprint.as_ref(),
                     )?;
+                let remote_branches =
+                    load_remote_tracking_branches_without_refresh(refresh_root.as_path())?;
                 let file_line_stats = if let Some(workflow_snapshot) = workflow_snapshot.as_ref() {
                     if workflow_snapshot.files.is_empty() {
                         BTreeMap::new()
@@ -579,7 +619,12 @@ impl DiffViewer {
                 } else {
                     BTreeMap::new()
                 };
-                Ok::<_, anyhow::Error>((fingerprint, workflow_snapshot, file_line_stats))
+                Ok::<_, anyhow::Error>((
+                    fingerprint,
+                    workflow_snapshot,
+                    remote_branches,
+                    file_line_stats,
+                ))
             });
             let result = result.await;
 
@@ -593,7 +638,7 @@ impl DiffViewer {
                     this.git_workspace_active_root = None;
                     this.workspace_target_switch_loading = false;
                     match result {
-                        Ok((fingerprint, Some(workflow_snapshot), file_line_stats)) => {
+                        Ok((fingerprint, Some(workflow_snapshot), remote_branches, file_line_stats)) => {
                             debug!(
                                 "git workspace state refresh complete: epoch={} recent_commits={} root={} files={}",
                                 epoch,
@@ -605,6 +650,7 @@ impl DiffViewer {
                             this.apply_git_workspace_snapshot(
                                 root.clone(),
                                 workflow_snapshot,
+                                remote_branches,
                                 file_line_stats,
                                 cx,
                             );
@@ -612,7 +658,7 @@ impl DiffViewer {
                                 this.request_recent_commits_refresh(true, cx);
                             }
                         }
-                        Ok((fingerprint, None, _)) => {
+                        Ok((fingerprint, None, remote_branches, _)) => {
                             debug!(
                                 "git workspace state refresh skipped: epoch={} recent_commits={} root={} (no repo changes)",
                                 epoch,
@@ -620,6 +666,7 @@ impl DiffViewer {
                                 root.display()
                             );
                             this.last_git_workspace_fingerprint = Some(fingerprint);
+                            this.update_git_workspace_remote_branches(remote_branches);
                             if refresh_recent_commits {
                                 this.request_recent_commits_refresh(true, cx);
                             }

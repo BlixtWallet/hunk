@@ -174,6 +174,7 @@ impl DiffViewer {
             .map(|branch| LocalBranch {
                 name: branch.name,
                 is_current: branch.is_current,
+                is_remote_tracking: branch.is_remote_tracking,
                 tip_unix_time: branch.tip_unix_time,
                 attached_workspace_target_id: branch.attached_workspace_target_id,
                 attached_workspace_target_root: branch.attached_workspace_target_root,
@@ -242,6 +243,7 @@ impl DiffViewer {
                 .map(|branch| CachedLocalBranchState {
                     name: branch.name.clone(),
                     is_current: branch.is_current,
+                    is_remote_tracking: branch.is_remote_tracking,
                     tip_unix_time: branch.tip_unix_time,
                     attached_workspace_target_id: branch.attached_workspace_target_id.clone(),
                     attached_workspace_target_root: branch.attached_workspace_target_root.clone(),

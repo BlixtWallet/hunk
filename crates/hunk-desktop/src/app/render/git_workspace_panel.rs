@@ -68,12 +68,18 @@ impl DiffViewer {
         let colors = hunk_git_workspace(cx.theme(), is_dark);
         let activate_branch_loading = self.git_action_loading_named("Activate branch");
         let sync_loading = self.git_action_loading_named("Sync branch");
+        let pull_rebase_loading = self.git_action_loading_named("Pull branch --rebase");
+        let fetch_remote_branches_loading = self.git_action_loading_named("Fetch remote branches");
         let publish_loading = self.git_action_loading_named("Publish branch");
         let open_review_loading = self.git_action_loading_named("Open PR/MR");
         let copy_review_loading = self.git_action_loading_named("Copy PR/MR URL");
         let git_controls_busy = self.git_rail_controls_busy();
         let branch_syncable = self.can_run_active_branch_actions_for_ui();
         let sync_disabled = !self.can_sync_current_branch_for_ui();
+        let pull_rebase_disabled = !self.can_pull_current_branch_with_rebase_for_ui();
+        let fetch_remote_branches_disabled = !self.can_fetch_remote_branches_for_ui();
+        let update_disabled =
+            sync_disabled && pull_rebase_disabled && fetch_remote_branches_disabled;
         let publish_disabled = !self.can_publish_current_branch_for_ui();
         let create_or_activate_disabled = git_controls_busy || !self.branch_input_has_text;
         let active_review_blocker = self.active_review_action_blocker_for_ui();
@@ -284,20 +290,72 @@ impl DiffViewer {
                     .gap_1p5()
                     .flex_wrap()
                     .child({
-                        let view = view.clone();
-                        Button::new("sync-branch-v3")
-                            .outline()
+                        let view_for_primary = view.clone();
+                        let view_for_menu = view.clone();
+                        DropdownButton::new("update-branch-dropdown")
+                            .button(
+                                Button::new("update-branch-v1")
+                                    .outline()
+                                    .compact()
+                                    .with_size(gpui_component::Size::Small)
+                                    .rounded(px(8.0))
+                                    .loading(
+                                        sync_loading
+                                            || pull_rebase_loading
+                                            || fetch_remote_branches_loading,
+                                    )
+                                    .label("Update")
+                                    .tooltip(sync_tooltip)
+                                    .disabled(sync_disabled)
+                                    .on_click(move |_, window, cx| {
+                                        view_for_primary.update(cx, |this, cx| {
+                                            this.sync_current_branch_from_remote(window, cx);
+                                        });
+                                    }),
+                            )
                             .compact()
+                            .outline()
                             .with_size(gpui_component::Size::Small)
                             .rounded(px(8.0))
-                            .loading(sync_loading)
-                            .label("Sync")
-                            .tooltip(sync_tooltip)
-                            .disabled(sync_disabled)
-                            .on_click(move |_, _, cx| {
-                                view.update(cx, |this, cx| {
-                                    this.sync_current_branch_from_remote(cx);
-                                });
+                            .disabled(update_disabled)
+                            .dropdown_menu(move |menu, _, _| {
+                                menu.item(
+                                    PopupMenuItem::new("Sync branch (ff-only)")
+                                        .disabled(sync_disabled)
+                                        .on_click({
+                                        let view = view_for_menu.clone();
+                                        move |_, window, cx| {
+                                            view.update(cx, |this, cx| {
+                                                this.sync_current_branch_from_remote(window, cx);
+                                            });
+                                        }
+                                    }),
+                                )
+                                .item(PopupMenuItem::separator())
+                                .item(
+                                    PopupMenuItem::new("Pull branch --rebase")
+                                        .disabled(pull_rebase_disabled)
+                                        .on_click({
+                                            let view = view_for_menu.clone();
+                                            move |_, window, cx| {
+                                                view.update(cx, |this, cx| {
+                                                    this.pull_current_branch_with_rebase(window, cx);
+                                                });
+                                            }
+                                        }),
+                                )
+                                .item(
+                                    PopupMenuItem::new("Fetch remote branches")
+                                        .disabled(fetch_remote_branches_disabled)
+                                        .on_click({
+                                            let view = view_for_menu.clone();
+                                            move |_, window, cx| {
+                                                view.update(cx, |this, cx| {
+                                                    this.fetch_remote_branches(window, cx);
+                                                });
+                                            }
+                                        }),
+                                )
                             })
                     })
                     .child({
@@ -314,9 +372,9 @@ impl DiffViewer {
                             })
                             .tooltip(publish_state_tooltip)
                             .disabled(self.git_workspace.branch_has_upstream || publish_disabled)
-                            .on_click(move |_, _, cx| {
+                            .on_click(move |_, window, cx| {
                                 view.update(cx, |this, cx| {
-                                    this.publish_current_branch(cx);
+                                    this.publish_current_branch(window, cx);
                                 });
                             });
                         if self.git_workspace.branch_has_upstream {
@@ -348,9 +406,9 @@ impl DiffViewer {
                                     .to_string()
                             }))
                             .disabled(review_url_disabled)
-                            .on_click(move |_, _, cx| {
+                            .on_click(move |_, window, cx| {
                                 view.update(cx, |this, cx| {
-                                    this.open_current_branch_review_url(cx);
+                                    this.open_current_branch_review_url(window, cx);
                                 });
                             })
                     })
@@ -369,9 +427,9 @@ impl DiffViewer {
                                     .to_string()
                             }))
                             .disabled(review_url_disabled)
-                            .on_click(move |_, _, cx| {
+                            .on_click(move |_, window, cx| {
                                 view.update(cx, |this, cx| {
-                                    this.copy_current_branch_review_url(cx);
+                                    this.copy_current_branch_review_url(window, cx);
                                 });
                             })
                     }),

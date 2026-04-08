@@ -148,6 +148,7 @@
                 branches: vec![CachedLocalBranchState {
                     name: "feature/project-b".to_string(),
                     is_current: false,
+                    is_remote_tracking: false,
                     tip_unix_time: None,
                     attached_workspace_target_id: Some("worktree:task-1".to_string()),
                     attached_workspace_target_root: Some(PathBuf::from("/repo-b/worktrees/task-1")),
@@ -207,6 +208,7 @@
                 branches: vec![CachedLocalBranchState {
                     name: "feature/project-b".to_string(),
                     is_current: false,
+                    is_remote_tracking: false,
                     tip_unix_time: None,
                     attached_workspace_target_id: Some("worktree:task-1".to_string()),
                     attached_workspace_target_root: Some(PathBuf::from("/repo-b/worktrees/task-1")),

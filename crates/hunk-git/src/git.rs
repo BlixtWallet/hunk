@@ -70,6 +70,7 @@ impl ChangedFile {
 pub struct LocalBranch {
     pub name: String,
     pub is_current: bool,
+    pub is_remote_tracking: bool,
     pub tip_unix_time: Option<i64>,
     pub attached_workspace_target_id: Option<String>,
     pub attached_workspace_target_root: Option<PathBuf>,

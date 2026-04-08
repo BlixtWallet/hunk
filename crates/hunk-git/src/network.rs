@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result, anyhow};
 use git2::{
     AutotagOption, BranchType, Cred, CredentialType, FetchOptions, PushOptions, RemoteCallbacks,
-    Repository,
+    Repository, RepositoryState,
 };
 
 use crate::branch::is_valid_branch_name;
@@ -106,6 +106,19 @@ pub fn sync_current_branch(repo_root: &Path, branch_name: &str) -> Result<()> {
     sync_branch_from_remote(repo_root, branch_name)
 }
 
+pub fn pull_current_branch_with_rebase(repo_root: &Path, branch_name: &str) -> Result<()> {
+    let branch_name = normalized_branch_name(branch_name)?;
+    let repo = open_repo(repo_root)?;
+    let upstream = resolve_upstream_target(&repo, branch_name)?
+        .ok_or_else(|| anyhow!("no upstream branch to pull from"))?;
+    pull_branch_with_rebase(&repo, branch_name, &upstream)
+}
+
+pub fn fetch_remote_branches(repo_root: &Path) -> Result<usize> {
+    let repo = open_repo(repo_root)?;
+    fetch_all_remotes(&repo)
+}
+
 pub fn sync_branch_from_remote_if_tracked(repo_root: &Path, branch_name: &str) -> Result<bool> {
     let branch_name = normalized_branch_name(branch_name)?;
     let repo = open_repo(repo_root)?;
@@ -182,17 +195,182 @@ fn sync_branch_with_upstream(
     ))
 }
 
+fn pull_branch_with_rebase(
+    repo: &Repository,
+    branch_name: &str,
+    upstream: &UpstreamTarget,
+) -> Result<()> {
+    let local_branch = repo
+        .find_branch(branch_name, BranchType::Local)
+        .with_context(|| format!("branch '{branch_name}' does not exist"))?;
+    if !local_branch.is_head() {
+        return Err(anyhow!(
+            "pull with rebase only supports the checked out branch"
+        ));
+    }
+    ensure_pull_rebase_worktree_is_clean(repo)?;
+    ensure_repository_state_clean_for_pull_rebase(repo)?;
+    fetch_upstream(repo, upstream)?;
+
+    let tracking_reference = repo
+        .find_reference(upstream.tracking_ref_name.as_str())
+        .with_context(|| {
+            format!(
+                "tracking branch '{}' does not exist after fetch",
+                upstream.tracking_ref_name
+            )
+        })?;
+    let remote_commit = repo
+        .reference_to_annotated_commit(&tracking_reference)
+        .context("failed to resolve fetched upstream commit")?;
+    let (analysis, _) = repo
+        .merge_analysis_for_ref(local_branch.get(), &[&remote_commit])
+        .context("failed to analyze pull --rebase state")?;
+
+    if analysis.is_up_to_date() {
+        return Ok(());
+    }
+    if analysis.is_fast_forward() {
+        fast_forward_branch(
+            repo,
+            branch_name,
+            upstream.tracking_ref_name.as_str(),
+            remote_commit.id(),
+            true,
+        )?;
+        return Ok(());
+    }
+    if analysis.is_unborn() {
+        return Err(anyhow!(
+            "cannot pull branch '{branch_name}' because the local branch has no commits"
+        ));
+    }
+    if !analysis.is_normal() {
+        return Err(anyhow!(
+            "pull with rebase is not supported for the current branch state"
+        ));
+    }
+
+    let local_commit = repo
+        .reference_to_annotated_commit(local_branch.get())
+        .with_context(|| format!("failed to resolve local branch '{branch_name}'"))?;
+    let mut rebase = repo
+        .rebase(Some(&local_commit), Some(&remote_commit), None, None)
+        .with_context(|| format!("failed to start rebase for branch '{branch_name}'"))?;
+    let signature = repo
+        .signature()
+        .context("failed to resolve Git signature for pull with rebase")?;
+
+    while let Some(operation_result) = rebase.next() {
+        let operation = match operation_result {
+            Ok(operation) => operation,
+            Err(err) => {
+                return Err(abort_rebase_on_error(
+                    &mut rebase,
+                    anyhow!(err).context(format!(
+                        "failed to apply rebase step for branch '{branch_name}'"
+                    )),
+                ));
+            }
+        };
+
+        let index = repo.index().context("failed to inspect rebase index")?;
+        if index.has_conflicts() {
+            return Err(abort_rebase_on_error(
+                &mut rebase,
+                anyhow!(
+                    "pull with rebase for branch '{branch_name}' hit conflicts while applying commit {}",
+                    operation.id()
+                ),
+            ));
+        }
+
+        match rebase.commit(None, &signature, None) {
+            Ok(_) => {}
+            Err(err) if err.code() == git2::ErrorCode::Applied => {}
+            Err(err) => {
+                return Err(abort_rebase_on_error(
+                    &mut rebase,
+                    anyhow!(err).context(format!(
+                        "failed to commit rebased changes for branch '{branch_name}'"
+                    )),
+                ));
+            }
+        }
+    }
+
+    rebase
+        .finish(None)
+        .with_context(|| format!("failed to finish rebase for branch '{branch_name}'"))?;
+    Ok(())
+}
+
+fn fetch_all_remotes(repo: &Repository) -> Result<usize> {
+    let remote_names = repo
+        .remotes()
+        .context("failed to list configured Git remotes")?
+        .iter()
+        .flatten()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if remote_names.is_empty() {
+        return Err(anyhow!("no Git remotes are configured"));
+    }
+
+    let mut fetched_remote_count = 0usize;
+    for remote_name in remote_names {
+        let mut fetch_options = fetch_options(repo)?;
+        let mut remote = repo
+            .find_remote(remote_name.as_str())
+            .with_context(|| format!("remote '{remote_name}' is not configured"))?;
+        let refspecs: [&str; 0] = [];
+        remote
+            .fetch(&refspecs, Some(&mut fetch_options), None)
+            .with_context(|| format!("failed to fetch remote '{remote_name}'"))?;
+        fetched_remote_count += 1;
+    }
+
+    Ok(fetched_remote_count)
+}
+
 fn ensure_sync_worktree_is_clean(repo: &Repository) -> Result<()> {
-    let statuses = load_statuses(repo, || {
-        "failed to inspect sync worktree status".to_string()
-    })?;
+    ensure_worktree_is_clean(
+        repo,
+        "commit, unstage, or discard local changes before syncing",
+    )
+}
+
+fn ensure_pull_rebase_worktree_is_clean(repo: &Repository) -> Result<()> {
+    ensure_worktree_is_clean(
+        repo,
+        "commit, unstage, or discard local changes before pulling with rebase",
+    )
+}
+
+fn ensure_worktree_is_clean(repo: &Repository, message: &'static str) -> Result<()> {
+    let statuses = load_statuses(repo, || "failed to inspect worktree status".to_string())?;
     if statuses.is_empty() {
         return Ok(());
     }
 
+    Err(anyhow!(message))
+}
+
+fn ensure_repository_state_clean_for_pull_rebase(repo: &Repository) -> Result<()> {
+    if repo.state() == RepositoryState::Clean {
+        return Ok(());
+    }
+
     Err(anyhow!(
-        "commit, unstage, or discard local changes before syncing"
+        "complete or abort the in-progress Git operation before pulling with rebase"
     ))
+}
+
+fn abort_rebase_on_error(rebase: &mut git2::Rebase<'_>, err: anyhow::Error) -> anyhow::Error {
+    match rebase.abort() {
+        Ok(()) => err,
+        Err(abort_err) => err.context(format!("failed to abort rebase cleanly: {abort_err:#}")),
+    }
 }
 
 fn normalized_branch_name(branch_name: &str) -> Result<&str> {

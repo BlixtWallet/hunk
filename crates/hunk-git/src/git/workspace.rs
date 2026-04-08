@@ -460,6 +460,7 @@ fn list_local_branches(
         branches.push(LocalBranch {
             name: name.to_string(),
             is_current: Some(full_name.as_str()) == current_head_ref_name,
+            is_remote_tracking: false,
             tip_unix_time,
             attached_workspace_target_id: occupancy.map(|target| target.target_id.clone()),
             attached_workspace_target_root: occupancy.map(|target| target.target_root.clone()),
@@ -475,6 +476,81 @@ fn list_local_branches(
             .then_with(|| left.name.cmp(&right.name))
     });
     Ok(branches)
+}
+
+pub fn load_remote_tracking_branches_without_refresh(path: &Path) -> Result<Vec<LocalBranch>> {
+    let repo = open_git2_repo(path)?;
+    list_remote_tracking_branches(&repo)
+}
+
+fn list_remote_tracking_branches(repo: &git2::Repository) -> Result<Vec<LocalBranch>> {
+    let mut local_branch_names = BTreeSet::new();
+    for branch in repo
+        .branches(Some(git2::BranchType::Local))
+        .context("failed to iterate local Git branches for remote branch discovery")?
+    {
+        let (branch, _) = branch.map_err(|err| anyhow!("failed to read local branch: {err}"))?;
+        let Some(name) = branch
+            .name()
+            .context("failed to resolve local branch name for remote branch discovery")?
+        else {
+            continue;
+        };
+        local_branch_names.insert(name.to_string());
+    }
+
+    let mut branches = Vec::new();
+    for branch in repo
+        .branches(Some(git2::BranchType::Remote))
+        .context("failed to iterate remote Git branches")?
+    {
+        let (branch, _) =
+            branch.map_err(|err| anyhow!("failed to read remote-tracking branch: {err}"))?;
+        let Some(name) = branch
+            .name()
+            .context("failed to resolve remote-tracking branch name")?
+        else {
+            continue;
+        };
+        let name = name.to_string();
+        let Some((_, remote_branch_name)) = split_remote_tracking_branch_name(name.as_str()) else {
+            continue;
+        };
+        if local_branch_names.contains(remote_branch_name) {
+            continue;
+        }
+
+        let tip_unix_time = branch
+            .into_reference()
+            .peel_to_commit()
+            .ok()
+            .map(|commit| commit.time().seconds());
+        branches.push(LocalBranch {
+            name,
+            is_current: false,
+            is_remote_tracking: true,
+            tip_unix_time,
+            attached_workspace_target_id: None,
+            attached_workspace_target_root: None,
+            attached_workspace_target_label: None,
+        });
+    }
+
+    branches.sort_by(|left, right| {
+        right
+            .tip_unix_time
+            .cmp(&left.tip_unix_time)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    Ok(branches)
+}
+
+fn split_remote_tracking_branch_name(name: &str) -> Option<(&str, &str)> {
+    let (remote_name, remote_branch_name) = name.split_once('/')?;
+    if remote_name.is_empty() || remote_branch_name.is_empty() || remote_branch_name == "HEAD" {
+        return None;
+    }
+    Some((remote_name, remote_branch_name))
 }
 
 fn last_commit_subject(repo: &gix::Repository) -> Result<Option<String>> {

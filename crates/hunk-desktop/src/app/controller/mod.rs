@@ -29,10 +29,11 @@ use hunk_git::branch::{
 use hunk_git::compare::{CompareSource, load_compare_snapshot, resolve_default_base_branch_name};
 use hunk_git::git::{
     RepoSnapshotFingerprint, WorkflowSnapshot, count_non_ignored_repo_tree_entries,
-    invalidate_repo_metadata_caches, load_repo_file_line_stats_for_paths_without_refresh,
-    load_repo_file_line_stats_without_refresh, load_repo_tree, load_snapshot_fingerprint,
-    load_workflow_snapshot, load_workflow_snapshot_if_changed,
-    load_workflow_snapshot_if_changed_without_refresh, load_workflow_snapshot_with_fingerprint,
+    invalidate_repo_metadata_caches, load_remote_tracking_branches_without_refresh,
+    load_repo_file_line_stats_for_paths_without_refresh, load_repo_file_line_stats_without_refresh,
+    load_repo_tree, load_snapshot_fingerprint, load_workflow_snapshot,
+    load_workflow_snapshot_if_changed, load_workflow_snapshot_if_changed_without_refresh,
+    load_workflow_snapshot_with_fingerprint,
     load_workflow_snapshot_with_fingerprint_without_refresh,
 };
 use hunk_git::history::{
@@ -46,6 +47,7 @@ use hunk_git::mutation::{
     working_copy_context_for_ai,
 };
 use hunk_git::network::{
+    fetch_remote_branches, pull_current_branch_with_rebase as pull_branch_with_rebase,
     push_current_branch, sync_branch_from_remote_if_tracked, sync_current_branch,
 };
 

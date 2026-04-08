@@ -2,12 +2,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use git2::{BranchType, IndexAddOption, Repository, Signature, build::CheckoutBuilder};
-use hunk_git::git::load_workflow_snapshot;
+use git2::{
+    BranchType, IndexAddOption, Repository, RepositoryState, Signature, build::CheckoutBuilder,
+};
+use hunk_git::git::{load_remote_tracking_branches_without_refresh, load_workflow_snapshot};
 use hunk_git::mutation::{commit_index_with_details, stage_paths};
 use hunk_git::network::{
-    push_current_branch, sync_branch_from_remote, sync_branch_from_remote_if_tracked,
-    sync_current_branch,
+    fetch_remote_branches, pull_current_branch_with_rebase, push_current_branch,
+    sync_branch_from_remote, sync_branch_from_remote_if_tracked, sync_current_branch,
 };
 use tempfile::TempDir;
 
@@ -235,6 +237,123 @@ fn sync_branch_from_remote_if_tracked_skips_local_only_base_branch() -> Result<(
         fixture.repository()?.head()?.shorthand(),
         Some("feature/local-only")
     );
+    Ok(())
+}
+
+#[test]
+fn pull_branch_with_rebase_replays_local_commits_on_upstream() -> Result<()> {
+    let fixture = TempGitRepo::new()?;
+    fixture.configure_signature()?;
+    fixture.write_file("tracked.txt", "base\n")?;
+    fixture.commit_all("initial")?;
+    let remote_root = fixture.create_bare_remote("origin")?;
+    fixture.checkout_branch("feature/rebase")?;
+    push_current_branch(fixture.root(), "feature/rebase", false)?;
+
+    let peer = TempGitRepo::clone_from(fixture.root(), "peer")?;
+    peer.configure_signature()?;
+    peer.set_remote_url("origin", remote_root.to_string_lossy().as_ref())?;
+    peer.checkout_branch("feature/rebase")?;
+    peer.write_file("remote.txt", "remote\n")?;
+    peer.commit_all("remote update")?;
+    peer.push_to_remote("origin", "feature/rebase", "feature/rebase")?;
+
+    fixture.write_file("local.txt", "local\n")?;
+    let local_head_before_rebase = fixture.commit_all("local update")?;
+
+    pull_current_branch_with_rebase(fixture.root(), "feature/rebase")?;
+
+    let snapshot = load_workflow_snapshot(fixture.root())?;
+    assert_eq!(snapshot.branch_behind_count, 0);
+    assert_eq!(snapshot.branch_ahead_count, 1);
+    assert_eq!(
+        snapshot.last_commit_subject.as_deref(),
+        Some("local update")
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.root().join("remote.txt"))?,
+        "remote\n"
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.root().join("local.txt"))?,
+        "local\n"
+    );
+    assert_ne!(
+        fixture.repository()?.head()?.target(),
+        Some(local_head_before_rebase)
+    );
+    Ok(())
+}
+
+#[test]
+fn pull_branch_with_rebase_aborts_and_restores_state_on_conflict() -> Result<()> {
+    let fixture = TempGitRepo::new()?;
+    fixture.configure_signature()?;
+    fixture.write_file("tracked.txt", "base\n")?;
+    fixture.commit_all("initial")?;
+    let remote_root = fixture.create_bare_remote("origin")?;
+    fixture.checkout_branch("feature/rebase-conflict")?;
+    push_current_branch(fixture.root(), "feature/rebase-conflict", false)?;
+
+    let peer = TempGitRepo::clone_from(fixture.root(), "peer")?;
+    peer.configure_signature()?;
+    peer.set_remote_url("origin", remote_root.to_string_lossy().as_ref())?;
+    peer.checkout_branch("feature/rebase-conflict")?;
+    peer.write_file("tracked.txt", "remote\n")?;
+    peer.commit_all("remote update")?;
+    peer.push_to_remote(
+        "origin",
+        "feature/rebase-conflict",
+        "feature/rebase-conflict",
+    )?;
+
+    fixture.write_file("tracked.txt", "local\n")?;
+    let local_head_before_rebase = fixture.commit_all("local update")?;
+
+    let err = pull_current_branch_with_rebase(fixture.root(), "feature/rebase-conflict")
+        .expect_err("conflicting rebase should abort and return an error");
+    assert!(err.to_string().contains("conflicts"));
+
+    let repo = fixture.repository()?;
+    assert_eq!(repo.state(), RepositoryState::Clean);
+    assert_eq!(repo.head()?.target(), Some(local_head_before_rebase));
+    assert_eq!(
+        fs::read_to_string(fixture.root().join("tracked.txt"))?,
+        "local\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn fetch_remote_branches_discovers_remote_only_branches() -> Result<()> {
+    let fixture = TempGitRepo::new()?;
+    fixture.configure_signature()?;
+    fixture.write_file("tracked.txt", "base\n")?;
+    fixture.commit_all("initial")?;
+    let remote_root = fixture.create_bare_remote("origin")?;
+    fixture.checkout_branch("feature/base")?;
+    push_current_branch(fixture.root(), "feature/base", false)?;
+
+    let peer = TempGitRepo::clone_from(fixture.root(), "peer")?;
+    peer.configure_signature()?;
+    peer.set_remote_url("origin", remote_root.to_string_lossy().as_ref())?;
+    peer.checkout_branch("feature/pr-123")?;
+    peer.write_file("remote.txt", "remote branch\n")?;
+    peer.commit_all("remote branch")?;
+    peer.push_to_remote("origin", "feature/pr-123", "feature/pr-123")?;
+
+    assert!(
+        load_remote_tracking_branches_without_refresh(fixture.root())?
+            .iter()
+            .all(|branch| branch.name != "origin/feature/pr-123")
+    );
+
+    assert_eq!(fetch_remote_branches(fixture.root())?, 1);
+
+    let remote_branches = load_remote_tracking_branches_without_refresh(fixture.root())?;
+    assert!(remote_branches.iter().any(|branch| {
+        branch.name == "origin/feature/pr-123" && branch.is_remote_tracking && !branch.is_current
+    }));
     Ok(())
 }
 

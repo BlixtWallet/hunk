@@ -357,9 +357,9 @@ impl DiffViewer {
                             .label(if push_loading { "Pushing..." } else { "Push" })
                             .tooltip(push_tooltip)
                             .disabled(push_disabled)
-                            .on_click(move |_, _, cx| {
+                            .on_click(move |_, window, cx| {
                                 view.update(cx, |this, cx| {
-                                    this.push_current_branch(cx);
+                                    this.push_current_branch(window, cx);
                                 });
                             });
                         if !push_disabled {
