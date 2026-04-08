@@ -3,6 +3,7 @@ enum AiWorkspaceOverlayButtonKind {
         text: String,
         success_message: &'static str,
         message_copy: bool,
+        chromeless: bool,
     },
     RunInTerminal {
         command: String,
@@ -160,6 +161,7 @@ fn ai_workspace_overlay_action_clusters(
                     text: copy_text,
                     success_message: block.block.copy_success_message.unwrap_or("Copied."),
                     message_copy: block.block.copy_tooltip == Some("Copy message"),
+                    chromeless: block.block.copy_tooltip == Some("Copy message"),
                 },
             });
         }
@@ -259,6 +261,7 @@ fn ai_workspace_overlay_action_clusters(
                             text: copy_region.text.clone(),
                             success_message: copy_region.success_message,
                             message_copy: false,
+                            chromeless: true,
                         },
                     }],
                 },
@@ -279,22 +282,22 @@ fn ai_workspace_overlay_button_cluster(
     border_color: gpui::Hsla,
     background_color: gpui::Hsla,
 ) -> AnyElement {
-    let message_copy_only = spec.status_label.is_none()
+    let chromeless_single_button = spec.status_label.is_none()
         && spec.buttons.len() == 1
         && matches!(
             spec.buttons.first().map(|button| &button.kind),
             Some(AiWorkspaceOverlayButtonKind::Copy {
-                message_copy: true,
+                chromeless: true,
                 ..
             })
         );
 
-    if message_copy_only {
+    if chromeless_single_button {
         let button = spec
             .buttons
             .into_iter()
             .next()
-            .expect("message copy overlay should include one button");
+            .expect("chromeless overlay should include one button");
         return div()
             .absolute()
             .left(px(spec.left_px as f32))
@@ -371,6 +374,7 @@ fn ai_workspace_overlay_action_button(
                     text,
                     success_message,
                     message_copy,
+                    ..
                 } => {
                     if *message_copy {
                         this.ai_copy_message_action(text.clone(), window, cx);
