@@ -831,7 +831,69 @@ impl DiffViewer {
             cx.notify();
             return;
         }
-        self.reset_to_empty_workspace_state(true, cx);
+        self.recover_from_missing_workspace_project(cx);
+    }
+
+    fn recover_from_missing_workspace_project(&mut self, cx: &mut Context<Self>) {
+        let unavailable_project_path = self
+            .project_path
+            .clone()
+            .or_else(|| self.state.active_project_path().cloned());
+        let removed_from_workspace = unavailable_project_path
+            .as_ref()
+            .is_some_and(|project_path| self.state.remove_workspace_project(project_path.as_path()));
+
+        if removed_from_workspace {
+            self.persist_state();
+        }
+
+        if let Some(project_path) = unavailable_project_path.as_ref() {
+            self.clear_workspace_project_caches(project_path.as_path());
+            self.discard_workspace_project_state(project_path.as_path());
+            self.discard_files_terminal_state_for_project(
+                project_path.as_path(),
+                "removing unavailable project from workspace",
+            );
+            self.remove_ai_workspace_states_for_project(project_path.as_path(), cx);
+        }
+
+        self.invalidate_ai_visible_frame_state_with_reason("refresh");
+        self.project_path = None;
+        self.repo_root = None;
+
+        let next_active_project = self.state.active_project_path().cloned();
+        if let Some(next_active_project) = next_active_project {
+            let next_project_name =
+                crate::app::project_picker::project_display_name(next_active_project.as_path());
+            self.activate_workspace_project_root(next_active_project, cx);
+            self.git_status_message = Some(format!(
+                "Previous project is unavailable. Switched to '{}'.",
+                next_project_name
+            ));
+            return;
+        }
+
+        self.reset_to_empty_workspace_state(false, cx);
+        self.git_status_message =
+            Some("Previous project is unavailable. Open another project.".to_string());
+    }
+
+    fn clear_workspace_project_caches(&mut self, project_path: &std::path::Path) {
+        let cache_key = project_path.to_string_lossy().to_string();
+        let removed_workflow = self
+            .state
+            .git_workflow_cache_by_repo
+            .remove(cache_key.as_str())
+            .is_some();
+        let removed_recent = self
+            .state
+            .git_recent_commits_cache_by_repo
+            .remove(cache_key.as_str())
+            .is_some();
+
+        if removed_workflow || removed_recent {
+            self.persist_state();
+        }
     }
 
     fn format_error_chain(err: &anyhow::Error) -> String {
@@ -849,10 +911,6 @@ impl DiffViewer {
     }
 
     fn is_missing_repository_error(err: &anyhow::Error) -> bool {
-        err.chain().any(|cause| {
-            let message = cause.to_string();
-            message.contains("failed to discover git repository")
-                || message.contains("could not find repository")
-        })
+        crate::app::repo_discovery::is_missing_repository_error(err)
     }
 }
