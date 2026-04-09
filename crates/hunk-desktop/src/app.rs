@@ -178,6 +178,7 @@ mod fuzzy_match;
 mod project_open;
 mod project_picker;
 mod refresh_policy;
+mod repo_discovery;
 mod review_compare_picker;
 mod workspace_target_picker;
 
