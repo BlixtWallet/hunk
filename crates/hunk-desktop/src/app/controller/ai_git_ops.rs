@@ -59,10 +59,10 @@ impl AiBranchTargetChoiceAction {
         }
     }
 
-    fn current_branch_button_label(self, branch_name: &str) -> String {
+    fn current_branch_button_label(self) -> String {
         match self {
-            Self::CreateBranchAndPush => format!("Push {}", branch_name),
-            Self::OpenPr => format!("Open PR on {}", branch_name),
+            Self::CreateBranchAndPush => "Push Current Branch".to_string(),
+            Self::OpenPr => "Open PR on Current Branch".to_string(),
         }
     }
 
@@ -710,13 +710,13 @@ impl DiffViewer {
         let title = action.dialog_title();
         let description = action.dialog_description(branch_name.as_str());
         let hint_text = action.hint_text();
-        let current_branch_button_label = action.current_branch_button_label(branch_name.as_str());
+        let current_branch_button_label = action.current_branch_button_label();
         let new_branch_button_label = action.new_branch_button_label();
         let view = cx.entity();
 
         gpui_component::WindowExt::open_alert_dialog(window, cx, move |alert, _, cx| {
             alert
-                .width(px(520.0))
+                .width(px(600.0))
                 .title(title)
                 .description(description.clone())
                 .child(
@@ -728,67 +728,83 @@ impl DiffViewer {
                 )
                 .footer(
                     DialogFooter::new()
+                        .w_full()
+                        .justify_between()
+                        .items_start()
+                        .gap_3()
                         .child(
-                            DialogClose::new().child(
-                                Button::new(action.cancel_button_id())
-                                    .label("Cancel")
-                                    .outline(),
-                            ),
-                        )
-                        .child(
-                            Button::new(action.current_branch_button_id())
-                                .label(current_branch_button_label.clone())
+                            Button::new(action.cancel_button_id())
+                                .label("Cancel")
                                 .outline()
-                                .on_click({
-                                    let view = view.clone();
-                                    let context = context.clone();
-                                    move |_, window, cx| {
-                                        window.close_dialog(cx);
-                                        view.update(cx, |this, cx| match action {
-                                            AiBranchTargetChoiceAction::CreateBranchAndPush => {
-                                                this.ai_run_commit_and_push_action(
-                                                    context.clone(),
-                                                    cx,
-                                                );
-                                            }
-                                            AiBranchTargetChoiceAction::OpenPr => {
-                                                this.ai_run_open_pr_action(
-                                                    context.clone(),
-                                                    AiOpenPrBranchStrategy::ReuseCurrentBranch,
-                                                    cx,
-                                                );
-                                            }
-                                        });
-                                    }
+                                .on_click(|_, window, cx| {
+                                    window.close_dialog(cx);
                                 }),
                         )
                         .child(
-                            DialogAction::new().child(
-                                Button::new(action.new_branch_button_id())
-                                    .label(new_branch_button_label)
-                                    .primary(),
-                            ),
+                            div()
+                                .h_flex()
+                                .flex_1()
+                                .min_w_0()
+                                .justify_end()
+                                .items_start()
+                                .gap_2()
+                                .flex_wrap()
+                                .child(
+                                    Button::new(action.current_branch_button_id())
+                                        .label(current_branch_button_label.clone())
+                                        .outline()
+                                        .on_click({
+                                            let view = view.clone();
+                                            let context = context.clone();
+                                            move |_, window, cx| {
+                                                window.close_dialog(cx);
+                                                view.update(cx, |this, cx| match action {
+                                                    AiBranchTargetChoiceAction::CreateBranchAndPush => {
+                                                        this.ai_run_commit_and_push_action(
+                                                            context.clone(),
+                                                            cx,
+                                                        );
+                                                    }
+                                                    AiBranchTargetChoiceAction::OpenPr => {
+                                                        this.ai_run_open_pr_action(
+                                                            context.clone(),
+                                                            AiOpenPrBranchStrategy::ReuseCurrentBranch,
+                                                            cx,
+                                                        );
+                                                    }
+                                                });
+                                            }
+                                        }),
+                                )
+                                .child(
+                                    Button::new(action.new_branch_button_id())
+                                        .label(new_branch_button_label)
+                                        .primary()
+                                        .on_click({
+                                            let view = view.clone();
+                                            let context = context.clone();
+                                            move |_, window, cx| {
+                                                window.close_dialog(cx);
+                                                view.update(cx, |this, cx| match action {
+                                                    AiBranchTargetChoiceAction::CreateBranchAndPush => {
+                                                        this.ai_run_create_branch_and_push_action(
+                                                            context.clone(),
+                                                            cx,
+                                                        );
+                                                    }
+                                                    AiBranchTargetChoiceAction::OpenPr => {
+                                                        this.ai_run_open_pr_action(
+                                                            context.clone(),
+                                                            AiOpenPrBranchStrategy::CreateReviewBranch,
+                                                            cx,
+                                                        );
+                                                    }
+                                                });
+                                            }
+                                        }),
+                                ),
                         ),
                 )
-                .on_ok({
-                    let view = view.clone();
-                    let context = context.clone();
-                    move |_, _, cx| {
-                        view.update(cx, |this, cx| match action {
-                            AiBranchTargetChoiceAction::CreateBranchAndPush => {
-                                this.ai_run_create_branch_and_push_action(context.clone(), cx);
-                            }
-                            AiBranchTargetChoiceAction::OpenPr => {
-                                this.ai_run_open_pr_action(
-                                    context.clone(),
-                                    AiOpenPrBranchStrategy::CreateReviewBranch,
-                                    cx,
-                                );
-                            }
-                        });
-                        true
-                    }
-                })
         });
     }
 
