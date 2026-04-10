@@ -306,6 +306,7 @@ fn build_application_menus() -> Vec<Menu> {
         vec![
             Menu {
                 name: "Hunk".into(),
+                disabled: false,
                 items: vec![
                     MenuItem::action("About Hunk", AboutHunk),
                     MenuItem::separator(),
@@ -320,6 +321,7 @@ fn build_application_menus() -> Vec<Menu> {
             },
             Menu {
                 name: "File".into(),
+                disabled: false,
                 items: vec![
                     MenuItem::action("Open Project...", OpenProject),
                     MenuItem::action("Quick Open...", QuickOpenFile),
@@ -333,6 +335,7 @@ fn build_application_menus() -> Vec<Menu> {
             },
             Menu {
                 name: "Edit".into(),
+                disabled: false,
                 items: vec![
                     MenuItem::os_action("Copy", CopySelection, OsAction::Copy),
                     MenuItem::os_action("Select All", SelectAllDiffRows, OsAction::SelectAll),
@@ -343,6 +346,7 @@ fn build_application_menus() -> Vec<Menu> {
         vec![
             Menu {
                 name: "File".into(),
+                disabled: false,
                 items: vec![
                     MenuItem::action("Open Project...", OpenProject),
                     MenuItem::action("Quick Open...", QuickOpenFile),
@@ -358,6 +362,7 @@ fn build_application_menus() -> Vec<Menu> {
             },
             Menu {
                 name: "Edit".into(),
+                disabled: false,
                 items: vec![
                     MenuItem::action("Copy", CopySelection),
                     MenuItem::action("Select All", SelectAllDiffRows),
