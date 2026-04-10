@@ -1,5 +1,8 @@
 use gpui_component::tooltip::Tooltip;
 
+// Mirror Codex CLI's baseline-adjusted context window math.
+const AI_CONTEXT_WINDOW_BASELINE_TOKENS: i64 = 12_000;
+
 fn ai_context_usage_cached_input_tokens(
     usage: &hunk_codex::state::TokenUsageBreakdownSummary,
 ) -> i64 {
@@ -12,23 +15,49 @@ fn ai_context_usage_non_cached_input_tokens(
     (usage.input_tokens.max(0) - ai_context_usage_cached_input_tokens(usage)).max(0)
 }
 
-fn ai_context_usage_display_tokens(usage: &hunk_codex::state::ThreadTokenUsageSummary) -> i64 {
+fn ai_context_usage_billable_tokens(usage: &hunk_codex::state::ThreadTokenUsageSummary) -> i64 {
     let last = &usage.last;
     (ai_context_usage_non_cached_input_tokens(last) + last.output_tokens.max(0)).max(0)
 }
 
-fn ai_context_usage_percent_used(
+fn ai_context_window_used_tokens(usage: &hunk_codex::state::ThreadTokenUsageSummary) -> i64 {
+    usage.last.total_tokens.max(0)
+}
+
+fn ai_context_window_percent_left(
     usage: &hunk_codex::state::ThreadTokenUsageSummary,
 ) -> Option<u16> {
-    let window = usage.model_context_window.filter(|value| *value > 0)? as u128;
-    let used_tokens = ai_context_usage_display_tokens(usage) as u128;
-    Some((used_tokens.saturating_mul(100) / window).min(100) as u16)
+    let window = usage.model_context_window.filter(|value| *value > 0)?;
+    if window <= AI_CONTEXT_WINDOW_BASELINE_TOKENS {
+        return Some(0);
+    }
+
+    let effective_window = window - AI_CONTEXT_WINDOW_BASELINE_TOKENS;
+    let used = (ai_context_window_used_tokens(usage) - AI_CONTEXT_WINDOW_BASELINE_TOKENS).max(0);
+    let remaining = (effective_window - used).max(0);
+    Some(
+        ((remaining as f64 / effective_window as f64) * 100.0)
+            .clamp(0.0, 100.0)
+            .round() as u16,
+    )
+}
+
+fn ai_context_window_percent_used(
+    usage: &hunk_codex::state::ThreadTokenUsageSummary,
+) -> Option<u16> {
+    Some(100u16.saturating_sub(ai_context_window_percent_left(usage)?.min(100)))
 }
 
 fn ai_context_usage_percent_left(
     usage: &hunk_codex::state::ThreadTokenUsageSummary,
 ) -> Option<u16> {
-    Some(100u16.saturating_sub(ai_context_usage_percent_used(usage)?.min(100)))
+    ai_context_window_percent_left(usage)
+}
+
+fn ai_context_usage_percent_used(
+    usage: &hunk_codex::state::ThreadTokenUsageSummary,
+) -> Option<u16> {
+    ai_context_window_percent_used(usage)
 }
 
 fn ai_context_usage_compact_token_count(token_count: i64) -> String {
@@ -89,7 +118,8 @@ fn ai_render_context_usage_chip(
     let percent_used = ai_context_usage_percent_used(usage)?;
     let usage_color = cx.theme().foreground;
     let chip_border = hunk_opacity(cx.theme().border, is_dark, 0.76, 0.62);
-    let chip_background = hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.16, 0.20);
+    let chip_background =
+        hunk_blend(cx.theme().background, cx.theme().muted, is_dark, 0.16, 0.20);
     let tooltip_usage = usage.clone();
 
     Some(
@@ -131,7 +161,7 @@ fn ai_render_context_usage_chip(
                                         .child(format!(
                                             "{} / {} tokens",
                                             ai_context_usage_compact_token_count(
-                                                ai_context_usage_display_tokens(&tooltip_usage),
+                                                ai_context_window_used_tokens(&tooltip_usage),
                                             ),
                                             ai_context_usage_compact_token_count(
                                                 tooltip_usage
@@ -150,9 +180,19 @@ fn ai_render_context_usage_chip(
                             v_flex()
                                 .gap_1()
                                 .child(ai_render_context_usage_detail_row(
+                                    "Context",
+                                    ai_context_usage_exact_token_count(
+                                        ai_context_window_used_tokens(&tooltip_usage),
+                                    ),
+                                    cx.theme().muted_foreground,
+                                    cx.theme().foreground,
+                                ))
+                                .child(ai_render_context_usage_detail_row(
                                     "Input",
                                     ai_context_usage_exact_token_count(
-                                        ai_context_usage_non_cached_input_tokens(&tooltip_usage.last),
+                                        ai_context_usage_non_cached_input_tokens(
+                                            &tooltip_usage.last,
+                                        ),
                                     ),
                                     cx.theme().muted_foreground,
                                     cx.theme().foreground,
@@ -182,9 +222,9 @@ fn ai_render_context_usage_chip(
                                     cx.theme().foreground,
                                 ))
                                 .child(ai_render_context_usage_detail_row(
-                                    "Used now",
+                                    "Billable",
                                     ai_context_usage_exact_token_count(
-                                        ai_context_usage_display_tokens(&tooltip_usage),
+                                        ai_context_usage_billable_tokens(&tooltip_usage),
                                     ),
                                     cx.theme().muted_foreground,
                                     cx.theme().foreground,
@@ -248,9 +288,10 @@ mod tests {
         let usage = usage_with_window(72_889, 258_000);
 
         assert_eq!(ai_context_usage_non_cached_input_tokens(&usage.last), 3_600);
-        assert_eq!(ai_context_usage_display_tokens(&usage), 4_300);
-        assert_eq!(ai_context_usage_percent_used(&usage), Some(1));
-        assert_eq!(ai_context_usage_percent_left(&usage), Some(99));
+        assert_eq!(ai_context_usage_billable_tokens(&usage), 4_300);
+        assert_eq!(ai_context_window_used_tokens(&usage), 6_400);
+        assert_eq!(ai_context_usage_percent_used(&usage), Some(0));
+        assert_eq!(ai_context_usage_percent_left(&usage), Some(100));
         assert_eq!(ai_context_usage_compact_token_count(72_889), "73k");
         assert_eq!(ai_context_usage_exact_token_count(72_889), "72,889");
     }
@@ -271,8 +312,9 @@ mod tests {
         usage.last.input_tokens = 300_000;
         usage.last.cached_input_tokens = 10_000;
         usage.last.output_tokens = 40_000;
+        usage.last.total_tokens = 330_000;
 
-        assert_eq!(ai_context_usage_display_tokens(&usage), 330_000);
+        assert_eq!(ai_context_usage_billable_tokens(&usage), 330_000);
         assert_eq!(ai_context_usage_percent_used(&usage), Some(100));
         assert_eq!(ai_context_usage_percent_left(&usage), Some(0));
     }
