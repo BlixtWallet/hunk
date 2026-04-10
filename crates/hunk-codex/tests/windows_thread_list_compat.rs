@@ -304,6 +304,7 @@ fn thread_with_timestamps(id: &str, cwd: &str, created_at: i64, updated_at: i64)
         source: SessionSource::AppServer,
         agent_nickname: None,
         agent_role: None,
+        forked_from_id: None,
         git_info: None,
         name: Some(format!("Thread {id}")),
         turns: Vec::new(),
