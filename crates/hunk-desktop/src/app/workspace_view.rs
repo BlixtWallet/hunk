@@ -95,4 +95,14 @@ impl WorkspaceSwitchAction {
             Self::Ai => WorkspaceViewMode::Ai,
         }
     }
+
+    pub(super) const fn toggles_sidebar_when_repeated(
+        self,
+        current_mode: WorkspaceViewMode,
+    ) -> bool {
+        matches!(
+            (self, current_mode),
+            (Self::Files, WorkspaceViewMode::Files)
+        )
+    }
 }
