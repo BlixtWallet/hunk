@@ -1,0 +1,4 @@
+[env]
+# Keep Cargo, C/C++ build scripts, and Zig-built Ghostty artifacts aligned on the
+# same minimum macOS version during local builds and tests.
+MACOSX_DEPLOYMENT_TARGET = "13.0"
