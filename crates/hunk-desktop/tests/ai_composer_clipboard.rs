@@ -1,3 +1,6 @@
+#[path = "../src/app/ai_attachment_images.rs"]
+mod ai_attachment_images;
+
 #[path = "../src/app/ai_composer_clipboard.rs"]
 mod ai_composer_clipboard;
 

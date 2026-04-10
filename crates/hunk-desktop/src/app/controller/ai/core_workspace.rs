@@ -1231,7 +1231,11 @@ impl DiffViewer {
 
         for path in paths {
             let normalized = std::fs::canonicalize(path.as_path()).unwrap_or(path);
-            if !normalized.is_file() || !is_supported_ai_image_path(normalized.as_path()) {
+            if !normalized.is_file()
+                || !crate::app::ai_attachment_images::is_supported_ai_image_path(
+                    normalized.as_path(),
+                )
+            {
                 continue;
             }
             if draft
@@ -1314,17 +1318,6 @@ fn cached_workspace_branch_name_for_root(
 
 fn ai_in_progress_turn_tracking_key(thread_id: &str, turn_id: &str) -> String {
     format!("{thread_id}::{turn_id}")
-}
-
-fn is_supported_ai_image_path(path: &std::path::Path) -> bool {
-    let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
-        return false;
-    };
-
-    matches!(
-        extension.to_ascii_lowercase().as_str(),
-        "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "tif" | "tiff"
-    )
 }
 
 fn ai_attachment_status_message(file_count: usize, added_count: usize) -> Option<String> {

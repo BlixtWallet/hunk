@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use gpui::{ClipboardEntry, ClipboardItem, Image, ImageFormat};
 
+use super::ai_attachment_images::is_supported_ai_image_path;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AiComposerClipboardAttachments {
     pub(crate) item_count: usize,
@@ -99,7 +101,7 @@ fn ai_composer_path_from_text_line(line: &str) -> Option<PathBuf> {
         path.is_absolute().then_some(path)?
     };
 
-    ai_composer_is_supported_image_path(path.as_path()).then_some(path)
+    is_supported_ai_image_path(path.as_path()).then_some(path)
 }
 
 fn ai_composer_path_from_file_url(line: &str) -> Option<PathBuf> {
@@ -129,17 +131,4 @@ fn percent_decode(value: &str) -> Option<PathBuf> {
     }
 
     String::from_utf8(decoded).ok().map(PathBuf::from)
-}
-
-fn ai_composer_is_supported_image_path(path: &Path) -> bool {
-    matches!(
-        path.extension()
-            .and_then(|value| value.to_str())
-            .map(|value| value.to_ascii_lowercase()),
-        Some(extension)
-            if matches!(
-                extension.as_str(),
-                "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "tif" | "tiff"
-            )
-    )
 }
