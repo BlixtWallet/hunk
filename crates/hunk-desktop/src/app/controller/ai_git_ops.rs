@@ -21,6 +21,80 @@ struct AiGitProgressEvent {
     detail: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AiBranchTargetChoiceAction {
+    CreateBranchAndPush,
+    OpenPr,
+}
+
+impl AiBranchTargetChoiceAction {
+    const fn dialog_title(self) -> &'static str {
+        match self {
+            Self::CreateBranchAndPush => "Choose Push Target",
+            Self::OpenPr => "Choose PR Target",
+        }
+    }
+
+    fn dialog_description(self, branch_name: &str) -> String {
+        match self {
+            Self::CreateBranchAndPush => format!(
+                "You're already on branch '{}'. Create a fresh branch for this AI thread, or push the current branch instead?",
+                branch_name
+            ),
+            Self::OpenPr => format!(
+                "You're already on branch '{}'. Open a PR for the current branch, or create a fresh branch and open a PR from that instead?",
+                branch_name
+            ),
+        }
+    }
+
+    const fn hint_text(self) -> &'static str {
+        match self {
+            Self::CreateBranchAndPush => {
+                "Opening a PR later will reuse whichever branch you choose here."
+            }
+            Self::OpenPr => {
+                "Use the current branch if it already matches this thread. Create a new branch if you want to keep the existing branch separate."
+            }
+        }
+    }
+
+    fn current_branch_button_label(self, branch_name: &str) -> String {
+        match self {
+            Self::CreateBranchAndPush => format!("Push {}", branch_name),
+            Self::OpenPr => format!("Open PR on {}", branch_name),
+        }
+    }
+
+    const fn new_branch_button_label(self) -> &'static str {
+        match self {
+            Self::CreateBranchAndPush => "Create New Branch",
+            Self::OpenPr => "Create New Branch and Open PR",
+        }
+    }
+
+    const fn cancel_button_id(self) -> &'static str {
+        match self {
+            Self::CreateBranchAndPush => "ai-create-branch-and-push-cancel",
+            Self::OpenPr => "ai-open-pr-branch-choice-cancel",
+        }
+    }
+
+    const fn current_branch_button_id(self) -> &'static str {
+        match self {
+            Self::CreateBranchAndPush => "ai-push-current-branch",
+            Self::OpenPr => "ai-open-pr-current-branch",
+        }
+    }
+
+    const fn new_branch_button_id(self) -> &'static str {
+        match self {
+            Self::CreateBranchAndPush => "ai-create-and-push-new-branch",
+            Self::OpenPr => "ai-create-branch-and-open-pr",
+        }
+    }
+}
+
 impl DiffViewer {
     fn ai_current_thread_git_action_context(
         &self,
@@ -508,6 +582,14 @@ impl DiffViewer {
                 return;
             }
         };
+        self.ai_run_commit_and_push_action(context, cx);
+    }
+
+    fn ai_run_commit_and_push_action(
+        &mut self,
+        context: AiThreadGitActionContext,
+        cx: &mut Context<Self>,
+    ) {
         let fallback_commit_message = ai_commit_message_for_thread(
             &self.ai_state_snapshot,
             context.thread_id.as_str(),
@@ -617,6 +699,99 @@ impl DiffViewer {
         );
     }
 
+    fn ai_prompt_for_branch_target_choice(
+        &mut self,
+        window: &mut Window,
+        context: AiThreadGitActionContext,
+        action: AiBranchTargetChoiceAction,
+        cx: &mut Context<Self>,
+    ) {
+        let branch_name = context.branch_name.clone();
+        let title = action.dialog_title();
+        let description = action.dialog_description(branch_name.as_str());
+        let hint_text = action.hint_text();
+        let current_branch_button_label = action.current_branch_button_label(branch_name.as_str());
+        let new_branch_button_label = action.new_branch_button_label();
+        let view = cx.entity();
+
+        gpui_component::WindowExt::open_alert_dialog(window, cx, move |alert, _, cx| {
+            alert
+                .width(px(520.0))
+                .title(title)
+                .description(description.clone())
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .whitespace_normal()
+                        .child(hint_text),
+                )
+                .footer(
+                    DialogFooter::new()
+                        .child(
+                            DialogClose::new().child(
+                                Button::new(action.cancel_button_id())
+                                    .label("Cancel")
+                                    .outline(),
+                            ),
+                        )
+                        .child(
+                            Button::new(action.current_branch_button_id())
+                                .label(current_branch_button_label.clone())
+                                .outline()
+                                .on_click({
+                                    let view = view.clone();
+                                    let context = context.clone();
+                                    move |_, window, cx| {
+                                        window.close_dialog(cx);
+                                        view.update(cx, |this, cx| match action {
+                                            AiBranchTargetChoiceAction::CreateBranchAndPush => {
+                                                this.ai_run_commit_and_push_action(
+                                                    context.clone(),
+                                                    cx,
+                                                );
+                                            }
+                                            AiBranchTargetChoiceAction::OpenPr => {
+                                                this.ai_run_open_pr_action(
+                                                    context.clone(),
+                                                    AiOpenPrBranchStrategy::ReuseCurrentBranch,
+                                                    cx,
+                                                );
+                                            }
+                                        });
+                                    }
+                                }),
+                        )
+                        .child(
+                            DialogAction::new().child(
+                                Button::new(action.new_branch_button_id())
+                                    .label(new_branch_button_label)
+                                    .primary(),
+                            ),
+                        ),
+                )
+                .on_ok({
+                    let view = view.clone();
+                    let context = context.clone();
+                    move |_, _, cx| {
+                        view.update(cx, |this, cx| match action {
+                            AiBranchTargetChoiceAction::CreateBranchAndPush => {
+                                this.ai_run_create_branch_and_push_action(context.clone(), cx);
+                            }
+                            AiBranchTargetChoiceAction::OpenPr => {
+                                this.ai_run_open_pr_action(
+                                    context.clone(),
+                                    AiOpenPrBranchStrategy::CreateReviewBranch,
+                                    cx,
+                                );
+                            }
+                        });
+                        true
+                    }
+                })
+        });
+    }
+
     pub(super) fn ai_create_branch_and_push_for_current_thread(
         &mut self,
         window: &mut Window,
@@ -641,72 +816,19 @@ impl DiffViewer {
             }
         };
 
-        if ai_create_branch_and_push_strategy(context.repo_root.as_path(), context.branch_name.as_str())
-            == AiCreateBranchAndPushStrategy::CreateBranchImmediately
-        {
+        if ai_should_prompt_for_create_branch_and_push_target(
+            context.repo_root.as_path(),
+            context.branch_name.as_str(),
+        ) {
+            self.ai_prompt_for_branch_target_choice(
+                window,
+                context,
+                AiBranchTargetChoiceAction::CreateBranchAndPush,
+                cx,
+            );
+        } else {
             self.ai_run_create_branch_and_push_action(context, cx);
-            return;
         }
-
-        let branch_name = context.branch_name.clone();
-        let view = cx.entity();
-
-        gpui_component::WindowExt::open_alert_dialog(window, cx, move |alert, _, cx| {
-            alert
-                .width(px(520.0))
-                .title("Choose Push Target")
-                .description(format!(
-                    "You're already on branch '{}'. Create a fresh branch for this AI thread, or push the current branch instead?",
-                    branch_name
-                ))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .whitespace_normal()
-                        .child(
-                            "Opening a PR later will reuse whichever branch you choose here.",
-                        ),
-                )
-                .footer(
-                    DialogFooter::new()
-                        .child(
-                            DialogClose::new()
-                                .child(Button::new("ai-create-branch-and-push-cancel").label("Cancel").outline()),
-                        )
-                        .child(
-                            Button::new("ai-push-current-branch")
-                                .label(format!("Push {}", branch_name))
-                                .outline()
-                                .on_click({
-                                    let view = view.clone();
-                                    move |_, window, cx| {
-                                        window.close_dialog(cx);
-                                        view.update(cx, |this, cx| {
-                                            this.ai_commit_and_push_for_current_thread(cx);
-                                        });
-                                    }
-                                }),
-                        )
-                        .child(
-                            DialogAction::new().child(
-                                Button::new("ai-create-and-push-new-branch")
-                                    .label("Create New Branch")
-                                    .primary(),
-                            ),
-                        ),
-                )
-                .on_ok({
-                    let view = view.clone();
-                    let context = context.clone();
-                    move |_, _, cx| {
-                        view.update(cx, |this, cx| {
-                            this.ai_run_create_branch_and_push_action(context.clone(), cx);
-                        });
-                        true
-                    }
-                })
-        });
     }
 
     fn ai_run_create_branch_and_push_action(
@@ -860,11 +982,15 @@ impl DiffViewer {
         );
     }
 
-    pub(super) fn ai_open_pr_for_current_thread(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn ai_open_pr_for_current_thread(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(reason) = self.ai_open_pr_blocker().filter(|reason| !reason.is_empty()) {
             let message = format!("Open PR unavailable: {reason}");
             self.git_status_message = Some(message.clone());
-            Self::push_warning_notification(message, None, cx);
+            Self::push_warning_notification(message, Some(window), cx);
             cx.notify();
             return;
         }
@@ -874,11 +1000,33 @@ impl DiffViewer {
             Err(reason) => {
                 let message = format!("Open PR unavailable: {reason}");
                 self.git_status_message = Some(message.clone());
-                Self::push_warning_notification(message, None, cx);
+                Self::push_warning_notification(message, Some(window), cx);
                 cx.notify();
                 return;
             }
         };
+        if ai_should_prompt_for_open_pr_target(context.repo_root.as_path(), context.branch_name.as_str())
+        {
+            self.ai_prompt_for_branch_target_choice(
+                window,
+                context,
+                AiBranchTargetChoiceAction::OpenPr,
+                cx,
+            );
+            return;
+        }
+
+        let open_pr_branch_strategy =
+            ai_open_pr_branch_strategy(context.repo_root.as_path(), &context.branch_name);
+        self.ai_run_open_pr_action(context, open_pr_branch_strategy, cx);
+    }
+
+    fn ai_run_open_pr_action(
+        &mut self,
+        context: AiThreadGitActionContext,
+        open_pr_branch_strategy: AiOpenPrBranchStrategy,
+        cx: &mut Context<Self>,
+    ) {
         let fallback_commit_message = ai_commit_message_for_thread(
             &self.ai_state_snapshot,
             context.thread_id.as_str(),
@@ -902,7 +1050,6 @@ impl DiffViewer {
         let branch_name = context.branch_name.clone();
         let start_mode = context.start_mode;
         let epoch = self.begin_git_action("Open PR", cx);
-        let open_pr_branch_strategy = ai_open_pr_branch_strategy(repo_root.as_path(), &branch_name);
         let create_review_branch =
             open_pr_branch_strategy == AiOpenPrBranchStrategy::CreateReviewBranch;
         let branch_detail_label = if create_review_branch {

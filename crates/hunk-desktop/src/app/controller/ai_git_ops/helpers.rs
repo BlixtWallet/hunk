@@ -30,52 +30,100 @@ enum AiOpenPrBranchStrategy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AiCreateBranchAndPushStrategy {
-    CreateBranchImmediately,
-    PromptForPushTarget,
+enum AiBranchDefaultRelation {
+    DefaultBranch,
+    NonDefaultBranch,
+    Unknown,
+}
+
+fn ai_branch_default_relation(
+    repo_root: &std::path::Path,
+    branch_name: &str,
+) -> AiBranchDefaultRelation {
+    let default_branch_name = resolve_default_base_branch_name(repo_root).ok().flatten();
+    ai_branch_default_relation_for_branch(branch_name, default_branch_name.as_deref())
+}
+
+fn ai_branch_default_relation_for_branch(
+    branch_name: &str,
+    default_branch_name: Option<&str>,
+) -> AiBranchDefaultRelation {
+    let branch_name = branch_name.trim();
+    let default_branch_name = default_branch_name.map(str::trim);
+    match default_branch_name {
+        Some(default_branch_name) if default_branch_name == branch_name => {
+            AiBranchDefaultRelation::DefaultBranch
+        }
+        Some(_) => AiBranchDefaultRelation::NonDefaultBranch,
+        None => AiBranchDefaultRelation::Unknown,
+    }
 }
 
 fn ai_open_pr_branch_strategy(
     repo_root: &std::path::Path,
     branch_name: &str,
 ) -> AiOpenPrBranchStrategy {
-    let default_branch_name = resolve_default_base_branch_name(repo_root).ok().flatten();
-    ai_open_pr_branch_strategy_for_branch(branch_name, default_branch_name.as_deref())
+    match ai_branch_default_relation(repo_root, branch_name) {
+        AiBranchDefaultRelation::DefaultBranch => AiOpenPrBranchStrategy::CreateReviewBranch,
+        AiBranchDefaultRelation::NonDefaultBranch | AiBranchDefaultRelation::Unknown => {
+            AiOpenPrBranchStrategy::ReuseCurrentBranch
+        }
+    }
 }
 
+#[cfg(test)]
 fn ai_open_pr_branch_strategy_for_branch(
     branch_name: &str,
     default_branch_name: Option<&str>,
 ) -> AiOpenPrBranchStrategy {
-    let branch_name = branch_name.trim();
-    let default_branch_name = default_branch_name.map(str::trim);
-    if default_branch_name == Some(branch_name) {
-        AiOpenPrBranchStrategy::CreateReviewBranch
-    } else {
-        AiOpenPrBranchStrategy::ReuseCurrentBranch
+    match ai_branch_default_relation_for_branch(branch_name, default_branch_name) {
+        AiBranchDefaultRelation::DefaultBranch => AiOpenPrBranchStrategy::CreateReviewBranch,
+        AiBranchDefaultRelation::NonDefaultBranch | AiBranchDefaultRelation::Unknown => {
+            AiOpenPrBranchStrategy::ReuseCurrentBranch
+        }
     }
 }
 
-fn ai_create_branch_and_push_strategy(
+fn ai_should_prompt_for_create_branch_and_push_target(
     repo_root: &std::path::Path,
     branch_name: &str,
-) -> AiCreateBranchAndPushStrategy {
-    let default_branch_name = resolve_default_base_branch_name(repo_root).ok().flatten();
-    ai_create_branch_and_push_strategy_for_branch(branch_name, default_branch_name.as_deref())
+) -> bool {
+    !matches!(
+        ai_branch_default_relation(repo_root, branch_name),
+        AiBranchDefaultRelation::DefaultBranch
+    )
 }
 
-fn ai_create_branch_and_push_strategy_for_branch(
+#[cfg(test)]
+fn ai_should_prompt_for_create_branch_and_push_target_for_branch(
     branch_name: &str,
     default_branch_name: Option<&str>,
-) -> AiCreateBranchAndPushStrategy {
-    match ai_open_pr_branch_strategy_for_branch(branch_name, default_branch_name) {
-        AiOpenPrBranchStrategy::CreateReviewBranch => {
-            AiCreateBranchAndPushStrategy::CreateBranchImmediately
-        }
-        AiOpenPrBranchStrategy::ReuseCurrentBranch => {
-            AiCreateBranchAndPushStrategy::PromptForPushTarget
-        }
-    }
+) -> bool {
+    !matches!(
+        ai_branch_default_relation_for_branch(branch_name, default_branch_name),
+        AiBranchDefaultRelation::DefaultBranch
+    )
+}
+
+fn ai_should_prompt_for_open_pr_target(
+    repo_root: &std::path::Path,
+    branch_name: &str,
+) -> bool {
+    matches!(
+        ai_branch_default_relation(repo_root, branch_name),
+        AiBranchDefaultRelation::NonDefaultBranch
+    )
+}
+
+#[cfg(test)]
+fn ai_should_prompt_for_open_pr_target_for_branch(
+    branch_name: &str,
+    default_branch_name: Option<&str>,
+) -> bool {
+    matches!(
+        ai_branch_default_relation_for_branch(branch_name, default_branch_name),
+        AiBranchDefaultRelation::NonDefaultBranch
+    )
 }
 
 fn ai_publish_blocker_reason(
@@ -284,26 +332,74 @@ mod ai_git_ops_tests {
     }
 
     #[test]
-    fn create_branch_and_push_strategy_creates_immediately_for_default_branch() {
+    fn branch_default_relation_marks_default_branch() {
         assert_eq!(
-            ai_create_branch_and_push_strategy_for_branch("main", Some("main")),
-            AiCreateBranchAndPushStrategy::CreateBranchImmediately
+            ai_branch_default_relation_for_branch("main", Some("main")),
+            AiBranchDefaultRelation::DefaultBranch
         );
     }
 
     #[test]
-    fn create_branch_and_push_strategy_prompts_for_non_default_branch() {
+    fn branch_default_relation_marks_non_default_branch() {
         assert_eq!(
-            ai_create_branch_and_push_strategy_for_branch("feature/ai-thread", Some("main")),
-            AiCreateBranchAndPushStrategy::PromptForPushTarget
+            ai_branch_default_relation_for_branch("feature/ai-thread", Some("main")),
+            AiBranchDefaultRelation::NonDefaultBranch
         );
     }
 
     #[test]
-    fn create_branch_and_push_strategy_prompts_when_default_branch_is_unknown() {
+    fn branch_default_relation_marks_unknown_when_default_branch_is_missing() {
         assert_eq!(
-            ai_create_branch_and_push_strategy_for_branch("feature/ai-thread", None),
-            AiCreateBranchAndPushStrategy::PromptForPushTarget
+            ai_branch_default_relation_for_branch("feature/ai-thread", None),
+            AiBranchDefaultRelation::Unknown
         );
+    }
+
+    #[test]
+    fn create_branch_and_push_prompts_for_non_default_branch() {
+        assert!(ai_should_prompt_for_create_branch_and_push_target_for_branch(
+            "feature/ai-thread",
+            Some("main"),
+        ));
+    }
+
+    #[test]
+    fn create_branch_and_push_prompts_when_default_branch_is_unknown() {
+        assert!(ai_should_prompt_for_create_branch_and_push_target_for_branch(
+            "feature/ai-thread",
+            None,
+        ));
+    }
+
+    #[test]
+    fn create_branch_and_push_skips_prompt_for_default_branch() {
+        assert!(!ai_should_prompt_for_create_branch_and_push_target_for_branch(
+            "main",
+            Some("main"),
+        ));
+    }
+
+    #[test]
+    fn open_pr_prompts_for_known_non_default_branch() {
+        assert!(ai_should_prompt_for_open_pr_target_for_branch(
+            "feature/ai-thread",
+            Some("main"),
+        ));
+    }
+
+    #[test]
+    fn open_pr_skips_prompt_for_default_branch() {
+        assert!(!ai_should_prompt_for_open_pr_target_for_branch(
+            "main",
+            Some("main"),
+        ));
+    }
+
+    #[test]
+    fn open_pr_skips_prompt_when_default_branch_is_unknown() {
+        assert!(!ai_should_prompt_for_open_pr_target_for_branch(
+            "feature/ai-thread",
+            None,
+        ));
     }
 }

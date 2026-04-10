@@ -1070,9 +1070,9 @@ impl DiffViewer {
                                 .item(
                                     PopupMenuItem::new("Open PR").on_click({
                                         let view = view.clone();
-                                        move |_, _, cx| {
+                                        move |_, window, cx| {
                                             view.update(cx, |this, cx| {
-                                                this.ai_open_pr_for_current_thread(cx);
+                                                this.ai_open_pr_for_current_thread(window, cx);
                                             });
                                         }
                                     }),
