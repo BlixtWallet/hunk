@@ -1102,21 +1102,25 @@ fn normalized_user_input_answers_preserves_existing_answers() {
 
 #[test]
 fn supported_image_path_check_is_case_insensitive() {
-    assert!(is_supported_ai_image_path(std::path::Path::new(
-        "image.PNG"
-    )));
-    assert!(is_supported_ai_image_path(std::path::Path::new(
-        "shot.JpEg"
-    )));
-    assert!(is_supported_ai_image_path(std::path::Path::new("anim.GIF")));
+    assert!(crate::app::ai_attachment_images::is_supported_ai_image_path(
+        std::path::Path::new("image.PNG")
+    ));
+    assert!(crate::app::ai_attachment_images::is_supported_ai_image_path(
+        std::path::Path::new("shot.JpEg")
+    ));
+    assert!(crate::app::ai_attachment_images::is_supported_ai_image_path(
+        std::path::Path::new("anim.GIF")
+    ));
 }
 
 #[test]
 fn unsupported_image_path_without_extension_is_rejected() {
-    assert!(!is_supported_ai_image_path(std::path::Path::new("image")));
-    assert!(!is_supported_ai_image_path(std::path::Path::new(
-        "archive.zip"
-    )));
+    assert!(!crate::app::ai_attachment_images::is_supported_ai_image_path(
+        std::path::Path::new("image")
+    ));
+    assert!(!crate::app::ai_attachment_images::is_supported_ai_image_path(
+        std::path::Path::new("archive.zip")
+    ));
 }
 
 #[test]

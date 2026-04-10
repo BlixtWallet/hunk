@@ -157,7 +157,9 @@ const AI_THREAD_TITLE_REFRESH_MAX_ATTEMPTS: u8 = 20;
 const AI_THREAD_TITLE_REFRESH_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 const AI_COMPOSER_STATUS_AUTO_DISMISS_DELAY: Duration = Duration::from_secs(5);
 
+mod ai_attachment_images;
 mod ai_bookmarks;
+mod ai_composer_clipboard;
 mod ai_composer_commands;
 mod ai_composer_completion;
 mod ai_inline_review;
@@ -305,6 +307,7 @@ fn build_application_menus() -> Vec<Menu> {
         vec![
             Menu {
                 name: "Hunk".into(),
+                disabled: false,
                 items: vec![
                     MenuItem::action("About Hunk", AboutHunk),
                     MenuItem::separator(),
@@ -319,6 +322,7 @@ fn build_application_menus() -> Vec<Menu> {
             },
             Menu {
                 name: "File".into(),
+                disabled: false,
                 items: vec![
                     MenuItem::action("Open Project...", OpenProject),
                     MenuItem::action("Quick Open...", QuickOpenFile),
@@ -332,6 +336,7 @@ fn build_application_menus() -> Vec<Menu> {
             },
             Menu {
                 name: "Edit".into(),
+                disabled: false,
                 items: vec![
                     MenuItem::os_action("Copy", CopySelection, OsAction::Copy),
                     MenuItem::os_action("Select All", SelectAllDiffRows, OsAction::SelectAll),
@@ -342,6 +347,7 @@ fn build_application_menus() -> Vec<Menu> {
         vec![
             Menu {
                 name: "File".into(),
+                disabled: false,
                 items: vec![
                     MenuItem::action("Open Project...", OpenProject),
                     MenuItem::action("Quick Open...", QuickOpenFile),
@@ -357,6 +363,7 @@ fn build_application_menus() -> Vec<Menu> {
             },
             Menu {
                 name: "Edit".into(),
+                disabled: false,
                 items: vec![
                     MenuItem::action("Copy", CopySelection),
                     MenuItem::action("Select All", SelectAllDiffRows),

@@ -44,7 +44,6 @@ mod ai_tests {
     use super::drain_ai_worker_events;
     use super::group_ai_timeline_rows_for_thread;
     use super::is_command_name_without_path;
-    use super::is_supported_ai_image_path;
     use super::item_status_chip;
     use super::merge_restored_ai_prompt;
     use super::next_thread_metadata_refresh_attempt;
