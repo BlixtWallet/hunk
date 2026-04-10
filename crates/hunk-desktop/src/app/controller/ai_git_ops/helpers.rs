@@ -29,25 +29,101 @@ enum AiOpenPrBranchStrategy {
     ReuseCurrentBranch,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AiBranchDefaultRelation {
+    DefaultBranch,
+    NonDefaultBranch,
+    Unknown,
+}
+
+fn ai_branch_default_relation(
+    repo_root: &std::path::Path,
+    branch_name: &str,
+) -> AiBranchDefaultRelation {
+    let default_branch_name = resolve_default_base_branch_name(repo_root).ok().flatten();
+    ai_branch_default_relation_for_branch(branch_name, default_branch_name.as_deref())
+}
+
+fn ai_branch_default_relation_for_branch(
+    branch_name: &str,
+    default_branch_name: Option<&str>,
+) -> AiBranchDefaultRelation {
+    let branch_name = branch_name.trim();
+    let default_branch_name = default_branch_name.map(str::trim);
+    match default_branch_name {
+        Some(default_branch_name) if default_branch_name == branch_name => {
+            AiBranchDefaultRelation::DefaultBranch
+        }
+        Some(_) => AiBranchDefaultRelation::NonDefaultBranch,
+        None => AiBranchDefaultRelation::Unknown,
+    }
+}
+
 fn ai_open_pr_branch_strategy(
     repo_root: &std::path::Path,
     branch_name: &str,
 ) -> AiOpenPrBranchStrategy {
-    let default_branch_name = resolve_default_base_branch_name(repo_root).ok().flatten();
-    ai_open_pr_branch_strategy_for_branch(branch_name, default_branch_name.as_deref())
+    match ai_branch_default_relation(repo_root, branch_name) {
+        AiBranchDefaultRelation::DefaultBranch => AiOpenPrBranchStrategy::CreateReviewBranch,
+        AiBranchDefaultRelation::NonDefaultBranch | AiBranchDefaultRelation::Unknown => {
+            AiOpenPrBranchStrategy::ReuseCurrentBranch
+        }
+    }
 }
 
+#[cfg(test)]
 fn ai_open_pr_branch_strategy_for_branch(
     branch_name: &str,
     default_branch_name: Option<&str>,
 ) -> AiOpenPrBranchStrategy {
-    let branch_name = branch_name.trim();
-    let default_branch_name = default_branch_name.map(str::trim);
-    if default_branch_name == Some(branch_name) {
-        AiOpenPrBranchStrategy::CreateReviewBranch
-    } else {
-        AiOpenPrBranchStrategy::ReuseCurrentBranch
+    match ai_branch_default_relation_for_branch(branch_name, default_branch_name) {
+        AiBranchDefaultRelation::DefaultBranch => AiOpenPrBranchStrategy::CreateReviewBranch,
+        AiBranchDefaultRelation::NonDefaultBranch | AiBranchDefaultRelation::Unknown => {
+            AiOpenPrBranchStrategy::ReuseCurrentBranch
+        }
     }
+}
+
+fn ai_should_prompt_for_create_branch_and_push_target(
+    repo_root: &std::path::Path,
+    branch_name: &str,
+) -> bool {
+    !matches!(
+        ai_branch_default_relation(repo_root, branch_name),
+        AiBranchDefaultRelation::DefaultBranch
+    )
+}
+
+#[cfg(test)]
+fn ai_should_prompt_for_create_branch_and_push_target_for_branch(
+    branch_name: &str,
+    default_branch_name: Option<&str>,
+) -> bool {
+    !matches!(
+        ai_branch_default_relation_for_branch(branch_name, default_branch_name),
+        AiBranchDefaultRelation::DefaultBranch
+    )
+}
+
+fn ai_should_prompt_for_open_pr_target(
+    repo_root: &std::path::Path,
+    branch_name: &str,
+) -> bool {
+    matches!(
+        ai_branch_default_relation(repo_root, branch_name),
+        AiBranchDefaultRelation::NonDefaultBranch
+    )
+}
+
+#[cfg(test)]
+fn ai_should_prompt_for_open_pr_target_for_branch(
+    branch_name: &str,
+    default_branch_name: Option<&str>,
+) -> bool {
+    matches!(
+        ai_branch_default_relation_for_branch(branch_name, default_branch_name),
+        AiBranchDefaultRelation::NonDefaultBranch
+    )
 }
 
 fn ai_publish_blocker_reason(
@@ -102,8 +178,18 @@ fn try_ai_commit_message_for_staged_index(
 
 fn activate_new_ai_review_branch(
     repo_root: &std::path::Path,
+    current_branch_name: &str,
     requested_branch_name: &str,
 ) -> anyhow::Result<String> {
+    let default_branch_name = resolve_default_base_branch_name(repo_root)
+        .context("failed to resolve the default branch for isolated AI branch creation")?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "unable to resolve the default branch needed to isolate this AI thread; push the current branch instead"
+            )
+        })?;
+    let create_from_default_branch = default_branch_name.trim() != current_branch_name.trim();
+
     let mut attempt = 0usize;
     loop {
         attempt = attempt.saturating_add(1);
@@ -112,11 +198,20 @@ fn activate_new_ai_review_branch(
         } else {
             format!("{requested_branch_name}-{attempt}")
         };
-        match checkout_or_create_branch_with_change_transfer(
-            repo_root,
-            candidate_branch_name.as_str(),
-            true,
-        ) {
+        let activation_result = if create_from_default_branch {
+            create_branch_from_base_with_change_transfer(
+                repo_root,
+                candidate_branch_name.as_str(),
+                default_branch_name.as_str(),
+            )
+        } else {
+            checkout_or_create_branch_with_change_transfer(
+                repo_root,
+                candidate_branch_name.as_str(),
+                true,
+            )
+        };
+        match activation_result {
             Ok(()) => return Ok(candidate_branch_name),
             Err(err) => {
                 if err.to_string().contains("already exists") && attempt < 20 {
@@ -253,5 +348,77 @@ mod ai_git_ops_tests {
             ai_open_pr_branch_strategy_for_branch("feature/ai-thread", None),
             AiOpenPrBranchStrategy::ReuseCurrentBranch
         );
+    }
+
+    #[test]
+    fn branch_default_relation_marks_default_branch() {
+        assert_eq!(
+            ai_branch_default_relation_for_branch("main", Some("main")),
+            AiBranchDefaultRelation::DefaultBranch
+        );
+    }
+
+    #[test]
+    fn branch_default_relation_marks_non_default_branch() {
+        assert_eq!(
+            ai_branch_default_relation_for_branch("feature/ai-thread", Some("main")),
+            AiBranchDefaultRelation::NonDefaultBranch
+        );
+    }
+
+    #[test]
+    fn branch_default_relation_marks_unknown_when_default_branch_is_missing() {
+        assert_eq!(
+            ai_branch_default_relation_for_branch("feature/ai-thread", None),
+            AiBranchDefaultRelation::Unknown
+        );
+    }
+
+    #[test]
+    fn create_branch_and_push_prompts_for_non_default_branch() {
+        assert!(ai_should_prompt_for_create_branch_and_push_target_for_branch(
+            "feature/ai-thread",
+            Some("main"),
+        ));
+    }
+
+    #[test]
+    fn create_branch_and_push_prompts_when_default_branch_is_unknown() {
+        assert!(ai_should_prompt_for_create_branch_and_push_target_for_branch(
+            "feature/ai-thread",
+            None,
+        ));
+    }
+
+    #[test]
+    fn create_branch_and_push_skips_prompt_for_default_branch() {
+        assert!(!ai_should_prompt_for_create_branch_and_push_target_for_branch(
+            "main",
+            Some("main"),
+        ));
+    }
+
+    #[test]
+    fn open_pr_prompts_for_known_non_default_branch() {
+        assert!(ai_should_prompt_for_open_pr_target_for_branch(
+            "feature/ai-thread",
+            Some("main"),
+        ));
+    }
+
+    #[test]
+    fn open_pr_skips_prompt_for_default_branch() {
+        assert!(!ai_should_prompt_for_open_pr_target_for_branch(
+            "main",
+            Some("main"),
+        ));
+    }
+
+    #[test]
+    fn open_pr_skips_prompt_when_default_branch_is_unknown() {
+        assert!(!ai_should_prompt_for_open_pr_target_for_branch(
+            "feature/ai-thread",
+            None,
+        ));
     }
 }
