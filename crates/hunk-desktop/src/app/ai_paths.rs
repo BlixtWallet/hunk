@@ -4,6 +4,8 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(test)]
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 pub(super) fn resolve_codex_home_path() -> Option<PathBuf> {
     resolve_codex_home_path_from(
@@ -77,6 +79,15 @@ pub(super) fn allocate_ai_chat_thread_workspace_path() -> Option<PathBuf> {
     None
 }
 
+#[cfg(test)]
+pub(crate) fn lock_hunk_home_test_env() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    match LOCK.get_or_init(|| Mutex::new(())).lock() {
+        Ok(guard) => guard,
+        Err(error) => error.into_inner(),
+    }
+}
+
 fn user_home_dir() -> Option<PathBuf> {
     dirs::home_dir()
         .or_else(|| env::var_os("HOME").map(PathBuf::from))
@@ -125,14 +136,17 @@ mod tests {
     use super::allocate_ai_chat_thread_workspace_path;
     use super::expand_home_prefixed_path;
     use super::is_ai_chats_workspace_path;
+    use super::lock_hunk_home_test_env;
     use super::resolve_ai_chats_root_path;
     use super::resolve_codex_home_path_from;
     use std::path::PathBuf;
-    use std::sync::{Mutex, OnceLock};
 
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+    fn canonicalize_if_exists(path: PathBuf) -> PathBuf {
+        if !path.exists() {
+            return path;
+        }
+
+        std::fs::canonicalize(path.as_path()).unwrap_or(path)
     }
 
     #[test]
@@ -181,16 +195,15 @@ mod tests {
 
     #[test]
     fn chats_root_uses_hunk_home_dir_override() {
-        let _guard = env_lock().lock().expect("env lock should be available");
+        let _guard = lock_hunk_home_test_env();
+        let hunk_home = std::env::temp_dir().join("custom-hunk-home");
         let previous = std::env::var_os(hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR);
-        unsafe {
-            std::env::set_var(
-                hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR,
-                PathBuf::from("/tmp").join("custom-hunk-home"),
-            );
-        }
+        let _ = std::fs::remove_dir_all(&hunk_home);
+        std::fs::create_dir_all(&hunk_home).expect("override hunk home should exist");
+        unsafe { std::env::set_var(hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR, &hunk_home) };
 
         let resolved = resolve_ai_chats_root_path();
+        let expected = canonicalize_if_exists(hunk_home.clone()).join("chats");
 
         match previous {
             Some(value) => unsafe {
@@ -198,18 +211,21 @@ mod tests {
             },
             None => unsafe { std::env::remove_var(hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR) },
         }
+        let _ = std::fs::remove_dir_all(&hunk_home);
 
         assert_eq!(
             resolved,
-            Some(PathBuf::from("/tmp").join("custom-hunk-home").join("chats")),
+            Some(expected),
         );
     }
 
     #[test]
     fn chats_workspace_classifies_descendants() {
-        let _guard = env_lock().lock().expect("env lock should be available");
+        let _guard = lock_hunk_home_test_env();
         let hunk_home = std::env::temp_dir().join("hunk-ai-paths-descendants");
         let previous = std::env::var_os(hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR);
+        let _ = std::fs::remove_dir_all(&hunk_home);
+        std::fs::create_dir_all(&hunk_home).expect("override hunk home should exist");
         unsafe { std::env::set_var(hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR, &hunk_home) };
 
         let chats_root = resolve_ai_chats_root_path().expect("chats root should resolve");
@@ -227,11 +243,12 @@ mod tests {
             },
             None => unsafe { std::env::remove_var(hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR) },
         }
+        let _ = std::fs::remove_dir_all(&hunk_home);
     }
 
     #[test]
     fn chat_workspace_paths_include_root_and_children() {
-        let _guard = env_lock().lock().expect("env lock should be available");
+        let _guard = lock_hunk_home_test_env();
         let hunk_home = std::env::temp_dir().join("hunk-ai-paths-workspaces");
         let chats_root = hunk_home.join("chats");
         let child_a = chats_root.join("chat-a");
@@ -245,6 +262,11 @@ mod tests {
         std::fs::write(&hidden_file, "ignore").expect("hidden file should exist");
 
         let workspaces = ai_chats_workspace_paths();
+        let expected = vec![
+            canonicalize_if_exists(chats_root.clone()),
+            canonicalize_if_exists(child_a.clone()),
+            canonicalize_if_exists(child_b.clone()),
+        ];
 
         match previous {
             Some(value) => unsafe {
@@ -254,12 +276,12 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&hunk_home);
 
-        assert_eq!(workspaces, vec![chats_root, child_a, child_b]);
+        assert_eq!(workspaces, expected);
     }
 
     #[test]
     fn allocate_chat_thread_workspace_creates_unique_child_directory() {
-        let _guard = env_lock().lock().expect("env lock should be available");
+        let _guard = lock_hunk_home_test_env();
         let hunk_home = std::env::temp_dir().join("hunk-ai-paths-allocate");
         let previous = std::env::var_os(hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR);
         unsafe { std::env::set_var(hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR, &hunk_home) };

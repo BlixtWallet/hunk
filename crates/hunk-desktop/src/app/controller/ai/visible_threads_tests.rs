@@ -2,7 +2,6 @@
 mod ai_visible_threads_tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::path::PathBuf;
-    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use hunk_codex::state::AiState;
@@ -14,15 +13,8 @@ mod ai_visible_threads_tests {
     use super::merged_ai_visible_threads;
     use super::state_snapshot_workspace_key;
 
-    fn ai_test_env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
-
     fn with_temp_hunk_home<T>(test_name: &str, f: impl FnOnce(PathBuf) -> T) -> T {
-        let _guard = ai_test_env_lock()
-            .lock()
-            .expect("ai test env lock should be available");
+        let _guard = crate::app::ai_paths::lock_hunk_home_test_env();
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after epoch")
