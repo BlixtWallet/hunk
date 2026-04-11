@@ -4,8 +4,6 @@ use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::collections::BTreeSet;
 
-use codex_app_server_protocol::CollaborationModeMask;
-use codex_protocol::config_types::ModeKind;
 use hunk_git::git::LocalBranch;
 
 const AI_THREAD_SIDEBAR_DEFAULT_VISIBLE_THREADS_PER_PROJECT: usize = 5;
@@ -498,30 +496,6 @@ fn preferred_ai_worktree_base_branch_name(
                 .map(ToOwned::to_owned)
         })
         .or_else(|| branches.first().map(|branch| branch.name.clone()))
-}
-
-fn ai_collaboration_mode_matches_kind(mask: &CollaborationModeMask, kind: ModeKind) -> bool {
-    mask.mode == Some(kind) || mask.name.eq_ignore_ascii_case(kind.display_name())
-}
-
-fn ai_collaboration_mode_from_mask(
-    mask: &CollaborationModeMask,
-) -> Option<AiCollaborationModeSelection> {
-    if ai_collaboration_mode_matches_kind(mask, ModeKind::Default) {
-        Some(AiCollaborationModeSelection::Default)
-    } else if ai_collaboration_mode_matches_kind(mask, ModeKind::Plan) {
-        Some(AiCollaborationModeSelection::Plan)
-    } else {
-        None
-    }
-}
-
-fn ai_collaboration_mode_mask(
-    modes: &[CollaborationModeMask],
-    selection: AiCollaborationModeSelection,
-) -> Option<&CollaborationModeMask> {
-    modes.iter()
-        .find(|mask| ai_collaboration_mode_from_mask(mask) == Some(selection))
 }
 
 fn ai_composer_draft_key(

@@ -292,25 +292,13 @@ impl DiffViewer {
         &self,
         collaboration_mode: AiCollaborationModeSelection,
     ) -> AiTurnSessionOverrides {
-        let mut model = self.ai_selected_model.clone();
-        let mut effort = self.ai_selected_effort.clone();
-
-        if let Some(mask) = ai_collaboration_mode_mask(&self.ai_collaboration_modes, collaboration_mode)
-        {
-            if let Some(mask_model) = mask.model.as_ref() {
-                model = Some(mask_model.clone());
-            }
-            if let Some(reasoning_effort) = mask.reasoning_effort.unwrap_or(None) {
-                effort = Some(reasoning_effort_key(&reasoning_effort));
-            }
-        }
-
-        let (model, effort) = normalized_ai_session_selection(self.ai_models.as_slice(), model, effort);
-        let effort = model.as_ref().and_then(|model_id| {
-            effort
-                .clone()
-                .filter(|effort_key| self.model_supports_effort(model_id.as_str(), effort_key.as_str()))
-        });
+        // Preserve explicit picker choices across mode switches. Runtime collaboration-mode
+        // defaults are applied later only when model/effort are unset for the turn.
+        let (model, effort) = normalized_ai_session_selection(
+            self.ai_models.as_slice(),
+            self.ai_selected_model.clone(),
+            self.ai_selected_effort.clone(),
+        );
 
         AiTurnSessionOverrides {
             model,

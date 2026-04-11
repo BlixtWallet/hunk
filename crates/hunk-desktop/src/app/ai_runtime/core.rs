@@ -994,27 +994,18 @@ impl AiWorkerRuntime {
             .clone()
             .or_else(|| mode_mask.and_then(|mask| mask.model.clone()))
             .or_else(|| self.default_model_id());
-        let Some(model) = model else {
-            return;
-        };
-
         let effort = session_overrides
             .effort
             .as_deref()
             .and_then(parse_reasoning_effort)
             .or_else(|| mode_mask.and_then(|mask| mask.reasoning_effort.unwrap_or(None)));
-
-        let collaboration_mode = CollaborationMode {
-            mode: mode_kind,
-            settings: Settings {
-                model,
-                reasoning_effort: effort,
-                developer_instructions: self
-                    .is_chats_workspace()
-                    .then(|| AI_CHATS_DEVELOPER_INSTRUCTIONS.to_string()),
-            },
-        };
-        params.collaboration_mode = Some(collaboration_mode);
+        params.collaboration_mode = collaboration_mode_for_turn(
+            mode_kind,
+            model,
+            effort,
+            self.is_chats_workspace()
+                .then(|| AI_CHATS_DEVELOPER_INSTRUCTIONS.to_string()),
+        );
         // Collaboration mode takes precedence over model/effort in the server.
         params.model = None;
         params.effort = None;
@@ -1031,6 +1022,24 @@ impl AiWorkerRuntime {
             .or_else(|| self.models.first())
             .map(|model| model.id.clone())
     }
+}
+
+fn collaboration_mode_for_turn(
+    mode_kind: ModeKind,
+    model: Option<String>,
+    effort: Option<ReasoningEffort>,
+    developer_instructions: Option<String>,
+) -> Option<CollaborationMode> {
+    let model = model?;
+
+    Some(CollaborationMode {
+        mode: mode_kind,
+        settings: Settings {
+            model,
+            reasoning_effort: effort,
+            developer_instructions,
+        },
+    })
 }
 
 fn prompt_user_input_items(
