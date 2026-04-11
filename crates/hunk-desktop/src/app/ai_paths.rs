@@ -3,9 +3,9 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(test)]
 use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(super) fn resolve_codex_home_path() -> Option<PathBuf> {
     resolve_codex_home_path_from(
@@ -213,10 +213,7 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&hunk_home);
 
-        assert_eq!(
-            resolved,
-            Some(expected),
-        );
+        assert_eq!(resolved, Some(expected),);
     }
 
     #[test]
