@@ -664,6 +664,49 @@ fn ai_visible_thread_sections_prepend_global_chats_section() {
 }
 
 #[test]
+fn failed_chat_workspace_cleanup_target_only_cleans_orphaned_chat_children() {
+    with_temp_hunk_home("failed-chat-cleanup-target", |_| {
+        let chats_root = resolve_ai_chats_root_path().expect("chats root should resolve");
+        let child = chats_root.join("chat-1");
+        let child_key = child.to_string_lossy().to_string();
+        let chats_key = chats_root.to_string_lossy().to_string();
+
+        assert_eq!(
+            failed_chat_workspace_cleanup_target(
+                Some(chats_root.as_path()),
+                child_key.as_str(),
+                None,
+            ),
+            Some((chats_key, child_key.clone())),
+        );
+        assert_eq!(
+            failed_chat_workspace_cleanup_target(
+                Some(chats_root.as_path()),
+                chats_root.to_string_lossy().as_ref(),
+                None,
+            ),
+            None,
+        );
+        assert_eq!(
+            failed_chat_workspace_cleanup_target(
+                Some(chats_root.as_path()),
+                child_key.as_str(),
+                Some("thread-1"),
+            ),
+            None,
+        );
+        assert_eq!(
+            failed_chat_workspace_cleanup_target(
+                Some(chats_root.as_path()),
+                "/repo",
+                None,
+            ),
+            None,
+        );
+    });
+}
+
+#[test]
 fn resolved_ai_turn_session_overrides_prefers_queued_thread_session() {
     let models = vec![
         ai_model(

@@ -217,7 +217,9 @@ mod tests {
 
         assert!(is_ai_chats_workspace_path(chats_root.as_path()));
         assert!(is_ai_chats_workspace_path(thread_root.as_path()));
-        assert!(!is_ai_chats_workspace_path(PathBuf::from("/repo").as_path()));
+        assert!(!is_ai_chats_workspace_path(
+            PathBuf::from("/repo").as_path()
+        ));
 
         match previous {
             Some(value) => unsafe {
@@ -276,7 +278,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&hunk_home);
 
         assert_ne!(first, second);
-        assert!(first.parent().is_some_and(|parent| parent.ends_with("chats")));
-        assert!(second.parent().is_some_and(|parent| parent.ends_with("chats")));
+        assert!(
+            first
+                .parent()
+                .is_some_and(|parent| parent.ends_with("chats"))
+        );
+        assert!(
+            second
+                .parent()
+                .is_some_and(|parent| parent.ends_with("chats"))
+        );
     }
 }

@@ -474,7 +474,7 @@ impl DiffViewer {
             return sent;
         }
 
-        let pending_thread_start =
+        self.ai_pending_thread_start =
             self.ai_workspace_key_for_draft()
                 .map(|workspace_key| AiPendingThreadStart {
                     workspace_key,
@@ -494,8 +494,9 @@ impl DiffViewer {
             cx,
         );
         if started {
-            self.ai_pending_thread_start = pending_thread_start;
             cx.notify();
+        } else {
+            self.ai_pending_thread_start = None;
         }
         started
     }
