@@ -9,6 +9,7 @@ use hunk_codex::state::ReducerEvent;
 use hunk_codex::state::ServerRequestDecision;
 use hunk_codex::state::StreamEvent;
 use hunk_codex::state::ThreadLifecycleStatus;
+use hunk_codex::state::TurnCollaborationMode;
 use hunk_codex::state::TurnPlanStepStatus;
 use hunk_codex::state::TurnPlanStepSummary;
 use hunk_codex::state::TurnStatus;
@@ -190,6 +191,45 @@ fn turn_plan_updates_replace_steps_and_preserve_creation_sequence() {
     assert_eq!(plan.steps.len(), 2);
     assert_eq!(plan.steps[0].status, TurnPlanStepStatus::Completed);
     assert_eq!(plan.steps[1].status, TurnPlanStepStatus::InProgress);
+}
+
+#[test]
+fn turn_collaboration_mode_updates_mark_explicit_plan_turns() {
+    let mut state = AiState::default();
+
+    state.apply_stream_events(vec![
+        event(
+            1,
+            Some("thread-start:t1"),
+            ReducerEvent::ThreadStarted {
+                thread_id: "t1".to_string(),
+                cwd: "/repo".to_string(),
+                title: None,
+                created_at: Some(10),
+                updated_at: Some(10),
+            },
+        ),
+        event(
+            2,
+            Some("turn-start:r1"),
+            ReducerEvent::TurnStarted {
+                thread_id: "t1".to_string(),
+                turn_id: "r1".to_string(),
+            },
+        ),
+        event(
+            3,
+            Some("turn-mode:r1"),
+            ReducerEvent::TurnCollaborationModeUpdated {
+                thread_id: "t1".to_string(),
+                turn_id: "r1".to_string(),
+                collaboration_mode: TurnCollaborationMode::Plan,
+            },
+        ),
+    ]);
+
+    let turn = find_turn(&state, "t1", "r1");
+    assert_eq!(turn.collaboration_mode, Some(TurnCollaborationMode::Plan));
 }
 
 #[test]

@@ -23,12 +23,14 @@ fn insert_plan(
     thread_id: &str,
     turn_id: &str,
     last_sequence: u64,
+    collaboration_mode: Option<hunk_codex::state::TurnCollaborationMode>,
 ) {
     state.turns.insert(
         hunk_codex::state::turn_storage_key(thread_id, turn_id),
         hunk_codex::state::TurnSummary {
             id: turn_id.to_string(),
             thread_id: thread_id.to_string(),
+            collaboration_mode,
             status: hunk_codex::state::TurnStatus::Completed,
             last_sequence,
         },
@@ -55,12 +57,14 @@ fn insert_plan_item(
     turn_id: &str,
     item_id: &str,
     last_sequence: u64,
+    collaboration_mode: Option<hunk_codex::state::TurnCollaborationMode>,
 ) {
     state.turns.insert(
         hunk_codex::state::turn_storage_key(thread_id, turn_id),
         hunk_codex::state::TurnSummary {
             id: turn_id.to_string(),
             thread_id: thread_id.to_string(),
+            collaboration_mode,
             status: hunk_codex::state::TurnStatus::Completed,
             last_sequence,
         },
@@ -92,6 +96,7 @@ fn insert_review_exit_item(
         hunk_codex::state::TurnSummary {
             id: turn_id.to_string(),
             thread_id: thread_id.to_string(),
+            collaboration_mode: None,
             status: hunk_codex::state::TurnStatus::Completed,
             last_sequence,
         },
@@ -152,7 +157,13 @@ fn ai_followup_prompt_action_for_keystroke_matches_navigation_keys() {
 #[test]
 fn ai_followup_prompt_for_thread_returns_latest_plan_in_plan_mode() {
     let mut state = followup_state("thread-1");
-    insert_plan(&mut state, "thread-1", "turn-1", 9);
+    insert_plan(
+        &mut state,
+        "thread-1",
+        "turn-1",
+        9,
+        Some(hunk_codex::state::TurnCollaborationMode::Plan),
+    );
 
     assert_eq!(
         ai_followup_prompt_for_thread(
@@ -171,7 +182,14 @@ fn ai_followup_prompt_for_thread_returns_latest_plan_in_plan_mode() {
 #[test]
 fn ai_followup_prompt_for_thread_uses_plan_items_when_turn_plan_updates_are_absent() {
     let mut state = followup_state("thread-1");
-    insert_plan_item(&mut state, "thread-1", "turn-1", "plan-item", 9);
+    insert_plan_item(
+        &mut state,
+        "thread-1",
+        "turn-1",
+        "plan-item",
+        9,
+        Some(hunk_codex::state::TurnCollaborationMode::Plan),
+    );
 
     assert_eq!(
         ai_followup_prompt_for_thread(
@@ -193,7 +211,14 @@ fn visible_followup_prompt_is_scoped_to_the_selected_thread() {
     state
         .threads
         .insert("thread-2".to_string(), followup_thread("thread-2"));
-    insert_plan_item(&mut state, "thread-1", "turn-1", "plan-item", 9);
+    insert_plan_item(
+        &mut state,
+        "thread-1",
+        "turn-1",
+        "plan-item",
+        9,
+        Some(hunk_codex::state::TurnCollaborationMode::Plan),
+    );
 
     assert_eq!(
         ai_visible_followup_prompt_for_selected_thread(
@@ -209,7 +234,13 @@ fn visible_followup_prompt_is_scoped_to_the_selected_thread() {
 #[test]
 fn ai_followup_prompt_for_thread_hides_plan_outside_plan_mode() {
     let mut state = followup_state("thread-1");
-    insert_plan(&mut state, "thread-1", "turn-1", 9);
+    insert_plan(
+        &mut state,
+        "thread-1",
+        "turn-1",
+        9,
+        Some(hunk_codex::state::TurnCollaborationMode::Plan),
+    );
 
     assert_eq!(
         ai_followup_prompt_for_thread(
@@ -239,6 +270,67 @@ fn ai_followup_prompt_for_thread_ignores_review_exit_items() {
 }
 
 #[test]
+fn ai_followup_prompt_for_thread_ignores_turn_plan_updates_from_code_turns() {
+    let mut state = followup_state("thread-1");
+    insert_plan(
+        &mut state,
+        "thread-1",
+        "turn-1",
+        9,
+        Some(hunk_codex::state::TurnCollaborationMode::Default),
+    );
+
+    assert_eq!(
+        ai_followup_prompt_for_thread(
+            &state,
+            "thread-1",
+            AiCollaborationModeSelection::Plan,
+            AiThreadFollowupPromptState::default(),
+        ),
+        None
+    );
+}
+
+#[test]
+fn ai_followup_prompt_for_thread_ignores_plan_items_from_code_turns() {
+    let mut state = followup_state("thread-1");
+    insert_plan_item(
+        &mut state,
+        "thread-1",
+        "turn-1",
+        "plan-item",
+        9,
+        Some(hunk_codex::state::TurnCollaborationMode::Default),
+    );
+
+    assert_eq!(
+        ai_followup_prompt_for_thread(
+            &state,
+            "thread-1",
+            AiCollaborationModeSelection::Plan,
+            AiThreadFollowupPromptState::default(),
+        ),
+        None
+    );
+}
+
+#[test]
+fn ai_followup_prompt_for_thread_ignores_plans_without_turn_mode_provenance() {
+    let mut state = followup_state("thread-1");
+    insert_plan(&mut state, "thread-1", "turn-1", 9, None);
+
+    assert_eq!(
+        ai_followup_prompt_for_thread(
+            &state,
+            "thread-1",
+            AiCollaborationModeSelection::Plan,
+            AiThreadFollowupPromptState::default(),
+        ),
+        None
+    );
+}
+
+#[test]
 fn sync_ai_review_mode_threads_after_snapshot_clears_completed_review_threads() {
     let mut state = followup_state("thread-1");
     insert_review_exit_item(&mut state, "thread-1", "turn-2", "review-exit", 14);
@@ -252,7 +344,13 @@ fn sync_ai_review_mode_threads_after_snapshot_clears_completed_review_threads() 
 #[test]
 fn sync_ai_followup_prompt_ui_state_resets_selection_for_new_prompt() {
     let mut state = followup_state("thread-1");
-    insert_plan(&mut state, "thread-1", "turn-1", 11);
+    insert_plan(
+        &mut state,
+        "thread-1",
+        "turn-1",
+        11,
+        Some(hunk_codex::state::TurnCollaborationMode::Plan),
+    );
     let mut prompt_states = BTreeMap::from([(
         String::from("thread-1"),
         AiThreadFollowupPromptState {

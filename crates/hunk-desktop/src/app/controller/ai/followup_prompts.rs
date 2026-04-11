@@ -48,7 +48,10 @@ fn latest_ai_plan_for_thread(
     let turn_plan_prompt = state
         .turn_plans
         .values()
-        .filter(|plan| plan.thread_id == thread_id)
+        .filter(|plan| {
+            plan.thread_id == thread_id
+                && turn_has_explicit_plan_mode(state, plan.thread_id.as_str(), plan.turn_id.as_str())
+        })
         .max_by_key(|plan| plan.last_sequence)
         .map(|plan| AiFollowupPrompt {
             kind: AiFollowupPromptKind::Plan,
@@ -60,6 +63,7 @@ fn latest_ai_plan_for_thread(
         .filter(|item| {
             item.thread_id == thread_id
                 && item.kind == "plan"
+                && turn_has_explicit_plan_mode(state, item.thread_id.as_str(), item.turn_id.as_str())
                 && (!item.content.trim().is_empty()
                     || item
                         .display_metadata
@@ -85,6 +89,19 @@ fn latest_ai_plan_for_thread(
         (None, Some(plan_item)) => Some(plan_item),
         (None, None) => None,
     }
+}
+
+fn turn_has_explicit_plan_mode(
+    state: &hunk_codex::state::AiState,
+    thread_id: &str,
+    turn_id: &str,
+) -> bool {
+    state
+        .turns
+        .get(hunk_codex::state::turn_storage_key(thread_id, turn_id).as_str())
+        .is_some_and(|turn| {
+            turn.collaboration_mode == Some(hunk_codex::state::TurnCollaborationMode::Plan)
+        })
 }
 
 fn latest_ai_review_for_thread(

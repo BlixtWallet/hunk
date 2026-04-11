@@ -805,7 +805,7 @@ impl AiWorkerRuntime {
         }
 
         let mut params = TurnStartParams {
-            thread_id,
+            thread_id: thread_id.clone(),
             input,
             ..TurnStartParams::default()
         };
@@ -816,7 +816,7 @@ impl AiWorkerRuntime {
             .start_turn(&mut self.session, params, self.request_timeout)?
             .turn;
         self.service.record_turn_collaboration_mode(
-            turn.thread_id.clone(),
+            thread_id,
             turn.id,
             turn_collaboration_mode(session_overrides.collaboration_mode),
         );

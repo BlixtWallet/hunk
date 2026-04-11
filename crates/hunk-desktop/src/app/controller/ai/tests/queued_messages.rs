@@ -136,6 +136,7 @@ fn ready_ai_queued_message_thread_ids_skips_in_progress_and_interrupt_restore_th
         hunk_codex::state::TurnSummary {
             id: "turn-1".to_string(),
             thread_id: "thread-a".to_string(),
+            collaboration_mode: None,
             status: hunk_codex::state::TurnStatus::InProgress,
             last_sequence: 3,
         },
