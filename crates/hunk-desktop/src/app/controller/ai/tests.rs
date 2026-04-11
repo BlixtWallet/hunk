@@ -27,6 +27,7 @@ mod ai_tests {
     use super::ai_timeline_row_supports_inline_review;
     use super::AI_AUTH_REQUIRED_MESSAGE;
     use super::ai_workspace_catalog_inputs_from_target_sets;
+    use super::ai_visible_thread_sections;
     use super::ai_composer_draft_key;
     use super::ai_composer_prompt_for_target;
     use super::ai_composer_retained_thread_ids;
@@ -94,6 +95,7 @@ mod ai_tests {
     use super::timeline_turn_ids_by_thread;
     use super::timeline_visible_row_ids_for_turns;
     use super::timeline_visible_turn_ids;
+    use super::failed_chat_workspace_cleanup_target;
     use super::workspace_target_summary_for_root;
     use super::workspace_branch_name_for_root;
     use super::workspace_include_hidden_models;
@@ -101,6 +103,7 @@ mod ai_tests {
     use super::AiComposerModeTarget;
     use super::AiComposerShortcut;
     use crate::app::ai_composer_completion::merge_rebased_ai_composer_skill_bindings;
+    use crate::app::ai_paths::resolve_ai_chats_root_path;
     use crate::app::ai_runtime::AiConnectionState;
     use crate::app::ai_workspace_session;
     use crate::app::ai_workspace_surface::ai_workspace_selectable_text_context_menu_target;
@@ -130,6 +133,7 @@ mod ai_tests {
     use crate::app::AiThreadTitleRefreshState;
     use crate::app::AiTimelineRow;
     use crate::app::AiTimelineRowSource;
+    use crate::app::AiWorkspaceKind;
     use crate::app::AiWorkspaceState;
     use crate::app::DiffViewer;
     use crate::app::WorkspaceViewMode;
@@ -332,6 +336,31 @@ mod ai_tests {
             additional_speed_tiers: Vec::new(),
             is_default,
         }
+    }
+
+    fn with_temp_hunk_home<T>(test_name: &str, f: impl FnOnce(PathBuf) -> T) -> T {
+        let _guard = crate::app::ai_paths::lock_hunk_home_test_env();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos();
+        let temp_home = std::env::temp_dir().join(format!("hunk-ai-test-{test_name}-{unique}"));
+        let previous = std::env::var_os(hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR);
+        unsafe { std::env::set_var(hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR, &temp_home) };
+        let _ = std::fs::remove_dir_all(&temp_home);
+        std::fs::create_dir_all(&temp_home).expect("temp hunk home should be created");
+
+        let result = f(temp_home.clone());
+
+        match previous {
+            Some(value) => unsafe {
+                std::env::set_var(hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR, value)
+            },
+            None => unsafe { std::env::remove_var(hunk_domain::paths::HUNK_HOME_DIR_ENV_VAR) },
+        }
+        let _ = std::fs::remove_dir_all(&temp_home);
+
+        result
     }
 
     include!("tests/workspace_state.rs");

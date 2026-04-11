@@ -68,6 +68,15 @@ fn ai_select_previous_completion_item(
 }
 
 impl DiffViewer {
+    fn clear_ai_composer_file_completion_reload_state(&mut self, cx: &mut Context<Self>) {
+        self.ai_composer_file_completion_provider.clear();
+        self.ai_composer_file_completion_reload_task = Task::ready(());
+        self.ai_composer_file_completion_menu = None;
+        self.ai_composer_file_completion_dismissed_token = None;
+        self.ai_composer_file_completion_selected_ix = 0;
+        cx.notify();
+    }
+
     fn current_ai_composer_completion_context(
         &self,
         cx: &Context<Self>,
@@ -131,6 +140,7 @@ impl DiffViewer {
             sync_key.prompt.as_str(),
             sync_key.cursor,
             sync_key.session_settings_locked,
+            self.current_ai_workspace_kind() != AiWorkspaceKind::Chats,
         )
     }
 
@@ -549,18 +559,45 @@ impl DiffViewer {
 
         match command.item.kind {
             crate::app::ai_composer_commands::AiComposerSlashCommandKind::Code => {
+                if self.current_ai_workspace_kind() == AiWorkspaceKind::Chats {
+                    self.set_current_ai_composer_status(
+                        "Mode switching is unavailable in Chats.",
+                        cx,
+                    );
+                    self.sync_ai_composer_completion_menus(cx);
+                    cx.notify();
+                    return true;
+                }
                 self.ai_select_collaboration_mode_action(
                     hunk_domain::state::AiCollaborationModeSelection::Default,
                     cx,
                 );
             }
             crate::app::ai_composer_commands::AiComposerSlashCommandKind::Plan => {
+                if self.current_ai_workspace_kind() == AiWorkspaceKind::Chats {
+                    self.set_current_ai_composer_status(
+                        "Mode switching is unavailable in Chats.",
+                        cx,
+                    );
+                    self.sync_ai_composer_completion_menus(cx);
+                    cx.notify();
+                    return true;
+                }
                 self.ai_select_collaboration_mode_action(
                     hunk_domain::state::AiCollaborationModeSelection::Plan,
                     cx,
                 );
             }
             crate::app::ai_composer_commands::AiComposerSlashCommandKind::Review => {
+                if self.current_ai_workspace_kind() == AiWorkspaceKind::Chats {
+                    self.set_current_ai_composer_status(
+                        "Review mode is unavailable in Chats.",
+                        cx,
+                    );
+                    self.sync_ai_composer_completion_menus(cx);
+                    cx.notify();
+                    return true;
+                }
                 self.ai_select_review_mode_action(cx);
             }
             crate::app::ai_composer_commands::AiComposerSlashCommandKind::FastModeOn => {
@@ -698,14 +735,14 @@ impl DiffViewer {
         cx: &mut Context<Self>,
     ) {
         let Some(workspace_root) = workspace_root else {
-            self.ai_composer_file_completion_provider.clear();
-            self.ai_composer_file_completion_reload_task = Task::ready(());
-            self.ai_composer_file_completion_menu = None;
-            self.ai_composer_file_completion_dismissed_token = None;
-            self.ai_composer_file_completion_selected_ix = 0;
-            cx.notify();
+            self.clear_ai_composer_file_completion_reload_state(cx);
             return;
         };
+
+        if self.ai_workspace_kind_for_root(workspace_root.as_path()) == AiWorkspaceKind::Chats {
+            self.clear_ai_composer_file_completion_reload_state(cx);
+            return;
+        }
 
         let provider = self.ai_composer_file_completion_provider.clone();
         let generation = provider.begin_reload(Some(workspace_root.clone()));
