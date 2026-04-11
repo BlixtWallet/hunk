@@ -2,6 +2,8 @@
 
 A cross-platform Git diff viewer and Codex orchestrator built with `gpui` + `gpui-component`.
 
+> CI verification branch note: no functional changes in this README update.
+
 ## License
 
 Hunk is licensed under the GNU General Public License v3.0 or later. See [`LICENSE`](./LICENSE).
