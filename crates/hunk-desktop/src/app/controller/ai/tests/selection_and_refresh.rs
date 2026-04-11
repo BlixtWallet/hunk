@@ -280,6 +280,7 @@
             hunk_codex::state::TurnSummary {
                 id: "turn-a".to_string(),
                 thread_id: "thread-a".to_string(),
+                collaboration_mode: None,
                 status: hunk_codex::state::TurnStatus::InProgress,
                 last_sequence: 7,
             },
@@ -336,6 +337,7 @@
             hunk_codex::state::TurnSummary {
                 id: "turn-a".to_string(),
                 thread_id: "thread-a".to_string(),
+                collaboration_mode: None,
                 status: hunk_codex::state::TurnStatus::InProgress,
                 last_sequence: 7,
             },
@@ -377,6 +379,7 @@
             hunk_codex::state::TurnSummary {
                 id: "turn-a".to_string(),
                 thread_id: "thread-a".to_string(),
+                collaboration_mode: None,
                 status: hunk_codex::state::TurnStatus::InProgress,
                 last_sequence: 7,
             },
@@ -433,6 +436,7 @@
             hunk_codex::state::TurnSummary {
                 id: "turn-a".to_string(),
                 thread_id: "thread-a".to_string(),
+                collaboration_mode: None,
                 status: hunk_codex::state::TurnStatus::InProgress,
                 last_sequence: 7,
             },

@@ -10,6 +10,7 @@ mod ai_tests {
 
     use codex_app_server_protocol::AccountLoginCompletedNotification;
     use codex_app_server_protocol::AskForApproval;
+    use codex_protocol::config_types::ModeKind;
     use codex_app_server_protocol::RateLimitSnapshot;
     use codex_app_server_protocol::RateLimitWindow;
     use codex_app_server_protocol::RequestId;
@@ -42,6 +43,7 @@ mod ai_tests {
     use super::apply_thread_start_policy;
     use super::apply_thread_start_session_overrides;
     use super::apply_turn_start_policy;
+    use super::collaboration_mode_for_turn;
     use super::command_can_retry_after_reconnect;
     use super::dispatch_ai_worker_result;
     use super::reconnect_backoff;
@@ -297,6 +299,24 @@ mod ai_tests {
                 text: "Use $missing".to_string(),
                 text_elements: Vec::new(),
             }]
+        );
+    }
+
+    #[test]
+    fn collaboration_mode_for_turn_preserves_explicit_reasoning_effort() {
+        let mode = collaboration_mode_for_turn(
+            ModeKind::Plan,
+            Some("gpt-5.4".to_string()),
+            Some(codex_protocol::openai_models::ReasoningEffort::High),
+            None,
+        )
+        .expect("collaboration mode should resolve");
+
+        assert_eq!(mode.mode, ModeKind::Plan);
+        assert_eq!(mode.settings.model, "gpt-5.4");
+        assert_eq!(
+            mode.settings.reasoning_effort,
+            Some(codex_protocol::openai_models::ReasoningEffort::High)
         );
     }
 

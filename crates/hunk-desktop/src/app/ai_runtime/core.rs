@@ -56,6 +56,7 @@ use hunk_codex::host::HostConfig;
 use hunk_codex::host::SharedHostLease;
 use hunk_codex::state::AiState;
 use hunk_codex::state::ServerRequestDecision;
+use hunk_codex::state::TurnCollaborationMode;
 use hunk_codex::state::ThreadLifecycleStatus;
 use hunk_codex::state::TurnStatus as StateTurnStatus;
 use hunk_codex::threads::RolloutFallbackItem;
@@ -804,14 +805,21 @@ impl AiWorkerRuntime {
         }
 
         let mut params = TurnStartParams {
-            thread_id,
+            thread_id: thread_id.clone(),
             input,
             ..TurnStartParams::default()
         };
         apply_turn_start_policy(self.mad_max_mode, &mut params);
         self.apply_turn_session_overrides(&mut params, &session_overrides);
-        self.service
-            .start_turn(&mut self.session, params, self.request_timeout)?;
+        let turn = self
+            .service
+            .start_turn(&mut self.session, params, self.request_timeout)?
+            .turn;
+        self.service.record_turn_collaboration_mode(
+            thread_id,
+            turn.id,
+            turn_collaboration_mode(session_overrides.collaboration_mode),
+        );
         Ok(None)
     }
 
@@ -994,27 +1002,18 @@ impl AiWorkerRuntime {
             .clone()
             .or_else(|| mode_mask.and_then(|mask| mask.model.clone()))
             .or_else(|| self.default_model_id());
-        let Some(model) = model else {
-            return;
-        };
-
         let effort = session_overrides
             .effort
             .as_deref()
             .and_then(parse_reasoning_effort)
             .or_else(|| mode_mask.and_then(|mask| mask.reasoning_effort.unwrap_or(None)));
-
-        let collaboration_mode = CollaborationMode {
-            mode: mode_kind,
-            settings: Settings {
-                model,
-                reasoning_effort: effort,
-                developer_instructions: self
-                    .is_chats_workspace()
-                    .then(|| AI_CHATS_DEVELOPER_INSTRUCTIONS.to_string()),
-            },
-        };
-        params.collaboration_mode = Some(collaboration_mode);
+        params.collaboration_mode = collaboration_mode_for_turn(
+            mode_kind,
+            model,
+            effort,
+            self.is_chats_workspace()
+                .then(|| AI_CHATS_DEVELOPER_INSTRUCTIONS.to_string()),
+        );
         // Collaboration mode takes precedence over model/effort in the server.
         params.model = None;
         params.effort = None;
@@ -1030,6 +1029,33 @@ impl AiWorkerRuntime {
             .find(|model| model.is_default)
             .or_else(|| self.models.first())
             .map(|model| model.id.clone())
+    }
+}
+
+fn collaboration_mode_for_turn(
+    mode_kind: ModeKind,
+    model: Option<String>,
+    effort: Option<ReasoningEffort>,
+    developer_instructions: Option<String>,
+) -> Option<CollaborationMode> {
+    let model = model?;
+
+    Some(CollaborationMode {
+        mode: mode_kind,
+        settings: Settings {
+            model,
+            reasoning_effort: effort,
+            developer_instructions,
+        },
+    })
+}
+
+fn turn_collaboration_mode(
+    collaboration_mode: AiCollaborationModeSelection,
+) -> TurnCollaborationMode {
+    match collaboration_mode {
+        AiCollaborationModeSelection::Default => TurnCollaborationMode::Default,
+        AiCollaborationModeSelection::Plan => TurnCollaborationMode::Plan,
     }
 }
 

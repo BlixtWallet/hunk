@@ -812,14 +812,6 @@ impl DiffViewer {
         }
         self.ai_review_mode_active = false;
         self.ai_selected_collaboration_mode = selection;
-        if let Some(mask) = ai_collaboration_mode_mask(&self.ai_collaboration_modes, selection) {
-            if let Some(model) = mask.model.as_ref() {
-                self.ai_selected_model = Some(model.clone());
-            }
-            if let Some(reasoning_effort) = mask.reasoning_effort.unwrap_or(None) {
-                self.ai_selected_effort = Some(reasoning_effort_key(&reasoning_effort));
-            }
-        }
         self.normalize_ai_selected_effort();
         self.persist_current_ai_workspace_session();
         self.sync_ai_followup_prompt_state_for_selected_thread(current_thread_id.as_deref());
@@ -845,17 +837,6 @@ impl DiffViewer {
             return;
         };
         self.ai_selected_collaboration_mode = AiCollaborationModeSelection::Default;
-        if let Some(mask) = ai_collaboration_mode_mask(
-            &self.ai_collaboration_modes,
-            AiCollaborationModeSelection::Default,
-        ) {
-            if let Some(model) = mask.model.as_ref() {
-                self.ai_selected_model = Some(model.clone());
-            }
-            if let Some(reasoning_effort) = mask.reasoning_effort.unwrap_or(None) {
-                self.ai_selected_effort = Some(reasoning_effort_key(&reasoning_effort));
-            }
-        }
         self.normalize_ai_selected_effort();
         self.ai_review_mode_thread_ids.insert(thread_id);
         self.ai_review_mode_active = true;

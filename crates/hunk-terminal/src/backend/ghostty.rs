@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use libghostty_vt::{
-    RenderState, Terminal, TerminalOptions, ffi, focus, key, mouse,
+    RenderState, Terminal, TerminalOptions, focus, key, mouse,
     render::{CellIterator, Colors, CursorVisualStyle, Dirty, RowIterator, Snapshot},
+    screen::Screen,
     style::RgbColor,
     terminal::{Mode, ScrollViewport},
 };
@@ -154,7 +155,7 @@ impl GhosttyTerminalVt {
             .terminal
             .active_screen()
             .expect("read libghostty-vt active screen")
-            == ffi::GhosttyTerminalScreen_GHOSTTY_TERMINAL_SCREEN_ALTERNATE;
+            == Screen::Alternate;
         let alternate_scroll = self
             .terminal
             .mode(Mode::ALT_SCROLL)
@@ -588,7 +589,7 @@ fn snapshot_mode(
         alt_screen: terminal
             .active_screen()
             .expect("read libghostty-vt active screen")
-            == ffi::GhosttyTerminalScreen_GHOSTTY_TERMINAL_SCREEN_ALTERNATE,
+            == Screen::Alternate,
         app_cursor: terminal
             .mode(Mode::DECCKM)
             .expect("read libghostty-vt app cursor mode"),
