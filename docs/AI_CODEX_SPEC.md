@@ -17,9 +17,9 @@
 
 ## Pinned Upstream Baseline
 - Codex repo: `https://github.com/openai/codex`
-- Pinned tag: `rust-v0.119.0`
-- Pinned commit SHA: `4a3466efbf84cfb7469eca94bbf6307166c9f48e`
-- Pin captured on: 2026-04-10
+- Pinned tag: `rust-v0.120.0`
+- Pinned commit SHA: `65319eb1400cbd2890c43d572263dabd25f18ba9`
+- Pin captured on: 2026-04-11
 
 ## Architecture Boundary
 - New crate: `crates/hunk-codex`
