@@ -43,6 +43,7 @@ fn thread(id: &str, cwd: &str) -> Thread {
         source: SessionSource::AppServer,
         agent_nickname: None,
         agent_role: None,
+        forked_from_id: None,
         git_info: None,
         turns: Vec::new(),
         status: ThreadStatus::Idle,
