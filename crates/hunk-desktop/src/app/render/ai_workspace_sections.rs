@@ -175,7 +175,6 @@ impl DiffViewer {
             .text_xs()
             .font_semibold()
             .text_color(colors.text)
-            .tooltip(format!("Open {short_label} #{}", review.number))
             .hover(move |style| {
                 style
                     .bg(hover_background)

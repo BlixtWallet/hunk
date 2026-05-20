@@ -255,9 +255,9 @@ fn github_pull_request_state(pull_request: &PullRequest) -> ForgeReviewState {
     if pull_request.merged_at.is_some() {
         ForgeReviewState::Merged
     } else {
-        match pull_request.state.as_ref().unwrap_or(&IssueState::Open) {
-            &IssueState::Open => ForgeReviewState::Open,
-            &IssueState::Closed => ForgeReviewState::Closed,
+        match *pull_request.state.as_ref().unwrap_or(&IssueState::Open) {
+            IssueState::Open => ForgeReviewState::Open,
+            IssueState::Closed => ForgeReviewState::Closed,
             _ => ForgeReviewState::Closed,
         }
     }
