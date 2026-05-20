@@ -176,6 +176,12 @@ impl Default for DesktopNotificationsConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct AiConfig {
+    pub prevent_idle_sleep: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KeyboardShortcuts {
@@ -304,6 +310,7 @@ pub struct AppConfig {
     pub show_fps_counter: bool,
     pub auto_update_enabled: bool,
     pub desktop_notifications: DesktopNotificationsConfig,
+    pub ai: AiConfig,
     pub terminal: TerminalConfig,
     pub keyboard_shortcuts: KeyboardShortcuts,
     pub review_provider_mappings: Vec<ReviewProviderMapping>,
@@ -322,6 +329,7 @@ impl Default for AppConfig {
             show_fps_counter: true,
             auto_update_enabled: true,
             desktop_notifications: DesktopNotificationsConfig::default(),
+            ai: AiConfig::default(),
             terminal: TerminalConfig::default(),
             keyboard_shortcuts: KeyboardShortcuts::default(),
             review_provider_mappings: Vec::new(),

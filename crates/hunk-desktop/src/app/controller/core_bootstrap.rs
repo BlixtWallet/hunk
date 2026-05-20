@@ -570,6 +570,8 @@ impl DiffViewer {
         let editor_replace_input_state =
             cx.new(|cx| InputState::new(window, cx).placeholder("Replace in file"));
         let in_app_menu_bar = (!cfg!(target_os = "macos")).then(|| AppMenuBar::new(cx));
+        let ai_sleep_inhibitor =
+            hunk_sleep_inhibitor::SleepInhibitor::new(config.ai.prevent_idle_sleep);
 
         let mut view = Self {
             config_store,
@@ -664,6 +666,7 @@ impl DiffViewer {
             ai_timeline_groups_by_id: BTreeMap::new(),
             ai_timeline_group_parent_by_child_row_id: BTreeMap::new(),
             ai_in_progress_turn_started_at: BTreeMap::new(),
+            ai_sleep_inhibitor,
             ai_composer_activity_elapsed_second: None,
             ai_expanded_timeline_row_ids: BTreeSet::new(),
             ai_pressed_markdown_link: None,

@@ -143,6 +143,7 @@ impl DiffViewer {
         }
         self.ai_pending_user_input_answers.clear();
         self.ai_in_progress_turn_started_at.clear();
+        self.sync_ai_sleep_inhibitor();
         self.ai_composer_activity_elapsed_second = None;
         self.restore_ai_new_thread_draft_after_failure(cx);
         self.ai_account = None;

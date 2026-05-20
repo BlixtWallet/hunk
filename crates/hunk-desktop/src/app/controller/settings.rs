@@ -304,6 +304,7 @@ impl DiffViewer {
             show_fps_counter: self.config.show_fps_counter,
             auto_update_enabled: self.config.auto_update_enabled,
             desktop_notifications: self.config.desktop_notifications.clone(),
+            ai: self.config.ai.clone(),
             terminal,
             shortcuts,
             error_message: None,
@@ -457,6 +458,22 @@ impl DiffViewer {
         cx.notify();
     }
 
+    pub(super) fn set_settings_ai_prevent_idle_sleep(
+        &mut self,
+        prevent_idle_sleep: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(settings) = self.settings_draft.as_mut() else {
+            return;
+        };
+        if settings.ai.prevent_idle_sleep == prevent_idle_sleep {
+            return;
+        }
+        settings.ai.prevent_idle_sleep = prevent_idle_sleep;
+        settings.error_message = None;
+        cx.notify();
+    }
+
     pub(super) fn set_settings_terminal_shell_choice(
         &mut self,
         shell_choice: SettingsTerminalShellChoice,
@@ -512,6 +529,7 @@ impl DiffViewer {
             show_fps_counter,
             auto_update_enabled,
             desktop_notifications,
+            ai,
             terminal,
             keyboard_shortcuts,
         ) = {
@@ -626,6 +644,7 @@ impl DiffViewer {
                 settings.show_fps_counter,
                 settings.auto_update_enabled,
                 settings.desktop_notifications.clone(),
+                settings.ai.clone(),
                 terminal,
                 keyboard_shortcuts,
             )
@@ -642,8 +661,10 @@ impl DiffViewer {
         self.config.show_fps_counter = show_fps_counter;
         self.config.auto_update_enabled = auto_update_enabled;
         self.config.desktop_notifications = desktop_notifications;
+        self.config.ai = ai;
         self.config.terminal = terminal;
         self.config.keyboard_shortcuts = keyboard_shortcuts;
+        self.sync_ai_sleep_inhibitor();
         self.apply_theme_preference(window, cx);
         self.restart_auto_refresh(cx);
         self.restart_periodic_update_checks(cx);

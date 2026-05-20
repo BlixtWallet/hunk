@@ -38,7 +38,7 @@ use hunk_assets::HunkAssets;
 pub(crate) use hunk_assets::HunkIconName;
 
 use hunk_domain::config::{
-    AiDesktopNotificationsConfig, AppConfig, ConfigStore, DesktopNotificationsConfig,
+    AiConfig, AiDesktopNotificationsConfig, AppConfig, ConfigStore, DesktopNotificationsConfig,
     KeyboardShortcuts, TerminalConfig, TerminalShell, ThemePreference,
 };
 use hunk_domain::db::{
@@ -1562,6 +1562,7 @@ struct DiffViewer {
     ai_timeline_groups_by_id: BTreeMap<String, AiTimelineGroup>,
     ai_timeline_group_parent_by_child_row_id: BTreeMap<String, String>,
     ai_in_progress_turn_started_at: BTreeMap<String, Instant>,
+    ai_sleep_inhibitor: hunk_sleep_inhibitor::SleepInhibitor,
     ai_composer_activity_elapsed_second: Option<u64>,
     ai_expanded_timeline_row_ids: BTreeSet<String>,
     ai_pressed_markdown_link: Option<AiPressedMarkdownLink>,
