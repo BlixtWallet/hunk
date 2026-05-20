@@ -364,7 +364,11 @@ impl ThreadService {
         limit: Option<u32>,
         timeout: Duration,
     ) -> Result<ExperimentalFeatureListResponse> {
-        let params = ExperimentalFeatureListParams { cursor, limit };
+        let params = ExperimentalFeatureListParams {
+            cursor,
+            limit,
+            thread_id: None,
+        };
         self.request_with_notifications(
             session,
             api::method::EXPERIMENTAL_FEATURE_LIST,

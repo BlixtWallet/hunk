@@ -297,6 +297,7 @@ mod ai_tests {
             vec![
                 UserInput::LocalImage {
                     path: PathBuf::from("/tmp/diagram.png"),
+                    detail: None,
                 },
                 UserInput::Text {
                     text: "Use $gpui and $gpui-component".to_string(),

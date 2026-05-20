@@ -932,7 +932,7 @@ fn prompt_user_input_items(
     let mut input = local_image_paths
         .iter()
         .cloned()
-        .map(|path| UserInput::LocalImage { path })
+        .map(|path| UserInput::LocalImage { path, detail: None })
         .collect::<Vec<_>>();
     if let Some(text) = trimmed_prompt {
         input.push(UserInput::Text {

@@ -389,7 +389,7 @@ fn user_input_text_content(input: &UserInput) -> Option<&str> {
 
 fn user_input_local_image_name(input: &UserInput) -> Option<String> {
     match input {
-        UserInput::LocalImage { path } => Some(local_image_display_name(path.as_path())),
+        UserInput::LocalImage { path, .. } => Some(local_image_display_name(path.as_path())),
         _ => None,
     }
 }

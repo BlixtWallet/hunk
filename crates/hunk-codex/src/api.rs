@@ -42,6 +42,7 @@ impl InitializeOptions {
             },
             capabilities: Some(InitializeCapabilities {
                 experimental_api: self.experimental_api,
+                request_attestation: false,
                 opt_out_notification_methods: opt_out,
             }),
         }
