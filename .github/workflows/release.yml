@@ -261,7 +261,7 @@ jobs:
       - macos
       - linux
       - windows
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       HUNK_UPDATE_PRIVATE_KEY_BASE64: ${{ secrets.HUNK_UPDATE_PRIVATE_KEY_BASE64 }}
