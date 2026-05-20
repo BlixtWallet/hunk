@@ -5,7 +5,6 @@ license.workspace = true
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0"
 codex-app-server.workspace = true
 codex-app-server-protocol.workspace = true
 codex-arg0.workspace = true
@@ -24,5 +23,6 @@ hunk-browser = { path = "../hunk-browser" }
 hunk-mobile = { path = "../hunk-mobile" }
 
 [dev-dependencies]
+anyhow = "1.0"
 tempfile = "3.23"
 wiremock = "0.6.5"

@@ -7904,14 +7904,12 @@ name = "hunk-desktop"
 version = "0.0.11"
 dependencies = [
  "anyhow",
- "arc-swap",
  "base64 0.22.1",
  "block2",
  "codex-utils-rustls-provider",
  "ctrlc",
  "dirs",
  "futures",
- "git2",
  "gpui",
  "gpui-component",
  "gpui-component-assets",
@@ -7940,7 +7938,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "time",
- "toml 1.1.2+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "webbrowser",
