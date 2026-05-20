@@ -11,7 +11,6 @@ use codex_arg0::Arg0DispatchPaths;
 use codex_config::LoaderOverrides;
 use codex_core::config::ConfigBuilder;
 use codex_exec_server::EnvironmentManager;
-use codex_exec_server::EnvironmentManagerArgs;
 use codex_exec_server::ExecServerRuntimePaths;
 use codex_feedback::CodexFeedback;
 use serde::Serialize;
@@ -101,6 +100,20 @@ impl EmbeddedAppServerClient {
                 })
                 .collect();
 
+            let runtime_paths = ExecServerRuntimePaths::from_optional_paths(
+                Some(args.codex_executable.clone()),
+                None,
+            )
+            .map_err(CodexIntegrationError::HostProcessIo)?;
+            let environment_manager =
+                EnvironmentManager::from_codex_home(args.codex_home.clone(), runtime_paths)
+                    .await
+                    .map_err(|error| {
+                        CodexIntegrationError::WebSocketTransport(format!(
+                            "failed to load embedded Codex environments: {error}"
+                        ))
+                    })?;
+
             InProcessAppServerClient::start(InProcessClientStartArgs {
                 arg0_paths: Arg0DispatchPaths {
                     codex_self_exe: Some(args.codex_executable.clone()),
@@ -109,16 +122,7 @@ impl EmbeddedAppServerClient {
                 },
                 config: std::sync::Arc::new(config),
                 feedback: CodexFeedback::new(),
-                environment_manager: std::sync::Arc::new(
-                    EnvironmentManager::new(EnvironmentManagerArgs::new(
-                        ExecServerRuntimePaths::from_optional_paths(
-                            Some(args.codex_executable.clone()),
-                            None,
-                        )
-                        .map_err(CodexIntegrationError::HostProcessIo)?,
-                    ))
-                    .await,
-                ),
+                environment_manager: std::sync::Arc::new(environment_manager),
                 config_warnings,
                 session_source: SessionSource::Cli,
                 enable_codex_api_key_env: true,

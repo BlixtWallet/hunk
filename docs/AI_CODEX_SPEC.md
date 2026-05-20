@@ -3,7 +3,7 @@
 ## Status
 - In progress
 - Owner: Hunk
-- Last Updated: 2026-05-17
+- Last Updated: 2026-05-20
 
 ## Product Decisions (Locked)
 1. Transport is WebSocket-only. Hunk will not implement a stdio integration path.
@@ -17,14 +17,14 @@
 
 ## Pinned Upstream Baseline
 - Codex repo: `https://github.com/openai/codex`
-- Pinned tag: `rust-v0.130.0`
-- Pinned commit SHA: `58573da43ab697e8b79f152c53df4b42230395a8`
-- Pin captured on: 2026-05-17
+- Pinned tag: `rust-v0.132.0`
+- Pinned commit SHA: `13595c36e218fcbd13df118eeadf00d4eb0e6d31`
+- Pin captured on: 2026-05-20
 
 ## Current Hunk Codex Source
 - Fork repo: `https://github.com/niteshbalusu11/codex`
 - Fork branch: `hunk/embedded-apply-patch-fix`
-- Current fork commit in `Cargo.lock`: `97bbd1b7418e87c5a243d738fdad4ab3b85e3c8e`
+- Current fork commit in `Cargo.lock`: `b468be582eeb49f35926ae2d5428872e1c626744`
 - Hunk consumes the fork through root `workspace.dependencies`, not by pinning `tag = "rust-v..."` directly in crate manifests.
 - Bundled runtime binaries still come from the official `openai/codex` release assets for the locked Codex crate version unless `HUNK_CODEX_RUNTIME_REPO` is overridden.
 - Hunk pins the built-in default AI model to `gpt-5.5` unless the user explicitly chooses another model.

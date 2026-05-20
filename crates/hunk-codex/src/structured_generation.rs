@@ -99,6 +99,7 @@ fn generate_structured_output_with_client(
             responsesapi_client_metadata: None,
             environments: None,
             cwd: Some(request.cwd.to_path_buf()),
+            runtime_workspace_roots: None,
             approval_policy: Some(AskForApproval::Never),
             approvals_reviewer: None,
             sandbox_policy: Some(SandboxPolicy::ReadOnly {
@@ -140,7 +141,7 @@ fn build_user_input(prompt: &str, image_paths: &[PathBuf]) -> Vec<UserInput> {
         image_paths
             .iter()
             .cloned()
-            .map(|path| UserInput::LocalImage { path }),
+            .map(|path| UserInput::LocalImage { path, detail: None }),
     );
     input
 }
