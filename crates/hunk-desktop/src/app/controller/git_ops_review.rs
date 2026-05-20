@@ -547,7 +547,7 @@ impl DiffViewer {
                     let (token, token_cache_entry) =
                         resolve_forge_token_source(resolved_repos.base_repo.provider, token_source)?;
                     let client = ForgeReviewClient::new(&resolved_repos.base_repo, token.as_str())?;
-                    let review = client.find_open_review(&OpenReviewQuery {
+                    let review = client.find_branch_review(&OpenReviewQuery {
                         base_repo: resolved_repos.base_repo,
                         head_repo: resolved_repos.head_repo,
                         source_branch: source_branch.clone(),

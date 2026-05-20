@@ -45,23 +45,45 @@ impl GitLabReviewClient {
             .filter(|branch| !branch.is_empty())
             .map(ToOwned::to_owned);
 
-        let mut endpoint = MergeRequests::builder();
-        endpoint
-            .project(query.base_repo.path.as_str())
-            .state(MergeRequestState::Opened)
-            .scope(MergeRequestScope::All)
-            .source_branch(query.source_branch.as_str());
-        if let Some(target_branch) = normalized_target.as_deref() {
-            endpoint.target_branch(target_branch);
-        }
-        let endpoint = endpoint
-            .build()
-            .context("failed to build GitLab merge request query")?;
-        let merge_requests: Vec<GitLabMergeRequest> = endpoint
-            .query(&self.client)
-            .context("failed to query GitLab merge requests")?;
+        let merge_requests = self.query_merge_requests(
+            query,
+            Some(MergeRequestState::Opened),
+            normalized_target.as_deref(),
+        )?;
 
-        Ok(select_open_merge_request(
+        Ok(select_branch_merge_request(
+            merge_requests,
+            normalized_target.as_deref(),
+            head_project_id,
+        )
+        .map(|merge_request| map_gitlab_merge_request(&query.base_repo, merge_request)))
+    }
+
+    pub fn find_branch_review(&self, query: &OpenReviewQuery) -> Result<Option<OpenReviewSummary>> {
+        validate_gitlab_repo(query.base_repo.provider)?;
+        validate_gitlab_repo(query.head_repo.provider)?;
+
+        let head_project_id = self.project_id_for_repo(&query.head_repo)?;
+        let normalized_target = query
+            .target_branch
+            .as_deref()
+            .map(str::trim)
+            .filter(|branch| !branch.is_empty())
+            .map(ToOwned::to_owned);
+        let mut merge_requests = Vec::new();
+        for state in [
+            MergeRequestState::Opened,
+            MergeRequestState::Merged,
+            MergeRequestState::Closed,
+        ] {
+            merge_requests.extend(self.query_merge_requests(
+                query,
+                Some(state),
+                normalized_target.as_deref(),
+            )?);
+        }
+
+        Ok(select_branch_merge_request(
             merge_requests,
             normalized_target.as_deref(),
             head_project_id,
@@ -118,6 +140,31 @@ impl GitLabReviewClient {
             .with_context(|| format!("failed to load GitLab project '{}'", repo.path))?;
         Ok(project.id)
     }
+
+    fn query_merge_requests(
+        &self,
+        query: &OpenReviewQuery,
+        state: Option<MergeRequestState>,
+        target_branch: Option<&str>,
+    ) -> Result<Vec<GitLabMergeRequest>> {
+        let mut endpoint = MergeRequests::builder();
+        endpoint
+            .project(query.base_repo.path.as_str())
+            .scope(MergeRequestScope::All)
+            .source_branch(query.source_branch.as_str());
+        if let Some(state) = state {
+            endpoint.state(state);
+        }
+        if let Some(target_branch) = target_branch {
+            endpoint.target_branch(target_branch);
+        }
+        let endpoint = endpoint
+            .build()
+            .context("failed to build GitLab merge request query")?;
+        endpoint
+            .query(&self.client)
+            .context("failed to query GitLab merge requests")
+    }
 }
 
 fn validate_gitlab_repo(provider: ForgeProvider) -> Result<()> {
@@ -127,7 +174,7 @@ fn validate_gitlab_repo(provider: ForgeProvider) -> Result<()> {
     Ok(())
 }
 
-fn select_open_merge_request(
+fn select_branch_merge_request(
     merge_requests: Vec<GitLabMergeRequest>,
     target_branch: Option<&str>,
     head_project_id: u64,
@@ -135,32 +182,43 @@ fn select_open_merge_request(
     let normalized_target = target_branch
         .map(str::trim)
         .filter(|branch| !branch.is_empty());
-
-    if let Some(target_branch) = normalized_target
-        && let Some(index) = merge_requests.iter().position(|merge_request| {
-            merge_request.target_branch == target_branch
-                && merge_request.source_project_matches(head_project_id)
-        })
-    {
-        return merge_requests.into_iter().nth(index);
-    }
-
-    if let Some(index) = merge_requests
+    let selected_index = merge_requests
         .iter()
-        .position(|merge_request| merge_request.source_project_matches(head_project_id))
-    {
-        return merge_requests.into_iter().nth(index);
-    }
+        .enumerate()
+        .min_by_key(|(index, merge_request)| {
+            (
+                review_target_rank(merge_request.target_branch.as_str(), normalized_target),
+                source_project_rank(merge_request, head_project_id),
+                review_state_rank(gitlab_merge_request_state(merge_request)),
+                *index,
+            )
+        })
+        .map(|(index, _)| index)?;
+    merge_requests.into_iter().nth(selected_index)
+}
 
-    if let Some(target_branch) = normalized_target
-        && let Some(index) = merge_requests
-            .iter()
-            .position(|merge_request| merge_request.target_branch == target_branch)
-    {
-        return merge_requests.into_iter().nth(index);
+fn review_target_rank(review_target: &str, target_branch: Option<&str>) -> u8 {
+    match target_branch {
+        Some(target_branch) if review_target == target_branch => 0,
+        Some(_) => 1,
+        None => 0,
     }
+}
 
-    merge_requests.into_iter().next()
+fn source_project_rank(merge_request: &GitLabMergeRequest, head_project_id: u64) -> u8 {
+    if merge_request.source_project_matches(head_project_id) {
+        0
+    } else {
+        1
+    }
+}
+
+fn review_state_rank(state: ForgeReviewState) -> u8 {
+    match state {
+        ForgeReviewState::Open => 0,
+        ForgeReviewState::Merged => 1,
+        ForgeReviewState::Closed => 2,
+    }
 }
 
 fn map_gitlab_merge_request(
@@ -169,6 +227,7 @@ fn map_gitlab_merge_request(
 ) -> OpenReviewSummary {
     let draft = merge_request.is_draft();
     let number = merge_request.iid;
+    let state = gitlab_merge_request_state(&merge_request);
     OpenReviewSummary {
         provider: ForgeProvider::GitLab,
         number,
@@ -178,14 +237,18 @@ fn map_gitlab_merge_request(
         url: merge_request
             .web_url
             .unwrap_or_else(|| format!("{}/-/merge_requests/{number}", repo.web_base_url)),
-        state: match merge_request.state.as_deref() {
-            Some("merged") => ForgeReviewState::Merged,
-            Some("closed") => ForgeReviewState::Closed,
-            _ => ForgeReviewState::Open,
-        },
+        state,
         draft,
         source_branch: merge_request.source_branch,
         target_branch: merge_request.target_branch,
+    }
+}
+
+fn gitlab_merge_request_state(merge_request: &GitLabMergeRequest) -> ForgeReviewState {
+    match merge_request.state.as_deref() {
+        Some("merged") => ForgeReviewState::Merged,
+        Some("closed") => ForgeReviewState::Closed,
+        _ => ForgeReviewState::Open,
     }
 }
 
@@ -236,5 +299,64 @@ impl GitLabMergeRequest {
 
     fn source_project_matches(&self, head_project_id: u64) -> bool {
         self.source_project_id == Some(head_project_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn merge_request(
+        iid: u64,
+        target_branch: &str,
+        state: &str,
+        source_project_id: u64,
+    ) -> GitLabMergeRequest {
+        GitLabMergeRequest {
+            iid,
+            title: Some(format!("MR {iid}")),
+            web_url: None,
+            state: Some(state.to_string()),
+            draft: None,
+            work_in_progress: None,
+            source_branch: "feature".to_string(),
+            target_branch: target_branch.to_string(),
+            source_project_id: Some(source_project_id),
+        }
+    }
+
+    #[test]
+    fn branch_merge_request_selection_prefers_exact_target() {
+        let merge_requests = vec![
+            merge_request(1, "release", "opened", 10),
+            merge_request(2, "main", "merged", 10),
+        ];
+
+        let selected = select_branch_merge_request(merge_requests, Some("main"), 10);
+
+        assert_eq!(selected.map(|merge_request| merge_request.iid), Some(2));
+    }
+
+    #[test]
+    fn branch_merge_request_selection_prefers_open_then_merged_then_closed() {
+        let merge_requests = vec![
+            merge_request(1, "main", "closed", 10),
+            merge_request(2, "main", "merged", 10),
+            merge_request(3, "main", "opened", 10),
+        ];
+
+        let selected = select_branch_merge_request(merge_requests, Some("main"), 10);
+
+        assert_eq!(selected.map(|merge_request| merge_request.iid), Some(3));
+    }
+
+    #[test]
+    fn gitlab_merged_state_maps_to_forge_state() {
+        let merge_request = merge_request(1, "main", "merged", 10);
+
+        assert_eq!(
+            gitlab_merge_request_state(&merge_request),
+            ForgeReviewState::Merged
+        );
     }
 }

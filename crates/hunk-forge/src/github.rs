@@ -53,6 +53,18 @@ impl GitHubReviewClient {
     }
 
     pub fn find_open_review(&self, query: &OpenReviewQuery) -> Result<Option<OpenReviewSummary>> {
+        self.find_review_with_state(query, params::State::Open)
+    }
+
+    pub fn find_branch_review(&self, query: &OpenReviewQuery) -> Result<Option<OpenReviewSummary>> {
+        self.find_review_with_state(query, params::State::All)
+    }
+
+    fn find_review_with_state(
+        &self,
+        query: &OpenReviewQuery,
+        state: params::State,
+    ) -> Result<Option<OpenReviewSummary>> {
         let (owner, repo_name) = github_owner_and_name(&query.base_repo)?;
         let head_owner = query.head_repo.github_owner()?;
         let head = format!("{head_owner}:{}", query.source_branch);
@@ -63,14 +75,14 @@ impl GitHubReviewClient {
             let pulls = octocrab.pulls(owner, repo_name);
             pulls
                 .list()
-                .state(params::State::Open)
+                .state(state)
                 .head(head)
                 .send()
                 .await
                 .context("failed to query GitHub pull requests")
         })?;
         Ok(
-            select_open_pull_request(pull_requests.items, target_branch.as_deref()).map(
+            select_branch_pull_request(pull_requests.items, target_branch.as_deref()).map(
                 |pull_request| map_github_pull_request(repo_web_base_url.as_str(), pull_request),
             ),
         )
@@ -182,22 +194,21 @@ fn scheme_from_web_base_url(web_base_url: &str) -> &str {
     }
 }
 
-fn select_open_pull_request(
+fn select_branch_pull_request(
     pull_requests: Vec<PullRequest>,
     target_branch: Option<&str>,
 ) -> Option<PullRequest> {
     let normalized_target = target_branch
         .map(str::trim)
         .filter(|branch| !branch.is_empty());
-    if let Some(target_branch) = normalized_target
-        && let Some(index) = pull_requests
-            .iter()
-            .position(|pull_request| pull_request.base.ref_field == target_branch)
-    {
-        return pull_requests.into_iter().nth(index);
-    }
-
-    pull_requests.into_iter().next()
+    let selected_index =
+        select_review_index(pull_requests.iter(), normalized_target, |pull_request| {
+            (
+                pull_request.base.ref_field.as_str(),
+                github_pull_request_state(pull_request),
+            )
+        })?;
+    pull_requests.into_iter().nth(selected_index)
 }
 
 fn github_create_head(
@@ -222,16 +233,7 @@ fn map_github_pull_request(
     repo_web_base_url: &str,
     pull_request: PullRequest,
 ) -> OpenReviewSummary {
-    let state = if pull_request.merged_at.is_some() {
-        ForgeReviewState::Merged
-    } else {
-        match pull_request.state.unwrap_or(IssueState::Open) {
-            IssueState::Open => ForgeReviewState::Open,
-            IssueState::Closed => ForgeReviewState::Closed,
-            _ => ForgeReviewState::Closed,
-        }
-    };
-
+    let state = github_pull_request_state(&pull_request);
     OpenReviewSummary {
         provider: ForgeProvider::GitHub,
         number: pull_request.number,
@@ -246,5 +248,105 @@ fn map_github_pull_request(
         draft: pull_request.draft.unwrap_or(false),
         source_branch: pull_request.head.ref_field,
         target_branch: pull_request.base.ref_field,
+    }
+}
+
+fn github_pull_request_state(pull_request: &PullRequest) -> ForgeReviewState {
+    if pull_request.merged_at.is_some() {
+        ForgeReviewState::Merged
+    } else {
+        match pull_request.state.as_ref().unwrap_or(&IssueState::Open) {
+            &IssueState::Open => ForgeReviewState::Open,
+            &IssueState::Closed => ForgeReviewState::Closed,
+            _ => ForgeReviewState::Closed,
+        }
+    }
+}
+
+fn select_review_index<'a, T: 'a>(
+    reviews: impl Iterator<Item = &'a T>,
+    target_branch: Option<&str>,
+    review_target_and_state: impl Fn(&T) -> (&str, ForgeReviewState),
+) -> Option<usize> {
+    reviews
+        .enumerate()
+        .min_by_key(|(index, review)| {
+            let (review_target, state) = review_target_and_state(review);
+            (
+                review_target_rank(review_target, target_branch),
+                review_state_rank(state),
+                *index,
+            )
+        })
+        .map(|(index, _)| index)
+}
+
+fn review_target_rank(review_target: &str, target_branch: Option<&str>) -> u8 {
+    match target_branch {
+        Some(target_branch) if review_target == target_branch => 0,
+        Some(_) => 1,
+        None => 0,
+    }
+}
+
+fn review_state_rank(state: ForgeReviewState) -> u8 {
+    match state {
+        ForgeReviewState::Open => 0,
+        ForgeReviewState::Merged => 1,
+        ForgeReviewState::Closed => 2,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct ReviewCandidate {
+        target: &'static str,
+        state: ForgeReviewState,
+    }
+
+    #[test]
+    fn branch_review_selection_prefers_exact_target_before_state() {
+        let reviews = [
+            ReviewCandidate {
+                target: "release",
+                state: ForgeReviewState::Open,
+            },
+            ReviewCandidate {
+                target: "main",
+                state: ForgeReviewState::Merged,
+            },
+        ];
+
+        let selected = select_review_index(reviews.iter(), Some("main"), |review| {
+            (review.target, review.state)
+        });
+
+        assert_eq!(selected, Some(1));
+    }
+
+    #[test]
+    fn branch_review_selection_prefers_open_then_merged_then_closed() {
+        let reviews = [
+            ReviewCandidate {
+                target: "main",
+                state: ForgeReviewState::Closed,
+            },
+            ReviewCandidate {
+                target: "main",
+                state: ForgeReviewState::Merged,
+            },
+            ReviewCandidate {
+                target: "main",
+                state: ForgeReviewState::Open,
+            },
+        ];
+
+        let selected = select_review_index(reviews.iter(), Some("main"), |review| {
+            (review.target, review.state)
+        });
+
+        assert_eq!(selected, Some(2));
     }
 }

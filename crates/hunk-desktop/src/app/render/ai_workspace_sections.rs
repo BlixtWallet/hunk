@@ -148,6 +148,57 @@ fn render_ai_header_metric_chip(
 }
 
 impl DiffViewer {
+    fn render_ai_review_summary_link(
+        &self,
+        view: Entity<Self>,
+        review: OpenReviewSummary,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let is_dark = cx.theme().mode.is_dark();
+        let state_tone = Self::git_review_state_tone(&review);
+        let state_label = Self::git_review_state_label(&review);
+        let short_label = Self::git_review_short_label(review.provider);
+        let colors = hunk_tinted_button(cx.theme(), is_dark, state_tone);
+        let divider = hunk_opacity(colors.text, is_dark, 0.28, 0.22);
+        let hover_background = hunk_opacity(colors.text, is_dark, 0.14, 0.08);
+        let review_for_click = review.clone();
+
+        h_flex()
+            .items_center()
+            .gap_1()
+            .px_2()
+            .py_1()
+            .rounded(px(999.0))
+            .border_1()
+            .border_color(colors.border)
+            .bg(colors.background)
+            .text_xs()
+            .font_semibold()
+            .text_color(colors.text)
+            .tooltip(format!("Open {short_label} #{}", review.number))
+            .hover(move |style| {
+                style
+                    .bg(hover_background)
+                    .border_color(colors.text)
+                    .cursor_pointer()
+            })
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                let review = review_for_click.clone();
+                view.update(cx, |this, cx| {
+                    this.open_review_summary_in_browser(&review, cx);
+                });
+            })
+            .child(
+                div()
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .child(format!("{short_label} #{}", review.number)),
+            )
+            .child(div().w(px(1.0)).h_3().bg(divider))
+            .child(state_label)
+            .into_any_element()
+    }
+
     fn render_ai_workspace_content(
         &mut self,
         view: Entity<Self>,
@@ -944,27 +995,27 @@ impl DiffViewer {
                             ),
                     )
                 })
-                .child(
-                    div()
-                        .text_xs()
-                        .font_family(cx.theme().mono_font_family.clone())
-                        .text_color(cx.theme().muted_foreground)
-                        .child(format!(
-                            "Branch: {}{}",
-                            state.active_branch,
-                            state
-                                .current_review_summary
-                                .as_ref()
-                                .map(|review| {
-                                    let review_kind = match review.provider {
-                                        hunk_forge::ForgeProvider::GitHub => "PR",
-                                        hunk_forge::ForgeProvider::GitLab => "MR",
-                                    };
-                                    format!("  {review_kind} #{}", review.number)
-                                })
-                                .unwrap_or_default()
-                        )),
-                )
+                .child({
+                    let current_review_summary = state.current_review_summary.clone();
+                    h_flex()
+                        .items_center()
+                        .gap_1p5()
+                        .flex_wrap()
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_family(cx.theme().mono_font_family.clone())
+                                .text_color(cx.theme().muted_foreground)
+                                .child(format!("Branch: {}", state.active_branch)),
+                        )
+                        .when_some(current_review_summary, |this, review| {
+                            this.child(self.render_ai_review_summary_link(
+                                view.clone(),
+                                review,
+                                cx,
+                            ))
+                        })
+                })
                 .child({
                     let view = view.clone();
                     let diff_button_enabled = self.ai_can_open_inline_review_for_current_thread();

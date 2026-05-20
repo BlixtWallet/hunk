@@ -9,28 +9,9 @@ impl DiffViewer {
     ) -> AnyElement {
         let is_dark = cx.theme().mode.is_dark();
         let colors = hunk_git_workspace(cx.theme(), is_dark);
-        let review_kind = match review.provider {
-            hunk_forge::ForgeProvider::GitHub => "Pull Request",
-            hunk_forge::ForgeProvider::GitLab => "Merge Request",
-        };
-        let review_state_label = if review.draft {
-            "Draft"
-        } else {
-            match review.state {
-                hunk_forge::ForgeReviewState::Open => "Open",
-                hunk_forge::ForgeReviewState::Closed => "Closed",
-                hunk_forge::ForgeReviewState::Merged => "Merged",
-            }
-        };
-        let review_state_tone = if review.draft {
-            HunkAccentTone::Warning
-        } else {
-            match review.state {
-                hunk_forge::ForgeReviewState::Open => HunkAccentTone::Accent,
-                hunk_forge::ForgeReviewState::Closed => HunkAccentTone::Neutral,
-                hunk_forge::ForgeReviewState::Merged => HunkAccentTone::Success,
-            }
-        };
+        let review_kind = Self::git_review_kind_label(review.provider);
+        let review_state_label = Self::git_review_state_label(review);
+        let review_state_tone = Self::git_review_state_tone(review);
         let review_url_label = review
             .url
             .trim_start_matches("https://")
@@ -157,6 +138,44 @@ impl DiffViewer {
                     .child(self.render_git_recent_commits_panel(cx)),
             )
             .into_any_element()
+    }
+
+    fn git_review_kind_label(provider: hunk_forge::ForgeProvider) -> &'static str {
+        match provider {
+            hunk_forge::ForgeProvider::GitHub => "Pull Request",
+            hunk_forge::ForgeProvider::GitLab => "Merge Request",
+        }
+    }
+
+    fn git_review_short_label(provider: hunk_forge::ForgeProvider) -> &'static str {
+        match provider {
+            hunk_forge::ForgeProvider::GitHub => "PR",
+            hunk_forge::ForgeProvider::GitLab => "MR",
+        }
+    }
+
+    fn git_review_state_label(review: &OpenReviewSummary) -> &'static str {
+        if review.draft {
+            "Draft"
+        } else {
+            match review.state {
+                hunk_forge::ForgeReviewState::Open => "Open",
+                hunk_forge::ForgeReviewState::Closed => "Closed",
+                hunk_forge::ForgeReviewState::Merged => "Merged",
+            }
+        }
+    }
+
+    fn git_review_state_tone(review: &OpenReviewSummary) -> HunkAccentTone {
+        if review.draft {
+            HunkAccentTone::Warning
+        } else {
+            match review.state {
+                hunk_forge::ForgeReviewState::Open => HunkAccentTone::Accent,
+                hunk_forge::ForgeReviewState::Closed => HunkAccentTone::Neutral,
+                hunk_forge::ForgeReviewState::Merged => HunkAccentTone::Success,
+            }
+        }
     }
 
     fn render_git_metric_pill(

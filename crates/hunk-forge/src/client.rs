@@ -28,6 +28,13 @@ impl ForgeReviewClient {
         }
     }
 
+    pub fn find_branch_review(&self, query: &OpenReviewQuery) -> Result<Option<OpenReviewSummary>> {
+        match self {
+            Self::GitHub(client) => client.find_branch_review(query),
+            Self::GitLab(client) => client.find_branch_review(query),
+        }
+    }
+
     pub fn create_review(&self, input: &CreateReviewInput) -> Result<CreateReviewResult> {
         match self {
             Self::GitHub(client) => client.create_review(input),
