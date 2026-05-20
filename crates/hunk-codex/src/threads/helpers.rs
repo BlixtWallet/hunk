@@ -489,6 +489,7 @@ mod tests {
                     text_elements: Vec::new(),
                 },
                 UserInput::Image {
+                    detail: None,
                     url: "data:image/png;base64,abc".to_string(),
                 },
             ],
