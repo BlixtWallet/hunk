@@ -1,3 +1,12 @@
+struct SettingsAiNotificationToggle {
+    id: &'static str,
+    label: &'static str,
+    value_label: &'static str,
+    enabled: bool,
+    enable: fn(&mut AiDesktopNotificationsConfig),
+    disable: fn(&mut AiDesktopNotificationsConfig),
+}
+
 impl DiffViewer {
     fn render_settings_ai_category(
         &self,
@@ -303,39 +312,47 @@ impl DiffViewer {
                             }),
                     )
                     .child(self.render_settings_ai_notification_toggle(
-                        "settings-ai-notify-agent-finished-dropdown",
-                        "Agent finished",
-                        ai_notifications_agent_finished_label,
-                        settings.desktop_notifications.ai.agent_finished,
-                        |ai| ai.agent_finished = true,
-                        |ai| ai.agent_finished = false,
+                        SettingsAiNotificationToggle {
+                            id: "settings-ai-notify-agent-finished-dropdown",
+                            label: "Agent finished",
+                            value_label: ai_notifications_agent_finished_label,
+                            enabled: settings.desktop_notifications.ai.agent_finished,
+                            enable: |ai| ai.agent_finished = true,
+                            disable: |ai| ai.agent_finished = false,
+                        },
                         cx,
                     ))
                     .child(self.render_settings_ai_notification_toggle(
-                        "settings-ai-notify-plan-ready-dropdown",
-                        "Plan ready",
-                        ai_notifications_plan_ready_label,
-                        settings.desktop_notifications.ai.plan_ready,
-                        |ai| ai.plan_ready = true,
-                        |ai| ai.plan_ready = false,
+                        SettingsAiNotificationToggle {
+                            id: "settings-ai-notify-plan-ready-dropdown",
+                            label: "Plan ready",
+                            value_label: ai_notifications_plan_ready_label,
+                            enabled: settings.desktop_notifications.ai.plan_ready,
+                            enable: |ai| ai.plan_ready = true,
+                            disable: |ai| ai.plan_ready = false,
+                        },
                         cx,
                     ))
                     .child(self.render_settings_ai_notification_toggle(
-                        "settings-ai-notify-user-input-dropdown",
-                        "Agent input requests",
-                        ai_notifications_user_input_label,
-                        settings.desktop_notifications.ai.user_input_required,
-                        |ai| ai.user_input_required = true,
-                        |ai| ai.user_input_required = false,
+                        SettingsAiNotificationToggle {
+                            id: "settings-ai-notify-user-input-dropdown",
+                            label: "Agent input requests",
+                            value_label: ai_notifications_user_input_label,
+                            enabled: settings.desktop_notifications.ai.user_input_required,
+                            enable: |ai| ai.user_input_required = true,
+                            disable: |ai| ai.user_input_required = false,
+                        },
                         cx,
                     ))
                     .child(self.render_settings_ai_notification_toggle(
-                        "settings-ai-notify-approval-dropdown",
-                        "Approvals",
-                        ai_notifications_approval_label,
-                        settings.desktop_notifications.ai.approval_required,
-                        |ai| ai.approval_required = true,
-                        |ai| ai.approval_required = false,
+                        SettingsAiNotificationToggle {
+                            id: "settings-ai-notify-approval-dropdown",
+                            label: "Approvals",
+                            value_label: ai_notifications_approval_label,
+                            enabled: settings.desktop_notifications.ai.approval_required,
+                            enable: |ai| ai.approval_required = true,
+                            disable: |ai| ai.approval_required = false,
+                        },
                         cx,
                     ))
                     .child(
@@ -381,12 +398,7 @@ impl DiffViewer {
 
     fn render_settings_ai_notification_toggle(
         &self,
-        id: &'static str,
-        label: &'static str,
-        value_label: &'static str,
-        enabled: bool,
-        enable: fn(&mut AiDesktopNotificationsConfig),
-        disable: fn(&mut AiDesktopNotificationsConfig),
+        toggle: SettingsAiNotificationToggle,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let view = cx.entity();
@@ -403,17 +415,20 @@ impl DiffViewer {
                     .text_sm()
                     .font_semibold()
                     .text_color(cx.theme().foreground)
-                    .child(label),
+                    .child(toggle.label),
             )
             .child(
-                Button::new(id)
+                Button::new(toggle.id)
                     .outline()
                     .compact()
                     .rounded(px(8.0))
                     .bg(dropdown_bg)
                     .dropdown_caret(true)
-                    .label(value_label)
+                    .label(toggle.value_label)
                     .dropdown_menu(move |menu, _, _| {
+                        let enabled = toggle.enabled;
+                        let enable = toggle.enable;
+                        let disable = toggle.disable;
                         menu.item(
                             PopupMenuItem::new("On")
                                 .checked(enabled)
