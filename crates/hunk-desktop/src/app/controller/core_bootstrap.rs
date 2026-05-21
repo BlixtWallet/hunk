@@ -10,6 +10,7 @@ impl DiffViewer {
     const AUTO_REFRESH_BACKOFF_STEPS: u32 = 6;
     const REPO_WATCH_DEBOUNCE: Duration = Duration::from_millis(150);
     const LINE_STATS_BACKGROUND_DEBOUNCE: Duration = Duration::from_millis(350);
+    const REVIEW_SUMMARY_OPEN_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
     fn load_app_config() -> (Option<ConfigStore>, AppConfig) {
         let store = match ConfigStore::new() {
@@ -826,6 +827,8 @@ impl DiffViewer {
             review_summary_miss_by_branch_key: BTreeSet::new(),
             review_summary_lookup_in_flight: BTreeSet::new(),
             review_summary_lookup_task: Task::ready(()),
+            review_summary_refresh_epoch: 0,
+            review_summary_refresh_task: Task::ready(()),
             git_action_epoch: 0,
             git_action_task: Task::ready(()),
             git_action_loading: false,

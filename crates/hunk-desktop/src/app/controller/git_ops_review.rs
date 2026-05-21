@@ -122,6 +122,16 @@ impl DiffViewer {
         format!("{}::{}", repo_root.display(), branch_name.trim())
     }
 
+    fn next_review_summary_refresh_epoch(&mut self) -> usize {
+        self.review_summary_refresh_epoch = self.review_summary_refresh_epoch.saturating_add(1);
+        self.review_summary_refresh_epoch
+    }
+
+    fn cancel_review_summary_refresh(&mut self) {
+        self.next_review_summary_refresh_epoch();
+        self.review_summary_refresh_task = Task::ready(());
+    }
+
     fn cached_review_summary_for_branch(
         &self,
         repo_root: &std::path::Path,
@@ -155,6 +165,66 @@ impl DiffViewer {
     ) {
         let key = Self::review_summary_cache_key(repo_root, branch_name);
         self.review_summary_miss_by_branch_key.remove(key.as_str());
+    }
+
+    fn review_summary_refresh_is_relevant(
+        &self,
+        repo_root: &std::path::Path,
+        branch_name: &str,
+    ) -> bool {
+        let branch_name = branch_name.trim();
+        let primary_matches = self.repo_root.as_deref() == Some(repo_root)
+            && self.branch_name.trim() == branch_name;
+        let git_workspace_matches = self
+            .selected_git_workspace_root()
+            .as_deref()
+            .is_some_and(|root| root == repo_root)
+            && self.git_workspace.branch_name.trim() == branch_name;
+        primary_matches || git_workspace_matches
+    }
+
+    fn update_review_summary_refresh_for_branch(
+        &mut self,
+        repo_root: std::path::PathBuf,
+        branch_name: String,
+        review: Option<&OpenReviewSummary>,
+        cx: &mut Context<Self>,
+    ) {
+        let normalized_branch = branch_name.trim();
+        if normalized_branch.is_empty()
+            || matches!(normalized_branch, "detached" | "unknown")
+            || !review.is_some_and(review_summary_needs_remote_refresh)
+            || !self.review_summary_refresh_is_relevant(repo_root.as_path(), normalized_branch)
+        {
+            self.cancel_review_summary_refresh();
+            return;
+        }
+
+        let refresh_branch = normalized_branch.to_string();
+        let refresh_key = Self::review_summary_cache_key(repo_root.as_path(), refresh_branch.as_str());
+        let epoch = self.next_review_summary_refresh_epoch();
+        self.review_summary_refresh_task = cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Self::REVIEW_SUMMARY_OPEN_REFRESH_INTERVAL)
+                .await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |this, cx| {
+                    if epoch != this.review_summary_refresh_epoch {
+                        return;
+                    }
+                    if !this.review_summary_refresh_is_relevant(
+                        repo_root.as_path(),
+                        refresh_branch.as_str(),
+                    ) {
+                        return;
+                    }
+                    if !this.review_summary_by_branch_key.contains_key(refresh_key.as_str()) {
+                        return;
+                    }
+                    this.maybe_queue_review_summary_lookup(repo_root, refresh_branch, cx);
+                });
+            }
+        });
     }
 
     pub(super) fn selected_git_workspace_review_summary(&self) -> Option<&OpenReviewSummary> {
@@ -564,16 +634,35 @@ impl DiffViewer {
                             if let Some((credential_id, token)) = token_cache_entry {
                                 this.forge_tokens_by_credential_id.insert(credential_id, token);
                             }
+                            let review_for_refresh = review.clone();
                             this.cache_review_summary_for_branch(
                                 repo_root.as_path(),
                                 source_branch_for_update.as_str(),
                                 review,
+                            );
+                            this.update_review_summary_refresh_for_branch(
+                                repo_root.clone(),
+                                source_branch_for_update.clone(),
+                                review_for_refresh.as_ref(),
+                                cx,
                             );
                         }
                         Err(err) => {
                             error!(
                                 "background review summary lookup failed for {}: {err:#}",
                                 source_branch_for_update
+                            );
+                            let cached_review = this
+                                .cached_review_summary_for_branch(
+                                    repo_root.as_path(),
+                                    source_branch_for_update.as_str(),
+                                )
+                                .cloned();
+                            this.update_review_summary_refresh_for_branch(
+                                repo_root.clone(),
+                                source_branch_for_update.clone(),
+                                cached_review.as_ref(),
+                                cx,
                             );
                         }
                     }
@@ -700,6 +789,12 @@ impl DiffViewer {
                                 result.repo_root.as_path(),
                                 result.source_branch.as_str(),
                                 Some(result.review.clone()),
+                            );
+                            this.update_review_summary_refresh_for_branch(
+                                result.repo_root.clone(),
+                                result.source_branch.clone(),
+                                Some(&result.review),
+                                cx,
                             );
                             let message = if result.existed {
                                 format!(
@@ -1092,4 +1187,50 @@ fn percent_encode_url_component(value: &str) -> String {
         }
     }
     encoded
+}
+
+fn review_summary_needs_remote_refresh(review: &OpenReviewSummary) -> bool {
+    matches!(review.state, hunk_forge::ForgeReviewState::Open)
+}
+
+#[cfg(test)]
+mod review_summary_refresh_tests {
+    use super::*;
+
+    fn review_summary(state: hunk_forge::ForgeReviewState, draft: bool) -> OpenReviewSummary {
+        OpenReviewSummary {
+            provider: hunk_forge::ForgeProvider::GitHub,
+            number: 170,
+            title: "Review".to_string(),
+            url: "https://github.com/example/hunk/pull/170".to_string(),
+            state,
+            draft,
+            source_branch: "feature".to_string(),
+            target_branch: "main".to_string(),
+        }
+    }
+
+    #[test]
+    fn open_and_draft_reviews_need_remote_refresh() {
+        assert!(review_summary_needs_remote_refresh(&review_summary(
+            hunk_forge::ForgeReviewState::Open,
+            false,
+        )));
+        assert!(review_summary_needs_remote_refresh(&review_summary(
+            hunk_forge::ForgeReviewState::Open,
+            true,
+        )));
+    }
+
+    #[test]
+    fn terminal_reviews_stop_remote_refresh() {
+        assert!(!review_summary_needs_remote_refresh(&review_summary(
+            hunk_forge::ForgeReviewState::Merged,
+            false,
+        )));
+        assert!(!review_summary_needs_remote_refresh(&review_summary(
+            hunk_forge::ForgeReviewState::Closed,
+            false,
+        )));
+    }
 }

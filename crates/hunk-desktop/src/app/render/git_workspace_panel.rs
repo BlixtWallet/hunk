@@ -171,9 +171,9 @@ impl DiffViewer {
             HunkAccentTone::Warning
         } else {
             match review.state {
-                hunk_forge::ForgeReviewState::Open => HunkAccentTone::Accent,
+                hunk_forge::ForgeReviewState::Open => HunkAccentTone::Success,
                 hunk_forge::ForgeReviewState::Closed => HunkAccentTone::Neutral,
-                hunk_forge::ForgeReviewState::Merged => HunkAccentTone::Success,
+                hunk_forge::ForgeReviewState::Merged => HunkAccentTone::Merged,
             }
         }
     }

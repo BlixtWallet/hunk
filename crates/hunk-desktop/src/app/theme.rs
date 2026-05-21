@@ -39,6 +39,7 @@ pub(crate) enum HunkAccentTone {
     Accent,
     Success,
     Warning,
+    Merged,
     Neutral,
 }
 
@@ -341,6 +342,7 @@ pub(crate) fn hunk_tinted_button(
         HunkAccentTone::Accent => theme.accent,
         HunkAccentTone::Success => theme.success,
         HunkAccentTone::Warning => theme.warning,
+        HunkAccentTone::Merged => hunk_review_merged_color(is_dark),
         HunkAccentTone::Neutral => theme.secondary,
     };
 
@@ -364,6 +366,7 @@ pub(crate) fn hunk_action_ready_button(
         HunkAccentTone::Accent => theme.accent,
         HunkAccentTone::Success => theme.success,
         HunkAccentTone::Warning => theme.warning,
+        HunkAccentTone::Merged => hunk_review_merged_color(is_dark),
         HunkAccentTone::Neutral => theme.secondary,
     };
 
@@ -462,6 +465,10 @@ pub(crate) fn hunk_line_stats(theme: &Theme, is_dark: bool) -> HunkLineStatsColo
         removed: hunk_tone(theme.danger, is_dark, 0.42, 0.05),
         changed: theme.muted_foreground,
     }
+}
+
+pub(crate) fn hunk_review_merged_color(is_dark: bool) -> Hsla {
+    hunk_pick(is_dark, theme_hex("#a371f7"), theme_hex("#8250df"))
 }
 
 pub(crate) fn hunk_pick<T: Copy>(is_dark: bool, dark: T, light: T) -> T {
