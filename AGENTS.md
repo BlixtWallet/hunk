@@ -44,6 +44,7 @@ Important paths:
 - `crates/hunk-updater`: update/download/install logic for desktop releases.
 - `crates/hunk-browser`: embedded browser runtime state, CEF backend integration, offscreen frames, input routing, snapshots, console logs, and safety checks.
 - `crates/hunk-browser-helper`: CEF subprocess helper binary used by the embedded browser runtime.
+- `crates/hunk-sleep-inhibitor`: cross-platform idle sleep prevention used while long-running AI turns are active.
 - `crates/hunk-desktop`: GPUI app binary, app lifecycle, controllers, and render surfaces.
 - `crates/hunk-codex`: embedded Codex app-server integration, thread service, protocol boundary, and AI reducer/state logic.
 - `crates/hunk-desktop/src/app`: GPUI app entry/types; `controller/` owns behavior, `render/` owns UI, `theme.rs` owns app colors.

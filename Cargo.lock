@@ -7923,6 +7923,7 @@ dependencies = [
  "hunk-git",
  "hunk-language",
  "hunk-mobile",
+ "hunk-sleep-inhibitor",
  "hunk-terminal",
  "hunk-text",
  "hunk-updater",
@@ -8028,6 +8029,16 @@ dependencies = [
  "roxmltree",
  "serde",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "hunk-sleep-inhibitor"
+version = "0.1.0"
+dependencies = [
+ "core-foundation 0.9.4",
+ "libc",
+ "tracing",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

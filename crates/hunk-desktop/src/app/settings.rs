@@ -1,16 +1,18 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsCategory {
     Ui,
+    Ai,
     Terminal,
     KeyboardShortcuts,
 }
 
 impl SettingsCategory {
-    const ALL: [Self; 3] = [Self::Ui, Self::Terminal, Self::KeyboardShortcuts];
+    const ALL: [Self; 4] = [Self::Ui, Self::Ai, Self::Terminal, Self::KeyboardShortcuts];
 
     fn title(self) -> &'static str {
         match self {
             Self::Ui => "UI",
+            Self::Ai => "AI",
             Self::Terminal => "Terminal",
             Self::KeyboardShortcuts => "Keyboard Shortcuts",
         }
@@ -304,6 +306,7 @@ struct SettingsDraft {
     show_fps_counter: bool,
     auto_update_enabled: bool,
     desktop_notifications: DesktopNotificationsConfig,
+    ai: AiConfig,
     terminal: SettingsTerminalState,
     shortcuts: SettingsShortcutInputs,
     error_message: Option<String>,

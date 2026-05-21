@@ -73,6 +73,7 @@ hunk-editor = { path = "../hunk-editor" }
 hunk-language = { path = "../hunk-language" }
 hunk-text = { path = "../hunk-text" }
 hunk-updater = { path = "../hunk-updater" }
+hunk-sleep-inhibitor = { path = "../hunk-sleep-inhibitor" }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 tempfile = "3.27.0"

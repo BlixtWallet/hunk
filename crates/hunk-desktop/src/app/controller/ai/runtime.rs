@@ -119,6 +119,7 @@ impl DiffViewer {
         self.maybe_submit_ready_ai_queued_messages(worker_workspace_key.as_deref(), cx);
         self.rebuild_ai_timeline_indexes();
         self.sync_ai_in_progress_turn_started_at();
+        self.sync_ai_sleep_inhibitor();
         self.ai_composer_activity_elapsed_second =
             self.current_ai_composer_activity_elapsed_second();
         self.ai_pending_approvals = pending_approvals;
@@ -337,6 +338,20 @@ impl DiffViewer {
 
         self.ai_in_progress_turn_started_at
             .retain(|key, _| in_progress_turn_keys.contains(key));
+    }
+
+    fn ai_has_in_progress_turn(&self) -> bool {
+        self.ai_state_snapshot
+            .turns
+            .values()
+            .any(|turn| turn.status == TurnStatus::InProgress)
+    }
+
+    fn sync_ai_sleep_inhibitor(&mut self) {
+        self.ai_sleep_inhibitor
+            .set_enabled(self.config.ai.prevent_idle_sleep);
+        self.ai_sleep_inhibitor
+            .set_turn_running(self.ai_has_in_progress_turn());
     }
 }
 

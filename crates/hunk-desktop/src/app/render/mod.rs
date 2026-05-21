@@ -61,4 +61,5 @@ include!("ai_browser_surface.rs");
 include!("ai_workspace_sections.rs");
 include!("ai_helpers.rs");
 include!("settings.rs");
+include!("settings_ai.rs");
 include!("root.rs");
