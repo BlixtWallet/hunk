@@ -106,7 +106,7 @@ impl EmbeddedAppServerClient {
             )
             .map_err(CodexIntegrationError::HostProcessIo)?;
             let environment_manager =
-                EnvironmentManager::from_codex_home(args.codex_home.clone(), runtime_paths)
+                EnvironmentManager::from_codex_home(args.codex_home.clone(), Some(runtime_paths))
                     .await
                     .map_err(|error| {
                         CodexIntegrationError::WebSocketTransport(format!(
