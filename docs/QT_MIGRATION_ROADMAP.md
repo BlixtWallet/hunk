@@ -140,7 +140,7 @@ equivalent to this roadmap.
 - [x] Record current CI structure and recent wall-clock ranges.
 - [x] Review this layer and fix its scope/path findings.
 - [x] Commit this layer.
-- [ ] Open the bottom stacked PR.
+- [x] Open the bottom stacked PR: <https://github.com/smolcars/hunk/pull/175>.
 
 Current PR CI baseline from the five most recent successful runs inspected on
 2026-08-24:
