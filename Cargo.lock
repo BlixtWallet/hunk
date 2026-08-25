@@ -8795,10 +8795,12 @@ version = "0.0.11"
 dependencies = [
  "anyhow",
  "hunk-app",
+ "hunk-codex",
  "hunk-domain",
  "hunk-forge",
  "hunk-git",
  "qtbridge",
+ "serde_json",
  "tracing",
  "tracing-subscriber",
  "url",

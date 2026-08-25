@@ -362,3 +362,29 @@ append a correction when later evidence changes one.
   development asset, app-bundle, Windows launcher, and Linux packager rules in
   `hunk-app::ai` prevents the Qt migration from growing a second resolver that
   would drift only after packaging on a different operating system.
+
+## 2026-08-25 — Qt Codex worker and thread-catalog boundary
+
+- A queued Qt callback is not a sufficient cancellation boundary. Pair the
+  mailbox with a repository epoch, clear it before stopping the old worker, and
+  make old callbacks harmless so a late snapshot cannot overwrite the newly
+  selected repository.
+- Snapshot coalescing must preserve semantic event ordering. Replacing only a
+  consecutive snapshot tail bounds streaming pressure without moving a snapshot
+  across status, error, tool-call, or disconnect events.
+- Disabling a dynamic tool in a new frontend does not remove its response
+  obligation. Browser requests already queued during a reset or arriving from a
+  stale worker must receive a terminal unavailable response or the Codex worker
+  can remain blocked waiting for a frontend that discarded the event.
+- Worker cleanup must not turn Qt object destruction or repository selection
+  into a request-timeout pause. Send the cooperative shutdown command on drop,
+  then join the worker and event listener on a detached reaper thread instead of
+  the Qt event thread.
+- A worker normally emits `Fatal` immediately before its channel disconnects.
+  Preserve the specific fatal message when the later disconnect callback runs;
+  replacing it with a generic disconnect error discards the actionable cause.
+- Cargo's workspace feature unification can hide the first-build cost of the
+  exact shipping frontend graph. A full-workspace test and a focused Qt test may
+  produce different `hunk-app`/Codex artifacts; validate and cache the production
+  Qt feature combination directly instead of assuming the broader workspace
+  artifact will be reusable.

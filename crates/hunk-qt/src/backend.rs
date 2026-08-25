@@ -4,6 +4,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use hunk_app::ai::{AiTurnSessionOverrides, AiWorkerCommand};
 use hunk_app::diff::DiffCommentStoreCommand;
 use hunk_domain::db::CommentStatus;
 use hunk_domain::state::AppStateStore;
@@ -11,6 +12,9 @@ use hunk_forge::{ForgeCredentialKind, ForgeProvider, ForgeReviewWorkspace};
 use hunk_git::workspace::{GitWorkspaceCommand, execute_git_workspace_command, load_git_workspace};
 use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString};
 
+use crate::ai_models::AiThreadListModel;
+use crate::ai_runtime::{prepare_ai_worker_config, start_ai_runtime};
+use crate::backend_ai::{apply_ai_runtime_events, reset_ai_runtime_state, stop_ai_runtime};
 pub use crate::backend_state::{Backend, Workspace};
 use crate::backend_state::{DiffCommentRequestKind, ForgeAsyncPayload};
 use crate::comment_models::DiffCommentListModel;
@@ -218,6 +222,45 @@ impl Backend {
         Member = git_action_label,
         Notify = git_state_changed
     );
+    qproperty!("aiThreads", Read = ai_threads, Constant);
+    qproperty!("aiReady", Member = ai_ready, Notify = ai_state_changed);
+    qproperty!("aiLoading", Member = ai_loading, Notify = ai_state_changed);
+    qproperty!(
+        "aiRequiresAuthentication",
+        Member = ai_requires_authentication,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiConnectionState",
+        Member = ai_connection_state,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiWorkspaceRoot",
+        Member = ai_workspace_root,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiActiveThreadId",
+        Member = ai_active_thread_id,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiThreadCount",
+        Member = ai_thread_count,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiRunningThreadCount",
+        Member = ai_running_thread_count,
+        Notify = ai_state_changed
+    );
+    qproperty!("aiError", Member = ai_error, Notify = ai_state_changed);
+    qproperty!(
+        "aiStatusMessage",
+        Member = ai_status_message,
+        Notify = ai_state_changed
+    );
     qproperty!(
         "forgeAvailable",
         Member = forge_available,
@@ -364,6 +407,9 @@ impl Backend {
     fn git_state_changed(&mut self);
 
     #[qsignal]
+    fn ai_state_changed(&mut self);
+
+    #[qsignal]
     fn forge_state_changed(&mut self);
 
     #[qslot]
@@ -373,11 +419,17 @@ impl Backend {
             return;
         };
         if self.active_workspace == workspace.as_str() {
+            if workspace == Workspace::Ai {
+                self.ensure_ai_runtime_started();
+            }
             return;
         }
 
         self.active_workspace = workspace.as_str().to_owned();
         self.active_workspace_changed();
+        if workspace == Workspace::Ai {
+            self.ensure_ai_runtime_started();
+        }
     }
 
     #[qslot]
@@ -817,6 +869,63 @@ impl Backend {
     }
 
     #[qslot]
+    fn refresh_ai_threads(&mut self) {
+        self.ensure_ai_runtime_started();
+        self.send_ai_worker_command(AiWorkerCommand::RefreshThreads, "Refreshing Codex threads…");
+    }
+
+    #[qslot]
+    fn select_ai_thread(&mut self, thread_id: String) {
+        if thread_id.trim().is_empty() || thread_id == self.ai_active_thread_id {
+            return;
+        }
+        self.ensure_ai_runtime_started();
+        self.send_ai_worker_command(
+            AiWorkerCommand::SelectThread { thread_id },
+            "Opening Codex thread…",
+        );
+    }
+
+    #[qslot]
+    fn create_ai_thread(&mut self) {
+        self.ensure_ai_runtime_started();
+        self.send_ai_worker_command(
+            AiWorkerCommand::StartThread {
+                prompt: None,
+                local_image_paths: Vec::new(),
+                selected_skills: Vec::new(),
+                skill_bindings: Vec::new(),
+                session_overrides: AiTurnSessionOverrides::default(),
+            },
+            "Creating a Codex thread…",
+        );
+    }
+
+    #[qslot]
+    fn archive_ai_thread(&mut self, thread_id: String) {
+        if thread_id.trim().is_empty() {
+            return;
+        }
+        self.ensure_ai_runtime_started();
+        self.send_ai_worker_command(
+            AiWorkerCommand::ArchiveThread { thread_id },
+            "Archiving Codex thread…",
+        );
+    }
+
+    #[qslot]
+    fn apply_ai_events(&mut self, epoch: i32) {
+        let events = self.ai_runtime.mailbox.take(epoch);
+        if events.is_empty() {
+            return;
+        }
+        if apply_ai_runtime_events(self, events) {
+            stop_ai_runtime(self);
+        }
+        self.ai_state_changed();
+    }
+
+    #[qslot]
     fn refresh_git_workspace(&mut self) {
         if self.git_loading || self.git_busy {
             return;
@@ -875,6 +984,7 @@ impl Backend {
             return;
         }
 
+        reset_ai_runtime_state(self);
         self.git_epoch = self.git_epoch.wrapping_add(1).max(1);
         self.git_loading = false;
         self.git_root = root.display().to_string();
@@ -903,6 +1013,7 @@ impl Backend {
         self.reset_diff_comment_state();
         self.reset_forge_state();
         self.git_state_changed();
+        self.ai_state_changed();
         self.diff_comments_state_changed();
         self.forge_state_changed();
         self.refresh_git_workspace();
@@ -1295,6 +1406,82 @@ impl Backend {
         }
     }
 
+    fn ensure_ai_runtime_started(&mut self) {
+        let workspace_key = self.git_root.clone();
+        if self
+            .ai_runtime
+            .session
+            .as_ref()
+            .is_some_and(|runtime| runtime.workspace_key() == workspace_key.as_str())
+        {
+            return;
+        }
+        if !self.git_ready {
+            self.ai_loading = true;
+            self.ai_connection_state = "waiting".to_owned();
+            self.ai_status_message = "Waiting for the repository to load…".to_owned();
+            self.ai_state_changed();
+            return;
+        }
+
+        reset_ai_runtime_state(self);
+        self.ai_workspace_root = workspace_key.clone();
+        let config = match prepare_ai_worker_config(Path::new(workspace_key.as_str())) {
+            Ok(config) => config,
+            Err(error) => {
+                self.ai_connection_state = "failed".to_owned();
+                self.ai_error = error.clone();
+                self.ai_status_message = error;
+                self.ai_state_changed();
+                return;
+            }
+        };
+        let starting_status_message = config.starting_status_message();
+        let epoch = self.ai_epoch;
+        let mailbox = Arc::clone(&self.ai_runtime.mailbox);
+        let invoker = self.get_qml_method_invoker();
+        let start_result = start_ai_runtime(config, epoch, mailbox, move |event_epoch| {
+            invoke_method!(invoker, "apply_ai_events", event_epoch);
+        });
+
+        match start_result {
+            Ok(runtime) => {
+                self.ai_runtime.session = Some(runtime);
+                self.ai_loading = true;
+                self.ai_connection_state = "connecting".to_owned();
+                self.ai_status_message = starting_status_message;
+            }
+            Err(error) => {
+                self.ai_connection_state = "failed".to_owned();
+                self.ai_error = error.clone();
+                self.ai_status_message = error;
+            }
+        }
+        self.ai_state_changed();
+    }
+
+    fn send_ai_worker_command(&mut self, command: AiWorkerCommand, status_message: &str) {
+        let Some(runtime) = self.ai_runtime.session.as_ref() else {
+            return;
+        };
+        let result = runtime.send(command);
+        match result {
+            Ok(()) => {
+                self.ai_error.clear();
+                self.ai_status_message = status_message.to_owned();
+            }
+            Err(error) => {
+                stop_ai_runtime(self);
+                self.ai_ready = false;
+                self.ai_loading = false;
+                self.ai_connection_state = "failed".to_owned();
+                self.ai_error = error.clone();
+                self.ai_status_message = error;
+            }
+        }
+        self.ai_state_changed();
+    }
+
     fn set_status_message(&mut self, status_message: String) {
         if self.status_message == status_message {
             return;
@@ -1325,6 +1512,10 @@ impl Backend {
 
     fn git_commits(&self) -> Rc<RefCell<GitCommitListModel>> {
         self.git_commits.clone()
+    }
+
+    fn ai_threads(&self) -> Rc<RefCell<AiThreadListModel>> {
+        self.ai_threads.clone()
     }
 
     fn apply_git_payload(&mut self, payload: GitSnapshotPayload) {
@@ -1381,6 +1572,9 @@ impl Backend {
             self.reset_forge_state();
             self.forge_state_changed();
             self.refresh_forge_review();
+        }
+        if self.active_workspace == Workspace::Ai.as_str() {
+            self.ensure_ai_runtime_started();
         }
     }
 
