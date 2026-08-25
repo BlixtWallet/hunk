@@ -1,5 +1,6 @@
-use hunk_app::ai::AiWorkerEventPayload;
+use hunk_app::ai::{AiTurnSessionOverrides, AiWorkerCommand, AiWorkerEventPayload};
 
+use crate::AiPromptReceipt;
 use crate::ai_runtime::{AiProjectedSnapshot, AiRuntimeEvent, reject_browser_call};
 use crate::backend_state::Backend;
 
@@ -15,6 +16,11 @@ pub(super) fn reset_ai_runtime_state(backend: &mut Backend) {
     backend.ai_active_thread_id.clear();
     backend.ai_active_thread_title.clear();
     backend.ai_active_thread_cwd.clear();
+    backend.ai_active_turn_id.clear();
+    backend.ai_turn_running = false;
+    backend.ai_prompt_receipt = None;
+    backend.ai_interrupt_thread_id.clear();
+    backend.ai_interrupt_turn_id.clear();
     backend.ai_thread_count = 0;
     backend.ai_running_thread_count = 0;
     backend.ai_timeline_total_turn_count = 0;
@@ -67,7 +73,14 @@ pub(super) fn apply_ai_runtime_events(backend: &mut Backend, events: Vec<AiRunti
                     AiWorkerEventPayload::ThreadStarted { .. } => {
                         backend.ai_status_message = "Created a new Codex thread.".to_owned();
                     }
-                    AiWorkerEventPayload::SteerAccepted(_) => {
+                    AiWorkerEventPayload::SteerAccepted(pending) => {
+                        if backend
+                            .ai_prompt_receipt
+                            .as_ref()
+                            .is_some_and(|receipt| receipt.thread_id() == pending.thread_id)
+                        {
+                            accept_pending_prompt(backend);
+                        }
                         backend.ai_status_message =
                             "Added the message to the active turn.".to_owned();
                     }
@@ -94,6 +107,7 @@ pub(super) fn apply_ai_runtime_events(backend: &mut Backend, events: Vec<AiRunti
                         backend.ai_loading = false;
                         backend.ai_error = message.clone();
                         backend.ai_status_message = message;
+                        clear_pending_ai_commands(backend);
                     }
                     AiWorkerEventPayload::Fatal(message) => {
                         fail_ai_runtime(backend, message);
@@ -120,6 +134,18 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
         timeline,
         ..
     } = projected;
+    if backend.ai_prompt_receipt.as_ref().is_some_and(|receipt| {
+        receipt.is_accepted_by(projection.active_thread_id.as_str(), &timeline)
+    }) {
+        accept_pending_prompt(backend);
+    }
+    if !backend.ai_interrupt_turn_id.is_empty()
+        && projection.active_thread_id == backend.ai_interrupt_thread_id
+        && timeline.active_turn_id != backend.ai_interrupt_turn_id
+    {
+        backend.ai_interrupt_thread_id.clear();
+        backend.ai_interrupt_turn_id.clear();
+    }
     backend
         .ai_threads
         .borrow_mut()
@@ -128,6 +154,8 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     backend.ai_active_thread_id = projection.active_thread_id;
     backend.ai_active_thread_title = projection.active_thread_title;
     backend.ai_active_thread_cwd = projection.active_thread_cwd;
+    backend.ai_active_turn_id = timeline.active_turn_id;
+    backend.ai_turn_running = timeline.turn_running;
     backend.ai_thread_count = projection.thread_count;
     backend.ai_running_thread_count = projection.running_thread_count;
     backend.ai_timeline_total_turn_count = timeline.total_turn_count;
@@ -149,4 +177,97 @@ fn fail_ai_runtime(backend: &mut Backend, message: String) {
     backend.ai_connection_state = "failed".to_owned();
     backend.ai_error = message.clone();
     backend.ai_status_message = message;
+    clear_pending_ai_commands(backend);
+}
+
+pub(super) fn queue_ai_prompt(backend: &mut Backend, prompt: String) -> bool {
+    let prompt = prompt.trim();
+    if prompt.is_empty()
+        || !backend.ai_ready
+        || backend.ai_loading
+        || backend.ai_requires_authentication
+        || backend.ai_active_thread_id.is_empty()
+        || backend.ai_prompt_receipt.is_some()
+        || !backend.ai_interrupt_turn_id.is_empty()
+    {
+        return false;
+    }
+    let receipt = AiPromptReceipt::new(
+        backend.ai_active_thread_id.clone(),
+        backend.ai_active_turn_id.clone(),
+        backend.ai_timeline_total_turn_count,
+    );
+    let command = AiWorkerCommand::SendPrompt {
+        thread_id: backend.ai_active_thread_id.clone(),
+        prompt: Some(prompt.to_owned()),
+        local_image_paths: Vec::new(),
+        selected_skills: Vec::new(),
+        skill_bindings: Vec::new(),
+        session_overrides: AiTurnSessionOverrides::default(),
+    };
+    if !send_ai_command(backend, command, "Sending message to Codex…") {
+        return false;
+    }
+    backend.ai_prompt_receipt = Some(receipt);
+    true
+}
+
+pub(super) fn queue_ai_interrupt(backend: &mut Backend) -> bool {
+    if !backend.ai_ready
+        || backend.ai_loading
+        || backend.ai_active_thread_id.is_empty()
+        || backend.ai_active_turn_id.is_empty()
+        || backend.ai_prompt_receipt.is_some()
+        || !backend.ai_interrupt_turn_id.is_empty()
+    {
+        return false;
+    }
+    let thread_id = backend.ai_active_thread_id.clone();
+    let turn_id = backend.ai_active_turn_id.clone();
+    if !send_ai_command(
+        backend,
+        AiWorkerCommand::InterruptTurn {
+            thread_id: thread_id.clone(),
+            turn_id: turn_id.clone(),
+        },
+        "Stopping the active Codex turn…",
+    ) {
+        return false;
+    }
+    backend.ai_interrupt_thread_id = thread_id;
+    backend.ai_interrupt_turn_id = turn_id;
+    true
+}
+
+fn send_ai_command(backend: &mut Backend, command: AiWorkerCommand, status: &str) -> bool {
+    let result = backend
+        .ai_runtime
+        .session
+        .as_ref()
+        .ok_or_else(|| "Codex worker is not connected.".to_owned())
+        .and_then(|runtime| runtime.send(command));
+    match result {
+        Ok(()) => {
+            backend.ai_error.clear();
+            backend.ai_status_message = status.to_owned();
+            true
+        }
+        Err(error) => {
+            stop_ai_runtime(backend);
+            fail_ai_runtime(backend, error);
+            false
+        }
+    }
+}
+
+fn accept_pending_prompt(backend: &mut Backend) {
+    backend.ai_prompt_receipt = None;
+    backend.ai_prompt_accepted_revision =
+        backend.ai_prompt_accepted_revision.wrapping_add(1).max(1);
+}
+
+fn clear_pending_ai_commands(backend: &mut Backend) {
+    backend.ai_prompt_receipt = None;
+    backend.ai_interrupt_thread_id.clear();
+    backend.ai_interrupt_turn_id.clear();
 }

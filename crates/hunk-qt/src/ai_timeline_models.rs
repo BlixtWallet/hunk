@@ -26,6 +26,8 @@ pub struct AiTimelineItem {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AiTimelineProjection {
     pub items: Vec<AiTimelineItem>,
+    pub active_turn_id: String,
+    pub turn_running: bool,
     pub total_turn_count: i32,
     pub visible_turn_count: i32,
     pub hidden_turn_count: i32,
@@ -84,7 +86,12 @@ impl AiTimelineProjection {
             .skip(hidden_turn_count)
             .map(|turn| turn.id.as_str())
             .collect::<BTreeSet<_>>();
-
+        let active_turn_id = turns
+            .iter()
+            .rev()
+            .find(|turn| turn.status == hunk_codex::state::TurnStatus::InProgress)
+            .map(|turn| turn.id.clone())
+            .unwrap_or_default();
         let mut rows = state
             .items
             .iter()
@@ -126,6 +133,8 @@ impl AiTimelineProjection {
 
         Self {
             items,
+            turn_running: !active_turn_id.is_empty(),
+            active_turn_id,
             total_turn_count: saturating_usize_to_i32(total_turn_count),
             visible_turn_count: saturating_usize_to_i32(
                 total_turn_count.saturating_sub(hidden_turn_count),

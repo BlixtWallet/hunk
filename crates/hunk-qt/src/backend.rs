@@ -15,7 +15,10 @@ use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString
 use crate::ai_models::AiThreadListModel;
 use crate::ai_runtime::{prepare_ai_worker_config, start_ai_runtime};
 use crate::ai_timeline_models::AiTimelineListModel;
-use crate::backend_ai::{apply_ai_runtime_events, reset_ai_runtime_state, stop_ai_runtime};
+use crate::backend_ai::{
+    apply_ai_runtime_events, queue_ai_interrupt, queue_ai_prompt, reset_ai_runtime_state,
+    stop_ai_runtime,
+};
 pub use crate::backend_state::{Backend, Workspace};
 use crate::backend_state::{DiffCommentRequestKind, ForgeAsyncPayload};
 use crate::comment_models::DiffCommentListModel;
@@ -255,6 +258,31 @@ impl Backend {
     qproperty!(
         "aiActiveThreadCwd",
         Member = ai_active_thread_cwd,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiActiveTurnId",
+        Member = ai_active_turn_id,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiTurnRunning",
+        Member = ai_turn_running,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiPromptPending",
+        Read = ai_prompt_pending,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiPromptAcceptedRevision",
+        Member = ai_prompt_accepted_revision,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiInterruptPending",
+        Read = ai_interrupt_pending,
         Notify = ai_state_changed
     );
     qproperty!(
@@ -913,7 +941,11 @@ impl Backend {
 
     #[qslot]
     fn select_ai_thread(&mut self, thread_id: String) {
-        if thread_id.trim().is_empty() || thread_id == self.ai_active_thread_id {
+        if self.ai_prompt_pending()
+            || self.ai_interrupt_pending()
+            || thread_id.trim().is_empty()
+            || thread_id == self.ai_active_thread_id
+        {
             return;
         }
         self.ensure_ai_runtime_started();
@@ -925,6 +957,9 @@ impl Backend {
 
     #[qslot]
     fn create_ai_thread(&mut self) {
+        if self.ai_prompt_pending() || self.ai_interrupt_pending() {
+            return;
+        }
         self.ensure_ai_runtime_started();
         self.send_ai_worker_command(
             AiWorkerCommand::StartThread {
@@ -940,7 +975,7 @@ impl Backend {
 
     #[qslot]
     fn archive_ai_thread(&mut self, thread_id: String) {
-        if thread_id.trim().is_empty() {
+        if self.ai_prompt_pending() || self.ai_interrupt_pending() || thread_id.trim().is_empty() {
             return;
         }
         self.ensure_ai_runtime_started();
@@ -948,6 +983,21 @@ impl Backend {
             AiWorkerCommand::ArchiveThread { thread_id },
             "Archiving Codex thread…",
         );
+    }
+
+    #[qslot]
+    fn send_ai_prompt(&mut self, prompt: String) -> bool {
+        self.ensure_ai_runtime_started();
+        let queued = queue_ai_prompt(self, prompt);
+        self.ai_state_changed();
+        queued
+    }
+
+    #[qslot]
+    fn interrupt_ai_turn(&mut self) -> bool {
+        let queued = queue_ai_interrupt(self);
+        self.ai_state_changed();
+        queued
     }
 
     #[qslot]
@@ -1517,6 +1567,14 @@ impl Backend {
             }
         }
         self.ai_state_changed();
+    }
+
+    fn ai_prompt_pending(&self) -> bool {
+        self.ai_prompt_receipt.is_some()
+    }
+
+    fn ai_interrupt_pending(&self) -> bool {
+        !self.ai_interrupt_turn_id.is_empty()
     }
 
     fn set_status_message(&mut self, status_message: String) {

@@ -83,6 +83,11 @@ TestCase {
         property string aiActiveThreadId: "thread-qt-migration"
         property string aiActiveThreadTitle: "Replace the GPUI AI workspace"
         property string aiActiveThreadCwd: "/Volumes/hulk/dev/projects/hunk"
+        property string aiActiveTurnId: "turn-2"
+        property bool aiTurnRunning: true
+        property bool aiPromptPending: false
+        property int aiPromptAcceptedRevision: 0
+        property bool aiInterruptPending: false
         property int aiThreadCount: 2
         property int aiRunningThreadCount: 1
         property int aiTimelineTotalTurnCount: 2
@@ -118,14 +123,17 @@ TestCase {
         property string forgeDeviceVerificationUrl: ""
         property string lastCommand: ""
         property string lastArgument: ""
+        property int commandCount: 0
         property string lastTargetBranch: ""
         property string lastReviewTitle: ""
         property string lastReviewBody: ""
         property bool lastReviewDraft: false
 
         signal diffCommentsStateChanged
+        signal aiStateChanged
 
         function record(command, argument) {
+            commandCount += 1
             lastCommand = command
             lastArgument = argument || ""
         }
@@ -367,8 +375,11 @@ TestCase {
                     aiActiveThreadId = threadId
                     aiActiveThreadTitle = aiThreadsModel.get(index).title
                     aiActiveThreadCwd = aiThreadsModel.get(index).cwd
+                    aiTurnRunning = aiThreadsModel.get(index).running
+                    aiActiveTurnId = aiTurnRunning ? "turn-for-" + threadId : ""
                 }
             }
+            aiStateChanged()
         }
         function create_ai_thread() { record("create_ai_thread") }
         function archive_ai_thread(threadId) {
@@ -384,9 +395,46 @@ TestCase {
                 aiActiveThreadId = ""
                 aiActiveThreadTitle = ""
                 aiActiveThreadCwd = ""
+                aiActiveTurnId = ""
+                aiTurnRunning = false
                 aiTimelineModel.clear()
                 aiTimelineTotalRowCount = 0
             }
+            aiStateChanged()
+        }
+        function send_ai_prompt(prompt) {
+            if (!aiReady || aiLoading || aiRequiresAuthentication
+                    || aiActiveThreadId.length === 0 || aiPromptPending
+                    || aiInterruptPending || prompt.trim().length === 0)
+                return false
+            record(aiTurnRunning ? "steer_ai_prompt" : "send_ai_prompt", prompt)
+            aiPromptPending = true
+            aiStateChanged()
+            return true
+        }
+        function accept_ai_prompt() {
+            aiPromptPending = false
+            aiPromptAcceptedRevision += 1
+            aiStateChanged()
+        }
+        function fail_ai_prompt() {
+            aiPromptPending = false
+            aiError = "Codex rejected the message"
+            aiStateChanged()
+        }
+        function interrupt_ai_turn() {
+            if (!aiTurnRunning || aiPromptPending || aiInterruptPending)
+                return false
+            record("interrupt_ai_turn", aiActiveTurnId)
+            aiInterruptPending = true
+            aiStateChanged()
+            return true
+        }
+        function complete_ai_interrupt() {
+            aiInterruptPending = false
+            aiTurnRunning = false
+            aiActiveTurnId = ""
+            aiStateChanged()
         }
         function refresh_forge_review() { record("refresh_forge") }
         function save_forge_personal_access_token(token) { record("save_forge_token", token) }
@@ -637,6 +685,7 @@ TestCase {
         fakeBackend.lastRequestedWorkspace = ""
         fakeBackend.lastCommand = ""
         fakeBackend.lastArgument = ""
+        fakeBackend.commandCount = 0
         fakeBackend.diffSelectedPath = "crates/hunk-qt/src/backend.rs"
         fakeBackend.diffStatusTag = "M"
         fakeBackend.diffAdditions = 132
@@ -677,6 +726,11 @@ TestCase {
         fakeBackend.aiActiveThreadId = "thread-qt-migration"
         fakeBackend.aiActiveThreadTitle = "Replace the GPUI AI workspace"
         fakeBackend.aiActiveThreadCwd = "/Volumes/hulk/dev/projects/hunk"
+        fakeBackend.aiActiveTurnId = "turn-2"
+        fakeBackend.aiTurnRunning = true
+        fakeBackend.aiPromptPending = false
+        fakeBackend.aiPromptAcceptedRevision = 0
+        fakeBackend.aiInterruptPending = false
         fakeBackend.aiThreadCount = 2
         fakeBackend.aiRunningThreadCount = 1
         fakeBackend.aiTimelineTotalTurnCount = 2
@@ -686,6 +740,8 @@ TestCase {
         fakeBackend.aiTimelineHiddenRowCount = 0
         fakeBackend.aiError = ""
         fakeBackend.aiStatusMessage = "Codex thread catalog refreshed"
+        shell.aiDraftWorkspaceRoot = fakeBackend.aiWorkspaceRoot
+        shell.aiDraftStore = ({})
         fakeBackend.forgeAvailable = true
         fakeBackend.forgeProviderLabel = "GitHub"
         fakeBackend.forgeReviewKindLabel = "Pull Request"
@@ -848,6 +904,127 @@ TestCase {
     function test_aiWorkspaceRendersAtDesktopSize() {
         openAiWorkspace()
         captureSnapshot("target/hunk-qt-ai.png")
+    }
+
+    function test_aiComposerKeepsDraftUntilAuthoritativeAcceptance() {
+        openAiWorkspace()
+        const composer = shell.workspaceItem.composer
+        composer.editor.text = "Finish the Qt composer migration"
+
+        composer.submit()
+
+        compare(fakeBackend.lastCommand, "steer_ai_prompt")
+        compare(fakeBackend.lastArgument, "Finish the Qt composer migration")
+        verify(fakeBackend.aiPromptPending)
+        verify(composer.submitting)
+        compare(composer.editor.text, "Finish the Qt composer migration")
+        verify(!composer.editor.enabled)
+
+        fakeBackend.accept_ai_prompt()
+
+        verify(!composer.submitting)
+        compare(composer.editor.text, "")
+        verify(composer.editor.enabled)
+    }
+
+    function test_aiComposerRestoresRejectedDraftForEditing() {
+        openAiWorkspace()
+        const composer = shell.workspaceItem.composer
+        composer.editor.text = "Keep this draft if sending fails"
+        composer.submit()
+
+        fakeBackend.fail_ai_prompt()
+
+        verify(!composer.submitting)
+        compare(composer.editor.text, "Keep this draft if sending fails")
+        verify(composer.editor.enabled)
+    }
+
+    function test_aiComposerRoutesSendSteerAndKeyboardControls() {
+        fakeBackend.aiTurnRunning = false
+        fakeBackend.aiActiveTurnId = ""
+        openAiWorkspace()
+        const composer = shell.workspaceItem.composer
+        compare(composer.sendButton.label, "Send")
+
+        composer.editor.forceActiveFocus()
+        composer.editor.text = "First line"
+        composer.editor.cursorPosition = composer.editor.text.length
+        keyClick(Qt.Key_Return, Qt.ShiftModifier)
+        compare(composer.editor.text, "First line\n")
+
+        composer.editor.text = "Start a new turn"
+        keyClick(Qt.Key_Return)
+        compare(fakeBackend.lastCommand, "send_ai_prompt")
+        fakeBackend.accept_ai_prompt()
+
+        fakeBackend.aiTurnRunning = true
+        fakeBackend.aiActiveTurnId = "turn-next"
+        fakeBackend.aiStateChanged()
+        compare(composer.sendButton.label, "Steer")
+        composer.editor.text = "Adjust the active turn"
+        composer.submit()
+        compare(fakeBackend.lastCommand, "steer_ai_prompt")
+    }
+
+    function test_aiComposerDraftsSurviveThreadAndWorkspaceSwitches() {
+        openAiWorkspace()
+        shell.workspaceItem.composer.editor.text = "Migration thread draft"
+
+        shell.sidebarItem.selectThread("thread-review")
+        compare(shell.workspaceItem.composer.editor.text, "")
+        shell.workspaceItem.composer.editor.text = "Review thread draft"
+        shell.sidebarItem.selectThread("thread-qt-migration")
+        compare(shell.workspaceItem.composer.editor.text, "Migration thread draft")
+
+        openDiffWorkspace()
+        openAiWorkspace()
+        compare(shell.workspaceItem.composer.editor.text, "Migration thread draft")
+    }
+
+    function test_aiComposerDisablesUnavailableAndDuplicateActions() {
+        openAiWorkspace()
+        const composer = shell.workspaceItem.composer
+        composer.editor.text = "Blocked prompt"
+
+        fakeBackend.aiRequiresAuthentication = true
+        verify(!composer.sendButton.enabled)
+        fakeBackend.aiRequiresAuthentication = false
+        fakeBackend.aiLoading = true
+        verify(!composer.sendButton.enabled)
+        fakeBackend.aiLoading = false
+        fakeBackend.aiActiveThreadId = ""
+        fakeBackend.aiStateChanged()
+        verify(!composer.sendButton.enabled)
+
+        fakeBackend.aiActiveThreadId = "thread-qt-migration"
+        fakeBackend.aiStateChanged()
+        composer.editor.text = "Only send once"
+        composer.submit()
+        verify(!composer.sendButton.enabled)
+        const commandCount = fakeBackend.commandCount
+        composer.submit()
+        compare(fakeBackend.commandCount, commandCount)
+    }
+
+    function test_aiComposerInterruptsOnlyTheExactActiveTurnOnce() {
+        openAiWorkspace()
+        const composer = shell.workspaceItem.composer
+        verify(fakeBackend.aiTurnRunning)
+        compare(composer.stopButton.label, "Stop")
+
+        composer.interrupt()
+
+        compare(fakeBackend.lastCommand, "interrupt_ai_turn")
+        compare(fakeBackend.lastArgument, "turn-2")
+        verify(fakeBackend.aiInterruptPending)
+        verify(!composer.stopButton.enabled)
+        const commandCount = fakeBackend.commandCount
+        composer.interrupt()
+        compare(fakeBackend.commandCount, commandCount)
+
+        fakeBackend.complete_ai_interrupt()
+        verify(!fakeBackend.aiTurnRunning)
     }
 
     function test_diffWorkspaceUsesVirtualizedRustModels() {

@@ -87,6 +87,8 @@ fn projection_orders_renderable_items_and_turn_plans() {
     let projection = AiTimelineProjection::from_state(&state, Some("thread"));
 
     assert_eq!(projection.total_turn_count, 1);
+    assert!(projection.active_turn_id.is_empty());
+    assert!(!projection.turn_running);
     assert_eq!(projection.visible_turn_count, 1);
     assert_eq!(projection.hidden_turn_count, 0);
     assert_eq!(projection.total_row_count, 5);
@@ -179,6 +181,20 @@ fn projection_is_empty_without_an_active_thread() {
         AiTimelineProjection::from_state(&state, None),
         AiTimelineProjection::default()
     );
+}
+
+#[test]
+fn projection_identifies_the_latest_running_turn() {
+    let mut state = AiState::default();
+    state.turns.insert("older".to_owned(), turn("older", 4));
+    let mut running = turn("running", 9);
+    running.status = TurnStatus::InProgress;
+    state.turns.insert("running".to_owned(), running);
+
+    let projection = AiTimelineProjection::from_state(&state, Some("thread"));
+
+    assert_eq!(projection.active_turn_id, "running");
+    assert!(projection.turn_running);
 }
 
 #[test]
