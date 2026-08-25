@@ -386,10 +386,11 @@ Phase 5 local validation through Nix:
 - [ ] Verify ordinary QML delegates against representative large repositories.
 - [ ] Add the narrow custom `QQuickItem`/scene-graph renderer only if measurements require it.
 - [ ] Meet the 8 ms frame budget at 120 Hz for scroll, resize, selection, and streamed updates.
-- [ ] Complete the remaining mandatory working loop and stacked PRs. Completed
+- [ ] Complete the remaining mandatory working loop and stacked PRs. Delivered
   Diff layers: [#185](https://github.com/smolcars/hunk/pull/185),
-  [#186](https://github.com/smolcars/hunk/pull/186), and
-  [#187](https://github.com/smolcars/hunk/pull/187).
+  [#186](https://github.com/smolcars/hunk/pull/186),
+  [#187](https://github.com/smolcars/hunk/pull/187), and
+  [#188](https://github.com/smolcars/hunk/pull/188).
 
 Phase 6 initial Qt slice decisions:
 
