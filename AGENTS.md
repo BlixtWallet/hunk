@@ -8,7 +8,7 @@ Hunk is a fast diff viewer that is extremely simple written in Rust.
 - After making an implementation plan, keep it updated as you work. When you finish a step or the status changes, update the plan before continuing.
 - Simplicity first, make every change as simple as possible.
 - Make sure code is scalable.
-- Don't make files over 1000 lines long.
+- Don't make files over 2000 lines long.
 - When working with frontend, always use colors in theme.rs
 - Tests always in crate-level `tests` directories (for example `crates/hunk-git/tests`)
 - Make sure workspace clippy passes
