@@ -2,6 +2,8 @@ module Hunk
 singleton Theme 1.0 Theme.qml
 ActionButton 1.0 ActionButton.qml
 ConfirmationDialog 1.0 ConfirmationDialog.qml
+DiffSidebar 1.0 DiffSidebar.qml
+DiffWorkspace 1.0 DiffWorkspace.qml
 ForgePanel 1.0 ForgePanel.qml
 ForgeReviewDialog 1.0 ForgeReviewDialog.qml
 ForgeTokenDialog 1.0 ForgeTokenDialog.qml

@@ -9,6 +9,7 @@ Item {
     readonly property var workspaceIds: ["diff", "git", "ai"]
     readonly property int workspaceCount: workspaceIds.length
     readonly property string activeWorkspace: backend.activeWorkspace
+    readonly property var sidebarItem: sidebarLoader.item
     readonly property var workspaceItem: workspaceLoader.item
 
     function activateWorkspace(workspace) {
@@ -124,8 +125,10 @@ Item {
         width: Theme.sidebarWidth
 
         Loader {
+            id: sidebarLoader
             anchors.fill: parent
-            sourceComponent: root.activeWorkspace === "git" ? gitSidebarComponent : summarySidebarComponent
+            sourceComponent: root.activeWorkspace === "git" ? gitSidebarComponent
+                : (root.activeWorkspace === "diff" ? diffSidebarComponent : summarySidebarComponent)
         }
 
         Rectangle {
@@ -143,7 +146,25 @@ Item {
         anchors.right: parent.right
         anchors.top: header.bottom
         anchors.bottom: parent.bottom
-        sourceComponent: root.activeWorkspace === "git" ? gitWorkspaceComponent : placeholderWorkspaceComponent
+        sourceComponent: root.activeWorkspace === "git" ? gitWorkspaceComponent
+            : (root.activeWorkspace === "diff" ? diffWorkspaceComponent : placeholderWorkspaceComponent)
+    }
+
+    Component {
+        id: diffSidebarComponent
+
+        DiffSidebar {
+            backend: root.backend
+        }
+    }
+
+    Component {
+        id: diffWorkspaceComponent
+
+        DiffWorkspace {
+            objectName: "diffWorkspace"
+            backend: root.backend
+        }
     }
 
     Component {
@@ -218,9 +239,7 @@ Item {
 
                 Text {
                     width: parent.width
-                    text: root.activeWorkspace === "diff"
-                        ? "The Qt diff surface is the next migration layer. Git operations are available now."
-                        : "The Qt Codex surface will connect to the retained Rust thread service in the AI migration layer."
+                    text: "The Qt Codex surface will connect to the retained Rust thread service in the AI migration layer."
                     color: Theme.muted
                     horizontalAlignment: Text.AlignHCenter
                     lineHeight: 1.3

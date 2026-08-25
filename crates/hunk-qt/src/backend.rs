@@ -11,6 +11,7 @@ use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString
 
 use crate::backend_state::ForgeAsyncPayload;
 pub use crate::backend_state::{Backend, Workspace};
+use crate::diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
 use crate::forge::{
     ForgeSnapshotPayload, create_or_find_review, load_forge_snapshot, provider_label,
     review_kind_label, review_short_label, review_state_label, run_github_device_flow,
@@ -27,6 +28,43 @@ impl Backend {
         "activeWorkspace",
         Member = active_workspace,
         Notify = active_workspace_changed
+    );
+    qproperty!("diffFiles", Read = diff_files, Constant);
+    qproperty!("diffRows", Read = diff_rows, Constant);
+    qproperty!(
+        "diffSelectedPath",
+        Member = diff_selected_path,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffStatusTag",
+        Member = diff_status_tag,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffAdditions",
+        Member = diff_additions,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffRemovals",
+        Member = diff_removals,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffReady",
+        Member = diff_ready,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffLoading",
+        Member = diff_loading,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffError",
+        Member = diff_error,
+        Notify = diff_state_changed
     );
     qproperty!("gitFiles", Read = git_files, Constant);
     qproperty!("gitBranches", Read = git_branches, Constant);
@@ -232,6 +270,9 @@ impl Backend {
     fn status_message_changed(&mut self);
 
     #[qsignal]
+    fn diff_state_changed(&mut self);
+
+    #[qsignal]
     fn git_state_changed(&mut self);
 
     #[qsignal]
@@ -288,6 +329,99 @@ impl Backend {
         if ready {
             self.refresh_git_workspace();
         }
+    }
+
+    #[qslot]
+    fn select_diff_file(&mut self, path: String) {
+        if path == self.diff_selected_path {
+            return;
+        }
+        let Some(summary) = self.diff_file_summaries.get(path.as_str()).cloned() else {
+            self.diff_error = format!("Changed file is no longer available: {path}");
+            self.diff_state_changed();
+            return;
+        };
+
+        self.apply_diff_selection(&summary);
+        self.refresh_diff();
+    }
+
+    #[qslot]
+    fn refresh_diff(&mut self) {
+        if self.diff_loading || self.diff_selected_path.is_empty() {
+            return;
+        }
+        let Some(summary) = self
+            .diff_file_summaries
+            .get(self.diff_selected_path.as_str())
+            .cloned()
+        else {
+            self.diff_error = "Selected diff is no longer available".to_owned();
+            self.diff_state_changed();
+            return;
+        };
+
+        self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
+        let epoch = self.diff_epoch;
+        self.diff_loading = true;
+        self.diff_ready = false;
+        self.diff_error.clear();
+        self.diff_rows.borrow_mut().replace(Vec::new());
+        self.diff_state_changed();
+
+        let root = PathBuf::from(self.git_root.clone());
+        let invoker = self.get_qml_method_invoker();
+        let refresh_results = Arc::clone(&self.diff_refresh_results);
+        let spawn_result = std::thread::Builder::new()
+            .name("hunk-qt-diff-refresh".to_owned())
+            .spawn(move || {
+                let result = DiffSnapshotPayload::load(root.as_path(), &summary)
+                    .map_err(|error| format!("{error:#}"));
+                if let Ok(mut pending) = refresh_results.lock() {
+                    pending.insert(epoch, result);
+                }
+                invoke_method!(invoker, "apply_diff_snapshot", epoch);
+            });
+
+        if let Err(error) = spawn_result {
+            self.diff_loading = false;
+            self.diff_error = format!("Failed to start diff refresh: {error}");
+            self.diff_state_changed();
+        }
+    }
+
+    #[qslot]
+    fn apply_diff_snapshot(&mut self, epoch: i32) {
+        let result = self
+            .diff_refresh_results
+            .lock()
+            .ok()
+            .and_then(|mut pending| pending.remove(&epoch));
+        if epoch != self.diff_epoch {
+            return;
+        }
+
+        self.diff_loading = false;
+        match result {
+            Some(Ok(payload)) if payload.path == self.diff_selected_path => {
+                self.diff_status_tag = payload.status_tag;
+                self.diff_additions = payload.additions;
+                self.diff_removals = payload.removals;
+                self.diff_rows.borrow_mut().replace(payload.rows);
+                self.diff_ready = true;
+                self.diff_error.clear();
+            }
+            Some(Ok(_)) => return,
+            Some(Err(error)) => {
+                self.diff_ready = false;
+                self.diff_error = error;
+            }
+            None => {
+                self.diff_ready = false;
+                self.diff_error = "Diff refresh completed without a queued result".to_owned();
+            }
+        }
+        self.diff_state_changed();
     }
 
     #[qslot]
@@ -373,6 +507,7 @@ impl Backend {
         self.git_files.borrow_mut().replace(Vec::new());
         self.git_branches.borrow_mut().replace(Vec::new());
         self.git_commits.borrow_mut().replace(Vec::new());
+        self.reset_diff_state();
         self.reset_forge_state();
         self.git_state_changed();
         self.forge_state_changed();
@@ -774,6 +909,14 @@ impl Backend {
         self.status_message_changed();
     }
 
+    fn diff_files(&self) -> Rc<RefCell<GitFileListModel>> {
+        self.diff_files.clone()
+    }
+
+    fn diff_rows(&self) -> Rc<RefCell<DiffRowListModel>> {
+        self.diff_rows.clone()
+    }
+
     fn git_files(&self) -> Rc<RefCell<GitFileListModel>> {
         self.git_files.clone()
     }
@@ -787,6 +930,8 @@ impl Backend {
     }
 
     fn apply_git_payload(&mut self, payload: GitSnapshotPayload) {
+        let diff_files = payload.diff_files;
+        let diff_file_summaries = payload.diff_file_summaries;
         let forge_context_changed = self.git_root != payload.root
             || self.git_branch_name != payload.branch_name
             || !self.forge_ready;
@@ -817,6 +962,7 @@ impl Backend {
         self.git_last_commit_subject = payload.last_commit_subject;
         self.git_ready = true;
         self.git_error.clear();
+        self.replace_diff_files(diff_files, diff_file_summaries);
         if self.git_root_pending_persist {
             self.git_root_pending_persist = false;
             if let Err(error) = persist_active_project(PathBuf::from(self.git_root.as_str())) {
@@ -825,11 +971,78 @@ impl Backend {
             }
         }
         self.git_state_changed();
+        self.refresh_diff();
         if forge_context_changed {
             self.reset_forge_state();
             self.forge_state_changed();
             self.refresh_forge_review();
         }
+    }
+
+    fn replace_diff_files(
+        &mut self,
+        files: Vec<crate::git_models::GitFileItem>,
+        summaries: Vec<DiffFileSummary>,
+    ) {
+        let previous_path = self.diff_selected_path.clone();
+        self.diff_loading = false;
+        self.diff_ready = false;
+        self.diff_error.clear();
+        self.diff_rows.borrow_mut().replace(Vec::new());
+        self.diff_files.borrow_mut().replace(files);
+        self.diff_file_summaries = summaries
+            .into_iter()
+            .map(|summary| (summary.path.clone(), summary))
+            .collect();
+
+        let selected = self
+            .diff_file_summaries
+            .get(previous_path.as_str())
+            .cloned()
+            .or_else(|| {
+                self.diff_file_summaries
+                    .values()
+                    .min_by(|left, right| left.path.cmp(&right.path))
+                    .cloned()
+            });
+        if let Some(summary) = selected {
+            self.apply_diff_selection(&summary);
+        } else {
+            self.diff_selected_path.clear();
+            self.diff_status_tag.clear();
+            self.diff_additions = 0;
+            self.diff_removals = 0;
+            self.diff_ready = true;
+            self.diff_state_changed();
+        }
+    }
+
+    fn apply_diff_selection(&mut self, summary: &DiffFileSummary) {
+        self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
+        self.diff_loading = false;
+        self.diff_rows.borrow_mut().replace(Vec::new());
+        self.diff_selected_path = summary.path.clone();
+        self.diff_status_tag = summary.status.tag().to_owned();
+        self.diff_additions = i32::try_from(summary.line_stats.added).unwrap_or(i32::MAX);
+        self.diff_removals = i32::try_from(summary.line_stats.removed).unwrap_or(i32::MAX);
+        self.diff_ready = false;
+        self.diff_error.clear();
+        self.diff_state_changed();
+    }
+
+    fn reset_diff_state(&mut self) {
+        self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
+        self.diff_files.borrow_mut().replace(Vec::new());
+        self.diff_rows.borrow_mut().replace(Vec::new());
+        self.diff_selected_path.clear();
+        self.diff_status_tag.clear();
+        self.diff_additions = 0;
+        self.diff_removals = 0;
+        self.diff_ready = false;
+        self.diff_loading = false;
+        self.diff_error.clear();
+        self.diff_file_summaries.clear();
+        self.diff_state_changed();
     }
 
     fn next_forge_epoch(&mut self) -> i32 {
