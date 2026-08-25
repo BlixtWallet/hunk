@@ -128,6 +128,54 @@ TestCase {
                 + diffSearchMatches.length) % diffSearchMatches.length
             diffSearchTargetRow = diffSearchMatches[diffSearchMatchIndex]
         }
+        function diff_selection_text(anchor, head) {
+            if (anchor < 0 || head < 0 || diffRowsModel.count === 0)
+                return ""
+            const start = Math.max(0, Math.min(anchor, head, diffRowsModel.count - 1))
+            const end = Math.max(0, Math.min(Math.max(anchor, head), diffRowsModel.count - 1))
+            const lines = []
+            for (let index = start; index <= end; ++index) {
+                const row = diffRowsModel.get(index)
+                if (row.row_kind === "code") {
+                    if (row.left_kind === "removed")
+                        lines.push("-" + row.left_text)
+                    if (row.right_kind === "added")
+                        lines.push("+" + row.right_text)
+                    if (row.left_kind === "context")
+                        lines.push(" " + row.left_text)
+                    if (row.left_kind === "none" && row.right_kind === "none"
+                            && row.text.length > 0)
+                        lines.push(row.text)
+                } else if ((row.row_kind === "meta" || row.row_kind === "empty")
+                        && row.text.length > 0) {
+                    lines.push(row.text)
+                }
+            }
+            return lines.join("\n")
+        }
+        function diff_hunk_target(start, direction) {
+            const hunks = []
+            for (let index = 0; index < diffRowsModel.count; ++index) {
+                if (diffRowsModel.get(index).row_kind === "hunk")
+                    hunks.push(index)
+            }
+            if (hunks.length === 0)
+                return -1
+            if (start < 0)
+                return direction >= 0 ? hunks[0] : hunks[hunks.length - 1]
+            if (direction >= 0) {
+                for (const index of hunks) {
+                    if (index > start)
+                        return index
+                }
+                return hunks[0]
+            }
+            for (let index = hunks.length - 1; index >= 0; --index) {
+                if (hunks[index] < start)
+                    return hunks[index]
+            }
+            return hunks[hunks.length - 1]
+        }
         function select_git_root(root) { record("select_root", root) }
         function stage_path(path) { record("stage", path) }
         function unstage_path(path) { record("unstage", path) }
@@ -409,6 +457,55 @@ TestCase {
         verify(shell.workspaceItem.diffListView.itemAtIndex(1000) === null)
     }
 
+    function test_diffSelectionSupportsKeyboardRangeCopyAndHunkNavigation() {
+        openDiffWorkspace()
+        shell.workspaceItem.resetSelection()
+        shell.workspaceItem.forceActiveFocus()
+        verify(shell.workspaceItem.activeFocus)
+
+        keyClick(Qt.Key_Down)
+        compare(shell.workspaceItem.selectionAnchorRow, 0)
+        compare(shell.workspaceItem.selectionHeadRow, 0)
+
+        keyClick(Qt.Key_Down, Qt.ShiftModifier)
+        compare(shell.workspaceItem.selectionStart, 0)
+        compare(shell.workspaceItem.selectionEnd, 1)
+
+        keyClick(Qt.Key_A, Qt.MetaModifier)
+        compare(shell.workspaceItem.selectionStart, 0)
+        compare(shell.workspaceItem.selectionEnd, 2)
+
+        shell.workspaceItem.resetSelection()
+        keyClick(Qt.Key_A, Qt.ControlModifier)
+        compare(shell.workspaceItem.selectionStart, 0)
+        compare(shell.workspaceItem.selectionEnd, 2)
+
+        keyClick(Qt.Key_C, Qt.MetaModifier)
+        const clipboardProxy = findChild(shell.workspaceItem, "diffClipboardProxy")
+        verify(clipboardProxy !== null)
+        compare(clipboardProxy.text, fakeBackend.diff_selection_text(0, 2))
+
+        keyClick(Qt.Key_F7)
+        compare(shell.workspaceItem.selectionAnchorRow, 0)
+        compare(shell.workspaceItem.selectionHeadRow, 0)
+        keyClick(Qt.Key_F7, Qt.ShiftModifier)
+        compare(shell.workspaceItem.selectionHeadRow, 0)
+    }
+
+    function test_diffSelectionSupportsPointerRangeSemantics() {
+        openDiffWorkspace()
+        shell.workspaceItem.diffListView.forceLayout()
+        const firstCodeRow = shell.workspaceItem.diffListView.itemAtIndex(1)
+        verify(firstCodeRow !== null)
+        verify(findChild(firstCodeRow, "diffRowTapHandler") !== null)
+        shell.workspaceItem.selectRow(1, false)
+        compare(shell.workspaceItem.selectionStart, 1)
+        compare(shell.workspaceItem.selectionEnd, 1)
+        shell.workspaceItem.selectRow(2, true)
+        compare(shell.workspaceItem.selectionStart, 1)
+        compare(shell.workspaceItem.selectionEnd, 2)
+    }
+
     function test_diffViewSwitchesBetweenSplitAndUnifiedRows() {
         openDiffWorkspace()
         shell.workspaceItem.diffListView.forceLayout()
@@ -455,7 +552,9 @@ TestCase {
         openDiffWorkspace()
         shell.workspaceItem.searchInput.text = ""
         shell.workspaceItem.applySearch("")
+        shell.workspaceItem.selectRow(2, false)
         captureSnapshot("target/hunk-qt-diff.png")
+        shell.workspaceItem.resetSelection()
     }
 
     function test_workspaceActivationUsesBackendCommand() {

@@ -123,9 +123,10 @@ master
   <- migration/06-qt-forge
   <- migration/07-qt-diff
   <- migration/08-qt-diff-review-tools
-  <- migration/09-qt-ai
-  <- migration/10-qt-cutover-ci
-  <- migration/11-release-hardening
+  <- migration/09-qt-diff-selection
+  <- migration/10-qt-ai
+  <- migration/11-qt-cutover-ci
+  <- migration/12-release-hardening
 ```
 
 Branch names may be divided into smaller layers when a listed layer would not
@@ -376,13 +377,17 @@ Phase 5 local validation through Nix:
 - [x] Implement virtualized side-by-side diff presentation.
 - [x] Implement virtualized unified diff presentation.
 - [x] Restore syntax highlighting and current-file search/navigation.
-- [ ] Restore selection, comments, folding, and remaining review navigation required by the narrowed product.
+- [x] Restore row selection, copied diff text, and keyboard/hunk review navigation.
+- [ ] Restore comments, folding, and remaining review affordances required by the narrowed product.
 - [x] Avoid one QObject per token or other high-churn bridge designs.
 - [ ] Instrument frame time, model update time, object count, and allocation hot paths.
 - [ ] Verify ordinary QML delegates against representative large repositories.
 - [ ] Add the narrow custom `QQuickItem`/scene-graph renderer only if measurements require it.
 - [ ] Meet the 8 ms frame budget at 120 Hz for scroll, resize, selection, and streamed updates.
-- [x] Complete the mandatory working loop and stacked PR: <https://github.com/smolcars/hunk/pull/186>.
+- [ ] Complete the remaining mandatory working loop and stacked PRs. Completed
+  Diff layers: [#185](https://github.com/smolcars/hunk/pull/185),
+  [#186](https://github.com/smolcars/hunk/pull/186), and
+  [#187](https://github.com/smolcars/hunk/pull/187).
 
 Phase 6 initial Qt slice decisions:
 
@@ -421,6 +426,24 @@ Phase 6 review-tools decisions:
   QML performs theme substitution, preventing code such as `@keyword@` from
   being rewritten as renderer metadata.
 
+Phase 6 selection-layer decisions:
+
+- Selection anchor/head indices, focus, and selected-row presentation remain
+  QML state. File changes and model resets clear or clamp that state; no
+  selection QObject or mutation is added to the Rust domain model.
+- Exact copied diff lines are precomputed with the immutable payload and moved
+  beside the row/search data in one model reset. Copying an inclusive range
+  preserves the legacy unified `-`, `+`, and context prefixes without asking
+  QML to reconstruct patch semantics.
+- Up/Down, Shift+Up/Down, platform Select All/Copy, and F7/Shift+F7 route through
+  the focused Diff workspace. Wrapped hunk targeting scans the Rust row model
+  without allocating an intermediate hunk list.
+- Row taps use `TapHandler` rather than a child `MouseArea`, allowing selection
+  taps to coexist with the nested horizontal Flickable and vertical ListView
+  without blocking drag-to-scroll gesture arbitration.
+- A single transparent QML `TextEdit` performs the native clipboard operation
+  for the Rust-projected selected text, then restores focus to the Diff surface.
+
 Phase 6 initial-slice macOS validation through Nix, using the existing
 external-volume Cargo target and caches:
 
@@ -440,6 +463,16 @@ external caches:
 - `qmllint` and all 18 QML interaction/virtualization/visual tests passed in
   467 milliseconds. The rendered desktop snapshot was inspected with semantic
   syntax colors, preserved indentation, split controls, and cleared search.
+
+Phase 6 selection-layer macOS validation through Nix, reusing the same target
+and external caches:
+
+- The full workspace build passed in 10.59 seconds, and the complete workspace
+  test suite passed, including four Qt Diff model tests.
+- Workspace Clippy passed for all targets with warnings denied in 3.38 seconds.
+- `qmllint` and all 20 QML interaction/virtualization/visual tests passed in
+  472 milliseconds. The rendered desktop snapshot was inspected with syntax,
+  split diff coloring, and the selected-row treatment visible together.
 
 ### 7. AI Tab
 
