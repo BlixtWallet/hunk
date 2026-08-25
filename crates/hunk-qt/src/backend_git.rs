@@ -71,6 +71,7 @@ impl Backend {
         self.git_branches.borrow_mut().replace(payload.branches);
         self.git_commits.borrow_mut().replace(payload.commits);
         self.git_root = payload.root;
+        crate::terminal::reconcile_terminal_root(self);
         self.git_repository_name = payload.repository_name;
         self.git_branch_name = payload.branch_name;
         self.git_branch_has_upstream = payload.branch_has_upstream;

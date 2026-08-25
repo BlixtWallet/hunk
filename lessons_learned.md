@@ -616,3 +616,23 @@ append a correction when later evidence changes one.
   `target/` temp fixture can silently target a nonexistent per-crate folder.
   Resolve the workspace target from `CARGO_MANIFEST_DIR` when tests must keep
   temporary data on the external-volume build cache.
+
+## 2026-08-25 — Qt terminal surface
+
+- Hiding a live terminal is not a geometry operation. Collapsing an attached
+  terminal item to zero height can debounce a resize into the PTY's minimum
+  grid and reflow the entire hidden session; unload the QML presentation and
+  preserve the last valid grid instead.
+- Coalescing after projection is too late for an 8 ms UI budget. Drain bursts
+  on the terminal listener, project only the newest VT snapshot off the Qt
+  thread, and limit the queued GUI callback to model patches and scalar state.
+- Recycled terminal rows need direct required model roles. Depending on an
+  implicit `model` object stops working once a delegate type declares required
+  properties and can silently produce blank rows that component-only tests miss.
+- A tabbed screen model needs explicit ownership of the rows currently lent to
+  the Qt list model. Move rows into the active model without cloning hot markup,
+  then return them to the previous tab when switching so inactive tabs remain
+  immediately restorable.
+- Bottom-panel focus restoration should retain the actual prior focus item.
+  Focusing a workspace root on close does not restore the AI composer, Git
+  commit editor, or any other nested editing control.

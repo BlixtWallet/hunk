@@ -11,11 +11,14 @@ Item {
     required property string role
     required property string title
     required property string text
+    required property string command
+    required property string cwd
     required property string status
     required property bool streaming
     required property bool mono
     required property bool truncated
     required property double last_sequence
+    required property var backend
 
     readonly property bool userRow: role === "user"
     readonly property bool toolRow: role === "tool"
@@ -58,7 +61,9 @@ Item {
 
             Text {
                 id: rowTitle
-                width: Math.max(0, Math.min(implicitWidth, parent.width - rowStatus.width - 8))
+                width: Math.max(0, Math.min(implicitWidth,
+                    parent.width - rowStatus.width
+                    - (runButton.visible ? runButton.width + 8 : 0) - 8))
                 text: root.title
                 textFormat: Text.PlainText
                 color: root.userRow ? Theme.accentStrong
@@ -82,6 +87,15 @@ Item {
                 font.family: Theme.monoFont
                 font.pixelSize: 9
                 font.capitalization: Font.AllUppercase
+            }
+
+            ActionButton {
+                id: runButton
+                visible: root.command.length > 0
+                label: qsTr("Run")
+                accessibleName: qsTr("Run command in terminal")
+                compact: true
+                onClicked: root.backend.run_terminal_command(root.command, root.cwd)
             }
         }
 

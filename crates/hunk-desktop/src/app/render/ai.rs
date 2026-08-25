@@ -32,7 +32,7 @@ struct TerminalPanelTabState {
 }
 
 fn ai_terminal_shell_label(config: &AppConfig) -> String {
-    crate::terminal_env::terminal_shell_label(&config.terminal)
+    hunk_terminal::terminal_shell_label(&config.terminal)
 }
 
 impl DiffViewer {

@@ -21,11 +21,14 @@ mod diff_models;
 mod forge;
 mod git_models;
 mod path;
+mod terminal;
+mod terminal_models;
 
 #[cfg(debug_assertions)]
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
+use hunk_domain::config::ConfigStore;
 use qtbridge::QApp;
 #[cfg(not(debug_assertions))]
 use qtbridge::include_bytes_qml;
@@ -55,6 +58,10 @@ pub use comment_models::{DiffCommentItem, DiffCommentListModel, DiffCommentProje
 pub use diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
 pub use git_models::{GitBranchListModel, GitCommitListModel, GitFileListModel};
 pub use path::{local_path_from_qml_file_url, local_path_from_qml_folder_url};
+pub use terminal_models::{
+    TerminalRowItem, TerminalRowListModel, TerminalScreenProjection, TerminalTabItem,
+    TerminalTabListModel, project_terminal_screen, terminal_selection_text,
+};
 
 #[cfg(debug_assertions)]
 const QML_MODULE_DIRECTORY: &str = "Hunk";
@@ -62,8 +69,16 @@ const QML_MODULE_DIRECTORY: &str = "Hunk";
 const QML_ENTRY_FILE: &str = "Main.qml";
 
 pub fn run() -> Result<()> {
+    if hunk_terminal::maybe_handle_terminal_env_helper_mode()? {
+        return Ok(());
+    }
     initialize_logging()?;
     install_panic_hook();
+    if let Ok(config) = ConfigStore::new().and_then(|store| store.load_or_create_default())
+        && let Err(error) = hunk_terminal::maybe_hydrate_app_environment(&config)
+    {
+        tracing::warn!(%error, "failed to hydrate terminal environment");
+    }
 
     let mut app = QApp::new();
     app.application_name("Hunk")
@@ -76,6 +91,8 @@ pub fn run() -> Result<()> {
         .register::<GitFileListModel>()
         .register::<GitBranchListModel>()
         .register::<GitCommitListModel>()
+        .register::<TerminalTabListModel>()
+        .register::<TerminalRowListModel>()
         .register::<Backend>();
     load_qml(&mut app)?;
 

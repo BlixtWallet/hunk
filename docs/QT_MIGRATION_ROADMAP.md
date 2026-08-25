@@ -600,7 +600,7 @@ external caches:
 - [x] Implement persistent bookmark ordering and interaction.
 - [x] Implement context usage, model/settings, collaboration-mode, approval-policy, and service-tier controls still in product scope.
 - [x] Implement prompt attachments still in product scope.
-- [ ] Port required terminal surfaces with correct input, focus, cursor, selection, and resize behavior.
+- [x] Port required terminal surfaces with correct input, focus, cursor, selection, and resize behavior.
 - [ ] Port the required embedded CEF browser surface, controls, input routing, and AI tool bridge to Qt.
 - [ ] Validate key flows without triggering unattended keychain prompts.
 - [ ] Complete the mandatory working loop and stacked PR.
@@ -610,6 +610,49 @@ remain required parts of Hunk and must work in the Qt application before the
 atomic cutover. Reuse the existing `hunk-terminal` and `hunk-browser`/CEF domain
 and runtime layers. Replace their GPUI presentation and input adapters with
 narrow Qt adapters; do not introduce Qt WebEngine or a second browser engine.
+
+Qt terminal decisions:
+
+- The Qt application uses one repository-scoped bottom drawer shared by Diff,
+  Git, and AI. It supports up to 12 live tabs and resets those sessions when the
+  active repository changes, avoiding both the removed Files workspace and a
+  second per-thread presentation model.
+- `hunk-terminal` remains the only PTY, VT, key encoding, mouse protocol,
+  scrollback, and shell-resolution authority. The former desktop-only shell
+  environment helper moved into that crate so GPUI and Qt consume the same
+  configured shell and login-environment behavior.
+- Shell startup, VT screen projection, and burst coalescing run off the Qt
+  thread. Listener threads retain only the latest projected screen and terminal
+  end event per tab generation and schedule at most one queued Qt callback.
+  Raw output events do not cross QtBridge, stale tab generations are rejected,
+  and dropping a tab drops its session handle without joining on the
+  frame-sensitive Qt thread.
+- The QML surface uses one recycled delegate per visible row rather than one
+  delegate per cell. Rust projects bounded rich-text rows, patches only changed
+  rows when the grid size is stable, preserves wide/combining-cell selection,
+  and keeps all terminal palette values in `Theme.qml`.
+- Closing the drawer unloads its QML tree without resizing or stopping live PTY
+  sessions. Hidden sessions keep only their latest projected screen; reopening
+  applies it once and restores focus to the exact control that owned focus
+  before the terminal opened.
+- The retained interaction contract includes shell tabs, keyboard and IME text,
+  bracketed paste, focus reporting, cursor shapes and blink, scrollback,
+  selection/copy, VT mouse and wheel modes, PTY resize, and the existing
+  platform terminal toggle/tab shortcuts. AI command rows can explicitly send
+  an untruncated command to the matching cwd; commands never run automatically.
+
+Qt terminal validation on 2026-08-25 used the shared external-volume caches and
+did not launch Hunk, Codex, or any keychain-facing runtime:
+
+- `cargo build --workspace --all-targets` passed through the Nix shell.
+- `cargo test --workspace` passed through the Nix shell.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed through the Nix shell.
+- Qt 6.11.2 `qmllint` accepted the changed terminal QML; its expected warnings
+  are limited to dynamic QtBridge backend properties that have no static QML type.
+- The offscreen Qt Quick suite passed all 92 tests, including terminal delegate
+  roles, hidden resize preservation, tab overflow visibility, and exact AI/Git
+  focus restoration. Live 120 Hz hardware profiling remains part of the atomic
+  cutover performance gate rather than this non-interactive validation layer.
 
 Prompt attachment decisions:
 

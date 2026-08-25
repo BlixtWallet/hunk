@@ -4,7 +4,6 @@ use std::sync::Arc;
 use hunk_app::ai::AiWorkerCommand;
 use hunk_app::diff::DiffCommentStoreCommand;
 use hunk_domain::db::CommentStatus;
-use hunk_forge::{ForgeCredentialKind, ForgeProvider};
 use hunk_git::workspace::{GitWorkspaceCommand, load_git_workspace};
 use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString};
 
@@ -23,13 +22,10 @@ use crate::backend_ai::{
     queue_ai_select_thread, queue_ai_user_input, reset_ai_runtime_state, send_ai_worker_command,
     stop_ai_runtime, take_ai_recovered_prompt,
 };
+use crate::backend_state::DiffCommentRequestKind;
 pub use crate::backend_state::{Backend, Workspace};
-use crate::backend_state::{DiffCommentRequestKind, ForgeAsyncPayload, next_forge_epoch};
 use crate::comments::DiffCommentStartOutcome;
 use crate::diff_models::DiffSnapshotPayload;
-use crate::forge::{
-    create_or_find_review, load_forge_snapshot, review_short_label, run_github_device_flow,
-};
 use crate::git_models::GitSnapshotPayload;
 use crate::local_path_from_qml_folder_url;
 
@@ -224,6 +220,83 @@ impl Backend {
         "gitActionLabel",
         Member = git_action_label,
         Notify = git_state_changed
+    );
+    qproperty!("terminalTabs", Member = terminal_tabs, Constant);
+    qproperty!("terminalRows", Member = terminal_rows, Constant);
+    qproperty!(
+        "terminalOpen",
+        Member = terminal_open,
+        Notify = terminal_state_changed
+    );
+    qproperty!(
+        "terminalActiveTabId",
+        Member = terminal_active_tab_id,
+        Notify = terminal_state_changed
+    );
+    qproperty!(
+        "terminalActiveTabIndex",
+        Member = terminal_active_tab_index,
+        Notify = terminal_state_changed
+    );
+    qproperty!(
+        "terminalShellLabel",
+        Member = terminal_shell_label,
+        Notify = terminal_state_changed
+    );
+    qproperty!(
+        "terminalStatus",
+        Member = terminal_status,
+        Notify = terminal_state_changed
+    );
+    qproperty!(
+        "terminalStatusMessage",
+        Member = terminal_status_message,
+        Notify = terminal_state_changed
+    );
+    qproperty!(
+        "terminalCwd",
+        Member = terminal_cwd,
+        Notify = terminal_state_changed
+    );
+    qproperty!(
+        "terminalDisplayOffset",
+        Member = terminal_display_offset,
+        Notify = terminal_screen_changed
+    );
+    qproperty!(
+        "terminalMouseMode",
+        Member = terminal_mouse_mode,
+        Notify = terminal_screen_changed
+    );
+    qproperty!(
+        "terminalCursorRow",
+        Member = terminal_cursor_row,
+        Notify = terminal_screen_changed
+    );
+    qproperty!(
+        "terminalCursorColumn",
+        Member = terminal_cursor_column,
+        Notify = terminal_screen_changed
+    );
+    qproperty!(
+        "terminalCursorShape",
+        Member = terminal_cursor_shape,
+        Notify = terminal_screen_changed
+    );
+    qproperty!(
+        "terminalCursorVisible",
+        Member = terminal_cursor_visible,
+        Notify = terminal_screen_changed
+    );
+    qproperty!(
+        "terminalScreenRevision",
+        Member = terminal_screen_revision,
+        Notify = terminal_screen_changed
+    );
+    qproperty!(
+        "terminalFocusRevision",
+        Member = terminal_focus_revision,
+        Notify = terminal_focus_changed
     );
     qproperty!("aiThreads", Member = ai_threads, Constant);
     qproperty!("aiTimeline", Member = ai_timeline, Constant);
@@ -660,6 +733,15 @@ impl Backend {
     pub(super) fn git_state_changed(&mut self);
 
     #[qsignal]
+    pub(super) fn terminal_state_changed(&mut self);
+
+    #[qsignal]
+    pub(super) fn terminal_screen_changed(&mut self);
+
+    #[qsignal]
+    pub(super) fn terminal_focus_changed(&mut self);
+
+    #[qsignal]
     pub(super) fn ai_state_changed(&mut self);
 
     #[qsignal]
@@ -842,6 +924,7 @@ impl Backend {
             return;
         }
         self.bootstrap_started = true;
+        crate::terminal::configure_terminal(self);
 
         let invoker = self.get_qml_method_invoker();
         let spawn_result = std::thread::Builder::new()
@@ -873,6 +956,154 @@ impl Backend {
         if ready {
             self.refresh_git_workspace();
         }
+    }
+
+    #[qslot]
+    fn toggle_terminal(&mut self) -> bool {
+        crate::terminal::toggle_terminal(self)
+    }
+
+    #[qslot]
+    fn set_terminal_open(&mut self, open: bool) -> bool {
+        crate::terminal::set_terminal_open(self, open)
+    }
+
+    #[qslot]
+    fn new_terminal_tab(&mut self) -> bool {
+        crate::terminal::new_terminal_tab(self)
+    }
+
+    #[qslot]
+    fn select_terminal_tab(&mut self, tab_id: i32) -> bool {
+        crate::terminal::select_terminal_tab(self, tab_id)
+    }
+
+    #[qslot]
+    fn close_terminal_tab(&mut self, tab_id: i32) -> bool {
+        crate::terminal::close_terminal_tab(self, tab_id)
+    }
+
+    #[qslot]
+    fn move_terminal_tab(&mut self, direction: i32) -> bool {
+        crate::terminal::move_terminal_tab(self, direction)
+    }
+
+    #[qslot]
+    fn resize_terminal(&mut self, rows: i32, cols: i32) -> bool {
+        crate::terminal::resize_terminal(self, rows, cols)
+    }
+
+    #[qslot]
+    fn send_terminal_key(
+        &mut self,
+        key: String,
+        text: String,
+        shift: bool,
+        control: bool,
+        alt: bool,
+        platform: bool,
+    ) -> bool {
+        crate::terminal::send_terminal_key(self, key, text, shift, control, alt, platform)
+    }
+
+    #[qslot]
+    fn write_terminal_text(&mut self, text: String) -> bool {
+        crate::terminal::write_terminal_text(self, text)
+    }
+
+    #[qslot]
+    fn paste_terminal_text(&mut self, text: String) -> bool {
+        crate::terminal::paste_terminal_text(self, text)
+    }
+
+    #[qslot]
+    fn report_terminal_focus(&mut self, focused: bool) -> bool {
+        crate::terminal::report_terminal_focus(self, focused)
+    }
+
+    #[qslot]
+    #[allow(clippy::too_many_arguments)]
+    fn terminal_pointer_button(
+        &mut self,
+        row: i32,
+        column: i32,
+        button: i32,
+        pressed: bool,
+        shift: bool,
+        control: bool,
+        alt: bool,
+    ) -> bool {
+        crate::terminal::send_terminal_pointer_button(
+            self, row, column, button, pressed, shift, control, alt,
+        )
+    }
+
+    #[qslot]
+    fn terminal_pointer_move(
+        &mut self,
+        row: i32,
+        column: i32,
+        button: i32,
+        shift: bool,
+        control: bool,
+        alt: bool,
+    ) -> bool {
+        crate::terminal::send_terminal_pointer_move(self, row, column, button, shift, control, alt)
+    }
+
+    #[qslot]
+    fn terminal_wheel(
+        &mut self,
+        row: i32,
+        column: i32,
+        lines: i32,
+        shift: bool,
+        control: bool,
+        alt: bool,
+    ) -> bool {
+        crate::terminal::send_terminal_wheel(self, row, column, lines, shift, control, alt)
+    }
+
+    #[qslot]
+    fn clear_terminal_screen(&mut self) -> bool {
+        crate::terminal::clear_terminal_screen(self)
+    }
+
+    #[qslot]
+    fn scroll_terminal(&mut self, direction: String) -> bool {
+        crate::terminal::scroll_terminal(self, direction)
+    }
+
+    #[qslot]
+    fn terminal_selection_text(
+        &self,
+        anchor_row: i32,
+        anchor_column: i32,
+        head_row: i32,
+        head_column: i32,
+    ) -> String {
+        crate::terminal::selected_terminal_text(
+            self,
+            anchor_row,
+            anchor_column,
+            head_row,
+            head_column,
+        )
+    }
+
+    #[qslot]
+    fn run_terminal_command(&mut self, command: String, cwd: String) -> bool {
+        crate::terminal::run_terminal_command(self, command, cwd)
+    }
+
+    #[qslot]
+    fn apply_terminal_events(&mut self, _tab_id: i32) {
+        crate::terminal::apply_terminal_events(self);
+    }
+
+    #[qslot]
+    fn complete_terminal_start(&mut self, tab_id: i32, generation: i32) {
+        crate::terminal::complete_terminal_start(self, tab_id, generation);
     }
 
     #[qslot]
@@ -1677,60 +1908,12 @@ impl Backend {
 
     #[qslot]
     pub(super) fn refresh_forge_review(&mut self) {
-        if !self.git_ready || self.forge_loading || self.forge_busy {
-            return;
-        }
-
-        let epoch = next_forge_epoch(self);
-        self.forge_loading = true;
-        self.forge_error.clear();
-        self.forge_status_message.clear();
-        self.forge_state_changed();
-
-        let root = PathBuf::from(self.git_root.clone());
-        let branch = self.git_branch_name.clone();
-        let invoker = self.get_qml_method_invoker();
-        let results = Arc::clone(&self.forge_results);
-        let spawn_result = std::thread::Builder::new()
-            .name("hunk-qt-forge-refresh".to_owned())
-            .spawn(move || {
-                let result = load_forge_snapshot(root.as_path(), branch.as_str())
-                    .map(Box::new)
-                    .map(ForgeAsyncPayload::Snapshot)
-                    .map_err(|error| format!("{error:#}"));
-                if let Ok(mut pending) = results.lock() {
-                    pending.insert(epoch, result);
-                }
-                invoke_method!(invoker, "apply_forge_result", epoch);
-            });
-
-        if let Err(error) = spawn_result {
-            self.forge_loading = false;
-            self.forge_error = format!("Failed to start review refresh: {error}");
-            self.forge_state_changed();
-        }
+        self.refresh_forge_review_impl();
     }
 
     #[qslot]
     fn save_forge_personal_access_token(&mut self, token: String) {
-        let Some(workspace) = self.forge_context.clone() else {
-            self.forge_error = "No forge repository is available for this branch".to_owned();
-            self.forge_state_changed();
-            return;
-        };
-        let token = token.trim().to_string();
-        if token.is_empty() {
-            self.forge_error = "Access token is required".to_owned();
-            self.forge_state_changed();
-            return;
-        }
-
-        self.run_save_forge_token(
-            "Saving credential",
-            workspace,
-            token,
-            ForgeCredentialKind::PersonalAccessToken,
-        );
+        self.save_forge_personal_access_token_impl(token);
     }
 
     #[qslot]
@@ -1741,183 +1924,27 @@ impl Backend {
         body: String,
         draft: bool,
     ) {
-        if self.forge_loading || self.forge_busy {
-            return;
-        }
-        let Some(workspace) = self.forge_context.clone() else {
-            self.forge_error = "No forge repository is available for this branch".to_owned();
-            self.forge_state_changed();
-            return;
-        };
-        let Some(token) = self.forge_token.clone() else {
-            self.forge_error = format!("{} authentication is required", self.forge_provider_label);
-            self.forge_state_changed();
-            return;
-        };
-
-        let epoch = self.begin_forge_action(format!(
-            "Creating or finding {}",
-            self.forge_review_kind_label
-        ));
-        let invoker = self.get_qml_method_invoker();
-        let results = Arc::clone(&self.forge_results);
-        let spawn_result = std::thread::Builder::new()
-            .name("hunk-qt-forge-review".to_owned())
-            .spawn(move || {
-                let result = create_or_find_review(
-                    &workspace,
-                    token.as_str(),
-                    target_branch.as_str(),
-                    title.as_str(),
-                    (!body.trim().is_empty()).then_some(body),
-                    draft,
-                )
-                .map(ForgeAsyncPayload::Review)
-                .map_err(|error| format!("{error:#}"));
-                if let Ok(mut pending) = results.lock() {
-                    pending.insert(epoch, result);
-                }
-                invoke_method!(invoker, "apply_forge_result", epoch);
-            });
-        if let Err(error) = spawn_result {
-            self.fail_forge_spawn("review operation", error);
-        }
+        self.create_forge_review_impl(target_branch, title, body, draft);
     }
 
     #[qslot]
     fn start_github_device_flow(&mut self) {
-        if self.forge_loading || self.forge_busy {
-            return;
-        }
-        let Some(workspace) = self.forge_context.clone() else {
-            self.forge_error = "No GitHub repository is available for this branch".to_owned();
-            self.forge_state_changed();
-            return;
-        };
-        if workspace.base_repo.provider != ForgeProvider::GitHub || self.forge_auth_mode != "device"
-        {
-            self.forge_error = "GitHub device sign-in is only available for github.com".to_owned();
-            self.forge_state_changed();
-            return;
-        }
-
-        let epoch = self.begin_forge_action("Starting GitHub sign-in".to_owned());
-        let current_epoch = Arc::clone(&self.forge_current_epoch);
-        let start_results = Arc::clone(&self.forge_device_start_results);
-        let final_results = Arc::clone(&self.forge_results);
-        let invoker = self.get_qml_method_invoker();
-        let spawn_result = std::thread::Builder::new()
-            .name("hunk-qt-github-auth".to_owned())
-            .spawn(move || {
-                let result =
-                    run_github_device_flow(workspace, epoch, current_epoch, |start_result| {
-                        if let Ok(mut pending) = start_results.lock() {
-                            pending.insert(epoch, start_result);
-                        }
-                        invoke_method!(invoker, "apply_github_device_authorization", epoch);
-                    });
-                let Some(result) = result else {
-                    return;
-                };
-                if let Ok(mut pending) = final_results.lock() {
-                    pending.insert(epoch, result.map(Box::new).map(ForgeAsyncPayload::Snapshot));
-                }
-                invoke_method!(invoker, "apply_forge_result", epoch);
-            });
-        if let Err(error) = spawn_result {
-            self.fail_forge_spawn("GitHub sign-in", error);
-        }
+        self.start_github_device_flow_impl();
     }
 
     #[qslot]
     fn cancel_github_device_flow(&mut self) {
-        if !self.forge_device_flow_active && !self.forge_busy {
-            return;
-        }
-        next_forge_epoch(self);
-        self.forge_busy = false;
-        self.forge_action_label.clear();
-        self.forge_device_flow_active = false;
-        self.forge_device_user_code.clear();
-        self.forge_device_verification_url.clear();
-        self.forge_status_message = "GitHub sign-in cancelled".to_owned();
-        self.forge_state_changed();
+        self.cancel_github_device_flow_impl();
     }
 
     #[qslot]
     fn apply_github_device_authorization(&mut self, epoch: i32) {
-        let result = self
-            .forge_device_start_results
-            .lock()
-            .ok()
-            .and_then(|mut pending| pending.remove(&epoch));
-        if epoch != self.forge_epoch {
-            return;
-        }
-        match result {
-            Some(Ok(authorization)) => {
-                self.forge_device_flow_active = true;
-                self.forge_device_user_code = authorization.user_code;
-                self.forge_device_verification_url = authorization.verification_uri;
-                self.forge_action_label = "Waiting for GitHub authorization".to_owned();
-                self.forge_status_message =
-                    "Enter the displayed code in GitHub to finish sign-in".to_owned();
-            }
-            Some(Err(error)) => {
-                self.forge_busy = false;
-                self.forge_action_label.clear();
-                self.forge_error = error;
-            }
-            None => {
-                self.forge_busy = false;
-                self.forge_action_label.clear();
-                self.forge_error =
-                    "GitHub sign-in started without a queued authorization".to_owned();
-            }
-        }
-        self.forge_state_changed();
+        self.apply_github_device_authorization_impl(epoch);
     }
 
     #[qslot]
     fn apply_forge_result(&mut self, epoch: i32) {
-        let result = self
-            .forge_results
-            .lock()
-            .ok()
-            .and_then(|mut pending| pending.remove(&epoch));
-        if epoch != self.forge_epoch {
-            return;
-        }
-
-        self.forge_loading = false;
-        self.forge_busy = false;
-        self.forge_action_label.clear();
-        self.forge_device_flow_active = false;
-        self.forge_device_user_code.clear();
-        self.forge_device_verification_url.clear();
-        match result {
-            Some(Ok(ForgeAsyncPayload::Snapshot(payload))) => {
-                self.apply_forge_payload(*payload);
-            }
-            Some(Ok(ForgeAsyncPayload::Review(outcome))) => {
-                let action = if outcome.existed { "Using" } else { "Created" };
-                let short_label = review_short_label(outcome.review.provider);
-                self.forge_status_message = format!(
-                    "{action} {short_label} #{} for {}",
-                    outcome.review.number, outcome.review.source_branch
-                );
-                self.apply_review_summary(Some(outcome.review));
-            }
-            Some(Err(error)) => {
-                self.forge_ready = true;
-                self.forge_error = error;
-            }
-            None => {
-                self.forge_ready = true;
-                self.forge_error = "Forge operation completed without a queued result".to_owned();
-            }
-        }
-        self.forge_state_changed();
+        self.apply_forge_result_impl(epoch);
     }
 
     #[qslot]

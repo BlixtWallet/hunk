@@ -8800,6 +8800,7 @@ dependencies = [
  "hunk-domain",
  "hunk-forge",
  "hunk-git",
+ "hunk-terminal",
  "qtbridge",
  "serde_json",
  "tempfile",
@@ -8823,8 +8824,11 @@ name = "hunk-terminal"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dirs",
+ "hunk-domain",
  "libghostty-vt",
  "portable-pty",
+ "serde_json",
 ]
 
 [[package]]

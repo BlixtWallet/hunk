@@ -7,6 +7,8 @@ const AI_TIMELINE_MAX_VISIBLE_TURNS: usize = 80;
 pub const AI_TIMELINE_MAX_VISIBLE_ROWS: usize = 1_000;
 const AI_TIMELINE_MAX_TEXT_BYTES: usize = 16 * 1024;
 const AI_TIMELINE_MAX_TITLE_BYTES: usize = 240;
+const AI_COMMAND_DISPLAY_BYTES: usize = 2 * 1024;
+const AI_COMMAND_CWD_DISPLAY_BYTES: usize = 1024;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, QModelItem)]
 pub struct AiTimelineItem {
@@ -16,6 +18,8 @@ pub struct AiTimelineItem {
     pub role: String,
     pub title: String,
     pub text: String,
+    pub command: String,
+    pub cwd: String,
     pub status: String,
     pub streaming: bool,
     pub mono: bool,
@@ -158,6 +162,7 @@ fn timeline_item(item_key: &str, item: &hunk_codex::state::ItemSummary) -> AiTim
         content
     };
     let (text, truncated) = bounded_text(text_source, AI_TIMELINE_MAX_TEXT_BYTES);
+    let (command, cwd) = command_execution_target(item);
     AiTimelineItem {
         row_id: format!("item:{item_key}"),
         turn_id: item.turn_id.clone(),
@@ -165,6 +170,8 @@ fn timeline_item(item_key: &str, item: &hunk_codex::state::ItemSummary) -> AiTim
         role: item_role(item.kind.as_str()).to_owned(),
         title: bounded_text(item_title(item).as_str(), AI_TIMELINE_MAX_TITLE_BYTES).0,
         text,
+        command,
+        cwd,
         status: item_status_label(item.status).to_owned(),
         streaming: item.status != ItemStatus::Completed,
         mono: item_uses_mono_text(item.kind.as_str()),
@@ -205,12 +212,47 @@ fn timeline_plan(turn_key: &str, plan: &hunk_codex::state::TurnPlanSummary) -> A
         role: "assistant".to_owned(),
         title: "Plan".to_owned(),
         text,
+        command: String::new(),
+        cwd: String::new(),
         status: if streaming { "in progress" } else { "" }.to_owned(),
         streaming,
         mono: false,
         truncated,
         last_sequence: saturating_u64_to_i64(plan.last_sequence),
     }
+}
+
+fn command_execution_target(item: &hunk_codex::state::ItemSummary) -> (String, String) {
+    if item.kind != "commandExecution" {
+        return (String::new(), String::new());
+    }
+    let Some(details) = item
+        .display_metadata
+        .as_ref()
+        .and_then(|metadata| metadata.details_json.as_deref())
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+    else {
+        return (String::new(), String::new());
+    };
+    if details.get("kind").and_then(serde_json::Value::as_str) != Some("commandExecution") {
+        return (String::new(), String::new());
+    }
+    let command = details
+        .get("command")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    let cwd = details
+        .get("cwd")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    if command.len() > AI_COMMAND_DISPLAY_BYTES || cwd.len() > AI_COMMAND_CWD_DISPLAY_BYTES {
+        return (String::new(), String::new());
+    }
+    (command, cwd)
 }
 
 fn item_is_renderable(item: &hunk_codex::state::ItemSummary) -> bool {

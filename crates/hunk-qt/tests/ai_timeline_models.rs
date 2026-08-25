@@ -69,7 +69,9 @@ fn projection_orders_renderable_items_and_turn_plans() {
     command.status = ItemStatus::Streaming;
     command.display_metadata = Some(ItemDisplayMetadata {
         summary: Some("  Running focused tests  ".to_owned()),
-        details_json: None,
+        details_json: Some(
+            r#"{"kind":"commandExecution","command":"cargo test","cwd":"/repo"}"#.to_owned(),
+        ),
     });
     state.items.insert("command".to_owned(), command);
     state.turn_plans.insert(
@@ -116,12 +118,38 @@ fn projection_orders_renderable_items_and_turn_plans() {
     assert_eq!(projection.items[3].status, "streaming");
     assert!(projection.items[3].streaming);
     assert!(projection.items[3].mono);
+    assert_eq!(projection.items[3].command, "cargo test");
+    assert_eq!(projection.items[3].cwd, "/repo");
     assert_eq!(projection.items[4].kind, "turnPlan");
     assert_eq!(projection.items[4].status, "in progress");
     assert_eq!(
         projection.items[4].text,
         "Verify the change\n[x] Read the parser\n[~] Run the tests"
     );
+}
+
+#[test]
+fn projection_does_not_offer_truncated_commands_for_execution() {
+    let mut state = AiState::default();
+    state.turns.insert("turn".to_owned(), turn("turn", 1));
+    let mut command = item("command", "turn", "commandExecution", "output", 2);
+    command.display_metadata = Some(ItemDisplayMetadata {
+        summary: Some("Long command".to_owned()),
+        details_json: Some(
+            serde_json::json!({
+                "kind": "commandExecution",
+                "command": "x".repeat(2 * 1024 + 3),
+                "cwd": "/repo",
+            })
+            .to_string(),
+        ),
+    });
+    state.items.insert("command".to_owned(), command);
+
+    let projection = AiTimelineProjection::from_state(&state, Some("thread"));
+
+    assert!(projection.items[0].command.is_empty());
+    assert!(projection.items[0].cwd.is_empty());
 }
 
 #[test]

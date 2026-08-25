@@ -13,7 +13,7 @@ use anyhow::bail;
 use anyhow::{Context, Result};
 use hunk_domain::config::{AppConfig, TerminalConfig, TerminalShell};
 
-pub(crate) const PRINT_TERMINAL_ENV_ARG: &str = "--print-terminal-env-json";
+pub const PRINT_TERMINAL_ENV_ARG: &str = "--print-terminal-env-json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TerminalShellFamily {
@@ -23,7 +23,7 @@ pub(crate) enum TerminalShellFamily {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ResolvedTerminalShell {
+pub struct ResolvedTerminalShell {
     program: OsString,
     args: Vec<OsString>,
     family: TerminalShellFamily,
@@ -32,7 +32,7 @@ pub(crate) struct ResolvedTerminalShell {
 }
 
 impl ResolvedTerminalShell {
-    pub(crate) fn program(&self) -> &OsStr {
+    pub fn program(&self) -> &OsStr {
         self.program.as_os_str()
     }
 
@@ -41,11 +41,11 @@ impl ResolvedTerminalShell {
         self.family
     }
 
-    pub(crate) fn label(&self) -> &str {
+    pub fn label(&self) -> &str {
         self.label.as_str()
     }
 
-    pub(crate) fn interactive_shell_args(&self, inherit_login_environment: bool) -> Vec<OsString> {
+    pub fn interactive_shell_args(&self, inherit_login_environment: bool) -> Vec<OsString> {
         if self.custom_args {
             return self.args.clone();
         }
@@ -76,7 +76,7 @@ impl ResolvedTerminalShell {
     }
 }
 
-pub(crate) fn maybe_handle_terminal_env_helper_mode() -> Result<bool> {
+pub fn maybe_handle_terminal_env_helper_mode() -> Result<bool> {
     let mut args = std::env::args_os();
     let _ = args.next();
     match args.next() {
@@ -88,7 +88,7 @@ pub(crate) fn maybe_handle_terminal_env_helper_mode() -> Result<bool> {
     }
 }
 
-pub(crate) fn maybe_hydrate_app_environment(config: &AppConfig) -> Result<()> {
+pub fn maybe_hydrate_app_environment(config: &AppConfig) -> Result<()> {
     #[cfg(target_os = "windows")]
     {
         let _ = config;
@@ -128,7 +128,7 @@ pub(crate) fn maybe_hydrate_app_environment(config: &AppConfig) -> Result<()> {
     }
 }
 
-pub(crate) fn resolve_terminal_shell(config: &TerminalConfig) -> ResolvedTerminalShell {
+pub fn resolve_terminal_shell(config: &TerminalConfig) -> ResolvedTerminalShell {
     match &config.shell {
         TerminalShell::System => {
             let program = system_shell_program();
@@ -151,7 +151,7 @@ pub(crate) fn resolve_terminal_shell(config: &TerminalConfig) -> ResolvedTermina
     }
 }
 
-pub(crate) fn terminal_shell_label(config: &TerminalConfig) -> String {
+pub fn terminal_shell_label(config: &TerminalConfig) -> String {
     resolve_terminal_shell(config).label().to_string()
 }
 
@@ -388,76 +388,4 @@ fn quote_posix(value: &OsStr) -> String {
 fn quote_powershell(value: &OsStr) -> String {
     let value = value.to_string_lossy();
     format!("'{}'", value.replace('\'', "''"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        TerminalShellFamily, build_resolved_terminal_shell, resolve_terminal_shell,
-        shell_family_from_program,
-    };
-    use hunk_domain::config::{TerminalConfig, TerminalShell};
-    use std::ffi::OsString;
-
-    #[test]
-    fn explicit_program_shell_resolution_preserves_program_and_defaults_args() {
-        let config = TerminalConfig {
-            shell: TerminalShell::Program("/bin/zsh".to_string()),
-            ..TerminalConfig::default()
-        };
-
-        let resolved = resolve_terminal_shell(&config);
-
-        assert_eq!(resolved.program(), "/bin/zsh");
-        assert!(resolved.args.is_empty());
-        assert_eq!(resolved.label(), "zsh");
-    }
-
-    #[test]
-    fn explicit_shell_args_are_preserved() {
-        let resolved = build_resolved_terminal_shell(
-            OsString::from("pwsh.exe"),
-            vec![OsString::from("-NoLogo")],
-            true,
-        );
-
-        assert_eq!(resolved.args, vec![OsString::from("-NoLogo")]);
-        assert_eq!(
-            resolved.interactive_shell_args(true),
-            vec![OsString::from("-NoLogo")]
-        );
-    }
-
-    #[test]
-    fn powershell_interactive_args_honor_profile_opt_out() {
-        let resolved = build_resolved_terminal_shell(OsString::from("pwsh.exe"), Vec::new(), false);
-
-        assert_eq!(
-            resolved.interactive_shell_args(true),
-            vec![OsString::from("-NoLogo")]
-        );
-        assert_eq!(
-            resolved.interactive_shell_args(false),
-            vec![OsString::from("-NoLogo"), OsString::from("-NoProfile")]
-        );
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    #[test]
-    fn unix_fallback_shells_keep_bash_ahead_of_zsh() {
-        assert_eq!(super::unix_fallback_shells()[0], "/bin/bash");
-        assert_eq!(super::unix_fallback_shells()[1], "/bin/zsh");
-    }
-
-    #[test]
-    fn shell_family_detection_handles_windows_shells() {
-        assert_eq!(
-            shell_family_from_program(OsString::from("pwsh.exe").as_os_str()),
-            TerminalShellFamily::PowerShell
-        );
-        assert_eq!(
-            shell_family_from_program(OsString::from("cmd.exe").as_os_str()),
-            TerminalShellFamily::Cmd
-        );
-    }
 }

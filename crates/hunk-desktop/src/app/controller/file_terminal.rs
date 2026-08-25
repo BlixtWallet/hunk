@@ -1111,7 +1111,7 @@ impl DiffViewer {
             }
         }
 
-        let resolved_shell = crate::terminal_env::resolve_terminal_shell(&self.config.terminal);
+        let resolved_shell = hunk_terminal::resolve_terminal_shell(&self.config.terminal);
         let request = TerminalSpawnRequest::shell(cwd.clone())
             .with_shell_program(resolved_shell.program().to_os_string())
             .with_shell_args(

@@ -233,6 +233,7 @@ Item {
 
             delegate: AiTimelineRow {
                 width: timeline.width
+                backend: root.backend
             }
 
             onCountChanged: {

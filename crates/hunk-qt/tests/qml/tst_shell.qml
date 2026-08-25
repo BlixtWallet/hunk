@@ -17,6 +17,7 @@ TestCase {
     ListModel { id: aiThreadsModel }
     ListModel { id: aiTimelineModel }
     ListModel { id: aiAttachmentsModel }
+    ListModel { id: terminalTabsModel } ListModel { id: terminalRowsModel }
     ListModel { id: aiModelsModel; ListElement { value: ""; label: "Server default" } ListElement { value: "gpt-5.5"; label: "GPT-5.5" } }
     ListModel { id: aiEffortsModel; ListElement { value: ""; label: "Model default" } ListElement { value: "high"; label: "High" } }
     ListModel { id: aiServiceTiersModel; ListElement { value: "standard"; label: "Standard" } ListElement { value: "fast"; label: "Fast" } ListElement { value: "flex"; label: "Flex" } }
@@ -74,6 +75,10 @@ TestCase {
         property string gitError: ""
         property string gitStatusMessage: "Repository refreshed"
         property string gitActionLabel: ""
+        property var terminalTabs: terminalTabsModel; property var terminalRows: terminalRowsModel
+        property bool terminalOpen: false; property int terminalActiveTabId: 1; property int terminalActiveTabIndex: 0; property string terminalShellLabel: "zsh"
+        property string terminalStatus: "idle"; property string terminalStatusMessage: ""; property string terminalCwd: gitRoot
+        property int terminalDisplayOffset: 0; property bool terminalMouseMode: false; property int terminalCursorRow: -1; property int terminalCursorColumn: -1; property string terminalCursorShape: "hidden"; property bool terminalCursorVisible: false; property int terminalScreenRevision: 0; property int terminalFocusRevision: 0
         property var aiThreads: aiThreadsModel
         property var aiTimeline: aiTimelineModel
         property var aiAttachments: aiAttachmentsModel; readonly property int aiAttachmentCount: aiAttachmentsModel.count; property bool aiAttachmentPending: false; property bool aiModelSupportsImageInputs: true
@@ -157,7 +162,7 @@ TestCase {
         property var recoveredAiAttachmentPaths: ({})
         signal diffCommentsStateChanged
         signal aiStateChanged
-        signal aiSessionStateChanged
+        signal aiSessionStateChanged; signal terminalStateChanged; signal terminalScreenChanged; signal terminalFocusChanged
         function record(command, argument) {
             commandCount += 1
             lastCommand = command
@@ -389,6 +394,12 @@ TestCase {
         function push_branch() { record("push") }
         function sync_branch() { record("sync") }
         function pull_branch_with_rebase() { record("pull_rebase") }
+        function set_terminal_open(open) { terminalOpen = open; if (open) { terminalFocusRevision += 1; terminalFocusChanged() } terminalStateChanged(); return true }
+        function new_terminal_tab() { return true } function close_terminal_tab(tabId) { return tabId > 0 }
+        function select_terminal_tab(tabId) { terminalActiveTabId = tabId; terminalStateChanged(); return true } function move_terminal_tab(direction) { return direction !== 0 }
+        function resize_terminal(rows, cols) { return rows > 0 && cols > 0 } function send_terminal_key() { return true } function write_terminal_text() { return true } function paste_terminal_text() { return true }
+        function report_terminal_focus() { return true } function terminal_pointer_button() { return true } function terminal_pointer_move() { return true } function terminal_wheel() { return true }
+        function clear_terminal_screen() { return true } function scroll_terminal() { return true } function terminal_selection_text() { return "" } function run_terminal_command() { terminalOpen = true; terminalFocusRevision += 1; terminalFocusChanged(); terminalStateChanged(); return true }
         function refresh_ai_threads() { record("refresh_ai_threads") }
         function select_ai_thread(threadId) {
             record("select_ai_thread", threadId)
@@ -523,6 +534,7 @@ TestCase {
                 role: "user",
                 title: "You",
                 text: text,
+                command: "", cwd: "",
                 status: "queued",
                 streaming: false,
                 mono: false,
@@ -723,14 +735,12 @@ TestCase {
             lastReviewDraft = draft
         }
     }
-
     Shell {
         id: shell
         width: 1280
         height: 760
         backend: fakeBackend
     }
-
     function appendFile(path, staged, additions, removals) {
         const slash = path.lastIndexOf("/")
         gitFilesModel.append({
@@ -745,7 +755,6 @@ TestCase {
             removals: removals
         })
     }
-
     function populateModels() {
         gitFilesModel.clear()
         gitBranchesModel.clear()
@@ -755,7 +764,6 @@ TestCase {
         diffCommentsModel.clear()
         aiThreadsModel.clear()
         aiTimelineModel.clear()
-
         appendFile("crates/hunk-git/src/workspace.rs", false, 84, 4)
         appendFile("crates/hunk-qt/src/backend.rs", false, 132, 8)
         appendFile("crates/hunk-qt/src/qml/Hunk/GitWorkspace.qml", true, 635, 0)
@@ -883,6 +891,7 @@ TestCase {
             role: "user",
             title: "You",
             text: "<b>Keep this text literal and do not parse it as HTML.</b>",
+            command: "", cwd: "",
             status: "",
             streaming: false,
             mono: false,
@@ -896,6 +905,7 @@ TestCase {
             role: "assistant",
             title: "Assistant",
             text: "The selected thread now comes from the retained Rust reducer and renders through a bounded Qt model.",
+            command: "", cwd: "",
             status: "",
             streaming: false,
             mono: false,
@@ -909,6 +919,7 @@ TestCase {
             role: "tool",
             title: "Running focused Qt tests",
             text: "nix develop -c cargo test -p hunk-qt",
+            command: "nix develop -c cargo test -p hunk-qt", cwd: "/Volumes/hulk/dev/projects/hunk",
             status: "streaming",
             streaming: true,
             mono: true,
@@ -922,6 +933,7 @@ TestCase {
             role: "assistant",
             title: "Plan",
             text: "[x] Retain the Rust reducer\n[~] Replace the GPUI timeline",
+            command: "", cwd: "",
             status: "in progress",
             streaming: true,
             mono: false,
@@ -952,6 +964,15 @@ TestCase {
         })
         tryVerify(() => snapshotReady)
         verify(snapshotSaved)
+    }
+    function verifyTerminalFocusRoundTrip(item) {
+        item.forceActiveFocus()
+        tryCompare(item, "activeFocus", true)
+        shell.setTerminalOpen(true)
+        tryVerify(() => findChild(shell, "terminalDrawer").item !== null)
+        shell.setTerminalOpen(false)
+        tryVerify(() => findChild(shell, "terminalDrawer").item === null)
+        tryCompare(item, "activeFocus", true)
     }
     function init() {
         shell.width = 1280
@@ -993,6 +1014,8 @@ TestCase {
         fakeBackend.gitError = ""
         fakeBackend.gitStatusMessage = "Repository refreshed"
         fakeBackend.gitActionLabel = ""
+        fakeBackend.terminalOpen = false
+        terminalTabsModel.clear(); terminalRowsModel.clear()
         fakeBackend.aiReady = true
         fakeBackend.aiLoading = false
         fakeBackend.aiRequiresAuthentication = false
@@ -1221,7 +1244,7 @@ TestCase {
                 kind: "agentMessage",
                 role: "assistant",
                 title: "Assistant",
-                text: "Bounded timeline row " + index,
+                text: "Bounded timeline row " + index, command: "", cwd: "",
                 status: "",
                 streaming: false,
                 mono: false,
@@ -1408,9 +1431,7 @@ TestCase {
         const composer = shell.workspaceItem.composer
         composer.editor.text = "don't run tests"
         fakeBackend.recoveredAiPrompts[fakeBackend.aiActiveThreadId] = "run tests"
-
         fakeBackend.aiStateChanged()
-
         compare(composer.editor.text, "don't run tests\n\nrun tests")
     }
     function test_aiRecoveryRestoresAnImageOnlyDraft() {
@@ -1418,7 +1439,6 @@ TestCase {
         const composer = shell.workspaceItem.composer
         fakeBackend.recoveredAiAttachmentPaths[fakeBackend.aiActiveThreadId] = ["restored.png"]
         fakeBackend.aiStateChanged()
-
         tryCompare(aiAttachmentsModel, "count", 1)
         tryVerify(() => composer.canSubmit)
     }
@@ -1430,22 +1450,18 @@ TestCase {
         composer.editor.forceActiveFocus()
         composer.editor.text = "Keep this idle draft"
         const commandCount = fakeBackend.commandCount
-
         keyClick(Qt.Key_Tab)
-
         compare(fakeBackend.commandCount, commandCount)
         verify(!fakeBackend.aiPromptPending)
     }
     function test_aiComposerDraftsSurviveThreadAndWorkspaceSwitches() {
         openAiWorkspace()
         shell.workspaceItem.composer.editor.text = "Migration thread draft"
-
         shell.sidebarItem.selectThread("thread-review")
         compare(shell.workspaceItem.composer.editor.text, "")
         shell.workspaceItem.composer.editor.text = "Review thread draft"
         shell.sidebarItem.selectThread("thread-qt-migration")
         compare(shell.workspaceItem.composer.editor.text, "Migration thread draft")
-
         openDiffWorkspace()
         openAiWorkspace()
         compare(shell.workspaceItem.composer.editor.text, "Migration thread draft")
@@ -1454,7 +1470,6 @@ TestCase {
         openAiWorkspace()
         const composer = shell.workspaceItem.composer
         composer.editor.text = "Blocked prompt"
-
         fakeBackend.aiRequiresAuthentication = true
         verify(!composer.sendButton.enabled)
         fakeBackend.aiRequiresAuthentication = false
@@ -1464,7 +1479,6 @@ TestCase {
         fakeBackend.aiActiveThreadId = ""
         fakeBackend.aiStateChanged()
         verify(!composer.sendButton.enabled)
-
         fakeBackend.aiActiveThreadId = "thread-qt-migration"
         fakeBackend.aiStateChanged()
         composer.editor.text = "Only send once"
@@ -1479,9 +1493,7 @@ TestCase {
         const composer = shell.workspaceItem.composer
         verify(fakeBackend.aiTurnRunning)
         compare(composer.stopButton.label, "Stop")
-
         composer.interrupt()
-
         compare(fakeBackend.lastCommand, "interrupt_ai_turn")
         compare(fakeBackend.lastArgument, "turn-2")
         verify(fakeBackend.aiInterruptPending)
@@ -1489,7 +1501,6 @@ TestCase {
         const commandCount = fakeBackend.commandCount
         composer.interrupt()
         compare(fakeBackend.commandCount, commandCount)
-
         fakeBackend.complete_ai_interrupt()
         verify(!fakeBackend.aiTurnRunning)
     }
@@ -1498,7 +1509,6 @@ TestCase {
         const workspace = shell.workspaceItem
         const panel = workspace.requestPanel
         const composer = workspace.composer
-
         composer.editor.forceActiveFocus()
         verify(composer.editor.activeFocus)
         fakeBackend.show_ai_approval("approval-accept")
@@ -1524,7 +1534,6 @@ TestCase {
 
         fakeBackend.complete_ai_request()
         tryVerify(() => composer.editor.enabled && composer.editor.activeFocus)
-
         fakeBackend.show_ai_approval("approval-decline")
         verify(!fakeBackend.resolve_ai_approval("stale-approval", false))
         verify(panel.resolveApproval(false))
@@ -1772,7 +1781,6 @@ TestCase {
         shell.workspaceItem.openCommentComposer(2)
         tryVerify(() => shell.workspaceItem.commentComposer !== null)
         shell.workspaceItem.commentComposer.text = "Explain why this stays off the Qt thread."
-
         fakeBackend.failNextDiffComment = true
         shell.workspaceItem.commentComposer.submit()
         compare(fakeBackend.lastCommand, "create_diff_comment")
@@ -1782,7 +1790,6 @@ TestCase {
             "Explain why this stays off the Qt thread."
         )
         compare(fakeBackend.diffCommentsError, "Failed to save comment")
-
         shell.workspaceItem.commentComposer.submit()
         tryCompare(shell.workspaceItem, "activeCommentRow", -1)
         compare(fakeBackend.diffCommentsOpenCount, 2)
@@ -1796,25 +1803,20 @@ TestCase {
         verify(shell.workspaceItem.commentsInspectorOpen)
         compare(shell.workspaceItem.commentsInspector.listView.count, 1)
         verify(shell.workspaceItem.commentsInspector.listView.reuseItems)
-
         const openComment = diffCommentsModel.get(0)
         shell.workspaceItem.commentsInspector.copyComment(openComment.clipboard_text)
         const clipboardProxy = findChild(shell.workspaceItem, "diffClipboardProxy")
         compare(clipboardProxy.text, openComment.clipboard_text)
-
         shell.workspaceItem.commentsInspector.jumpToComment("comment-open")
         compare(fakeBackend.lastCommand, "jump_to_diff_comment")
         compare(shell.workspaceItem.selectionHeadRow, 2)
-
         shell.workspaceItem.commentsInspector.toggleNonOpen()
         compare(fakeBackend.diffCommentsShowNonOpen, true)
         compare(shell.workspaceItem.commentsInspector.listView.count, 2)
-
         shell.workspaceItem.commentsInspector.setCommentStatus("comment-open", "resolved")
         compare(fakeBackend.lastCommand, "set_diff_comment_status")
         compare(fakeBackend.diffCommentsOpenCount, 0)
         compare(fakeBackend.diffCommentsResolvedCount, 2)
-
         shell.workspaceItem.commentsInspector.deleteComment("comment-open")
         compare(fakeBackend.lastCommand, "delete_diff_comment")
         compare(shell.workspaceItem.commentsInspector.listView.count, 1)
@@ -1835,7 +1837,6 @@ TestCase {
         }
         fakeBackend.diffCommentRecords = records
         fakeBackend.rebuildDiffComments()
-
         openDiffWorkspace()
         shell.workspaceItem.diffListView.positionViewAtIndex(2, ListView.Contain)
         shell.workspaceItem.diffListView.forceLayout()
@@ -1845,7 +1846,6 @@ TestCase {
         const badge = findChild(changedRow, "diffCommentBadge")
         verify(badge !== null)
         compare(badge.width, 28)
-
         shell.workspaceItem.toggleCommentsInspector()
         wait(Theme.transitionDuration + 20)
         shell.workspaceItem.commentsInspector.listView.forceLayout()
@@ -1862,7 +1862,6 @@ TestCase {
         wait(Theme.transitionDuration + 20)
         captureSnapshot("target/hunk-qt-diff-comments.png")
     }
-
     function test_diffWorkspaceRendersAtDesktopSize() {
         openDiffWorkspace()
         shell.workspaceItem.searchInput.text = ""
@@ -1871,25 +1870,29 @@ TestCase {
         captureSnapshot("target/hunk-qt-diff.png")
         shell.workspaceItem.resetSelection()
     }
-
     function test_workspaceActivationUsesBackendCommand() {
         openGitWorkspace()
         compare(fakeBackend.lastRequestedWorkspace, "git")
         compare(shell.activeWorkspace, "git")
     }
-
+    function test_terminalRestoresAiComposerFocus() {
+        openAiWorkspace()
+        verifyTerminalFocusRoundTrip(shell.workspaceItem.composer.editor)
+    }
+    function test_terminalRestoresGitCommitFocus() {
+        openGitWorkspace()
+        verifyTerminalFocusRoundTrip(shell.workspaceItem.commitMessageInput)
+    }
     function test_discardRequiresConfirmationBeforeRustCommand() {
         openGitWorkspace()
         shell.workspaceItem.requestDiscard("crates/hunk-git/src/workspace.rs")
         verify(shell.workspaceItem.discardConfirmationVisible)
         compare(fakeBackend.lastCommand, "")
-
         shell.workspaceItem.confirmDiscard()
         verify(!shell.workspaceItem.discardConfirmationVisible)
         compare(fakeBackend.lastCommand, "discard")
         compare(fakeBackend.lastArgument, "crates/hunk-git/src/workspace.rs")
     }
-
     function test_commitComposerUsesStagedCommitCommand() {
         openGitWorkspace()
         shell.workspaceItem.commitMessageInput.text = "Migrate the Git workspace"
@@ -1898,13 +1901,10 @@ TestCase {
         compare(fakeBackend.lastArgument, "Migrate the Git workspace")
         compare(shell.workspaceItem.commitMessageInput.text, "")
     }
-
     function test_githubDeviceAuthenticationUsesRustCommand() {
         fakeBackend.forgeAuthenticated = false
         openGitWorkspace()
-
         shell.workspaceItem.requestForgeAuthentication()
-
         compare(fakeBackend.lastCommand, "start_github_device_flow")
         verify(!shell.workspaceItem.forgeTokenDialogVisible)
     }

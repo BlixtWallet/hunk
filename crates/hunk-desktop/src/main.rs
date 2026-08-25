@@ -4,7 +4,6 @@
 )]
 
 mod app;
-mod terminal_env;
 mod updater_helper;
 
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -22,7 +21,7 @@ static SIGNAL_SHUTDOWN_STATE: AtomicU8 = AtomicU8::new(SIGNAL_SHUTDOWN_IDLE);
 fn main() -> Result<()> {
     codex_utils_rustls_provider::ensure_rustls_crypto_provider();
 
-    if terminal_env::maybe_handle_terminal_env_helper_mode()? {
+    if hunk_terminal::maybe_handle_terminal_env_helper_mode()? {
         return Ok(());
     }
     if updater_helper::maybe_handle_updater_helper_mode()? {
@@ -55,7 +54,7 @@ fn run_app() -> Result<()> {
     ensure_hidden_windows_console();
     ensure_valid_process_current_dir();
     let config = load_startup_config();
-    if let Err(error) = terminal_env::maybe_hydrate_app_environment(&config) {
+    if let Err(error) = hunk_terminal::maybe_hydrate_app_environment(&config) {
         eprintln!("failed to hydrate terminal environment: {error:#}");
     }
 

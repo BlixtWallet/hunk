@@ -5,7 +5,7 @@ import QtQuick
 Item {
     id: root
 
-    required property var backend
+    required property QtObject backend
     readonly property var workspaceIds: ["diff", "git", "ai"]
     readonly property int workspaceCount: workspaceIds.length
     readonly property string activeWorkspace: backend.activeWorkspace
@@ -14,6 +14,10 @@ Item {
     property var aiDraftStore: ({})
     property var aiRequestAnswerStore: ({})
     property string aiDraftWorkspaceRoot: ""
+    property real terminalDrawerHeight: 330
+    property bool terminalWasOpen: false
+    property Item terminalPreviousFocusItem: null
+    readonly property int observedTerminalFocusRevision: backend.terminalFocusRevision
 
     function activateWorkspace(workspace) {
         backend.select_workspace(workspace)
@@ -31,6 +35,45 @@ Item {
                 retainedAnswers[requestId] = aiRequestAnswerStore[requestId]
         }
         aiRequestAnswerStore = retainedAnswers
+    }
+
+    function setTerminalOpen(open) {
+        if (open && !backend.terminalOpen)
+            captureTerminalFocus()
+        backend.set_terminal_open(open)
+        syncTerminalFocus()
+    }
+
+    function captureTerminalFocus() {
+        const hostWindow = root.Window.window
+        terminalPreviousFocusItem = hostWindow === null
+            ? null : hostWindow.activeFocusItem
+    }
+
+    function syncTerminalFocus() {
+        const open = backend.terminalOpen
+        if (open === terminalWasOpen)
+            return
+        if (open && terminalPreviousFocusItem === null)
+            captureTerminalFocus()
+        terminalWasOpen = open
+        if (open) {
+            Qt.callLater(() => {
+                if (terminalDrawerLoader.item !== null)
+                    terminalDrawerLoader.item.focusTerminal()
+            })
+        } else {
+            Qt.callLater(() => {
+                if (terminalPreviousFocusItem !== null
+                        && terminalPreviousFocusItem.visible
+                        && terminalPreviousFocusItem.enabled) {
+                    terminalPreviousFocusItem.forceActiveFocus()
+                } else if (workspaceLoader.item !== null) {
+                    workspaceLoader.item.forceActiveFocus()
+                }
+                terminalPreviousFocusItem = null
+            })
+        }
     }
 
     Rectangle {
@@ -99,6 +142,15 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
 
+            ActionButton {
+                anchors.verticalCenter: parent.verticalCenter
+                label: root.backend.terminalOpen ? qsTr("Terminal ·") : qsTr("Terminal")
+                accessibleName: root.backend.terminalOpen
+                    ? qsTr("Close terminal") : qsTr("Open terminal")
+                compact: true
+                onClicked: root.setTerminalOpen(!root.backend.terminalOpen)
+            }
+
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 7
@@ -146,9 +198,40 @@ Item {
         anchors.left: sidebar.right
         anchors.right: parent.right
         anchors.top: header.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: terminalDrawerLoader.top
         sourceComponent: root.activeWorkspace === "git" ? gitWorkspaceComponent
             : (root.activeWorkspace === "diff" ? diffWorkspaceComponent : aiWorkspaceComponent)
+    }
+
+    Loader {
+        id: terminalDrawerLoader
+        objectName: "terminalDrawer"
+        anchors.left: sidebar.right
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: active
+            ? Math.min(root.terminalDrawerHeight,
+                Math.max(180, root.height - Theme.headerHeight - 160)) : 0
+        active: root.backend.terminalOpen
+        visible: active
+        sourceComponent: terminalDrawerComponent
+        onLoaded: Qt.callLater(() => {
+            if (item !== null)
+                item.focusTerminal()
+        })
+    }
+
+    Component {
+        id: terminalDrawerComponent
+
+        TerminalDrawer {
+            backend: root.backend
+            onResizeRequested: height => {
+                root.terminalDrawerHeight = Math.max(180,
+                    Math.min(height, root.height - Theme.headerHeight - 160))
+            }
+            onCloseRequested: root.setTerminalOpen(false)
+        }
     }
 
     Component {
@@ -210,7 +293,32 @@ Item {
         function onAiStateChanged() {
             root.syncAiWorkspaceState()
         }
+
+        function onTerminalStateChanged() {
+            root.syncTerminalFocus()
+        }
+
+        function onTerminalFocusChanged() {
+            root.syncTerminalFocus()
+        }
     }
 
-    Component.onCompleted: syncAiWorkspaceState()
+    Shortcut {
+        sequence: Qt.platform.os === "osx" ? "Meta+J" : "Ctrl+J"
+        autoRepeat: false
+        onActivated: root.setTerminalOpen(!root.backend.terminalOpen)
+    }
+
+    Component.onCompleted: {
+        syncAiWorkspaceState()
+        terminalWasOpen = backend.terminalOpen
+    }
+
+    onObservedTerminalFocusRevisionChanged: {
+        if (backend.terminalOpen)
+            Qt.callLater(() => {
+                if (terminalDrawerLoader.item !== null)
+                    terminalDrawerLoader.item.focusTerminal()
+            })
+    }
 }

@@ -1375,7 +1375,7 @@ impl DiffViewer {
             pending_input = self.ai_terminal_pending_input.is_some(),
             "Starting AI terminal session"
         );
-        let resolved_shell = crate::terminal_env::resolve_terminal_shell(&self.config.terminal);
+        let resolved_shell = hunk_terminal::resolve_terminal_shell(&self.config.terminal);
         let request = TerminalSpawnRequest::shell(cwd.clone())
             .with_shell_program(resolved_shell.program().to_os_string())
             .with_shell_args(
@@ -1743,7 +1743,7 @@ fn ai_terminal_strip_matching_outer_quotes(value: &str) -> &str {
 }
 
 fn ai_terminal_default_shell_family(config: &AppConfig) -> AiTerminalShellFamily {
-    let shell = crate::terminal_env::resolve_terminal_shell(&config.terminal);
+    let shell = hunk_terminal::resolve_terminal_shell(&config.terminal);
     ai_terminal_shell_family_from_program(
         shell.label(),
     )
