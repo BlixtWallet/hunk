@@ -129,6 +129,7 @@ master
   <- migration/12-qt-diff-comments-ui
   <- migration/13-ai-runtime-paths
   <- migration/14-qt-ai-runtime
+  <- migration/15-qt-ai-catalog
   <- additional independently reviewable Qt AI layers
   <- atomic Qt cutover and CI replacement
   <- release hardening
@@ -587,9 +588,10 @@ external caches:
 
 - [x] Move Codex executable discovery and validation below both frontends.
 - [x] Establish the lazy, repository-scoped Qt worker lifecycle, bounded thread catalog, active-thread state, and basic refresh/start/select/archive commands.
-- [ ] Expose thread catalog, active thread, turn timeline, composer, and runtime state through QtBridge.
+- [x] Expose the thread catalog, active thread, bounded read-only turn timeline, streaming rows, and runtime state through QtBridge.
+- [ ] Expose the composer and its send/steer/interrupt state through QtBridge.
 - [ ] Implement thread load/start/resume/fork/archive and cwd scoping.
-- [ ] Implement streaming messages and tool output without per-token QObject churn.
+- [x] Implement streaming messages and tool output without per-token QObject churn or structural model resets.
 - [ ] Implement approvals, request-user-input, queued messages, steering, interruption, and plan state.
 - [ ] Implement attachments, bookmarks, context usage, model/settings, and service-tier controls still in product scope.
 - [ ] Port required terminal surfaces with correct input, focus, cursor, selection, and resize behavior.
@@ -643,8 +645,10 @@ Phase 7 Qt worker-foundation decisions:
   thread, keeping tab and repository interaction non-blocking.
 - The QtBridge thread model excludes archived threads, preserves the GPUI
   created-time ordering, marks the active and in-progress rows, and caps visible
-  replacement at 200 items. The complete latest `AiSnapshot` remains in Rust for
-  the following timeline/composer layers; QML receives no reducer/domain state.
+  replacement at 200 items. The worker foundation initially retained the latest
+  `AiSnapshot`; the following timeline layer replaces that temporary retention
+  with bounded listener-thread projections so QML still receives no
+  reducer/domain state and the Qt thread never drops a full reducer snapshot.
 - This layer exposes runtime state and refresh/start/select/archive commands but
   deliberately adds no placeholder AI presentation. Timeline projection,
   composer/streaming behavior, approvals, and the final visual surface remain
@@ -665,6 +669,47 @@ Cargo target and cache:
   graph, not GPUI or Qt rendering, and now populates the shared external cache.
 - Validation constructed only inert Qt models and mailbox events. It did not
   launch Hunk or Codex and did not access the keychain.
+
+Phase 7 Qt catalog/timeline decisions:
+
+- The selected conversation is projected to the latest 80 turns and at most
+  1,000 visible rows. Aggregate turn/row counts remain available so the UI can
+  state when older history is omitted instead of silently implying completeness.
+- Snapshot projection runs on the existing AI event-listener thread before the
+  Qt callback is scheduled. The projected payload contains only catalog,
+  timeline, authentication, and selected-thread metadata; the full cloned
+  reducer snapshot is dropped off the Qt thread.
+- Stable row IDs turn streamed content changes into targeted QtBridge model
+  updates. The model resets only when row order or membership changes, and
+  consecutive projected snapshots retain the mailbox's ordering-aware
+  coalescing behavior.
+- The 200-thread catalog always retains the active thread even when it is older
+  than the newest visible window. Archived or otherwise missing active IDs are
+  rejected before the timeline is projected.
+- QML uses recycling `ListView` delegates with bounded caches. User, assistant,
+  plan, system, and compact tool rows render all reducer-provided strings as
+  plain text, allow message selection, follow streamed height growth only while
+  the user remains at the tail, and yield immediately when the user scrolls.
+- The initial Qt AI presentation follows the useful hierarchy of the already
+  open legacy app—a dense thread rail and dominant unboxed conversation plane—
+  without recreating its outgoing GPUI implementation or adding a fake composer.
+  Composer/send/steer behavior remains the next independently reviewable layer.
+
+Phase 7 Qt catalog/timeline macOS validation through Nix, reusing the external
+Cargo target, Cargo cache, and Qt 6.11.2 SDK:
+
+- The full workspace all-target build passed in 26.08 seconds; only `hunk-qt`
+  required compilation.
+- The complete workspace test suite passed in about 50 seconds, including the
+  new catalog pinning, projected-mailbox, timeline ordering/bounds, UTF-8
+  truncation, metadata fallback, and stable-row update coverage.
+- `qmllint` and all 30 QML interaction, state, virtualization, and rendered
+  snapshot tests passed in 1.13 seconds. The inspected 1280-by-760 AI snapshot
+  showed the dense catalog, literal plain-text fixture, assistant/plan rows, and
+  compact streaming tool row without instantiating the distant 1,000-row item.
+- Workspace Clippy passed for all targets with warnings denied in 6.32 seconds.
+  Validation used model fixtures only and did not launch Hunk, Codex, or any
+  credential/keychain path.
 
 ### 8. Atomic Qt Cutover and CI Replacement
 

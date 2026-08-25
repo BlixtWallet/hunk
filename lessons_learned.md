@@ -388,3 +388,34 @@ append a correction when later evidence changes one.
   produce different `hunk-app`/Codex artifacts; validate and cache the production
   Qt feature combination directly instead of assuming the broader workspace
   artifact will be reusable.
+
+## 2026-08-25 — Qt Codex catalog and streaming timeline
+
+- A bounded Qt model does not make full reducer projection safe on the event
+  thread. Project catalog and timeline payloads on the existing listener thread,
+  then let the queued Qt callback apply only bounded strings and counters. Drop
+  the unused full `AiSnapshot` there too; replacing a large `BTreeMap` snapshot
+  on the Qt thread can consume a frame even when rendering is virtualized.
+- Stable row IDs matter twice during streaming: they avoid per-token QObject
+  creation and allow QtBridge to emit targeted row changes instead of resetting
+  the whole `ListView`. Keep resets for actual membership/order changes only.
+- Consecutive snapshot coalescing is still useful after projection, but drop the
+  superseded payload after releasing the mailbox mutex. Deallocating hundreds of
+  projected strings while holding the lock can delay the queued Qt drain.
+- A fixed-size newest-thread window can hide the selected thread. Reserve one
+  catalog slot for an older active thread so selection, header metadata, and the
+  visible highlight cannot disagree when a repository has more than 200 threads.
+- Lifecycle acknowledgements are not authoritative selected-thread snapshots.
+  Relabeling the old timeline immediately on `ThreadStarted` briefly attributes
+  it to the new thread; wait for the worker snapshot before changing selected
+  metadata or timeline ownership.
+- Reducer content, metadata summaries, paths, errors, and thread titles are all
+  untrusted display strings. `Text.AutoText` can interpret markup, so AI QML
+  delegates and shared confirmation copy must explicitly use plain-text mode.
+- Tail following must respond to streamed row-height growth as well as row-count
+  changes, but it must turn off as soon as the user begins scrolling. Otherwise
+  a long response repeatedly pulls the viewport away from the history being read.
+- Qt Quick `Text` and `TextEdit` do not expose an identical typography surface:
+  `TextEdit` supports read-only selection but has no `lineHeight` property. Let
+  QML lint the component after converting a message body instead of assuming a
+  styling property transfers between the two types.

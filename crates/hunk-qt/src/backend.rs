@@ -14,6 +14,7 @@ use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString
 
 use crate::ai_models::AiThreadListModel;
 use crate::ai_runtime::{prepare_ai_worker_config, start_ai_runtime};
+use crate::ai_timeline_models::AiTimelineListModel;
 use crate::backend_ai::{apply_ai_runtime_events, reset_ai_runtime_state, stop_ai_runtime};
 pub use crate::backend_state::{Backend, Workspace};
 use crate::backend_state::{DiffCommentRequestKind, ForgeAsyncPayload};
@@ -223,6 +224,7 @@ impl Backend {
         Notify = git_state_changed
     );
     qproperty!("aiThreads", Read = ai_threads, Constant);
+    qproperty!("aiTimeline", Read = ai_timeline, Constant);
     qproperty!("aiReady", Member = ai_ready, Notify = ai_state_changed);
     qproperty!("aiLoading", Member = ai_loading, Notify = ai_state_changed);
     qproperty!(
@@ -246,6 +248,16 @@ impl Backend {
         Notify = ai_state_changed
     );
     qproperty!(
+        "aiActiveThreadTitle",
+        Member = ai_active_thread_title,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiActiveThreadCwd",
+        Member = ai_active_thread_cwd,
+        Notify = ai_state_changed
+    );
+    qproperty!(
         "aiThreadCount",
         Member = ai_thread_count,
         Notify = ai_state_changed
@@ -253,6 +265,31 @@ impl Backend {
     qproperty!(
         "aiRunningThreadCount",
         Member = ai_running_thread_count,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiTimelineTotalTurnCount",
+        Member = ai_timeline_total_turn_count,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiTimelineVisibleTurnCount",
+        Member = ai_timeline_visible_turn_count,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiTimelineHiddenTurnCount",
+        Member = ai_timeline_hidden_turn_count,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiTimelineTotalRowCount",
+        Member = ai_timeline_total_row_count,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiTimelineHiddenRowCount",
+        Member = ai_timeline_hidden_row_count,
         Notify = ai_state_changed
     );
     qproperty!("aiError", Member = ai_error, Notify = ai_state_changed);
@@ -1516,6 +1553,10 @@ impl Backend {
 
     fn ai_threads(&self) -> Rc<RefCell<AiThreadListModel>> {
         self.ai_threads.clone()
+    }
+
+    fn ai_timeline(&self) -> Rc<RefCell<AiTimelineListModel>> {
+        self.ai_timeline.clone()
     }
 
     fn apply_git_payload(&mut self, payload: GitSnapshotPayload) {

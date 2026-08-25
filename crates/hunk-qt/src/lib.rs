@@ -1,5 +1,6 @@
 mod ai_models;
 mod ai_runtime;
+mod ai_timeline_models;
 mod backend;
 mod backend_ai;
 mod backend_state;
@@ -20,7 +21,8 @@ use qtbridge::include_bytes_qml;
 use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 
 pub use ai_models::{AiThreadCatalogProjection, AiThreadItem, AiThreadListModel};
-pub use ai_runtime::{AiEventMailbox, AiRuntimeEvent};
+pub use ai_runtime::{AiEventMailbox, AiProjectedSnapshot, AiRuntimeEvent};
+pub use ai_timeline_models::{AiTimelineItem, AiTimelineListModel, AiTimelineProjection};
 pub use backend::{Backend, Workspace};
 pub use comment_models::{DiffCommentItem, DiffCommentListModel, DiffCommentProjection};
 pub use diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
@@ -39,6 +41,7 @@ pub fn run() -> Result<()> {
     let mut app = QApp::new();
     app.application_name("Hunk")
         .register::<AiThreadListModel>()
+        .register::<AiTimelineListModel>()
         .register::<DiffRowListModel>()
         .register::<DiffCommentListModel>()
         .register::<GitFileListModel>()

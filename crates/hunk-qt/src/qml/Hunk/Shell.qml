@@ -16,22 +16,6 @@ Item {
         backend.select_workspace(workspace)
     }
 
-    function workspaceTitle(workspace) {
-        if (workspace === "git")
-            return "Repository"
-        if (workspace === "ai")
-            return "Codex"
-        return "Review"
-    }
-
-    function workspaceDescription(workspace) {
-        if (workspace === "git")
-            return "Branches, changes, and commits"
-        if (workspace === "ai")
-            return "Threads, turns, and tools"
-        return "Working tree and comparison diffs"
-    }
-
     Rectangle {
         anchors.fill: parent
         color: Theme.canvas
@@ -128,7 +112,7 @@ Item {
             id: sidebarLoader
             anchors.fill: parent
             sourceComponent: root.activeWorkspace === "git" ? gitSidebarComponent
-                : (root.activeWorkspace === "diff" ? diffSidebarComponent : summarySidebarComponent)
+                : (root.activeWorkspace === "diff" ? diffSidebarComponent : aiSidebarComponent)
         }
 
         Rectangle {
@@ -147,7 +131,7 @@ Item {
         anchors.top: header.bottom
         anchors.bottom: parent.bottom
         sourceComponent: root.activeWorkspace === "git" ? gitWorkspaceComponent
-            : (root.activeWorkspace === "diff" ? diffWorkspaceComponent : placeholderWorkspaceComponent)
+            : (root.activeWorkspace === "diff" ? diffWorkspaceComponent : aiWorkspaceComponent)
     }
 
     Component {
@@ -185,69 +169,19 @@ Item {
     }
 
     Component {
-        id: summarySidebarComponent
+        id: aiSidebarComponent
 
-        Rectangle {
-            color: Theme.chrome
-
-            Column {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: 16
-                spacing: 7
-
-                Text {
-                    text: root.workspaceTitle(root.activeWorkspace).toUpperCase()
-                    color: Theme.muted
-                    font.family: Theme.uiFont
-                    font.pixelSize: 10
-                    font.weight: Font.DemiBold
-                    font.letterSpacing: 1.1
-                }
-
-                Text {
-                    width: parent.width
-                    text: root.workspaceDescription(root.activeWorkspace)
-                    color: Theme.foreground
-                    font.family: Theme.uiFont
-                    font.pixelSize: 14
-                    font.weight: Font.Medium
-                    wrapMode: Text.WordWrap
-                }
-            }
+        AiSidebar {
+            backend: root.backend
         }
     }
 
     Component {
-        id: placeholderWorkspaceComponent
+        id: aiWorkspaceComponent
 
-        Item {
-            Column {
-                anchors.centerIn: parent
-                width: Math.min(460, parent.width - 48)
-                spacing: 8
-
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: root.workspaceTitle(root.activeWorkspace)
-                    color: Theme.foreground
-                    font.family: Theme.uiFont
-                    font.pixelSize: 20
-                    font.weight: Font.DemiBold
-                }
-
-                Text {
-                    width: parent.width
-                    text: "The Qt Codex surface will connect to the retained Rust thread service in the AI migration layer."
-                    color: Theme.muted
-                    horizontalAlignment: Text.AlignHCenter
-                    lineHeight: 1.3
-                    wrapMode: Text.WordWrap
-                    font.family: Theme.uiFont
-                    font.pixelSize: 12
-                }
-            }
+        AiWorkspace {
+            objectName: "aiWorkspace"
+            backend: root.backend
         }
     }
 }
