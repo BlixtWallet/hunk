@@ -12,17 +12,25 @@ Item {
     readonly property var sidebarItem: sidebarLoader.item
     readonly property var workspaceItem: workspaceLoader.item
     property var aiDraftStore: ({})
+    property var aiRequestAnswerStore: ({})
     property string aiDraftWorkspaceRoot: ""
 
     function activateWorkspace(workspace) {
         backend.select_workspace(workspace)
     }
 
-    function syncAiDraftWorkspace() {
-        if (aiDraftWorkspaceRoot === backend.aiWorkspaceRoot)
-            return
-        aiDraftWorkspaceRoot = backend.aiWorkspaceRoot
-        aiDraftStore = ({})
+    function syncAiWorkspaceState() {
+        if (aiDraftWorkspaceRoot !== backend.aiWorkspaceRoot) {
+            aiDraftWorkspaceRoot = backend.aiWorkspaceRoot
+            aiDraftStore = ({})
+            aiRequestAnswerStore = ({})
+        }
+        const retainedAnswers = {}
+        for (const requestId in aiRequestAnswerStore) {
+            if (backend.ai_request_pending(requestId))
+                retainedAnswers[requestId] = aiRequestAnswerStore[requestId]
+        }
+        aiRequestAnswerStore = retainedAnswers
     }
 
     Rectangle {
@@ -192,6 +200,7 @@ Item {
             objectName: "aiWorkspace"
             backend: root.backend
             draftStore: root.aiDraftStore
+            requestAnswerStore: root.aiRequestAnswerStore
         }
     }
 
@@ -199,9 +208,9 @@ Item {
         target: root.backend
 
         function onAiStateChanged() {
-            root.syncAiDraftWorkspace()
+            root.syncAiWorkspaceState()
         }
     }
 
-    Component.onCompleted: syncAiDraftWorkspace()
+    Component.onCompleted: syncAiWorkspaceState()
 }

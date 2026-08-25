@@ -330,10 +330,13 @@ fn map_typed_request_error(error: TypedRequestError) -> CodexIntegrationError {
         TypedRequestError::Transport { source, .. } => CodexIntegrationError::WebSocketTransport(
             format!("embedded app-server request failed: {source}"),
         ),
-        TypedRequestError::Server { source, .. } => CodexIntegrationError::JsonRpcServerError {
-            code: source.code,
-            message: source.message,
-        },
+        TypedRequestError::Server { source, .. } => {
+            let source = *source;
+            CodexIntegrationError::JsonRpcServerError {
+                code: source.code,
+                message: source.message,
+            }
+        }
         TypedRequestError::Deserialize { source, .. } => {
             CodexIntegrationError::Serialization(source)
         }

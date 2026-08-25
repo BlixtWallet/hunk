@@ -10,12 +10,18 @@ FocusScope {
     property string currentThreadId: ""
     property bool restoringDraft: false
     property bool submitting: false
+    property bool requestWasBlocking: false
+    property bool restoreFocusAfterRequest: false
+    signal requestFocusRequested
     readonly property alias editor: editor
     readonly property alias sendButton: sendButton
     readonly property alias stopButton: stopButton
+    readonly property bool requestBlocking: backend.aiRequestId.length > 0
+        || backend.aiRequestResolving
     readonly property bool editable: backend.aiReady && !backend.aiLoading
         && !backend.aiRequiresAuthentication && backend.aiActiveThreadId.length > 0
         && !backend.aiPromptPending && !backend.aiInterruptPending
+        && !requestBlocking
     readonly property bool canSubmit: editable && editor.text.trim().length > 0
 
     implicitHeight: 142
@@ -73,8 +79,10 @@ FocusScope {
 
     function syncBackendState() {
         activateThread(backend.aiActiveThreadId)
-        if (currentThreadId.length === 0)
+        if (currentThreadId.length === 0) {
+            requestWasBlocking = requestBlocking
             return
+        }
         const entry = draftEntry(currentThreadId)
         if (entry.pending && backend.aiPromptAcceptedRevision !== entry.acceptedRevision) {
             entry.text = ""
@@ -93,6 +101,12 @@ FocusScope {
         } else {
             submitting = entry.pending && backend.aiPromptPending
         }
+        if (!requestWasBlocking && requestBlocking && restoreFocusAfterRequest)
+            Qt.callLater(() => root.requestFocusRequested())
+        if (requestWasBlocking && !requestBlocking && editable
+                && restoreFocusAfterRequest)
+            Qt.callLater(() => editor.forceActiveFocus())
+        requestWasBlocking = requestBlocking
     }
 
     function submit() {
@@ -173,6 +187,13 @@ FocusScope {
                 font.family: Theme.uiFont
                 font.pixelSize: 12
 
+                onActiveFocusChanged: {
+                    if (activeFocus && !root.requestBlocking)
+                        root.restoreFocusAfterRequest = true
+                    else if (!activeFocus && !root.requestBlocking
+                            && !root.requestWasBlocking)
+                        root.restoreFocusAfterRequest = false
+                }
                 onTextChanged: root.saveCurrentDraft()
                 onCursorRectangleChanged: {
                     if (cursorRectangle.y < editorViewport.contentY)
@@ -201,9 +222,11 @@ FocusScope {
                 visible: editor.text.length === 0
                 text: root.backend.aiActiveThreadId.length === 0
                     ? "Select or create a thread to begin"
-                    : (root.backend.aiTurnRunning
-                        ? "Add instructions to the active turn…"
-                        : "Ask Codex to work on this repository…")
+                    : (root.backend.aiRequestId.length > 0
+                        ? "Respond to Codex above to continue"
+                        : (root.backend.aiTurnRunning
+                            ? "Add instructions to the active turn…"
+                            : "Ask Codex to work on this repository…"))
                 color: Theme.faint
                 font.family: Theme.uiFont
                 font.pixelSize: 12
@@ -252,7 +275,9 @@ FocusScope {
 
             Text {
                 text: root.backend.aiPromptPending ? "SENDING"
-                    : (root.backend.aiInterruptPending ? "STOPPING" : "ENTER TO SEND")
+                    : (root.backend.aiInterruptPending ? "STOPPING"
+                        : (root.backend.aiRequestId.length > 0
+                            ? "RESPONSE REQUIRED" : "ENTER TO SEND"))
                 color: Theme.faint
                 font.family: Theme.monoFont
                 font.pixelSize: 8
@@ -282,6 +307,7 @@ FocusScope {
             reloadDraftStore()
     }
     Component.onCompleted: {
+        requestWasBlocking = requestBlocking
         activateThread(backend.aiActiveThreadId)
         if (editable && !submitting)
             editor.forceActiveFocus()

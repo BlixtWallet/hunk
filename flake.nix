@@ -23,7 +23,7 @@
             inherit system;
             overlays = [ rust-overlay.overlays.default ];
           };
-          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+          rustToolchain = pkgs.rust-bin.stable."1.98.0".default.override {
             extensions = [ "rust-src" ];
           };
           linuxRuntimeRpathLibraries = pkgs.lib.optionals pkgs.stdenv.isLinux (

@@ -637,7 +637,7 @@ fn browser_action_message(action: &BrowserAction, use_backend: bool) -> &'static
 fn browser_frame_png_data_url(frame: &hunk_browser::BrowserFrame) -> Option<String> {
     let metadata = frame.metadata();
     let mut rgba = frame.bgra().to_vec();
-    for pixel in rgba.chunks_exact_mut(4) {
+    for pixel in rgba.as_chunks_mut::<4>().0 {
         pixel.swap(0, 2);
     }
 

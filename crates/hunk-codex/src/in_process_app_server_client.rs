@@ -45,7 +45,7 @@ pub enum TypedRequestError {
     },
     Server {
         method: String,
-        source: JSONRPCErrorError,
+        source: Box<JSONRPCErrorError>,
     },
     Deserialize {
         method: String,
@@ -395,7 +395,7 @@ impl InProcessAppServerClient {
             })?;
         let result = response.map_err(|source| TypedRequestError::Server {
             method: method.clone(),
-            source,
+            source: Box::new(source),
         })?;
         serde_json::from_value(result)
             .map_err(|source| TypedRequestError::Deserialize { method, source })

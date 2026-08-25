@@ -1,5 +1,6 @@
 mod ai_composer;
 mod ai_models;
+mod ai_requests;
 mod ai_runtime;
 mod ai_timeline_models;
 mod backend;
@@ -23,6 +24,9 @@ use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 
 pub use ai_composer::AiPromptReceipt;
 pub use ai_models::{AiThreadCatalogProjection, AiThreadItem, AiThreadListModel};
+pub use ai_requests::{
+    AiPendingOption, AiPendingQuestion, AiPendingRequest, AiPendingRequestProjection,
+};
 pub use ai_runtime::{AiEventMailbox, AiProjectedSnapshot, AiRuntimeEvent};
 pub use ai_timeline_models::{AiTimelineItem, AiTimelineListModel, AiTimelineProjection};
 pub use backend::{Backend, Workspace};

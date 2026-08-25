@@ -210,7 +210,7 @@ jobs:
           clean: false
 
       - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.98.0
 
       - name: Install Zig
         uses: mlugg/setup-zig@v2
@@ -275,7 +275,7 @@ jobs:
           clean: false
 
       - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.98.0
 
       - name: Install AWS CLI when missing
         run: |

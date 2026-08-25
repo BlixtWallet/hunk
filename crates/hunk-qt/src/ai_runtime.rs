@@ -10,6 +10,7 @@ use hunk_app::ai::{
 };
 
 use crate::ai_models::AiThreadCatalogProjection;
+use crate::ai_requests::AiPendingRequestProjection;
 use crate::ai_timeline_models::AiTimelineProjection;
 
 pub struct AiProjectedSnapshot {
@@ -17,6 +18,7 @@ pub struct AiProjectedSnapshot {
     pub requires_openai_auth: bool,
     pub threads: AiThreadCatalogProjection,
     pub timeline: AiTimelineProjection,
+    pub requests: AiPendingRequestProjection,
 }
 
 pub enum AiRuntimeEvent {
@@ -251,7 +253,7 @@ fn project_worker_event(event: AiWorkerEvent) -> AiRuntimeEvent {
     match payload {
         AiWorkerEventPayload::Snapshot(snapshot) => {
             let requires_openai_auth = snapshot.requires_openai_auth;
-            let threads = AiThreadCatalogProjection::from_state(
+            let mut threads = AiThreadCatalogProjection::from_state(
                 &snapshot.state,
                 snapshot.active_thread_id.as_deref(),
             );
@@ -259,11 +261,24 @@ fn project_worker_event(event: AiWorkerEvent) -> AiRuntimeEvent {
                 &snapshot.state,
                 (!threads.active_thread_id.is_empty()).then_some(threads.active_thread_id.as_str()),
             );
+            let visible_thread_ids = threads
+                .items
+                .iter()
+                .map(|thread| thread.thread_id.as_str())
+                .collect::<Vec<_>>();
+            let requests = AiPendingRequestProjection::from_pending(
+                (!threads.active_thread_id.is_empty()).then_some(threads.active_thread_id.as_str()),
+                snapshot.pending_approvals.as_slice(),
+                snapshot.pending_user_inputs.as_slice(),
+                visible_thread_ids.as_slice(),
+            );
+            threads.mark_attention(requests.attention_thread_ids());
             AiRuntimeEvent::Snapshot(Box::new(AiProjectedSnapshot {
                 workspace_key,
                 requires_openai_auth,
                 threads,
                 timeline,
+                requests,
             }))
         }
         payload => AiRuntimeEvent::Worker(Box::new(AiWorkerEvent {

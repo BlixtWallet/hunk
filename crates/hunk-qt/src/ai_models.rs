@@ -14,6 +14,7 @@ pub struct AiThreadItem {
     pub status: String,
     pub active: bool,
     pub running: bool,
+    pub attention: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -96,6 +97,7 @@ impl AiThreadCatalogProjection {
                     status: thread_status_label(thread.status).to_owned(),
                     active: active_thread_id == Some(thread.id.as_str()),
                     running,
+                    attention: false,
                     created_at: thread.created_at,
                     updated_at: thread.updated_at,
                 }
@@ -121,6 +123,12 @@ impl AiThreadCatalogProjection {
                 .unwrap_or_default(),
             thread_count,
             running_thread_count,
+        }
+    }
+
+    pub fn mark_attention(&mut self, thread_ids: &BTreeSet<String>) {
+        for item in &mut self.items {
+            item.attention = thread_ids.contains(item.thread_id.as_str());
         }
     }
 }
