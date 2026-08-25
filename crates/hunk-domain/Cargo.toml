@@ -4,11 +4,16 @@ version = "0.1.0"
 license.workspace = true
 edition = "2024"
 
+[features]
+default = ["database", "markdown-preview"]
+database = ["dep:rusqlite"]
+markdown-preview = ["dep:comrak", "dep:hunk-language"]
+
 [dependencies]
 anyhow = "1.0"
 dirs = "6.0"
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"], optional = true }
 serde = { version = "1.0", features = ["derive"] }
 toml = "1.1.2"
-comrak = { version = "0.52.0", default-features = false }
-hunk-language = { path = "../hunk-language" }
+comrak = { version = "0.52.0", default-features = false, optional = true }
+hunk-language = { path = "../hunk-language", optional = true }

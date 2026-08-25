@@ -1,4 +1,8 @@
 module Hunk
 singleton Theme 1.0 Theme.qml
+ActionButton 1.0 ActionButton.qml
+ConfirmationDialog 1.0 ConfirmationDialog.qml
+GitSidebar 1.0 GitSidebar.qml
+GitWorkspace 1.0 GitWorkspace.qml
 NavigationButton 1.0 NavigationButton.qml
 Shell 1.0 Shell.qml

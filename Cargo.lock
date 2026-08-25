@@ -8794,9 +8794,12 @@ name = "hunk-qt"
 version = "0.0.11"
 dependencies = [
  "anyhow",
+ "hunk-domain",
+ "hunk-git",
  "qtbridge",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

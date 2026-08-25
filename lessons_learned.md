@@ -162,3 +162,28 @@ append a correction when later evidence changes one.
   the job: the Qt foundation check remained unassigned for more than 13 minutes.
   Use an ephemeral Ubuntu runner with pinned Nix, Qt, and Rust caches for PR
   feedback; keep release-runner changes separate until Qt packaging is ready.
+
+## 2026-08-25 — Qt Git adapter and dependency boundaries
+
+- Depending on a broad application crate from a thin UI adapter defeats much
+  of the build-time reason for separating the frontend. The first real Qt Git
+  build through `hunk-app` compiled the Codex, browser, AWS, image, and language
+  graph and took 4 minutes 26 seconds. Moving the production snapshot/command
+  API to `hunk-git` reduced the affected build to 2 minutes 54 seconds while
+  keeping Qt types out of the core.
+- A small type dependency can still hide a large compile graph. `hunk-git`
+  needed only Hunk Domain config/path/state types, but unconditional database
+  and Markdown dependencies pulled SQLite, Comrak, Hunk Language, and every
+  Tree-sitter grammar. Optional default-on Domain features preserve existing
+  consumers while letting the Git-only graph build in 1 minute 24 seconds on
+  the same cache; its immediate rebuild took 0.41 seconds.
+- QtBridge list models should be replaced once per owned snapshot on the Qt
+  thread. Recycling QML `ListView` delegates with bounded cache buffers kept a
+  1,500-file interaction test virtualized without per-row Rust QObjects.
+- Cross-thread invocation does not require converting an owned snapshot to
+  JSON. Store it in a small epoch-keyed Rust mailbox and queue only the epoch
+  through QtBridge; the Qt thread can then take the already-built payload
+  without parse work inside the frame budget.
+- Switching repositories is also a refresh-cancellation boundary. Increment
+  the adapter epoch before starting the new load so an older background result
+  cannot overwrite the newly selected root.

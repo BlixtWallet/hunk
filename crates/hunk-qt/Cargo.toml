@@ -12,6 +12,9 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
+hunk-domain = { path = "../hunk-domain", default-features = false }
+hunk-git = { path = "../hunk-git" }
 qtbridge.workspace = true
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2.5"

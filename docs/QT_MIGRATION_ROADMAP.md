@@ -197,7 +197,7 @@ Phase 3 ownership inventory:
 
 | Workflow | Headless Rust ownership | Temporary GPUI ownership | Qt adapter implication |
 | --- | --- | --- | --- |
-| Git | `hunk-app::git` owns refresh policy, repository loading, workflow fingerprints, line statistics, and owned snapshots; production operations remain in `hunk-git`. | The root `Entity` stores the last snapshot. `Context` schedules work, merges refresh requests, rejects stale epochs, and notifies paint. | Invoke the same synchronous service off the Qt thread and apply one snapshot on the UI thread. |
+| Git | `hunk-app::git` retains the legacy frontend's refresh policy and fingerprint coordination. `hunk-git::workspace` owns the toolkit-neutral repository snapshot and production stage, commit, restore, branch, and network commands consumed by Qt. | The root `Entity` stores the last snapshot. `Context` schedules work, merges refresh requests, rejects stale epochs, and notifies paint. | Invoke `hunk-git::workspace` off the Qt thread, reject stale epochs, and apply one batched snapshot on the UI thread. |
 | Diff | `hunk-app::diff` owns compare/historical commands, patch parsing, stable row projection, syntax/intra-line segments, and binary/error/collapsed states. | The root `Entity` owns active selection, viewport, search, comments, expansion, focus, and renderer caches. `Window` and `Context` own input and repaint. | Bridge immutable batched projections; keep selection, viewport, and scene-graph state in Qt. |
 | AI | `hunk-app::ai` owns the single worker thread, command/event channels, bootstrap/reconnect policy, workspace paths, rollout fallback, and dynamic-tool execution. `hunk-codex` still owns app-server protocol, reducer state, thread lifecycle semantics, and the embedded client. | The root `Entity` polls and applies worker events. `Window`, focus handles, dialogs, notifications, browser frames, and confirmation presentation remain frontend concerns. | Keep one Rust worker. The Qt layer sends commands, batches event application, and presents renderer/platform interactions. |
 | Terminal/browser support | Existing headless runtime crates retain session/browser state. | GPUI still owns terminal elements, browser frame presentation, focus routing, subscriptions, and input translation. | These adapters are explicitly deferred to the AI Qt phase; no domain state should move into QObjects. |
@@ -278,14 +278,61 @@ selection, and expansion feedback is immediate and never ornamental.
 
 ### 5. Git Tab
 
-- [ ] Expose repository status, change groups, branches, commits, and review metadata through QtBridge models.
-- [ ] Implement refresh and cancellation without blocking the Qt thread.
-- [ ] Implement stage/unstage/discard/commit and required confirmations.
-- [ ] Implement branch selection/activation and recent commits.
+- [x] Expose repository status, change groups, branches, and commits through QtBridge models.
+- [x] Implement refresh, stale-result rejection, and repository switching without blocking the Qt thread.
+- [x] Implement stage/unstage/discard/commit and required confirmations.
+- [x] Implement branch selection/activation and recent commits.
 - [ ] Implement forge authentication/review actions while skipping unattended keychain-blocked validation paths.
-- [ ] Add Rust service tests and QML interaction tests.
-- [ ] Visually inspect empty, loading, error, and populated states.
+- [x] Add Rust service tests and QML interaction tests.
+- [x] Visually inspect empty, loading, error, and populated states.
 - [ ] Complete the mandatory working loop and stacked PR.
+
+Phase 5 implementation decisions:
+
+- The production Git snapshot and commands live in `hunk-git::workspace`; the
+  Qt adapter owns only background scheduling, stale epochs, model replacement,
+  presentation state, and confirmation UI.
+- Background refreshes place owned snapshots in an epoch-keyed Rust mailbox;
+  the queued Qt callback transfers only the epoch. This avoids serializing and
+  parsing a large repository snapshot on the frame-sensitive Qt thread.
+- Repository, branch, commit, and file rows use three reset-in-batch QtBridge
+  list models. QML uses recycling `ListView` delegates with bounded cache
+  buffers; it does not create one QObject per repository item.
+- Hunk restores the active project from the existing application state and
+  exposes a native Qt folder chooser for changing repositories. A selection is
+  persisted only after the selected folder loads successfully as a Git repo.
+- Discard is the sole destructive working-copy action in this slice and always
+  requires an explicit confirmation before Rust receives the command.
+- `hunk-domain` keeps its database and Markdown/language features enabled by
+  default, but permits narrow consumers such as `hunk-git` to opt out. This
+  prevents a Git-only Qt build from compiling SQLite, Comrak, and every
+  Tree-sitter grammar.
+
+Phase 5 macOS build observations through Nix, all using the same default
+external-volume `target/` and Cargo cache:
+
+- The initial real `hunk-qt` build through monolithic `hunk-app` took 4 minutes
+  26 seconds and compiled 1,408 units, including the Codex/browser/AWS graph.
+- Moving the adapter to `hunk-git::workspace` reduced the next affected build
+  to 2 minutes 54 seconds.
+- Disabling optional Hunk Domain database/Markdown features for the Git-only
+  graph reduced the next affected build to 1 minute 24 seconds. An immediate
+  warm rebuild took 0.41 seconds, and a warm focused check took 0.76 seconds.
+- These are local dependency-boundary observations, not clean-machine CI
+  promises. Vendored libgit2/OpenSSL and QtBridge C++ compilation remain
+  material on cold macOS builds; Linux and Windows cache behavior must still be
+  measured in PR CI.
+- The QML suite exercises 1,500 file rows and verifies distant rows are not
+  instantiated. The final 8 ms/120 Hz hardware audit remains a cutover gate,
+  especially for the substantially heavier Diff and streaming AI surfaces.
+
+Phase 5 local validation through Nix:
+
+- The locked full workspace built successfully in 47.04 seconds on the shared
+  warm external-volume cache, and the locked full workspace test suite passed.
+- Workspace Clippy passed for all targets with warnings denied.
+- All nine QML interaction/visual-state tests passed together with `qmllint`.
+- The real `hunk_qt` binary launched offscreen without QML or backend errors.
 
 ### 6. Diff Tab
 
