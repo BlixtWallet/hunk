@@ -19,6 +19,9 @@ pub(super) fn reset_ai_runtime_state(backend: &mut Backend) {
     stop_ai_runtime(backend);
     backend.ai_threads.borrow_mut().replace(Vec::new());
     backend.ai_timeline.borrow_mut().replace(Vec::new());
+    backend
+        .ai_message_queue
+        .reset_pending_after_runtime_failure();
     backend.ai_ready = false;
     backend.ai_loading = false;
     backend.ai_requires_authentication = false;
@@ -94,15 +97,26 @@ pub(super) fn apply_ai_runtime_events(backend: &mut Backend, events: Vec<AiRunti
                         }
                     }
                     AiWorkerEventPayload::SteerAccepted(pending) => {
-                        if backend
+                        let direct_prompt_accepted = backend
                             .ai_prompt_receipt
                             .as_ref()
-                            .is_some_and(|receipt| receipt.thread_id() == pending.thread_id)
-                        {
+                            .is_some_and(|receipt| receipt.thread_id() == pending.thread_id);
+                        if direct_prompt_accepted {
                             accept_pending_prompt(backend);
                         }
-                        backend.ai_status_message =
-                            "Added the message to the active turn.".to_owned();
+                        let queued_prompt_accepted = !direct_prompt_accepted
+                            && backend
+                                .ai_message_queue
+                                .accept_steer(pending.thread_id.as_str(), pending.prompt.as_str());
+                        if queued_prompt_accepted {
+                            sync_ai_timeline_queue(backend);
+                        }
+                        backend.ai_status_message = if queued_prompt_accepted {
+                            "Sent the next queued message to Codex."
+                        } else {
+                            "Added the message to the active turn."
+                        }
+                        .to_owned();
                     }
                     AiWorkerEventPayload::BrowserToolCall {
                         params,
@@ -152,6 +166,7 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
         requires_openai_auth,
         threads: projection,
         timeline,
+        queue,
         requests,
         ..
     } = projected;
@@ -168,6 +183,7 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     }) {
         accept_pending_prompt(backend);
     }
+    backend.ai_message_queue.reconcile(&queue);
     if !backend.ai_interrupt_turn_id.is_empty()
         && projection.active_thread_id == backend.ai_interrupt_thread_id
         && timeline.active_turn_id != backend.ai_interrupt_turn_id
@@ -188,7 +204,7 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
         .ai_threads
         .borrow_mut()
         .replace_if_changed(projection.items);
-    backend.ai_timeline.borrow_mut().sync(timeline.items);
+    let timeline_items = timeline.items;
     backend.ai_active_thread_id = projection.active_thread_id;
     backend.ai_active_thread_title = projection.active_thread_title;
     backend.ai_active_thread_cwd = projection.active_thread_cwd;
@@ -212,6 +228,8 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     } else if backend.ai_thread_action.is_none() {
         backend.ai_status_message.clear();
     }
+    maybe_submit_ready_ai_queued_messages(backend, &queue);
+    sync_ai_timeline_snapshot(backend, timeline_items);
 }
 
 fn fail_ai_runtime(backend: &mut Backend, message: String) {
@@ -232,6 +250,10 @@ pub(super) fn queue_ai_prompt(backend: &mut Backend, prompt: String) -> bool {
         || backend.ai_active_thread_id.is_empty()
         || backend.ai_thread_action.is_some()
         || backend.ai_prompt_receipt.is_some()
+        || (backend
+            .ai_message_queue
+            .thread_is_sending(backend.ai_active_thread_id.as_str())
+            && !backend.ai_turn_running)
         || !backend.ai_interrupt_turn_id.is_empty()
         || backend.ai_requests.current.is_some()
         || !backend.ai_request_resolving_id.is_empty()
@@ -256,6 +278,56 @@ pub(super) fn queue_ai_prompt(backend: &mut Backend, prompt: String) -> bool {
     }
     backend.ai_prompt_receipt = Some(receipt);
     true
+}
+
+pub(super) fn queue_ai_follow_up(backend: &mut Backend, prompt: String) -> bool {
+    if !backend.ai_ready
+        || backend.ai_loading
+        || backend.ai_requires_authentication
+        || backend.ai_active_thread_id.is_empty()
+        || backend.ai_active_turn_id.is_empty()
+        || !backend.ai_turn_running
+        || backend.ai_thread_action.is_some()
+        || backend.ai_prompt_receipt.is_some()
+        || !backend.ai_interrupt_thread_id.is_empty()
+        || backend.ai_requests.current.is_some()
+        || !backend.ai_request_resolving_id.is_empty()
+    {
+        return false;
+    }
+    match backend
+        .ai_message_queue
+        .enqueue(backend.ai_active_thread_id.clone(), prompt)
+    {
+        Ok(()) => {
+            backend.ai_error.clear();
+            backend.ai_status_message = "Queued a follow-up for this thread.".to_owned();
+            sync_ai_timeline_queue(backend);
+            true
+        }
+        Err(error) => {
+            backend.ai_status_message = error.to_owned();
+            false
+        }
+    }
+}
+
+pub(super) fn edit_last_ai_queued_prompt(backend: &mut Backend) -> String {
+    let prompt = backend
+        .ai_message_queue
+        .edit_latest(backend.ai_active_thread_id.as_str())
+        .unwrap_or_default();
+    if !prompt.is_empty() {
+        backend.ai_status_message = "Moved the newest queued message back to the draft.".to_owned();
+        sync_ai_timeline_queue(backend);
+    }
+    prompt
+}
+
+pub(super) fn take_ai_recovered_prompt(backend: &mut Backend, thread_id: String) -> String {
+    backend
+        .ai_message_queue
+        .take_recovered_prompt(thread_id.as_str())
 }
 
 pub(super) fn queue_ai_interrupt(backend: &mut Backend) -> bool {
@@ -283,6 +355,9 @@ pub(super) fn queue_ai_interrupt(backend: &mut Backend) -> bool {
     }
     backend.ai_interrupt_thread_id = thread_id;
     backend.ai_interrupt_turn_id = turn_id;
+    backend
+        .ai_message_queue
+        .mark_interrupt_restore(backend.ai_interrupt_thread_id.clone());
     true
 }
 
@@ -417,6 +492,7 @@ pub(super) fn queue_ai_archive_thread(backend: &mut Backend, thread_id: String) 
     if thread_action_blocked(backend)
         || thread_id.is_empty()
         || backend.ai_requests.thread_needs_attention(thread_id)
+        || backend.ai_message_queue.thread_count(thread_id) > 0
         || !backend.ai_threads.borrow().contains_thread_id(thread_id)
     {
         return false;
@@ -546,6 +622,87 @@ fn clear_pending_ai_commands(backend: &mut Backend) {
     backend.ai_interrupt_thread_id.clear();
     backend.ai_interrupt_turn_id.clear();
     backend.ai_request_resolving_id.clear();
+    backend
+        .ai_message_queue
+        .reset_pending_after_runtime_failure();
+    sync_ai_timeline_queue(backend);
+}
+
+pub(super) fn clear_ai_message_queue(backend: &mut Backend) {
+    backend.ai_message_queue.clear();
+    sync_ai_timeline_queue(backend);
+}
+
+fn maybe_submit_ready_ai_queued_messages(
+    backend: &mut Backend,
+    projection: &crate::AiQueueProjection,
+) {
+    if backend.ai_thread_action.is_some() || !backend.ai_ready {
+        return;
+    }
+    let mut blocked_thread_ids = backend.ai_requests.attention_thread_ids().clone();
+    if let Some(receipt) = &backend.ai_prompt_receipt {
+        blocked_thread_ids.insert(receipt.thread_id().to_owned());
+    }
+    if !backend.ai_interrupt_thread_id.is_empty() {
+        blocked_thread_ids.insert(backend.ai_interrupt_thread_id.clone());
+    }
+    let ready_thread_ids = backend
+        .ai_message_queue
+        .ready_thread_ids(projection, &blocked_thread_ids);
+    for thread_id in ready_thread_ids {
+        let Some(thread) = projection.threads.get(thread_id.as_str()) else {
+            continue;
+        };
+        let Some(queued) = backend
+            .ai_message_queue
+            .mark_next_pending(thread_id.as_str(), thread.latest_sequence)
+        else {
+            continue;
+        };
+        let sent = send_ai_command(
+            backend,
+            AiWorkerCommand::SendPrompt {
+                thread_id: queued.thread_id,
+                prompt: Some(queued.prompt),
+                local_image_paths: Vec::new(),
+                selected_skills: Vec::new(),
+                skill_bindings: Vec::new(),
+                session_overrides: AiTurnSessionOverrides::default(),
+            },
+            "Sending the next queued message to Codex…",
+        );
+        if !sent {
+            break;
+        }
+    }
+}
+
+fn sync_ai_timeline_snapshot(backend: &mut Backend, mut items: Vec<crate::AiTimelineItem>) {
+    let queue_items = backend
+        .ai_message_queue
+        .timeline_items(backend.ai_active_thread_id.as_str());
+    let hidden_authoritative_rows = items
+        .len()
+        .saturating_add(queue_items.len())
+        .saturating_sub(crate::AI_TIMELINE_MAX_VISIBLE_ROWS)
+        .min(items.len());
+    items.drain(..hidden_authoritative_rows);
+    items.extend(queue_items);
+    backend.ai_timeline.borrow_mut().sync(items);
+    backend.ai_timeline_hidden_row_count = backend
+        .ai_timeline_hidden_row_count
+        .saturating_add(i32::try_from(hidden_authoritative_rows).unwrap_or(i32::MAX));
+}
+
+fn sync_ai_timeline_queue(backend: &mut Backend) {
+    let items = backend
+        .ai_message_queue
+        .timeline_items(backend.ai_active_thread_id.as_str());
+    let (_, hidden_authoritative_rows) = backend.ai_timeline.borrow_mut().sync_queue_items(items);
+    backend.ai_timeline_hidden_row_count = backend
+        .ai_timeline_hidden_row_count
+        .saturating_add(i32::try_from(hidden_authoritative_rows).unwrap_or(i32::MAX));
 }
 
 fn reject_ai_request(backend: &mut Backend, message: &str) -> bool {
@@ -556,6 +713,25 @@ fn reject_ai_request(backend: &mut Backend, message: &str) -> bool {
 
 pub(super) fn ai_prompt_pending(backend: &Backend) -> bool {
     backend.ai_prompt_receipt.is_some()
+}
+
+pub(super) fn ai_queued_message_count(backend: &Backend) -> i32 {
+    i32::try_from(backend.ai_message_queue.total_count()).unwrap_or(i32::MAX)
+}
+
+pub(super) fn ai_active_queued_message_count(backend: &Backend) -> i32 {
+    i32::try_from(
+        backend
+            .ai_message_queue
+            .thread_count(backend.ai_active_thread_id.as_str()),
+    )
+    .unwrap_or(i32::MAX)
+}
+
+pub(super) fn ai_active_queue_sending(backend: &Backend) -> bool {
+    backend
+        .ai_message_queue
+        .thread_is_sending(backend.ai_active_thread_id.as_str())
 }
 
 pub(super) fn ai_interrupt_pending(backend: &Backend) -> bool {

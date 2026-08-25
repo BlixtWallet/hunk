@@ -91,6 +91,10 @@ TestCase {
         property bool aiThreadActionPending: false
         property bool aiPromptPending: false
         property int aiPromptAcceptedRevision: 0
+        property int aiQueuedMessageCount: 0
+        property int aiActiveQueuedMessageCount: 0
+        property int nextAiQueuedMessageId: 0
+        property bool aiActiveQueueSending: false
         property bool aiInterruptPending: false
         property int aiPendingRequestCount: 0
         property int aiActiveRequestCount: 0
@@ -145,6 +149,7 @@ TestCase {
         property string lastAnswersJson: ""
         property bool failNextAiRequest: false
         property var pendingAiRequestIds: []
+        property var recoveredAiPrompts: ({})
 
         signal diffCommentsStateChanged
         signal aiStateChanged
@@ -448,6 +453,82 @@ TestCase {
             aiStateChanged()
             return true
         }
+        function queue_ai_follow_up(prompt) {
+            const text = prompt.trim()
+            if (!aiReady || aiLoading || aiRequiresAuthentication
+                    || !aiTurnRunning || aiPromptPending || aiInterruptPending
+                    || aiRequestId.length > 0 || aiRequestResolving
+                    || text.length === 0 || aiQueuedMessageCount >= 64)
+                return false
+            record("queue_ai_follow_up", text)
+            nextAiQueuedMessageId += 1
+            aiTimelineModel.append({
+                row_id: "queued-message:" + nextAiQueuedMessageId,
+                turn_id: "",
+                kind: "queuedMessage",
+                role: "user",
+                title: "You",
+                text: text,
+                status: "queued",
+                streaming: false,
+                mono: false,
+                truncated: false,
+                last_sequence: 0
+            })
+            aiQueuedMessageCount += 1
+            aiActiveQueuedMessageCount += 1
+            aiStateChanged()
+            return true
+        }
+        function first_queued_ai_message_index() {
+            for (let index = 0; index < aiTimelineModel.count; ++index) {
+                if (aiTimelineModel.get(index).kind === "queuedMessage")
+                    return index
+            }
+            return -1
+        }
+        function edit_last_ai_queued_prompt() {
+            for (let index = aiTimelineModel.count - 1; index >= 0; --index) {
+                const queued = aiTimelineModel.get(index)
+                if (queued.kind === "queuedMessage" && queued.status === "queued") {
+                    const prompt = queued.text
+                    aiTimelineModel.remove(index)
+                    aiQueuedMessageCount -= 1
+                    aiActiveQueuedMessageCount -= 1
+                    record("edit_last_ai_queued_prompt", prompt)
+                    aiStateChanged()
+                    return prompt
+                }
+            }
+            return ""
+        }
+        function take_ai_recovered_prompt(threadId) {
+            const prompt = recoveredAiPrompts[threadId] || ""
+            delete recoveredAiPrompts[threadId]
+            return prompt
+        }
+        function finish_ai_turn() {
+            aiTurnRunning = false
+            aiActiveTurnId = ""
+            const queuedIndex = first_queued_ai_message_index()
+            if (queuedIndex >= 0) {
+                aiTimelineModel.setProperty(queuedIndex, "status", "sending")
+                aiTimelineModel.setProperty(queuedIndex, "streaming", true)
+                aiActiveQueueSending = true
+                record("send_queued_ai_prompt", aiTimelineModel.get(queuedIndex).text)
+            }
+            aiStateChanged()
+        }
+        function accept_queued_ai_prompt() {
+            const queuedIndex = first_queued_ai_message_index()
+            if (queuedIndex < 0)
+                return
+            aiTimelineModel.remove(queuedIndex)
+            aiQueuedMessageCount -= 1
+            aiActiveQueuedMessageCount -= 1
+            aiActiveQueueSending = false
+            aiStateChanged()
+        }
         function accept_ai_prompt() {
             aiPromptPending = false
             aiPromptAcceptedRevision += 1
@@ -471,6 +552,20 @@ TestCase {
             aiInterruptPending = false
             aiTurnRunning = false
             aiActiveTurnId = ""
+            if (aiActiveQueuedMessageCount > 0) {
+                const prompts = []
+                for (let index = aiTimelineModel.count - 1; index >= 0; --index) {
+                    const item = aiTimelineModel.get(index)
+                    if (item.kind === "queuedMessage") {
+                        prompts.unshift(item.text)
+                        aiTimelineModel.remove(index)
+                    }
+                }
+                recoveredAiPrompts[aiActiveThreadId] = prompts.join("\n\n")
+                aiQueuedMessageCount = 0
+                aiActiveQueuedMessageCount = 0
+                aiActiveQueueSending = false
+            }
             aiStateChanged()
         }
         function set_ai_attention(threadId, attention) {
@@ -853,6 +948,10 @@ TestCase {
         fakeBackend.aiThreadActionPending = false
         fakeBackend.aiPromptPending = false
         fakeBackend.aiPromptAcceptedRevision = 0
+        fakeBackend.aiQueuedMessageCount = 0
+        fakeBackend.aiActiveQueuedMessageCount = 0
+        fakeBackend.nextAiQueuedMessageId = 0
+        fakeBackend.aiActiveQueueSending = false
         fakeBackend.aiInterruptPending = false
         fakeBackend.aiPendingRequestCount = 0
         fakeBackend.aiActiveRequestCount = 0
@@ -876,6 +975,7 @@ TestCase {
         fakeBackend.lastAnswersJson = ""
         fakeBackend.failNextAiRequest = false
         fakeBackend.pendingAiRequestIds = []
+        fakeBackend.recoveredAiPrompts = ({})
         shell.aiDraftWorkspaceRoot = fakeBackend.aiWorkspaceRoot
         shell.aiDraftStore = ({})
         shell.aiRequestAnswerStore = ({})
@@ -1163,6 +1263,104 @@ TestCase {
         composer.editor.text = "Adjust the active turn"
         composer.submit()
         compare(fakeBackend.lastCommand, "steer_ai_prompt")
+    }
+
+    function test_aiComposerQueuesAndEditsFollowUpsWithKeyboardControls() {
+        openAiWorkspace()
+        const workspace = shell.workspaceItem
+        const composer = workspace.composer
+        composer.editor.forceActiveFocus()
+        composer.editor.text = "Run the focused tests after this turn"
+
+        keyClick(Qt.Key_Tab)
+
+        compare(fakeBackend.lastCommand, "queue_ai_follow_up")
+        compare(fakeBackend.lastArgument, "Run the focused tests after this turn")
+        compare(composer.editor.text, "")
+        compare(fakeBackend.aiActiveQueuedMessageCount, 1)
+        tryCompare(workspace.timelineListView, "count", 5)
+
+        composer.editor.text = "Then review the queue lifecycle"
+        keyClick(Qt.Key_Tab)
+        compare(fakeBackend.aiActiveQueuedMessageCount, 2)
+
+        composer.editor.text = "Preserve this draft"
+        const commandCount = fakeBackend.commandCount
+        keyClick(Qt.Key_Up, Qt.ControlModifier | Qt.ShiftModifier)
+        compare(fakeBackend.commandCount, commandCount)
+        compare(composer.editor.text, "Preserve this draft")
+        compare(fakeBackend.aiActiveQueuedMessageCount, 2)
+
+        composer.editor.text = ""
+        keyClick(Qt.Key_Up, Qt.ControlModifier | Qt.ShiftModifier)
+
+        compare(fakeBackend.lastCommand, "edit_last_ai_queued_prompt")
+        compare(composer.editor.text, "Then review the queue lifecycle")
+        compare(fakeBackend.aiActiveQueuedMessageCount, 1)
+    }
+
+    function test_aiQueuedFollowUpWaitsForAcceptanceBeforeLeavingTimeline() {
+        openAiWorkspace()
+        const workspace = shell.workspaceItem
+        const composer = workspace.composer
+        composer.editor.text = "Continue after the current turn"
+        composer.queueFollowUp()
+
+        fakeBackend.finish_ai_turn()
+
+        compare(fakeBackend.lastCommand, "send_queued_ai_prompt")
+        verify(fakeBackend.aiActiveQueueSending)
+        verify(!composer.editor.enabled)
+        const queuedIndex = fakeBackend.first_queued_ai_message_index()
+        compare(aiTimelineModel.get(queuedIndex).status, "sending")
+
+        fakeBackend.accept_queued_ai_prompt()
+
+        compare(fakeBackend.aiActiveQueuedMessageCount, 0)
+        verify(!fakeBackend.aiActiveQueueSending)
+        verify(composer.editor.enabled)
+        tryVerify(() => composer.editor.activeFocus)
+    }
+
+    function test_aiInterruptRestoresQueuedFollowUpsToTheThreadDraft() {
+        openAiWorkspace()
+        const composer = shell.workspaceItem.composer
+        composer.editor.text = "Do not lose this queued follow-up"
+        composer.queueFollowUp()
+
+        composer.interrupt()
+        fakeBackend.complete_ai_interrupt()
+
+        compare(fakeBackend.aiActiveQueuedMessageCount, 0)
+        compare(composer.editor.text, "Do not lose this queued follow-up")
+        verify(composer.editor.enabled)
+        tryVerify(() => composer.editor.activeFocus)
+    }
+
+    function test_aiRecoveryPreservesDistinctSubstringDrafts() {
+        openAiWorkspace()
+        const composer = shell.workspaceItem.composer
+        composer.editor.text = "don't run tests"
+        fakeBackend.recoveredAiPrompts[fakeBackend.aiActiveThreadId] = "run tests"
+
+        fakeBackend.aiStateChanged()
+
+        compare(composer.editor.text, "don't run tests\n\nrun tests")
+    }
+
+    function test_aiIdleTabDoesNotSendTheDraft() {
+        fakeBackend.aiTurnRunning = false
+        fakeBackend.aiActiveTurnId = ""
+        openAiWorkspace()
+        const composer = shell.workspaceItem.composer
+        composer.editor.forceActiveFocus()
+        composer.editor.text = "Keep this idle draft"
+        const commandCount = fakeBackend.commandCount
+
+        keyClick(Qt.Key_Tab)
+
+        compare(fakeBackend.commandCount, commandCount)
+        verify(!fakeBackend.aiPromptPending)
     }
 
     function test_aiComposerDraftsSurviveThreadAndWorkspaceSwitches() {

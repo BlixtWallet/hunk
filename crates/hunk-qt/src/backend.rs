@@ -7,19 +7,21 @@ use hunk_app::ai::AiWorkerCommand;
 use hunk_app::diff::DiffCommentStoreCommand;
 use hunk_domain::db::CommentStatus;
 use hunk_forge::{ForgeCredentialKind, ForgeProvider, ForgeReviewWorkspace};
-use hunk_git::workspace::{GitWorkspaceCommand, execute_git_workspace_command, load_git_workspace};
+use hunk_git::workspace::{GitWorkspaceCommand, load_git_workspace};
 use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString};
 
 use crate::ai_models::AiThreadListModel;
 use crate::ai_timeline_models::AiTimelineListModel;
 use crate::backend_ai::{
-    ai_active_request_count, ai_interrupt_pending, ai_pending_request_count, ai_prompt_pending,
+    ai_active_queue_sending, ai_active_queued_message_count, ai_active_request_count,
+    ai_interrupt_pending, ai_pending_request_count, ai_prompt_pending, ai_queued_message_count,
     ai_request_answerable, ai_request_description, ai_request_id, ai_request_kind,
     ai_request_questions_json, ai_request_reason, ai_request_resolving, ai_request_title,
-    ai_thread_action_pending, apply_ai_runtime_events, ensure_ai_runtime_started,
-    queue_ai_approval, queue_ai_archive_thread, queue_ai_create_thread, queue_ai_fork_thread,
+    ai_thread_action_pending, apply_ai_runtime_events, clear_ai_message_queue,
+    edit_last_ai_queued_prompt, ensure_ai_runtime_started, queue_ai_approval,
+    queue_ai_archive_thread, queue_ai_create_thread, queue_ai_follow_up, queue_ai_fork_thread,
     queue_ai_interrupt, queue_ai_prompt, queue_ai_select_thread, queue_ai_user_input,
-    reset_ai_runtime_state, send_ai_worker_command, stop_ai_runtime,
+    reset_ai_runtime_state, send_ai_worker_command, stop_ai_runtime, take_ai_recovered_prompt,
 };
 pub use crate::backend_state::{Backend, Workspace};
 use crate::backend_state::{
@@ -30,8 +32,7 @@ use crate::comments::DiffCommentStartOutcome;
 use crate::diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
 use crate::forge::{
     ForgeSnapshotPayload, create_or_find_review, load_forge_snapshot, provider_label,
-    review_kind_label, review_short_label, review_state_label, run_github_device_flow,
-    save_forge_token,
+    review_kind_label, review_short_label, run_github_device_flow, save_forge_token,
 };
 use crate::git_models::{
     GitBranchListModel, GitCommitListModel, GitFileListModel, GitSnapshotPayload,
@@ -287,6 +288,21 @@ impl Backend {
     qproperty!(
         "aiPromptAcceptedRevision",
         Member = ai_prompt_accepted_revision,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiQueuedMessageCount",
+        Read = ai_queued_message_count,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiActiveQueuedMessageCount",
+        Read = ai_active_queued_message_count,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiActiveQueueSending",
+        Read = ai_active_queue_sending,
         Notify = ai_state_changed
     );
     qproperty!(
@@ -1036,6 +1052,25 @@ impl Backend {
     }
 
     #[qslot]
+    fn queue_ai_follow_up(&mut self, prompt: String) -> bool {
+        let queued = queue_ai_follow_up(self, prompt);
+        self.ai_state_changed();
+        queued
+    }
+
+    #[qslot]
+    fn edit_last_ai_queued_prompt(&mut self) -> String {
+        let prompt = edit_last_ai_queued_prompt(self);
+        self.ai_state_changed();
+        prompt
+    }
+
+    #[qslot]
+    fn take_ai_recovered_prompt(&mut self, thread_id: String) -> String {
+        take_ai_recovered_prompt(self, thread_id)
+    }
+
+    #[qslot]
     fn interrupt_ai_turn(&mut self) -> bool {
         let queued = queue_ai_interrupt(self);
         self.ai_state_changed();
@@ -1132,6 +1167,7 @@ impl Backend {
             return;
         }
 
+        clear_ai_message_queue(self);
         reset_ai_runtime_state(self);
         self.git_epoch = self.git_epoch.wrapping_add(1).max(1);
         self.git_loading = false;
@@ -1569,6 +1605,18 @@ impl Backend {
         ai_prompt_pending(self)
     }
 
+    fn ai_queued_message_count(&self) -> i32 {
+        ai_queued_message_count(self)
+    }
+
+    fn ai_active_queued_message_count(&self) -> i32 {
+        ai_active_queued_message_count(self)
+    }
+
+    fn ai_active_queue_sending(&self) -> bool {
+        ai_active_queue_sending(self)
+    }
+
     fn ai_interrupt_pending(&self) -> bool {
         ai_interrupt_pending(self)
     }
@@ -1623,6 +1671,10 @@ impl Backend {
         }
         self.status_message = status_message;
         self.status_message_changed();
+    }
+
+    pub(super) fn notify_git_state_changed(&mut self) {
+        self.git_state_changed();
     }
 
     fn diff_files(&self) -> Rc<RefCell<GitFileListModel>> {
@@ -1825,13 +1877,6 @@ impl Backend {
         }
     }
 
-    fn clear_diff_search_results(&mut self) {
-        self.diff_search_matches.clear();
-        self.diff_search_match_count = 0;
-        self.diff_search_match_index = -1;
-        self.diff_search_target_row = -1;
-    }
-
     fn begin_forge_action(&mut self, label: String) -> i32 {
         let epoch = next_forge_epoch(self);
         self.forge_busy = true;
@@ -1905,25 +1950,6 @@ impl Backend {
         self.apply_review_summary(payload.review);
     }
 
-    fn apply_review_summary(&mut self, review: Option<hunk_forge::OpenReviewSummary>) {
-        let Some(review) = review else {
-            self.forge_review_exists = false;
-            self.forge_review_number = 0;
-            self.forge_review_title.clear();
-            self.forge_review_url.clear();
-            self.forge_review_state.clear();
-            self.forge_review_draft = false;
-            return;
-        };
-        let state_label = review_state_label(&review).to_owned();
-        self.forge_review_exists = true;
-        self.forge_review_number = i32::try_from(review.number).unwrap_or(i32::MAX);
-        self.forge_review_title = review.title;
-        self.forge_review_url = review.url;
-        self.forge_review_state = state_label;
-        self.forge_review_draft = review.draft;
-    }
-
     fn reset_forge_state(&mut self) {
         next_forge_epoch(self);
         self.forge_available = false;
@@ -1947,40 +1973,5 @@ impl Backend {
         self.forge_device_verification_url.clear();
         self.forge_context = None;
         self.forge_token = None;
-    }
-
-    fn run_git_command(&mut self, label: &str, command: GitWorkspaceCommand) {
-        if self.git_loading || self.git_busy {
-            return;
-        }
-        self.git_busy = true;
-        self.git_error.clear();
-        self.git_action_label = label.to_owned();
-        self.git_state_changed();
-
-        let root = PathBuf::from(self.git_root.clone());
-        let invoker = self.get_qml_method_invoker();
-        let spawn_result = std::thread::Builder::new()
-            .name("hunk-qt-git-command".to_owned())
-            .spawn(move || {
-                let result = execute_git_workspace_command(root.as_path(), command);
-                let (success, message) = match result {
-                    Ok(outcome) => (true, outcome.message),
-                    Err(error) => (false, format!("{error:#}")),
-                };
-                invoke_method!(
-                    invoker,
-                    "complete_git_command",
-                    success,
-                    QString::from(message)
-                );
-            });
-
-        if let Err(error) = spawn_result {
-            self.git_busy = false;
-            self.git_action_label.clear();
-            self.git_error = format!("Failed to start Git command: {error}");
-            self.git_state_changed();
-        }
     }
 }

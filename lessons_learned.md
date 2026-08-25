@@ -508,3 +508,27 @@ append a correction when later evidence changes one.
 - Deferred QML focus work should belong to the component that owns the control.
   A zero-delay `Timer` is destroyed with its panel; a free `Qt.callLater`
   callback can outlive a workspace loader and invoke a method on a dead object.
+
+## 2026-08-25 — Qt Codex queued follow-ups and recovery
+
+- Queue lifecycle belongs beside the Rust worker boundary, not in QML. Keep
+  per-thread FIFO ordering, delivery state, authoritative acknowledgement, and
+  reconnect recovery in one repository-scoped owner; expose only bounded rows
+  and counts to the frontend.
+- Channel acceptance is not durable acknowledgement. A queued prompt must stay
+  visible until the exact steer receipt or an exact later user-message record
+  confirms it, and an unconfirmed runtime failure must return it to queued state.
+- Count limits do not bound text memory. Charge every retained queued or
+  recovered prompt against per-message and aggregate byte caps before it can
+  cross into QML or trigger a large `TextEdit` layout on the UI thread.
+- Queued messages are timeline rows, not a second footer view. Keeping them in
+  the same recycling `ListView` preserves virtualization, while notified suffix
+  insert/remove/update operations avoid invalidating every authoritative
+  delegate and scroll position.
+- Interrupt recovery is a draft transition. Preserve distinct existing text,
+  deduplicate only normalized exact equality, and explicitly return focus after
+  the interrupt lock clears; substring matching can discard instructions with
+  opposite meaning.
+- QtBridge `#[qobject]` property attributes are intentionally constrained. Keep
+  derived queue properties as backend getters/signals and move cohesive command
+  helpers into sibling modules when the 2,000-line backend boundary is reached.

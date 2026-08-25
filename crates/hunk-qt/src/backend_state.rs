@@ -10,7 +10,6 @@ use hunk_domain::state::AppStateStore;
 use hunk_forge::{ForgeReviewOutcome, ForgeReviewWorkspace, GitHubDeviceAuthorization};
 use qtbridge::QObjectHolder;
 
-use crate::AiPromptReceipt;
 use crate::ai_models::AiThreadListModel;
 use crate::ai_requests::AiPendingRequestProjection;
 use crate::ai_runtime::AiRuntimeSlot;
@@ -22,6 +21,7 @@ use crate::forge::ForgeSnapshotPayload;
 use crate::git_models::{
     GitBranchListModel, GitCommitListModel, GitFileListModel, GitSnapshotPayload,
 };
+use crate::{AiMessageQueue, AiPromptReceipt};
 
 pub(super) type GitRefreshResult = Result<GitSnapshotPayload, String>;
 pub(super) type DiffRefreshResult = Result<DiffSnapshotPayload, String>;
@@ -144,6 +144,7 @@ pub struct Backend {
     pub(super) git_unstaged_paths: Vec<String>,
     pub(super) ai_threads: Rc<RefCell<AiThreadListModel>>,
     pub(super) ai_timeline: Rc<RefCell<AiTimelineListModel>>,
+    pub(super) ai_message_queue: AiMessageQueue,
     pub(super) ai_runtime: AiRuntimeSlot,
     pub(super) ai_epoch: i32,
     pub(super) ai_ready: bool,
@@ -276,6 +277,7 @@ impl Default for Backend {
             git_unstaged_paths: Vec::new(),
             ai_threads: AiThreadListModel::default_with_attached_qobject(),
             ai_timeline: AiTimelineListModel::default_with_attached_qobject(),
+            ai_message_queue: AiMessageQueue::default(),
             ai_runtime: AiRuntimeSlot::default(),
             ai_epoch: 0,
             ai_ready: false,

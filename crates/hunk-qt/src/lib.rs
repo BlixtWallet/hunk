@@ -1,11 +1,15 @@
 mod ai_composer;
 mod ai_models;
+mod ai_queue;
 mod ai_requests;
 mod ai_runtime;
 mod ai_thread_actions;
 mod ai_timeline_models;
 mod backend;
 mod backend_ai;
+mod backend_diff;
+mod backend_forge;
+mod backend_git;
 mod backend_state;
 mod comment_models;
 mod comments;
@@ -25,12 +29,19 @@ use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 
 pub use ai_composer::AiPromptReceipt;
 pub use ai_models::{AiThreadCatalogProjection, AiThreadItem, AiThreadListModel};
+pub use ai_queue::{
+    AI_MESSAGE_QUEUE_MAX_ITEMS, AI_MESSAGE_QUEUE_MAX_PROMPT_BYTES,
+    AI_MESSAGE_QUEUE_MAX_RETAINED_BYTES, AiMessageQueue, AiQueueProjection,
+    AiQueueThreadProjection, AiQueuedMessageCommand,
+};
 pub use ai_requests::{
     AiPendingOption, AiPendingQuestion, AiPendingRequest, AiPendingRequestProjection,
 };
 pub use ai_runtime::{AiEventMailbox, AiProjectedSnapshot, AiRuntimeEvent};
 pub use ai_thread_actions::{AiThreadActionKind, AiThreadActionReceipt};
-pub use ai_timeline_models::{AiTimelineItem, AiTimelineListModel, AiTimelineProjection};
+pub use ai_timeline_models::{
+    AI_TIMELINE_MAX_VISIBLE_ROWS, AiTimelineItem, AiTimelineListModel, AiTimelineProjection,
+};
 pub use backend::{Backend, Workspace};
 pub use comment_models::{DiffCommentItem, DiffCommentListModel, DiffCommentProjection};
 pub use diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};

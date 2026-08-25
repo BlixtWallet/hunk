@@ -11,6 +11,7 @@ FocusScope {
     property bool restoringDraft: false
     property bool submitting: false
     property bool requestWasBlocking: false
+    property bool queueWasBlocking: false
     property bool restoreFocusAfterRequest: false
     signal requestFocusRequested
     readonly property alias editor: editor
@@ -18,10 +19,13 @@ FocusScope {
     readonly property alias stopButton: stopButton
     readonly property bool requestBlocking: backend.aiRequestId.length > 0
         || backend.aiRequestResolving
+    readonly property bool queueBlocking: backend.aiActiveQueueSending
+        && !backend.aiTurnRunning
     readonly property bool editable: backend.aiReady && !backend.aiLoading
         && !backend.aiRequiresAuthentication && backend.aiActiveThreadId.length > 0
         && !backend.aiThreadActionPending
         && !backend.aiPromptPending && !backend.aiInterruptPending
+        && !queueBlocking
         && !requestBlocking
     readonly property bool canSubmit: editable && editor.text.trim().length > 0
 
@@ -48,6 +52,37 @@ FocusScope {
         storeEntry(currentThreadId, entry)
     }
 
+    function mergedPrompt(existing, recovered) {
+        const current = existing.trim()
+        const restored = recovered.trim()
+        if (restored.length === 0)
+            return existing
+        if (current.length === 0)
+            return restored
+        if (current.replace(/\r\n/g, "\n") === restored.replace(/\r\n/g, "\n"))
+            return existing
+        return existing + "\n\n" + restored
+    }
+
+    function restoreRecoveredDraft(threadId) {
+        if (threadId.length === 0)
+            return
+        const recovered = backend.take_ai_recovered_prompt(threadId)
+        if (recovered.length === 0)
+            return
+        const entry = draftEntry(threadId)
+        entry.text = mergedPrompt(entry.text, recovered)
+        entry.pending = false
+        storeEntry(threadId, entry)
+        if (threadId === currentThreadId) {
+            restoringDraft = true
+            editor.text = entry.text
+            restoringDraft = false
+            submitting = false
+            editorFocusTimer.restart()
+        }
+    }
+
     function reloadDraftStore() {
         currentThreadId = ""
         restoringDraft = true
@@ -61,6 +96,7 @@ FocusScope {
             return
         saveCurrentDraft()
         currentThreadId = threadId
+        restoreRecoveredDraft(threadId)
         restoringDraft = true
         const entry = draftEntry(threadId)
         if (entry.pending && backend.aiPromptAcceptedRevision !== entry.acceptedRevision) {
@@ -80,6 +116,7 @@ FocusScope {
 
     function syncBackendState() {
         activateThread(backend.aiActiveThreadId)
+        restoreRecoveredDraft(currentThreadId)
         if (currentThreadId.length === 0) {
             requestWasBlocking = requestBlocking
             return
@@ -107,7 +144,10 @@ FocusScope {
         if (requestWasBlocking && !requestBlocking && editable
                 && restoreFocusAfterRequest)
             Qt.callLater(() => editor.forceActiveFocus())
+        if (queueWasBlocking && !queueBlocking && editable)
+            editorFocusTimer.restart()
         requestWasBlocking = requestBlocking
+        queueWasBlocking = queueBlocking
     }
 
     function submit() {
@@ -125,6 +165,45 @@ FocusScope {
             acceptedRevision: acceptedRevision
         })
         submitting = true
+    }
+
+    function queueFollowUp() {
+        if (!backend.aiTurnRunning || !canSubmit)
+            return
+        const prompt = editor.text
+        if (!backend.queue_ai_follow_up(prompt)) {
+            editor.forceActiveFocus()
+            return
+        }
+        storeEntry(currentThreadId, {
+            text: "",
+            pending: false,
+            acceptedRevision: backend.aiPromptAcceptedRevision
+        })
+        restoringDraft = true
+        editor.text = ""
+        restoringDraft = false
+        submitting = false
+        editor.forceActiveFocus()
+    }
+
+    function editLatestQueuedFollowUp() {
+        if (editor.text.length > 0)
+            return
+        const prompt = backend.edit_last_ai_queued_prompt()
+        if (prompt.length === 0)
+            return
+        storeEntry(currentThreadId, {
+            text: prompt,
+            pending: false,
+            acceptedRevision: backend.aiPromptAcceptedRevision
+        })
+        restoringDraft = true
+        editor.text = prompt
+        editor.cursorPosition = editor.text.length
+        restoringDraft = false
+        submitting = false
+        editor.forceActiveFocus()
     }
 
     function interrupt() {
@@ -208,6 +287,20 @@ FocusScope {
                 }
 
                 Keys.onPressed: event => {
+                    if (event.key === Qt.Key_Tab
+                            && event.modifiers === Qt.NoModifier
+                            && root.backend.aiTurnRunning) {
+                        root.queueFollowUp()
+                        event.accepted = true
+                        return
+                    }
+                    if (event.key === Qt.Key_Up
+                            && (event.modifiers & Qt.ControlModifier) !== 0
+                            && (event.modifiers & Qt.ShiftModifier) !== 0) {
+                        root.editLatestQueuedFollowUp()
+                        event.accepted = true
+                        return
+                    }
                     if (event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter)
                         return
                     if ((event.modifiers & Qt.ShiftModifier) !== 0) {
@@ -280,8 +373,10 @@ FocusScope {
             Text {
                 text: root.backend.aiPromptPending ? "SENDING"
                     : (root.backend.aiInterruptPending ? "STOPPING"
+                        : (root.backend.aiActiveQueuedMessageCount > 0
+                            ? root.backend.aiActiveQueuedMessageCount + " QUEUED"
                         : (root.backend.aiRequestId.length > 0
-                            ? "RESPONSE REQUIRED" : "ENTER TO SEND"))
+                            ? "RESPONSE REQUIRED" : "ENTER TO SEND")))
                 color: Theme.faint
                 font.family: Theme.monoFont
                 font.pixelSize: 8
@@ -289,7 +384,9 @@ FocusScope {
             }
 
             Text {
-                text: "SHIFT+ENTER FOR NEW LINE"
+                text: root.backend.aiTurnRunning
+                    ? "TAB TO QUEUE · CTRL+SHIFT+UP TO EDIT"
+                    : "SHIFT+ENTER FOR NEW LINE"
                 color: Theme.faint
                 font.family: Theme.monoFont
                 font.pixelSize: 8
@@ -306,12 +403,23 @@ FocusScope {
         }
     }
 
+    Timer {
+        id: editorFocusTimer
+        interval: 0
+        repeat: false
+        onTriggered: {
+            if (root.editable)
+                editor.forceActiveFocus()
+        }
+    }
+
     onDraftStoreChanged: {
         if (editor)
             reloadDraftStore()
     }
     Component.onCompleted: {
         requestWasBlocking = requestBlocking
+        queueWasBlocking = queueBlocking
         activateThread(backend.aiActiveThreadId)
         if (editable && !submitting)
             editor.forceActiveFocus()

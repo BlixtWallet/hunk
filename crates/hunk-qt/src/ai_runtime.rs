@@ -10,6 +10,7 @@ use hunk_app::ai::{
 };
 
 use crate::ai_models::AiThreadCatalogProjection;
+use crate::ai_queue::AiQueueProjection;
 use crate::ai_requests::AiPendingRequestProjection;
 use crate::ai_timeline_models::AiTimelineProjection;
 
@@ -18,6 +19,7 @@ pub struct AiProjectedSnapshot {
     pub requires_openai_auth: bool,
     pub threads: AiThreadCatalogProjection,
     pub timeline: AiTimelineProjection,
+    pub queue: AiQueueProjection,
     pub requests: AiPendingRequestProjection,
 }
 
@@ -272,12 +274,15 @@ fn project_worker_event(event: AiWorkerEvent) -> AiRuntimeEvent {
                 snapshot.pending_user_inputs.as_slice(),
                 visible_thread_ids.as_slice(),
             );
+            let queue =
+                AiQueueProjection::from_state(&snapshot.state, visible_thread_ids.as_slice());
             threads.mark_attention(requests.attention_thread_ids());
             AiRuntimeEvent::Snapshot(Box::new(AiProjectedSnapshot {
                 workspace_key,
                 requires_openai_auth,
                 threads,
                 timeline,
+                queue,
                 requests,
             }))
         }
