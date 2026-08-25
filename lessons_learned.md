@@ -192,3 +192,8 @@ append a correction when later evidence changes one.
   insufficient when Nix isolates its linker paths; include `libglvnd` and its
   library directory in the dev shell itself. QML-only smoke tests can otherwise
   conceal the missing native link dependency.
+- Do not run headless Nix-built tests through the Linux host-graphics wrapper.
+  Adding Ubuntu's full library directory to `LD_LIBRARY_PATH` can replace the
+  matching Nix glibc and fail on private symbols. CI tests should unset the
+  graphics runner and expose only the external Qt directory plus the
+  Nix-provided runtime-library path.
