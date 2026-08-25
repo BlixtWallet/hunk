@@ -5,10 +5,12 @@ use std::rc::Rc;
 use std::sync::atomic::AtomicI32;
 use std::sync::{Arc, Mutex};
 
+use hunk_app::diff::DiffCommentAnchor;
 use hunk_domain::state::AppStateStore;
 use hunk_forge::{ForgeReviewOutcome, ForgeReviewWorkspace, GitHubDeviceAuthorization};
 use qtbridge::QObjectHolder;
 
+use crate::comment_models::{DiffCommentListModel, DiffCommentProjection};
 use crate::diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
 use crate::forge::ForgeSnapshotPayload;
 use crate::git_models::{
@@ -17,12 +19,26 @@ use crate::git_models::{
 
 pub(super) type GitRefreshResult = Result<GitSnapshotPayload, String>;
 pub(super) type DiffRefreshResult = Result<DiffSnapshotPayload, String>;
+pub(super) type DiffCommentAsyncResult = Result<DiffCommentAsyncPayload, String>;
 pub(super) type ForgeAsyncResult = Result<ForgeAsyncPayload, String>;
 type GitHubDeviceStartResult = Result<GitHubDeviceAuthorization, String>;
 
 pub(super) enum ForgeAsyncPayload {
     Snapshot(Box<ForgeSnapshotPayload>),
     Review(ForgeReviewOutcome),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum DiffCommentRequestKind {
+    Load,
+    Mutation,
+    Reconcile,
+}
+
+pub(super) struct DiffCommentAsyncPayload {
+    pub(super) kind: DiffCommentRequestKind,
+    pub(super) diff_epoch: i32,
+    pub(super) projection: DiffCommentProjection,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -75,6 +91,27 @@ pub struct Backend {
     pub(super) diff_epoch: i32,
     pub(super) diff_file_summaries: HashMap<String, DiffFileSummary>,
     pub(super) diff_refresh_results: Arc<Mutex<HashMap<i32, DiffRefreshResult>>>,
+    pub(super) diff_comments: Rc<RefCell<DiffCommentListModel>>,
+    pub(super) diff_comment_projection: Option<DiffCommentProjection>,
+    pub(super) diff_comment_anchors: Arc<Vec<Option<DiffCommentAnchor>>>,
+    pub(super) diff_comments_ready: bool,
+    pub(super) diff_comments_loading: bool,
+    pub(super) diff_comments_busy: bool,
+    pub(super) diff_comments_error: String,
+    pub(super) diff_comments_status_message: String,
+    pub(super) diff_comments_show_non_open: bool,
+    pub(super) diff_comments_open_count: i32,
+    pub(super) diff_comments_stale_count: i32,
+    pub(super) diff_comments_resolved_count: i32,
+    pub(super) diff_comments_version: i32,
+    pub(super) diff_comment_target_row: i32,
+    pub(super) diff_comment_target_revision: i32,
+    pub(super) diff_comment_epoch: i32,
+    pub(super) diff_comment_results: Arc<Mutex<HashMap<i32, DiffCommentAsyncResult>>>,
+    pub(super) diff_comment_refresh_pending: bool,
+    pub(super) diff_comment_initial_prune_done: bool,
+    pub(super) diff_comment_miss_streaks: HashMap<String, u8>,
+    pub(super) diff_comment_pending_jump_id: Option<String>,
     pub(super) git_files: Rc<RefCell<GitFileListModel>>,
     pub(super) git_branches: Rc<RefCell<GitBranchListModel>>,
     pub(super) git_commits: Rc<RefCell<GitCommitListModel>>,
@@ -156,6 +193,27 @@ impl Default for Backend {
             diff_epoch: 0,
             diff_file_summaries: HashMap::new(),
             diff_refresh_results: Arc::new(Mutex::new(HashMap::new())),
+            diff_comments: DiffCommentListModel::default_with_attached_qobject(),
+            diff_comment_projection: None,
+            diff_comment_anchors: Arc::new(Vec::new()),
+            diff_comments_ready: false,
+            diff_comments_loading: false,
+            diff_comments_busy: false,
+            diff_comments_error: String::new(),
+            diff_comments_status_message: String::new(),
+            diff_comments_show_non_open: false,
+            diff_comments_open_count: 0,
+            diff_comments_stale_count: 0,
+            diff_comments_resolved_count: 0,
+            diff_comments_version: 0,
+            diff_comment_target_row: -1,
+            diff_comment_target_revision: 0,
+            diff_comment_epoch: 0,
+            diff_comment_results: Arc::new(Mutex::new(HashMap::new())),
+            diff_comment_refresh_pending: false,
+            diff_comment_initial_prune_done: false,
+            diff_comment_miss_streaks: HashMap::new(),
+            diff_comment_pending_jump_id: None,
             git_files: GitFileListModel::default_with_attached_qobject(),
             git_branches: GitBranchListModel::default_with_attached_qobject(),
             git_commits: GitCommitListModel::default_with_attached_qobject(),

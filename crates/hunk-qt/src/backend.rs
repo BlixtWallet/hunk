@@ -4,13 +4,17 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use hunk_app::diff::DiffCommentStoreCommand;
+use hunk_domain::db::CommentStatus;
 use hunk_domain::state::AppStateStore;
 use hunk_forge::{ForgeCredentialKind, ForgeProvider, ForgeReviewWorkspace};
 use hunk_git::workspace::{GitWorkspaceCommand, execute_git_workspace_command, load_git_workspace};
 use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString};
 
-use crate::backend_state::ForgeAsyncPayload;
 pub use crate::backend_state::{Backend, Workspace};
+use crate::backend_state::{DiffCommentRequestKind, ForgeAsyncPayload};
+use crate::comment_models::DiffCommentListModel;
+use crate::comments::DiffCommentStartOutcome;
 use crate::diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
 use crate::forge::{
     ForgeSnapshotPayload, create_or_find_review, load_forge_snapshot, provider_label,
@@ -85,6 +89,67 @@ impl Backend {
         "diffSearchTargetRow",
         Member = diff_search_target_row,
         Notify = diff_state_changed
+    );
+    qproperty!("diffComments", Read = diff_comments, Constant);
+    qproperty!(
+        "diffCommentsReady",
+        Member = diff_comments_ready,
+        Notify = diff_comments_state_changed
+    );
+    qproperty!(
+        "diffCommentsLoading",
+        Member = diff_comments_loading,
+        Notify = diff_comments_state_changed
+    );
+    qproperty!(
+        "diffCommentsBusy",
+        Member = diff_comments_busy,
+        Notify = diff_comments_state_changed
+    );
+    qproperty!(
+        "diffCommentsError",
+        Member = diff_comments_error,
+        Notify = diff_comments_state_changed
+    );
+    qproperty!(
+        "diffCommentsStatusMessage",
+        Member = diff_comments_status_message,
+        Notify = diff_comments_state_changed
+    );
+    qproperty!(
+        "diffCommentsShowNonOpen",
+        Member = diff_comments_show_non_open,
+        Notify = diff_comments_state_changed
+    );
+    qproperty!(
+        "diffCommentsOpenCount",
+        Member = diff_comments_open_count,
+        Notify = diff_comments_state_changed
+    );
+    qproperty!(
+        "diffCommentsStaleCount",
+        Member = diff_comments_stale_count,
+        Notify = diff_comments_state_changed
+    );
+    qproperty!(
+        "diffCommentsResolvedCount",
+        Member = diff_comments_resolved_count,
+        Notify = diff_comments_state_changed
+    );
+    qproperty!(
+        "diffCommentsVersion",
+        Member = diff_comments_version,
+        Notify = diff_comments_state_changed
+    );
+    qproperty!(
+        "diffCommentTargetRow",
+        Member = diff_comment_target_row,
+        Notify = diff_comments_state_changed
+    );
+    qproperty!(
+        "diffCommentTargetRevision",
+        Member = diff_comment_target_revision,
+        Notify = diff_comments_state_changed
     );
     qproperty!("gitFiles", Read = git_files, Constant);
     qproperty!("gitBranches", Read = git_branches, Constant);
@@ -293,6 +358,9 @@ impl Backend {
     fn diff_state_changed(&mut self);
 
     #[qsignal]
+    fn diff_comments_state_changed(&mut self);
+
+    #[qsignal]
     fn git_state_changed(&mut self);
 
     #[qsignal]
@@ -386,11 +454,16 @@ impl Backend {
         self.diff_loading = true;
         self.diff_ready = false;
         self.diff_error.clear();
-        self.diff_rows
-            .borrow_mut()
-            .replace(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        self.diff_rows.borrow_mut().replace(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Arc::new(Vec::new()),
+        );
+        self.clear_diff_comment_row_state();
         self.clear_diff_search_results();
         self.diff_state_changed();
+        self.diff_comments_state_changed();
 
         let root = PathBuf::from(self.git_root.clone());
         let invoker = self.get_qml_method_invoker();
@@ -425,11 +498,13 @@ impl Backend {
         }
 
         self.diff_loading = false;
+        let mut refresh_comments = false;
         match result {
             Some(Ok(payload)) if payload.path == self.diff_selected_path => {
                 self.diff_status_tag = payload.status_tag;
                 self.diff_additions = payload.additions;
                 self.diff_removals = payload.removals;
+                self.diff_comment_anchors = Arc::clone(&payload.comment_anchors);
                 self.diff_rows.borrow_mut().replace(
                     payload.rows,
                     payload.search_texts,
@@ -439,6 +514,7 @@ impl Backend {
                 self.rebuild_diff_search_results();
                 self.diff_ready = true;
                 self.diff_error.clear();
+                refresh_comments = true;
             }
             Some(Ok(_)) => return,
             Some(Err(error)) => {
@@ -451,6 +527,9 @@ impl Backend {
             }
         }
         self.diff_state_changed();
+        if refresh_comments {
+            self.refresh_diff_comments();
+        }
     }
 
     #[qslot]
@@ -492,6 +571,249 @@ impl Backend {
     #[qslot]
     fn diff_hunk_target(&self, start: i32, direction: i32) -> i32 {
         self.diff_rows.borrow().hunk_target(start, direction)
+    }
+
+    #[qslot]
+    fn refresh_diff_comments(&mut self) {
+        let command = self.initial_diff_comment_load_command();
+        match self.start_diff_comment_command(DiffCommentRequestKind::Load, command) {
+            Ok(DiffCommentStartOutcome::Started) => self.diff_comments_state_changed(),
+            Ok(DiffCommentStartOutcome::RefreshQueued) => {}
+            Err(error) => {
+                self.diff_comments_error = error;
+                self.diff_comments_state_changed();
+            }
+        }
+    }
+
+    #[qslot]
+    fn create_diff_comment(&mut self, row: i32, comment_text: String) {
+        let Some(anchor) = self.diff_comment_anchor(row) else {
+            self.diff_comments_error =
+                "This diff row does not have a stable comment anchor".to_owned();
+            self.diff_comments_state_changed();
+            return;
+        };
+        if comment_text.trim().is_empty() {
+            self.diff_comments_error = "Comment text cannot be empty".to_owned();
+            self.diff_comments_state_changed();
+            return;
+        }
+        let command = DiffCommentStoreCommand::Create {
+            anchor,
+            comment_text,
+        };
+        match self.start_diff_comment_command(DiffCommentRequestKind::Mutation, command) {
+            Ok(_) => self.diff_comments_state_changed(),
+            Err(error) => {
+                self.diff_comments_error = error;
+                self.diff_comments_state_changed();
+            }
+        }
+    }
+
+    #[qslot]
+    fn set_diff_comment_status(&mut self, id: String, status: String) {
+        let status = match status.as_str() {
+            "open" => CommentStatus::Open,
+            "stale" => CommentStatus::Stale,
+            "resolved" => CommentStatus::Resolved,
+            _ => {
+                self.diff_comments_error = format!("Unknown comment status: {status}");
+                self.diff_comments_state_changed();
+                return;
+            }
+        };
+        let command = DiffCommentStoreCommand::SetStatus { id, status };
+        match self.start_diff_comment_command(DiffCommentRequestKind::Mutation, command) {
+            Ok(_) => self.diff_comments_state_changed(),
+            Err(error) => {
+                self.diff_comments_error = error;
+                self.diff_comments_state_changed();
+            }
+        }
+    }
+
+    #[qslot]
+    fn delete_diff_comment(&mut self, id: String) {
+        let command = DiffCommentStoreCommand::Delete { id };
+        match self.start_diff_comment_command(DiffCommentRequestKind::Mutation, command) {
+            Ok(_) => self.diff_comments_state_changed(),
+            Err(error) => {
+                self.diff_comments_error = error;
+                self.diff_comments_state_changed();
+            }
+        }
+    }
+
+    #[qslot]
+    fn set_diff_comments_show_non_open(&mut self, show: bool) {
+        if self.diff_comments_show_non_open == show {
+            return;
+        }
+        self.diff_comments_show_non_open = show;
+        self.rebuild_diff_comment_items();
+        self.diff_comments_state_changed();
+    }
+
+    #[qslot]
+    fn jump_to_diff_comment(&mut self, id: String) {
+        let Some(projection) = self.diff_comment_projection.as_ref() else {
+            self.diff_comments_error = "Comments are not loaded yet".to_owned();
+            self.diff_comments_state_changed();
+            return;
+        };
+        if let Some(row) = projection.row_for_comment(id.as_str()) {
+            self.set_diff_comment_target(row);
+            self.diff_comments_status_message = "Jumped to comment location.".to_owned();
+            self.diff_comments_state_changed();
+            return;
+        }
+        let Some(path) = projection
+            .comment(id.as_str())
+            .map(|comment| comment.file_path.clone())
+        else {
+            self.diff_comments_error = "Comment is no longer available".to_owned();
+            self.diff_comments_state_changed();
+            return;
+        };
+        let Some(summary) = self.diff_file_summaries.get(path.as_str()).cloned() else {
+            self.diff_comments_status_message =
+                "Comment location is not visible in the current changes.".to_owned();
+            self.diff_comments_state_changed();
+            return;
+        };
+        if path == self.diff_selected_path && self.diff_ready {
+            self.diff_comments_status_message =
+                "Comment anchor was not found in this diff.".to_owned();
+            self.diff_comments_state_changed();
+            return;
+        }
+
+        self.diff_comment_pending_jump_id = Some(id);
+        self.apply_diff_selection(&summary);
+        self.refresh_diff();
+    }
+
+    #[qslot]
+    fn diff_comment_count_for_row(&self, row: i32) -> i32 {
+        self.diff_comment_projection
+            .as_ref()
+            .map(|projection| projection.row_count(row))
+            .unwrap_or_default()
+    }
+
+    #[qslot]
+    fn diff_row_supports_comments(&self, row: i32) -> bool {
+        usize::try_from(row)
+            .ok()
+            .and_then(|row| self.diff_comment_anchors.get(row))
+            .is_some_and(|anchor| anchor.is_some())
+    }
+
+    #[qslot]
+    fn diff_comment_line_hint(&self, row: i32) -> String {
+        let Some(anchor) = usize::try_from(row)
+            .ok()
+            .and_then(|row| self.diff_comment_anchors.get(row))
+            .and_then(Option::as_ref)
+        else {
+            return String::new();
+        };
+        let old_line = anchor
+            .old_line
+            .map(|line| line.to_string())
+            .unwrap_or_else(|| "-".to_owned());
+        let new_line = anchor
+            .new_line
+            .map(|line| line.to_string())
+            .unwrap_or_else(|| "-".to_owned());
+        format!("old {old_line} | new {new_line}")
+    }
+
+    #[qslot]
+    fn diff_comment_bundle(&self, id: String) -> String {
+        self.diff_comment_projection
+            .as_ref()
+            .and_then(|projection| projection.comment(id.as_str()))
+            .map(hunk_domain::db::format_comment_clipboard_blob)
+            .unwrap_or_default()
+    }
+
+    #[qslot]
+    fn diff_all_open_comment_bundles(&self) -> String {
+        self.diff_comment_projection
+            .as_ref()
+            .map(|projection| projection.all_open_clipboard_text())
+            .unwrap_or_default()
+    }
+
+    #[qslot]
+    fn apply_diff_comment_result(&mut self, epoch: i32) {
+        let result = self
+            .diff_comment_results
+            .lock()
+            .ok()
+            .and_then(|mut pending| pending.remove(&epoch));
+        if epoch != self.diff_comment_epoch {
+            return;
+        }
+
+        self.diff_comments_loading = false;
+        self.diff_comments_busy = false;
+        let mut completed_kind = None;
+        let mut applied = false;
+        let mut stale_diff_projection = false;
+        match result {
+            Some(Ok(payload)) => {
+                if self.active_diff_comment_scope().as_ref() != Some(&payload.projection.scope) {
+                    return;
+                }
+                if payload.diff_epoch != self.diff_epoch {
+                    if let Some(message) = payload.projection.status_message {
+                        self.diff_comments_status_message = message;
+                    }
+                    stale_diff_projection = true;
+                } else {
+                    completed_kind = Some(payload.kind);
+                    self.apply_diff_comment_projection(payload.projection);
+                    applied = true;
+                }
+            }
+            Some(Err(error)) => {
+                self.diff_comments_error = error;
+                self.diff_comments_ready = self.diff_comment_projection.is_some();
+            }
+            None => {
+                self.diff_comments_error =
+                    "Comment operation completed without a queued result".to_owned();
+                self.diff_comments_ready = self.diff_comment_projection.is_some();
+            }
+        }
+        self.diff_comments_state_changed();
+
+        if stale_diff_projection {
+            self.diff_comment_refresh_pending = false;
+            self.refresh_diff_comments();
+            return;
+        }
+
+        if self.diff_comment_refresh_pending {
+            self.diff_comment_refresh_pending = false;
+            self.refresh_diff_comments();
+            return;
+        }
+        if applied
+            && completed_kind != Some(DiffCommentRequestKind::Reconcile)
+            && let Some(command) = self.next_diff_comment_reconcile_command()
+        {
+            if let Err(error) =
+                self.start_diff_comment_command(DiffCommentRequestKind::Reconcile, command)
+            {
+                self.diff_comments_error = error;
+            }
+            self.diff_comments_state_changed();
+        }
     }
 
     #[qslot]
@@ -578,8 +900,10 @@ impl Backend {
         self.git_branches.borrow_mut().replace(Vec::new());
         self.git_commits.borrow_mut().replace(Vec::new());
         self.reset_diff_state();
+        self.reset_diff_comment_state();
         self.reset_forge_state();
         self.git_state_changed();
+        self.diff_comments_state_changed();
         self.forge_state_changed();
         self.refresh_git_workspace();
     }
@@ -987,6 +1311,10 @@ impl Backend {
         self.diff_rows.clone()
     }
 
+    fn diff_comments(&self) -> Rc<RefCell<DiffCommentListModel>> {
+        self.diff_comments.clone()
+    }
+
     fn git_files(&self) -> Rc<RefCell<GitFileListModel>> {
         self.git_files.clone()
     }
@@ -1002,6 +1330,8 @@ impl Backend {
     fn apply_git_payload(&mut self, payload: GitSnapshotPayload) {
         let diff_files = payload.diff_files;
         let diff_file_summaries = payload.diff_file_summaries;
+        let comment_scope_changed =
+            self.git_root != payload.root || self.git_branch_name != payload.branch_name;
         let forge_context_changed = self.git_root != payload.root
             || self.git_branch_name != payload.branch_name
             || !self.forge_ready;
@@ -1032,6 +1362,10 @@ impl Backend {
         self.git_last_commit_subject = payload.last_commit_subject;
         self.git_ready = true;
         self.git_error.clear();
+        if comment_scope_changed {
+            self.reset_diff_comment_state();
+            self.diff_comments_state_changed();
+        }
         self.replace_diff_files(diff_files, diff_file_summaries);
         if self.git_root_pending_persist {
             self.git_root_pending_persist = false;
@@ -1042,6 +1376,7 @@ impl Backend {
         }
         self.git_state_changed();
         self.refresh_diff();
+        self.refresh_diff_comments();
         if forge_context_changed {
             self.reset_forge_state();
             self.forge_state_changed();
@@ -1054,13 +1389,18 @@ impl Backend {
         files: Vec<crate::git_models::GitFileItem>,
         summaries: Vec<DiffFileSummary>,
     ) {
+        self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
         let previous_path = self.diff_selected_path.clone();
         self.diff_loading = false;
         self.diff_ready = false;
         self.diff_error.clear();
-        self.diff_rows
-            .borrow_mut()
-            .replace(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        self.diff_rows.borrow_mut().replace(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Arc::new(Vec::new()),
+        );
+        self.clear_diff_comment_row_state();
         self.clear_diff_search_results();
         self.diff_files.borrow_mut().replace(files);
         self.diff_file_summaries = summaries
@@ -1088,14 +1428,19 @@ impl Backend {
             self.diff_ready = true;
             self.diff_state_changed();
         }
+        self.diff_comments_state_changed();
     }
 
     fn apply_diff_selection(&mut self, summary: &DiffFileSummary) {
         self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
         self.diff_loading = false;
-        self.diff_rows
-            .borrow_mut()
-            .replace(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        self.diff_rows.borrow_mut().replace(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Arc::new(Vec::new()),
+        );
+        self.clear_diff_comment_row_state();
         self.clear_diff_search_results();
         self.diff_selected_path = summary.path.clone();
         self.diff_status_tag = summary.status.tag().to_owned();
@@ -1104,14 +1449,19 @@ impl Backend {
         self.diff_ready = false;
         self.diff_error.clear();
         self.diff_state_changed();
+        self.diff_comments_state_changed();
     }
 
     fn reset_diff_state(&mut self) {
         self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
         self.diff_files.borrow_mut().replace(Vec::new());
-        self.diff_rows
-            .borrow_mut()
-            .replace(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        self.diff_rows.borrow_mut().replace(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Arc::new(Vec::new()),
+        );
+        self.clear_diff_comment_row_state();
         self.diff_selected_path.clear();
         self.diff_status_tag.clear();
         self.diff_additions = 0;
@@ -1123,6 +1473,7 @@ impl Backend {
         self.diff_search_query.clear();
         self.clear_diff_search_results();
         self.diff_state_changed();
+        self.diff_comments_state_changed();
     }
 
     fn rebuild_diff_search_results(&mut self) {

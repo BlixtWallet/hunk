@@ -1,3 +1,5 @@
+#[cfg(feature = "comment-store")]
+mod comment_store;
 #[cfg(feature = "comments")]
 mod comments;
 mod highlight;
@@ -12,9 +14,15 @@ use anyhow::Result;
 use hunk_git::compare::{CompareSnapshot, CompareSource, load_compare_snapshot};
 use hunk_git::git::LineStats;
 
+#[cfg(feature = "comment-store")]
+pub use comment_store::{
+    DiffCommentScope, DiffCommentStoreCommand, DiffCommentStoreSnapshot,
+    execute_diff_comment_store_command,
+};
 #[cfg(feature = "comments")]
 pub use comments::{
-    DIFF_COMMENT_CONTEXT_RADIUS_ROWS, DiffCommentAnchor, build_diff_comment_anchors,
+    DIFF_COMMENT_CONTEXT_RADIUS_ROWS, DiffCommentAnchor, DiffCommentLookup,
+    build_diff_comment_anchors, find_diff_comment_row,
 };
 pub use highlight::{
     StyledSegment, SyntaxTokenKind, build_line_segments, build_plain_line_segments,

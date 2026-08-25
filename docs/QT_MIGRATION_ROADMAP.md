@@ -126,9 +126,10 @@ master
   <- migration/09-qt-diff-selection
   <- migration/10-qt-diff-comment-core
   <- migration/11-qt-diff-comments
-  <- migration/12-qt-ai
-  <- migration/13-qt-cutover-ci
-  <- migration/14-release-hardening
+  <- migration/12-qt-diff-comments-ui
+  <- migration/13-qt-ai
+  <- migration/14-qt-cutover-ci
+  <- migration/15-release-hardening
 ```
 
 Branch names may be divided into smaller layers when a listed layer would not
@@ -464,6 +465,30 @@ Phase 6 comment-core decisions:
   default feature set stays unchanged, and this prerequisite adds no QML object
   or database mutation before the asynchronous comment UI/store layer.
 
+Phase 6 comment-store decisions:
+
+- `hunk-app` owns scope-checked comment-store commands while `hunk-domain`
+  continues to own SQLite records and migrations. Qt enables persistence through
+  an explicit `comment-store` feature; no Qt or QtBridge type enters either
+  headless crate.
+- Database access, exact/hash/fuzzy matching, and list projection run on one
+  serialized background worker. Results carry repository/branch scope plus both
+  comment and Diff epochs, so switching repositories, branches, or selected
+  files cannot apply stale row matches on the Qt thread.
+- Reconciliation preserves the inherited two-miss threshold. It touches matched
+  comments immediately, defers changed files whose selected-file diff has not
+  loaded, marks missing anchors stale, and resolves unchanged files. When any
+  rename is present, unmatched old-path comments remain open until a renamed
+  diff can prove or disprove the fuzzy match.
+- Shared `Arc` ownership keeps the row model and background matcher aligned
+  without cloning every anchor. Visible comment items are capped at the legacy
+  64-item preview limit while counts and reconciliation still cover every
+  record, bounding the Qt-thread model reset.
+- This layer deliberately exposes the QtBridge model, properties, commands,
+  copy payloads, row counts, and jump targets without presentation. The
+  contextual composer, row badges, and virtualized inspector are the next stack
+  layer so persistence/concurrency can be reviewed independently from QML.
+
 Phase 6 initial-slice macOS validation through Nix, using the existing
 external-volume Cargo target and caches:
 
@@ -504,6 +529,19 @@ external caches:
 - `qmllint` and all 20 existing QML interaction/virtualization/visual tests
   passed in 482 milliseconds. This prerequisite intentionally changes no QML
   presentation; comment editing and persistence are the next Diff layer.
+
+Phase 6 comment-store macOS validation through Nix, reusing the same target and
+external caches:
+
+- The full workspace build passed in 32.21 seconds after the changed Qt and
+  headless comment crates compiled.
+- The complete workspace test suite passed, including scope-guarded CRUD,
+  exact/hash/fuzzy matching, two-miss reconciliation, rename preservation, the
+  64-item projection bound, and Qt comment-list coverage.
+- Workspace Clippy passed for all targets with warnings denied in 10.43 seconds.
+- `qmllint` and all 20 existing QML interaction/virtualization/visual tests
+  passed in 486 milliseconds. The store seam intentionally adds no QML surface;
+  the composer, badges, and inspector remain the next layer.
 
 ### 7. AI Tab
 
