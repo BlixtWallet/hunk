@@ -110,3 +110,6 @@ append a correction when later evidence changes one.
 - Moving an implementation also moves its direct dependencies. Removing the
   now-orphaned `base64`, `hunk-mobile`, and `webbrowser` dependencies from the
   GPUI crate prevents the temporary adapter from hiding ownership mistakes.
+- Compatibility re-exports used only by the legacy frontend's internal tests
+  must be gated with `cfg(test)`; test-target checks can otherwise conceal an
+  unused import that the normal binary and workspace clippy correctly reject.
