@@ -197,3 +197,7 @@ append a correction when later evidence changes one.
   matching Nix glibc and fail on private symbols. CI tests should unset the
   graphics runner and expose only the external Qt directory plus the
   Nix-provided runtime-library path.
+- Fontconfig does not put FreeType itself on a path consumable by an externally
+  installed Qt SDK. Qt GUI links `libfreetype` directly, so include `freetype`
+  explicitly in the Nix-owned Linux runtime closure instead of relying on a
+  transitive package relationship.

@@ -45,6 +45,7 @@
               dbus.lib
               expat
               fontconfig
+              freetype
               glib
               libcap
               libdrm
