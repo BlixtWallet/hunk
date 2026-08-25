@@ -4,6 +4,7 @@ Item {
     id: root
 
     property string label: ""
+    property string accessibleName: label
     property bool primary: false
     property bool danger: false
     property bool compact: false
@@ -14,7 +15,7 @@ Item {
     opacity: enabled ? 1 : 0.42
     activeFocusOnTab: enabled
     Accessible.role: Accessible.Button
-    Accessible.name: label
+    Accessible.name: accessibleName
     Accessible.onPressAction: {
         if (root.enabled)
             root.clicked()

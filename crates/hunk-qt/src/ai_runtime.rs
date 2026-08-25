@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
@@ -39,6 +40,7 @@ struct AiEventMailboxState {
 #[derive(Default)]
 pub struct AiEventMailbox {
     state: Mutex<AiEventMailboxState>,
+    bookmarked_thread_ids: Mutex<BTreeSet<String>>,
 }
 
 pub struct AiRuntimeSession {
@@ -146,6 +148,13 @@ where
 }
 
 impl AiEventMailbox {
+    pub fn set_bookmarked_thread_ids(&self, thread_ids: BTreeSet<String>) {
+        *self
+            .bookmarked_thread_ids
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = thread_ids;
+    }
+
     pub fn reset(&self, epoch: i32) {
         let mut state = self
             .state
@@ -174,7 +183,12 @@ impl AiEventMailbox {
             }
         }
 
-        let event = project_worker_event(event);
+        let bookmarked_thread_ids = self
+            .bookmarked_thread_ids
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let event = project_worker_event(event, &bookmarked_thread_ids);
         let mut state = self
             .state
             .lock()
@@ -247,7 +261,10 @@ pub fn reject_browser_call(event: AiWorkerEvent, message: &str) {
     }
 }
 
-fn project_worker_event(event: AiWorkerEvent) -> AiRuntimeEvent {
+fn project_worker_event(
+    event: AiWorkerEvent,
+    bookmarked_thread_ids: &BTreeSet<String>,
+) -> AiRuntimeEvent {
     let AiWorkerEvent {
         workspace_key,
         payload,
@@ -255,9 +272,10 @@ fn project_worker_event(event: AiWorkerEvent) -> AiRuntimeEvent {
     match payload {
         AiWorkerEventPayload::Snapshot(snapshot) => {
             let requires_openai_auth = snapshot.requires_openai_auth;
-            let mut threads = AiThreadCatalogProjection::from_state(
+            let mut threads = AiThreadCatalogProjection::from_state_with_bookmarks(
                 &snapshot.state,
                 snapshot.active_thread_id.as_deref(),
+                bookmarked_thread_ids,
             );
             let timeline = AiTimelineProjection::from_state(
                 &snapshot.state,

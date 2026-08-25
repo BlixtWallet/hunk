@@ -532,3 +532,33 @@ append a correction when later evidence changes one.
 - QtBridge `#[qobject]` property attributes are intentionally constrained. Keep
   derived queue properties as backend getters/signals and move cohesive command
   helpers into sibling modules when the 2,000-line backend boundary is reached.
+
+## 2026-08-25 — Qt Codex thread bookmarks
+
+- Persistent ordering belongs in the bounded Rust projection. Sorting only the
+  200 visible rows means an old bookmark can never re-enter the catalog.
+- Optimistic UI state must remain authoritative over already-projected worker
+  events. Reapply the current bookmark set as a snapshot reaches the Qt thread,
+  then request a fresh projection to reconcile catalog membership.
+- Multiple load-modify-save features sharing one state file need a serialized
+  write boundary. Otherwise a bookmark save and repository-selection save can
+  each preserve its own field while silently reverting the other.
+- Background persistence needs application-lifecycle ownership. Retain and join
+  outstanding saves on shutdown, and replace the state file through a flushed
+  temporary sibling so process exit cannot leave a truncated TOML.
+- Failure recovery must restore the complete previous set and attempt to put
+  that set back on disk. Flipping one ID is insufficient after rapid toggles
+  because superseded optimistic states may never have been persisted.
+- Icon-only actions still need stable semantic names. Keep the compact star in
+  the dense rail, but expose “Bookmark thread” and “Remove bookmark” to
+  accessibility clients instead of reading the glyph aloud.
+- A single role change should not reset a bounded `QAbstractListModel`. Emit
+  `dataChanged` for the row and a notified move when its sort position changes,
+  preserving `ListView.reuseItems` and the 8 ms interaction budget.
+- A row-wide selection `MouseArea` should end before contextual actions begin.
+  Disjoint hit regions are more reliable than depending on sibling z-order to
+  keep a star or archive button clickable.
+- After a model move, Qt Quick Test can expose a pooled, non-visible delegate
+  through `itemAtIndex()` under the offscreen runner. Assert authoritative model
+  ordering and action signal wiring separately instead of sending synthetic
+  pointer input to a pooled object.

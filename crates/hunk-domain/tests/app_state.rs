@@ -90,6 +90,34 @@ fn app_state_store_uses_shared_app_data_directory() {
 }
 
 #[test]
+fn app_state_store_atomically_replaces_existing_state() {
+    let temp = tempfile::tempdir().expect("temporary state directory should be created");
+    let state_path = temp.path().join("nested").join("state.toml");
+    let store = AppStateStore::from_path(state_path.clone());
+    let mut state = AppState {
+        ai_bookmarked_thread_ids: ["thread-a".to_owned()].into_iter().collect(),
+        ..AppState::default()
+    };
+
+    store.save(&state).expect("initial state should save");
+    state.ai_bookmarked_thread_ids = ["thread-b".to_owned()].into_iter().collect();
+    store
+        .save(&state)
+        .expect("existing state should be replaced");
+
+    assert_eq!(
+        store.load_or_default().expect("replaced state should load"),
+        state
+    );
+    assert_eq!(
+        std::fs::read_dir(state_path.parent().expect("state parent"))
+            .expect("state directory should be readable")
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn app_state_round_trips_workspace_fields() {
     let state = AppState {
         legacy_last_project_path: None,
