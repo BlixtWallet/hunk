@@ -87,8 +87,7 @@ impl DiffViewer {
         match self.workspace_view_mode {
             WorkspaceViewMode::Ai => (self.current_ai_workspace_kind() != AiWorkspaceKind::Chats)
                 .then_some(WorkspaceTerminalKind::Ai),
-            WorkspaceViewMode::Files
-            | WorkspaceViewMode::Diff
+            WorkspaceViewMode::Diff
             | WorkspaceViewMode::GitWorkspace => Some(WorkspaceTerminalKind::Files),
         }
     }
@@ -507,8 +506,7 @@ impl DiffViewer {
     ) {
         match self.workspace_view_mode {
             WorkspaceViewMode::Ai => self.ai_toggle_terminal_drawer_action(cx),
-            WorkspaceViewMode::Files
-            | WorkspaceViewMode::Diff
+            WorkspaceViewMode::Diff
             | WorkspaceViewMode::GitWorkspace => {
                 self.toggle_files_terminal_drawer(Some(window), cx);
             }
@@ -535,8 +533,7 @@ impl DiffViewer {
     ) {
         match self.workspace_view_mode {
             WorkspaceViewMode::Ai => self.ai_new_terminal_tab_action(cx),
-            WorkspaceViewMode::Files
-            | WorkspaceViewMode::Diff
+            WorkspaceViewMode::Diff
             | WorkspaceViewMode::GitWorkspace => {
                 self.files_new_terminal_tab_action(Some(window), cx);
             }
@@ -551,8 +548,7 @@ impl DiffViewer {
     ) {
         match self.workspace_view_mode {
             WorkspaceViewMode::Ai => self.ai_close_terminal_tab_action(cx),
-            WorkspaceViewMode::Files
-            | WorkspaceViewMode::Diff
+            WorkspaceViewMode::Diff
             | WorkspaceViewMode::GitWorkspace => {
                 self.files_close_terminal_tab_action(Some(window), cx);
             }
@@ -567,8 +563,7 @@ impl DiffViewer {
     ) {
         match self.workspace_view_mode {
             WorkspaceViewMode::Ai => self.ai_select_relative_terminal_tab(1, cx),
-            WorkspaceViewMode::Files
-            | WorkspaceViewMode::Diff
+            WorkspaceViewMode::Diff
             | WorkspaceViewMode::GitWorkspace => {
                 self.files_select_relative_terminal_tab(1, Some(window), cx);
             }
@@ -583,8 +578,7 @@ impl DiffViewer {
     ) {
         match self.workspace_view_mode {
             WorkspaceViewMode::Ai => self.ai_select_relative_terminal_tab(-1, cx),
-            WorkspaceViewMode::Files
-            | WorkspaceViewMode::Diff
+            WorkspaceViewMode::Diff
             | WorkspaceViewMode::GitWorkspace => {
                 self.files_select_relative_terminal_tab(-1, Some(window), cx);
             }

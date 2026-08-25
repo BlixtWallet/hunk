@@ -541,10 +541,6 @@ impl DiffViewer {
                 .rows(4)
                 .placeholder("Commit message")
         });
-        let files_editor = Rc::new(RefCell::new(
-            crate::app::native_files_editor::FilesEditor::new(),
-        ));
-        let repo_file_search_provider = Rc::new(RepoFileSearchProvider::new());
         let comment_input_state = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line(true)
@@ -564,12 +560,8 @@ impl DiffViewer {
         let ai_browser_address_input_state = cx.new(|cx| {
             InputState::new(window, cx).placeholder("Search or enter website address")
         });
-        let file_quick_open_input_state =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Type a file name or path"));
         let editor_search_input_state =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Find in file"));
-        let editor_replace_input_state =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Replace in file"));
+            cx.new(|cx| InputState::new(window, cx).placeholder("Find in diff"));
         let in_app_menu_bar = (!cfg!(target_os = "macos")).then(|| AppMenuBar::new(cx));
         let ai_sleep_inhibitor =
             hunk_sleep_inhibitor::SleepInhibitor::new(config.ai.prevent_idle_sleep);
@@ -765,7 +757,6 @@ impl DiffViewer {
             files_terminal_height_px: 220.0,
             files_terminal_session: AiTerminalSessionState::default(),
             files_terminal_focus_handle: cx.focus_handle(),
-            files_terminal_restore_target: FilesTerminalRestoreTarget::default(),
             files_terminal_surface_focused: false,
             files_terminal_cursor_blink_visible: true,
             files_terminal_cursor_blink_active: false,
@@ -781,9 +772,6 @@ impl DiffViewer {
             files_terminal_cursor_output_generation: 0,
             files_terminal_runtime_generation: 0,
             files_terminal_stop_requested: false,
-            repo_file_search_provider,
-            repo_file_search_reload_task: Task::ready(()),
-            repo_file_search_loading: false,
             ai_composer_file_completion_provider,
             ai_composer_file_completion_reload_task: Task::ready(()),
             ai_composer_file_completion_menu: None,
@@ -892,7 +880,6 @@ impl DiffViewer {
             in_app_menu_bar,
             focus_handle: cx.focus_handle(),
             repo_tree_focus_handle: cx.focus_handle(),
-            files_editor_focus_handle: cx.focus_handle(),
             drag_selecting_rows: false,
             scroll_selected_after_reload: true,
             last_scroll_activity_at: Instant::now(),
@@ -907,40 +894,12 @@ impl DiffViewer {
             ai_perf_metrics: RefCell::new(AiPerfMetrics::default()),
             repo_discovery_failed: false,
             error_message: None,
-            files_sidebar_collapsed: false,
             review_sidebar_collapsed: false,
             ai_thread_sidebar_collapsed: false,
             repo_tree: RepoTreeState::new(),
-            repo_tree_inline_edit: None,
-            repo_tree_context_menu: None,
             workspace_text_context_menu: None,
             browser_context_menu: None,
-            file_editor_tabs: Vec::new(),
-            active_file_editor_tab_id: None,
-            next_file_editor_tab_id: 1,
-            file_editor_tab_scroll_handle: ScrollHandle::default(),
-            files_editor,
             editor_search_input_state,
-            editor_replace_input_state,
-            file_quick_open_input_state,
-            file_quick_open_visible: false,
-            file_quick_open_matches: Vec::new(),
-            file_quick_open_selected_ix: 0,
-            editor_path: None,
-            editor_loading: false,
-            editor_error: None,
-            editor_dirty: false,
-            editor_last_saved_text: None,
-            editor_epoch: 0,
-            editor_task: Task::ready(()),
-            editor_save_loading: false,
-            editor_save_epoch: 0,
-            editor_save_task: Task::ready(()),
-            editor_markdown_preview_task: Task::ready(()),
-            editor_markdown_preview_blocks: Vec::new(),
-            editor_markdown_preview_loading: false,
-            editor_markdown_preview_revision: 0,
-            editor_markdown_preview: false,
             editor_search_visible: false,
         };
 
@@ -1015,14 +974,6 @@ impl DiffViewer {
         })
         .detach();
 
-        let file_quick_open_state = view.file_quick_open_input_state.clone();
-        cx.subscribe(&file_quick_open_state, |this, _, event, cx| {
-            if matches!(event, InputEvent::Change) {
-                this.sync_file_quick_open_matches(cx);
-            }
-        })
-        .detach();
-
         let editor_search_state = view.editor_search_input_state.clone();
         cx.subscribe(&editor_search_state, |this, _, event, cx| {
             if matches!(event, InputEvent::Change) {
@@ -1030,18 +981,6 @@ impl DiffViewer {
             }
             if let InputEvent::PressEnter { secondary } = event {
                 this.navigate_editor_search(!secondary, cx);
-            }
-        })
-        .detach();
-
-        let editor_replace_state = view.editor_replace_input_state.clone();
-        cx.subscribe(&editor_replace_state, |this, _, event, cx| {
-            if let InputEvent::PressEnter { secondary } = event {
-                if *secondary {
-                    this.replace_all_editor_search_matches(cx);
-                } else {
-                    this.replace_current_editor_search_match(None, cx);
-                }
             }
         })
         .detach();
@@ -1056,14 +995,6 @@ impl DiffViewer {
             if let Some(action) = hunk_picker_action_for_keystroke(&event.keystroke) {
                 let handled = view.update(cx, |this, cx| {
                     this.handle_hunk_picker_keystroke(action, window, cx)
-                });
-                if handled {
-                    return;
-                }
-            }
-            if let Some(action) = file_quick_open_action_for_keystroke(&event.keystroke) {
-                let handled = view.update(cx, |this, cx| {
-                    this.handle_file_quick_open_keystroke(action, window, cx)
                 });
                 if handled {
                     return;

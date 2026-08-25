@@ -1,4 +1,46 @@
 impl DiffViewer {
+    fn files_terminal_panel_state(&self) -> TerminalPanelState {
+        TerminalPanelState {
+            kind: WorkspaceTerminalKind::Files,
+            open: self.files_terminal_open,
+            active_tab_id: self.files_terminal_active_tab_id,
+            tabs: self
+                .files_visible_terminal_tabs_snapshot()
+                .into_iter()
+                .map(|tab| TerminalPanelTabState {
+                    id: tab.id,
+                    title: tab.title,
+                    status: tab.session.status,
+                })
+                .collect(),
+            cwd_label: self
+                .files_terminal_session
+                .cwd
+                .clone()
+                .or_else(|| self.repo_root.clone())
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "No repository selected".to_string()),
+            shell_label: ai_terminal_shell_label(&self.config),
+            status_message: self.files_terminal_session.status_message.clone(),
+            status: self.files_terminal_session.status,
+            running: self.files_terminal_is_running(),
+            surface_focused: self.files_terminal_surface_focused,
+            screen: self.files_terminal_session.screen.clone(),
+            display_offset: self
+                .files_terminal_session
+                .screen
+                .as_ref()
+                .map(|screen| screen.display_offset)
+                .unwrap_or(0),
+            has_transcript: !self.files_terminal_session.transcript.trim().is_empty(),
+            has_output: self.files_terminal_session.screen.is_some()
+                || !self.files_terminal_session.transcript.trim().is_empty(),
+            has_last_command: self.files_terminal_session.last_command.is_some(),
+            transcript: self.files_terminal_session.transcript.clone(),
+            height_px: self.files_terminal_height_px,
+        }
+    }
+
     fn current_or_fresh_review_surface_snapshot(
         &mut self,
     ) -> Option<review_workspace_session::ReviewWorkspaceSurfaceSnapshot> {
@@ -107,7 +149,6 @@ impl DiffViewer {
                             editor_chrome,
                             is_dark,
                             search_match_count,
-                            false,
                             cx,
                         ))
                     })
@@ -307,10 +348,6 @@ impl DiffViewer {
         let layout = self.diff_column_layout();
         let chrome = hunk_diff_chrome(cx.theme(), cx.theme().mode.is_dark());
         let (left_horizontal_offset, right_horizontal_offset) = self.diff_horizontal_offsets();
-        let sticky_file_can_view = surface.sticky_file_header.as_ref().is_some_and(|header| {
-            self.can_open_file_in_files_workspace(header.path.as_str(), header.status)
-        });
-
         div()
             .id("review-workspace-viewport")
             .relative()
@@ -322,7 +359,6 @@ impl DiffViewer {
                         view: cx.entity(),
                         viewport: std::rc::Rc::new(viewport.clone()),
                         sticky_file_header: surface.sticky_file_header.clone(),
-                        sticky_file_can_view,
                         viewport_origin_px,
                         selected_row_range: self.selected_row_range(),
                         left_panel_width: layout.map(|layout| layout.left_panel_width),

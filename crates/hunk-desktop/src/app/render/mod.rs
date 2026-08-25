@@ -1,4 +1,4 @@
-use super::data::{DiffStreamRowKind, RepoTreeNodeKind, is_markdown_path};
+use super::data::DiffStreamRowKind;
 use super::theme::*;
 use super::*;
 use crate::app::markdown_links::MarkdownLinkRange;
@@ -12,7 +12,6 @@ use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::scroll::{Scrollbar, ScrollbarShow};
 use gpui_component::{Icon, IconName};
 use hunk_codex::state::ThreadLifecycleStatus;
-use hunk_domain::markdown_preview::{MarkdownInlineSpan, MarkdownPreviewBlock};
 
 fn change_status_label_color(
     status: FileStatus,
@@ -49,9 +48,6 @@ include!("review_workspace_section.rs");
 include!("review_workspace_surface.rs");
 include!("context_menu.rs");
 include!("workspace_search_bar.rs");
-include!("file_editor.rs");
-include!("file_editor_surface.rs");
-include!("file_quick_open.rs");
 include!("ai_loading.rs");
 include!("ai.rs");
 include!("ai_followup_prompt.rs");

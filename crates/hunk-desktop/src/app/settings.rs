@@ -89,26 +89,18 @@ struct SettingsShortcutInputs {
     previous_hunk: Entity<InputState>,
     next_file: Entity<InputState>,
     previous_file: Entity<InputState>,
-    view_current_review_file: Entity<InputState>,
     toggle_sidebar_tree: Entity<InputState>,
-    switch_to_files_view: Entity<InputState>,
     switch_to_review_view: Entity<InputState>,
     switch_to_git_view: Entity<InputState>,
+    switch_to_ai_view: Entity<InputState>,
     toggle_ai_terminal_drawer: Entity<InputState>,
     terminal_new_tab: Entity<InputState>,
     terminal_close_tab: Entity<InputState>,
     terminal_next_tab: Entity<InputState>,
     terminal_previous_tab: Entity<InputState>,
     open_project: Entity<InputState>,
-    save_current_file: Entity<InputState>,
-    next_editor_tab: Entity<InputState>,
-    previous_editor_tab: Entity<InputState>,
-    close_editor_tab: Entity<InputState>,
     open_settings: Entity<InputState>,
     quit_app: Entity<InputState>,
-    repo_tree_new_file: Entity<InputState>,
-    repo_tree_new_folder: Entity<InputState>,
-    repo_tree_rename_file: Entity<InputState>,
 }
 
 impl SettingsShortcutInputs {
@@ -175,22 +167,10 @@ impl SettingsShortcutInputs {
                 input_state: self.previous_file.clone(),
             },
             SettingsShortcutRow {
-                id: "view-current-review-file",
-                label: "View Review File",
-                hint: "Opens the selected review file in Files view.",
-                input_state: self.view_current_review_file.clone(),
-            },
-            SettingsShortcutRow {
                 id: "toggle-sidebar-tree",
                 label: "Toggle Sidebar",
-                hint: "Collapses or expands the left sidebar in Files, Review, and AI views.",
+                hint: "Collapses or expands the left sidebar in Review and AI views.",
                 input_state: self.toggle_sidebar_tree.clone(),
-            },
-            SettingsShortcutRow {
-                id: "switch-to-files-view",
-                label: "Switch to Files View",
-                hint: "Switches the workspace to file editing view.",
-                input_state: self.switch_to_files_view.clone(),
             },
             SettingsShortcutRow {
                 id: "switch-to-review-view",
@@ -205,9 +185,15 @@ impl SettingsShortcutInputs {
                 input_state: self.switch_to_git_view.clone(),
             },
             SettingsShortcutRow {
+                id: "switch-to-ai-view",
+                label: "Switch to AI View",
+                hint: "Switches the workspace to Codex threads and tools.",
+                input_state: self.switch_to_ai_view.clone(),
+            },
+            SettingsShortcutRow {
                 id: "toggle-ai-terminal-drawer",
                 label: "Toggle Terminal",
-                hint: "Opens or closes the terminal in AI and Files views.",
+                hint: "Opens or closes the terminal in the active workspace.",
                 input_state: self.toggle_ai_terminal_drawer.clone(),
             },
             SettingsShortcutRow {
@@ -241,30 +227,6 @@ impl SettingsShortcutInputs {
                 input_state: self.open_project.clone(),
             },
             SettingsShortcutRow {
-                id: "save-current-file",
-                label: "Save Current File",
-                hint: "Saves the active file editor buffer.",
-                input_state: self.save_current_file.clone(),
-            },
-            SettingsShortcutRow {
-                id: "next-editor-tab",
-                label: "Next Editor Tab",
-                hint: "Moves to the next open file tab in Files view.",
-                input_state: self.next_editor_tab.clone(),
-            },
-            SettingsShortcutRow {
-                id: "previous-editor-tab",
-                label: "Previous Editor Tab",
-                hint: "Moves to the previous open file tab in Files view.",
-                input_state: self.previous_editor_tab.clone(),
-            },
-            SettingsShortcutRow {
-                id: "close-editor-tab",
-                label: "Close Editor Tab",
-                hint: "Closes the active file tab in Files view.",
-                input_state: self.close_editor_tab.clone(),
-            },
-            SettingsShortcutRow {
                 id: "open-settings",
                 label: "Open Settings",
                 hint: "Opens this settings popup.",
@@ -275,24 +237,6 @@ impl SettingsShortcutInputs {
                 label: "Quit App",
                 hint: "Quits Hunk.",
                 input_state: self.quit_app.clone(),
-            },
-            SettingsShortcutRow {
-                id: "repo-tree-new-file",
-                label: "Tree: New File",
-                hint: "Creates a file from the focused file tree.",
-                input_state: self.repo_tree_new_file.clone(),
-            },
-            SettingsShortcutRow {
-                id: "repo-tree-new-folder",
-                label: "Tree: New Folder",
-                hint: "Creates a folder from the focused file tree.",
-                input_state: self.repo_tree_new_folder.clone(),
-            },
-            SettingsShortcutRow {
-                id: "repo-tree-rename-file",
-                label: "Tree: Rename File",
-                hint: "Renames the selected file in the focused file tree.",
-                input_state: self.repo_tree_rename_file.clone(),
             },
         ]
     }

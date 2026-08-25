@@ -1820,7 +1820,6 @@ fn review_workspace_session_surface_snapshot_builds_sparse_overlays_from_surface
             comment_open_counts_by_row: BTreeMap::from([(comment_row, 1)]),
             active_comment_editor_row: Some(comment_row),
             collapsed_paths: BTreeSet::from(["src/main.rs".to_string()]),
-            view_file_enabled_paths: BTreeSet::from(["src/main.rs".to_string()]),
             search_highlight_columns_by_row: BTreeMap::new(),
         },
     );
@@ -1833,9 +1832,7 @@ fn review_workspace_session_surface_snapshot_builds_sparse_overlays_from_surface
         Some(comment_row)
     );
     assert!(surface.viewport.row_by_raw_index(0).is_some_and(|row| {
-        row.stream_kind == app::DiffStreamRowKind::FileHeader
-            && row.file_is_collapsed
-            && row.can_view_file
+        row.stream_kind == app::DiffStreamRowKind::FileHeader && row.file_is_collapsed
     }));
     assert!(
         surface

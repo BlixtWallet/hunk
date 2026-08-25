@@ -90,39 +90,6 @@ impl DiffViewer {
             .into_any_element()
     }
 
-    fn render_file_workspace_screen(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        if self.repo_discovery_failed {
-            return self.render_open_project_empty_state(cx);
-        }
-
-        if let Some(error_message) = &self.error_message {
-            return v_flex()
-                .size_full()
-                .items_center()
-                .justify_center()
-                .p_4()
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().danger)
-                        .child(error_message.clone()),
-                )
-                .into_any_element();
-        }
-
-        let surface = self.render_file_editor(window, cx);
-        self.render_tree_workspace_screen(
-            "hunk-file-workspace",
-            self.files_sidebar_collapsed,
-            surface,
-            cx,
-        )
-    }
-
     fn render_git_workspace_screen(&mut self, cx: &mut Context<Self>) -> AnyElement {
         if self.repo_discovery_failed {
             return self.render_open_project_empty_state(cx);
@@ -179,7 +146,6 @@ impl DiffViewer {
         let render_started_at = Instant::now();
         let view = cx.entity();
         let is_dark = cx.theme().mode.is_dark();
-        let files_selected = self.workspace_view_mode == WorkspaceViewMode::Files;
         let diff_selected = self.workspace_view_mode == WorkspaceViewMode::Diff;
         let git_selected = self.workspace_view_mode == WorkspaceViewMode::GitWorkspace;
         let ai_selected = self.workspace_view_mode == WorkspaceViewMode::Ai;
@@ -188,8 +154,6 @@ impl DiffViewer {
             "Codex AI Workspace"
         } else if git_selected {
             "Git Workspace"
-        } else if files_selected {
-            "Files Workspace"
         } else {
             "Review Workspace"
         };
@@ -334,35 +298,13 @@ impl DiffViewer {
                     })
                     .child({
                         let view = view.clone();
-                        let mut button = Button::new("footer-workspace-files")
-                            .compact()
-                            .rounded(px(7.0))
-                            .icon(Icon::new(HunkIconName::FolderTree).size(px(14.0)))
-                            .min_w(px(36.0))
-                            .h(px(28.0))
-                            .tooltip("Switch to file view (Cmd/Ctrl+1)")
-                            .on_click(move |_, window, cx| {
-                                view.update(cx, |this, cx| {
-                                    this.set_workspace_view_mode(WorkspaceViewMode::Files, cx);
-                                    this.focus_handle.focus(window, cx);
-                                });
-                            });
-                        if files_selected {
-                            button = button.primary();
-                        } else {
-                            button = button.outline();
-                        }
-                        button.into_any_element()
-                    })
-                    .child({
-                        let view = view.clone();
                         let mut button = Button::new("footer-workspace-diff")
                             .compact()
                             .rounded(px(7.0))
                             .icon(Icon::new(HunkIconName::FileDiff).size(px(14.0)))
                             .min_w(px(36.0))
                             .h(px(28.0))
-                            .tooltip("Switch to review mode (Cmd/Ctrl+2)")
+                            .tooltip("Switch to review mode (Cmd/Ctrl+1)")
                             .on_click(move |_, window, cx| {
                                 view.update(cx, |this, cx| {
                                     this.set_workspace_view_mode(WorkspaceViewMode::Diff, cx);
@@ -384,7 +326,7 @@ impl DiffViewer {
                             .icon(Icon::new(HunkIconName::GitBranch).size(px(14.0)))
                             .min_w(px(36.0))
                             .h(px(28.0))
-                            .tooltip("Switch to Git workspace (Cmd/Ctrl+3)")
+                            .tooltip("Switch to Git workspace (Cmd/Ctrl+2)")
                             .on_click(move |_, window, cx| {
                                 view.update(cx, |this, cx| {
                                     this.set_workspace_view_mode(
@@ -409,7 +351,7 @@ impl DiffViewer {
                             .icon(Icon::new(HunkIconName::BotMessageSquare).size(px(14.0)))
                             .min_w(px(36.0))
                             .h(px(28.0))
-                            .tooltip("Switch to AI coding workspace (Cmd/Ctrl+4)")
+                            .tooltip("Switch to AI coding workspace (Cmd/Ctrl+3)")
                             .on_click(move |_, window, cx| {
                                 view.update(cx, |this, cx| {
                                     this.activate_ai_workspace(window, cx);
@@ -600,9 +542,7 @@ impl Render for DiffViewer {
             .on_action(cx.listener(Self::previous_hunk_action))
             .on_action(cx.listener(Self::next_file_action))
             .on_action(cx.listener(Self::previous_file_action))
-            .on_action(cx.listener(Self::view_current_review_file_action))
             .on_action(cx.listener(Self::toggle_sidebar_tree_action))
-            .on_action(cx.listener(Self::switch_to_files_view_action))
             .on_action(cx.listener(Self::switch_to_review_view_action))
             .on_action(cx.listener(Self::switch_to_git_view_action))
             .on_action(cx.listener(Self::switch_to_ai_view_action))
@@ -615,11 +555,6 @@ impl Render for DiffViewer {
             .on_action(cx.listener(Self::ai_new_worktree_thread_shortcut_action))
             .on_action(cx.listener(Self::ai_open_working_tree_diff_viewer_action))
             .on_action(cx.listener(Self::open_project_action))
-            .on_action(cx.listener(Self::quick_open_file_action))
-            .on_action(cx.listener(Self::save_current_file_action))
-            .on_action(cx.listener(Self::next_editor_tab_action))
-            .on_action(cx.listener(Self::previous_editor_tab_action))
-            .on_action(cx.listener(Self::close_editor_tab_action))
             .on_action(cx.listener(Self::check_for_updates_action))
             .on_action(cx.listener(Self::open_about_hunk_action))
             .on_action(cx.listener(Self::open_settings_action))
@@ -639,7 +574,6 @@ impl Render for DiffViewer {
                     .w_full()
                     .min_h_0()
                     .child(match self.workspace_view_mode {
-                        WorkspaceViewMode::Files => self.render_file_workspace_screen(window, cx),
                         WorkspaceViewMode::Diff => self.render_diff_workspace_screen(window, cx),
                         WorkspaceViewMode::GitWorkspace => self.render_git_workspace_screen(cx),
                         WorkspaceViewMode::Ai => {
@@ -652,9 +586,6 @@ impl Render for DiffViewer {
                 self.comments_preview_open && self.workspace_view_mode == WorkspaceViewMode::Diff,
                 |this| this.child(self.render_comments_preview(cx)),
             )
-            .when(self.file_quick_open_visible, |this| {
-                this.child(self.render_file_quick_open_popup(window, cx))
-            })
             .when(self.settings_draft.is_some(), |this| {
                 this.child(self.render_settings_popup(cx))
             })

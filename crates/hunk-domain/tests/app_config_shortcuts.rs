@@ -47,28 +47,20 @@ fn app_config_defaults_include_existing_keyboard_shortcuts() {
         strings(&["alt-up"])
     );
     assert_eq!(
-        config.keyboard_shortcuts.view_current_review_file,
-        strings(&["g space"])
-    );
-    assert_eq!(
         config.keyboard_shortcuts.toggle_sidebar_tree,
         strings(&["cmd-b", "ctrl-b"])
     );
     assert_eq!(
-        config.keyboard_shortcuts.switch_to_files_view,
+        config.keyboard_shortcuts.switch_to_review_view,
         strings(&["cmd-1", "ctrl-1"])
     );
     assert_eq!(
-        config.keyboard_shortcuts.switch_to_review_view,
+        config.keyboard_shortcuts.switch_to_git_view,
         strings(&["cmd-2", "ctrl-2"])
     );
     assert_eq!(
-        config.keyboard_shortcuts.switch_to_git_view,
-        strings(&["cmd-3", "ctrl-3"])
-    );
-    assert_eq!(
         config.keyboard_shortcuts.switch_to_ai_view,
-        strings(&["cmd-4", "ctrl-4"])
+        strings(&["cmd-3", "ctrl-3"])
     );
     if cfg!(target_os = "macos") {
         assert_eq!(
@@ -108,10 +100,6 @@ fn app_config_defaults_include_existing_keyboard_shortcuts() {
     assert_eq!(
         config.keyboard_shortcuts.open_project,
         strings(&["cmd-shift-o", "ctrl-shift-o"])
-    );
-    assert_eq!(
-        config.keyboard_shortcuts.save_current_file,
-        strings(&["cmd-s", "ctrl-s"])
     );
     assert_eq!(
         config.keyboard_shortcuts.open_settings,
@@ -260,36 +248,20 @@ next_hunk = ["f8"]
     );
     assert_eq!(config.keyboard_shortcuts.next_hunk, strings(&["f8"]));
     assert_eq!(
-        config.keyboard_shortcuts.view_current_review_file,
-        strings(&["g space"])
-    );
-    assert_eq!(
-        config.keyboard_shortcuts.save_current_file,
-        strings(&["cmd-s", "ctrl-s"])
-    );
-    assert_eq!(
         config.keyboard_shortcuts.toggle_sidebar_tree,
         strings(&["cmd-b", "ctrl-b"])
     );
     assert_eq!(
-        config.keyboard_shortcuts.view_current_review_file,
-        strings(&["g space"])
-    );
-    assert_eq!(
-        config.keyboard_shortcuts.switch_to_files_view,
+        config.keyboard_shortcuts.switch_to_review_view,
         strings(&["cmd-1", "ctrl-1"])
     );
     assert_eq!(
-        config.keyboard_shortcuts.switch_to_review_view,
+        config.keyboard_shortcuts.switch_to_git_view,
         strings(&["cmd-2", "ctrl-2"])
     );
     assert_eq!(
-        config.keyboard_shortcuts.switch_to_git_view,
-        strings(&["cmd-3", "ctrl-3"])
-    );
-    assert_eq!(
         config.keyboard_shortcuts.switch_to_ai_view,
-        strings(&["cmd-4", "ctrl-4"])
+        strings(&["cmd-3", "ctrl-3"])
     );
     assert_eq!(
         config.keyboard_shortcuts.open_settings,
@@ -315,20 +287,16 @@ quit_app = []
         strings(&["cmd-b", "ctrl-b"])
     );
     assert_eq!(
-        config.keyboard_shortcuts.switch_to_files_view,
+        config.keyboard_shortcuts.switch_to_review_view,
         strings(&["cmd-1", "ctrl-1"])
     );
     assert_eq!(
-        config.keyboard_shortcuts.switch_to_review_view,
+        config.keyboard_shortcuts.switch_to_git_view,
         strings(&["cmd-2", "ctrl-2"])
     );
     assert_eq!(
-        config.keyboard_shortcuts.switch_to_git_view,
-        strings(&["cmd-3", "ctrl-3"])
-    );
-    assert_eq!(
         config.keyboard_shortcuts.switch_to_ai_view,
-        strings(&["cmd-4", "ctrl-4"])
+        strings(&["cmd-3", "ctrl-3"])
     );
     assert_eq!(
         config.keyboard_shortcuts.open_settings,

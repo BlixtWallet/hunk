@@ -141,22 +141,6 @@ pub(super) const fn should_scroll_selected_after_reload(
     selected_changed || diff_rows_empty
 }
 
-pub(super) const fn should_reload_empty_files_workspace_tree(
-    files_view_active: bool,
-    repo_tree_empty: bool,
-    repo_tree_loading: bool,
-) -> bool {
-    files_view_active && repo_tree_empty && !repo_tree_loading
-}
-
-pub(super) const fn should_bootstrap_empty_files_workspace_editor(
-    files_view_active: bool,
-    editor_missing: bool,
-    editor_loading: bool,
-) -> bool {
-    files_view_active && editor_missing && !editor_loading
-}
-
 pub(super) const fn should_reload_repo_tree_after_snapshot(
     root_changed: bool,
     supports_sidebar_tree: bool,
@@ -278,14 +262,4 @@ pub(super) fn line_stats_paths_from_dirty_paths(
         })
         .map(|file| file.path.clone())
         .collect()
-}
-
-pub(super) fn retained_selection_path(
-    files: &[ChangedFile],
-    selected_path: Option<&str>,
-) -> Option<String> {
-    selected_path
-        .filter(|selected_path| files.iter().any(|file| file.path == *selected_path))
-        .map(ToString::to_string)
-        .or_else(|| files.first().map(|file| file.path.clone()))
 }

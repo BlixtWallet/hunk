@@ -1,11 +1,6 @@
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::hash::{Hash, Hasher};
-use std::io::Write as _;
-use std::path::Path;
-
-use anyhow::{Result, anyhow};
 
 pub(super) use super::data_segments::{
     cached_runtime_fallback_segments, compact_cached_segments_for_render, is_binary_patch,
@@ -17,53 +12,12 @@ use super::highlight::{
 pub(super) use super::workspace_view::{WorkspaceSwitchAction, WorkspaceViewMode};
 use super::*;
 use hunk_domain::diff::parse_patch_side_by_side;
-use hunk_git::git::{RepoTreeEntry, RepoTreeEntryKind};
-
-#[derive(Default)]
-struct RepoTreeFolder {
-    ignored: bool,
-    folders: BTreeMap<String, RepoTreeFolder>,
-    files: BTreeMap<String, RepoTreeFile>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct RepoTreeFile {
-    ignored: bool,
-    status: Option<FileStatus>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum RepoTreeNodeKind {
-    Directory,
-    File,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct RepoTreeNode {
-    pub(super) path: String,
-    pub(super) name: String,
-    pub(super) kind: RepoTreeNodeKind,
-    pub(super) ignored: bool,
-    pub(super) file_status: Option<FileStatus>,
-    pub(super) children: Vec<RepoTreeNode>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct RepoTreeRow {
     pub(super) path: String,
     pub(super) name: String,
-    pub(super) kind: RepoTreeNodeKind,
-    pub(super) ignored: bool,
     pub(super) file_status: Option<FileStatus>,
-    pub(super) depth: usize,
-    pub(super) expanded: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct FileEditorDocument {
-    pub(super) text: String,
-    pub(super) byte_len: usize,
-    pub(super) language: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,291 +85,15 @@ struct LoadedFileDiffRows {
 const MAX_RENDER_SEGMENTS_PER_CELL_DETAILED: usize = 48;
 const MAX_RENDER_SEGMENTS_PER_CELL_LARGE_FILE: usize = 24;
 
-pub(super) fn build_repo_tree(entries: &[RepoTreeEntry]) -> Vec<RepoTreeNode> {
-    let mut root = RepoTreeFolder::default();
-
-    for entry in entries {
-        let mut parts = entry.path.split('/').peekable();
-        let mut cursor = &mut root;
-        while let Some(part) = parts.next() {
-            if parts.peek().is_some() {
-                cursor = cursor.folders.entry(part.to_string()).or_default();
-                continue;
-            }
-
-            match entry.kind {
-                RepoTreeEntryKind::Directory => {
-                    let folder = cursor.folders.entry(part.to_string()).or_default();
-                    folder.ignored = entry.ignored;
-                }
-                RepoTreeEntryKind::File => {
-                    cursor.files.insert(
-                        part.to_string(),
-                        RepoTreeFile {
-                            ignored: entry.ignored,
-                            status: None,
-                        },
-                    );
-                }
-            }
-        }
-    }
-
-    build_repo_tree_nodes(&root, "")
-}
-
-pub(super) fn build_changed_files_tree(files: &[ChangedFile]) -> Vec<RepoTreeNode> {
+pub(super) fn build_changed_file_rows(files: &[ChangedFile]) -> Vec<RepoTreeRow> {
     files
         .iter()
-        .map(|file| RepoTreeNode {
+        .map(|file| RepoTreeRow {
             path: file.path.clone(),
             name: file.path.clone(),
-            kind: RepoTreeNodeKind::File,
-            ignored: false,
             file_status: Some(file.status),
-            children: Vec::new(),
         })
         .collect()
-}
-
-pub(super) fn flatten_repo_tree_rows(
-    nodes: &[RepoTreeNode],
-    expanded_dirs: &BTreeSet<String>,
-) -> Vec<RepoTreeRow> {
-    let mut rows = Vec::new();
-    append_repo_tree_rows(nodes, expanded_dirs, 0, &mut rows);
-    rows
-}
-
-pub(super) fn count_repo_tree_kind(nodes: &[RepoTreeNode], kind: RepoTreeNodeKind) -> usize {
-    nodes
-        .iter()
-        .map(|node| {
-            let self_count = usize::from(node.kind == kind);
-            self_count + count_repo_tree_kind(&node.children, kind)
-        })
-        .sum::<usize>()
-}
-
-pub(super) fn load_file_editor_document(
-    repo_root: &Path,
-    file_path: &str,
-    max_bytes: usize,
-) -> Result<FileEditorDocument> {
-    let absolute_path = repo_root.join(file_path);
-    let bytes = fs::read(&absolute_path)
-        .map_err(|err| anyhow!("failed to read {}: {err}", absolute_path.display()))?;
-    if bytes.len() > max_bytes {
-        return Err(anyhow!(
-            "file is too large to edit ({} bytes, max {})",
-            bytes.len(),
-            max_bytes
-        ));
-    }
-    if is_probably_binary_bytes(&bytes) {
-        return Err(anyhow!("binary file editing is not supported"));
-    }
-
-    let text = String::from_utf8(bytes)
-        .map_err(|_| anyhow!("file is not UTF-8 text and cannot be edited"))?;
-
-    Ok(FileEditorDocument {
-        byte_len: text.len(),
-        language: editor_language_hint(file_path),
-        text,
-    })
-}
-
-pub(super) fn save_file_editor_document(
-    repo_root: &Path,
-    file_path: &str,
-    text: &str,
-) -> Result<()> {
-    let absolute_path = repo_root.join(file_path);
-    let existing_permissions = fs::metadata(&absolute_path)
-        .ok()
-        .map(|meta| meta.permissions());
-    let parent = absolute_path.parent().ok_or_else(|| {
-        anyhow!(
-            "cannot save {}: resolved path has no parent",
-            absolute_path.display()
-        )
-    })?;
-
-    let mut temp_name = absolute_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("hunk-save")
-        .to_string();
-    temp_name.push_str(".hunk-tmp.");
-    temp_name.push_str(&std::process::id().to_string());
-    temp_name.push('.');
-    temp_name.push_str(
-        &std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
-            .to_string(),
-    );
-
-    let temp_path = parent.join(temp_name);
-    let mut temp_file =
-        fs::File::create(&temp_path).map_err(|err| anyhow!("failed to create temp file: {err}"))?;
-    temp_file
-        .write_all(text.as_bytes())
-        .map_err(|err| anyhow!("failed to write temp file {}: {err}", temp_path.display()))?;
-    temp_file
-        .sync_all()
-        .map_err(|err| anyhow!("failed to fsync temp file {}: {err}", temp_path.display()))?;
-    drop(temp_file);
-    if let Some(permissions) = existing_permissions {
-        fs::set_permissions(&temp_path, permissions).map_err(|err| {
-            anyhow!(
-                "failed to preserve permissions for temp file {}: {err}",
-                temp_path.display()
-            )
-        })?;
-    }
-
-    if let Err(err) = fs::rename(&temp_path, &absolute_path) {
-        let _ = fs::remove_file(&temp_path);
-        return Err(anyhow!(
-            "failed to move {} into place: {err}",
-            absolute_path.display()
-        ));
-    }
-
-    if let Ok(dir_handle) = fs::File::open(parent) {
-        let _ = dir_handle.sync_all();
-    }
-
-    Ok(())
-}
-
-fn join_path(prefix: &str, name: &str) -> String {
-    if prefix.is_empty() {
-        name.to_string()
-    } else {
-        format!("{prefix}/{name}")
-    }
-}
-
-fn build_repo_tree_nodes(folder: &RepoTreeFolder, prefix: &str) -> Vec<RepoTreeNode> {
-    let mut nodes = Vec::new();
-
-    for (name, child_folder) in &folder.folders {
-        let path = join_path(prefix, name);
-        nodes.push(RepoTreeNode {
-            path: path.clone(),
-            name: name.clone(),
-            kind: RepoTreeNodeKind::Directory,
-            ignored: child_folder.ignored,
-            file_status: None,
-            children: build_repo_tree_nodes(child_folder, &path),
-        });
-    }
-
-    for (name, file) in &folder.files {
-        let path = join_path(prefix, name);
-        nodes.push(RepoTreeNode {
-            path,
-            name: name.clone(),
-            kind: RepoTreeNodeKind::File,
-            ignored: file.ignored,
-            file_status: file.status,
-            children: Vec::new(),
-        });
-    }
-
-    nodes
-}
-
-fn append_repo_tree_rows(
-    nodes: &[RepoTreeNode],
-    expanded_dirs: &BTreeSet<String>,
-    depth: usize,
-    rows: &mut Vec<RepoTreeRow>,
-) {
-    for node in nodes {
-        let expanded =
-            node.kind == RepoTreeNodeKind::Directory && expanded_dirs.contains(node.path.as_str());
-        rows.push(RepoTreeRow {
-            path: node.path.clone(),
-            name: node.name.clone(),
-            kind: node.kind,
-            ignored: node.ignored,
-            file_status: node.file_status,
-            depth,
-            expanded,
-        });
-
-        if expanded && node.kind == RepoTreeNodeKind::Directory {
-            append_repo_tree_rows(&node.children, expanded_dirs, depth + 1, rows);
-        }
-    }
-}
-
-fn is_probably_binary_bytes(bytes: &[u8]) -> bool {
-    bytes.contains(&0)
-}
-
-fn editor_language_hint(file_path: &str) -> String {
-    let path = Path::new(file_path);
-
-    if let Some(name) = path.file_name().and_then(|file| file.to_str()) {
-        match name {
-            "Dockerfile" => return "text".to_string(),
-            "Makefile" => return "make".to_string(),
-            "CMakeLists.txt" => return "cmake".to_string(),
-            ".zshrc" | ".bashrc" | ".bash_profile" => return "bash".to_string(),
-            "Cargo.toml" | "Cargo.lock" => return "toml".to_string(),
-            _ => {}
-        }
-    }
-
-    if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
-        let extension = extension.to_ascii_lowercase();
-        let language = match extension.as_str() {
-            "rs" => "rust",
-            "toml" => "toml",
-            "js" | "mjs" | "cjs" | "jsx" => "javascript",
-            "tsx" => "tsx",
-            "ts" => "typescript",
-            "json" | "jsonc" => "json",
-            "yaml" | "yml" => "yaml",
-            "md" | "markdown" | "mdx" => "markdown",
-            "py" => "python",
-            "rb" => "ruby",
-            "go" => "go",
-            "java" => "java",
-            "swift" => "swift",
-            "c" | "h" => "c",
-            "cc" | "cpp" | "cxx" | "hh" | "hpp" | "hxx" => "cpp",
-            "cs" => "csharp",
-            "cmake" => "cmake",
-            "graphql" | "gql" => "graphql",
-            "bash" | "sh" | "zsh" => "bash",
-            "html" | "htm" => "html",
-            "css" | "scss" | "sass" => "css",
-            "ejs" => "ejs",
-            "erb" => "erb",
-            "ex" | "exs" => "elixir",
-            "sql" => "sql",
-            "proto" => "proto",
-            "scala" => "scala",
-            "zig" => "zig",
-            "diff" | "patch" => "diff",
-            "lock" => "toml",
-            _ => "text",
-        };
-        return language.to_string();
-    }
-
-    "text".to_string()
-}
-
-pub(super) fn is_markdown_path(file_path: &str) -> bool {
-    editor_language_hint(file_path) == "markdown"
 }
 
 pub(super) fn message_row(kind: DiffRowKind, text: impl Into<String>) -> SideBySideRow {
@@ -728,26 +406,6 @@ mod tests {
     }
 
     #[test]
-    fn editor_language_hint_maps_rust_and_ts() {
-        assert_eq!(editor_language_hint("src/main.rs"), "rust");
-        assert_eq!(editor_language_hint("web/app.ts"), "typescript");
-        assert_eq!(editor_language_hint("web/app.tsx"), "tsx");
-        assert_eq!(editor_language_hint("web/app.jsx"), "javascript");
-    }
-
-    #[test]
-    fn editor_language_hint_uses_filename_for_special_cases() {
-        assert_eq!(editor_language_hint("Dockerfile"), "text");
-        assert_eq!(editor_language_hint("Cargo.lock"), "toml");
-        assert_eq!(editor_language_hint("CMakeLists.txt"), "cmake");
-    }
-
-    #[test]
-    fn editor_language_hint_falls_back_to_text_for_unknown_extensions() {
-        assert_eq!(editor_language_hint("docs/schema.xml"), "text");
-    }
-
-    #[test]
     fn compact_cached_segments_caps_count_and_preserves_text() {
         let mut expected = String::new();
         let styled = (0..20)
@@ -833,16 +491,11 @@ mod tests {
             },
         ];
 
-        let nodes = build_changed_files_tree(&files);
-        assert_eq!(nodes.len(), 2);
-        assert!(
-            nodes
-                .iter()
-                .all(|node| node.kind == RepoTreeNodeKind::File && node.children.is_empty())
-        );
-        assert_eq!(nodes[0].name, "src/main.rs");
-        assert_eq!(nodes[0].file_status, Some(FileStatus::Modified));
-        assert_eq!(nodes[1].name, "README.md");
-        assert_eq!(nodes[1].file_status, Some(FileStatus::Untracked));
+        let rows = build_changed_file_rows(&files);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].name, "src/main.rs");
+        assert_eq!(rows[0].file_status, Some(FileStatus::Modified));
+        assert_eq!(rows[1].name, "README.md");
+        assert_eq!(rows[1].file_status, Some(FileStatus::Untracked));
     }
 }

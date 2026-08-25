@@ -275,54 +275,6 @@ impl DiffViewer {
     ) -> Vec<AnyElement> {
         let mut items = Vec::new();
         match target {
-            WorkspaceTextContextMenuTarget::FilesEditor(target) => {
-                items.push(
-                    self.render_workspace_text_context_menu_item("Cut", target.can_cut, {
-                        let view = view.clone();
-                        move |cx| {
-                            view.update(cx, |this, cx| {
-                                this.workspace_text_context_menu_cut(cx);
-                            });
-                        }
-                    }, cx),
-                );
-                items.push(
-                    self.render_workspace_text_context_menu_item("Copy", target.can_copy, {
-                        let view = view.clone();
-                        move |cx| {
-                            view.update(cx, |this, cx| {
-                                this.workspace_text_context_menu_copy(cx);
-                            });
-                        }
-                    }, cx),
-                );
-                items.push(
-                    self.render_workspace_text_context_menu_item("Paste", target.can_paste, {
-                        let view = view.clone();
-                        move |cx| {
-                            view.update(cx, |this, cx| {
-                                this.workspace_text_context_menu_paste(cx);
-                            });
-                        }
-                    }, cx),
-                );
-                items.push(div().h(px(1.0)).mx_1().bg(cx.theme().border).into_any_element());
-                items.push(
-                    self.render_workspace_text_context_menu_item(
-                        "Select All",
-                        target.can_select_all,
-                        {
-                            let view = view.clone();
-                            move |cx| {
-                                view.update(cx, |this, cx| {
-                                    this.workspace_text_context_menu_select_all(cx);
-                                });
-                            }
-                        },
-                        cx,
-                    ),
-                );
-            }
             WorkspaceTextContextMenuTarget::SelectableText(target) => {
                 items.push(
                     self.render_workspace_text_context_menu_item("Copy", target.can_copy, {

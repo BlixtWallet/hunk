@@ -53,3 +53,20 @@ append a correction when later evidence changes one.
   verified against GitHub's published SHA-256 digests before staging.
 - Correction to the migration baseline: the user explicitly requested that the
   existing `AGENTS.md` worktree change be included in the next commit.
+
+## 2026-08-25 — Editable Files product removal
+
+- The standalone Files editor and the Diff surface shared a large module, but
+  only the read-only workspace projection, visible-range syntax spans, and a
+  few generic line-paint helpers were required by Diff. Consumer tracing made
+  it possible to delete the GPUI editor element, input/mutation paths, saving,
+  folding, full-file search/replace, and editor-only tests without weakening
+  Diff syntax highlighting or search.
+- The old editable Files controller also owned generic window lookup and root
+  focus restoration helpers used by Git, AI, and terminal workflows. Move
+  genuinely shared helpers before deleting a product controller; module names
+  are not reliable ownership boundaries.
+- The retained Diff sidebar should derive its changed-file rows directly from
+  the active comparison. A full checkout tree, ignored-file scan, filesystem
+  mutation context menu, and directory expansion cache are File Explorer
+  behavior and do not belong in the narrowed product.

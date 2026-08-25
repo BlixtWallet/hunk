@@ -1,10 +1,3 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum RepoTreePromptAction {
-    CreateFile { base_dir: Option<String> },
-    CreateFolder { base_dir: Option<String> },
-    RenameFile { path: String },
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum RecentCommitsRefreshPriority {
     Background,
@@ -65,65 +58,6 @@ impl RecentCommitsRefreshRequest {
     }
 }
 
-#[derive(Clone)]
-struct RepoTreeInlineEditState {
-    action: RepoTreePromptAction,
-    input_state: Entity<InputState>,
-}
-
-struct FileEditorTab {
-    id: usize,
-    path: String,
-    files_editor: native_files_editor::SharedFilesEditor,
-    loading: bool,
-    error: Option<String>,
-    dirty: bool,
-    last_saved_text: Option<String>,
-    reload_epoch: usize,
-    reload_task: Task<()>,
-    save_loading: bool,
-    save_epoch: usize,
-    save_task: Task<()>,
-    markdown_preview_task: Task<()>,
-    markdown_preview_blocks: Vec<MarkdownPreviewBlock>,
-    markdown_preview_loading: bool,
-    markdown_preview_revision: usize,
-    markdown_preview: bool,
-}
-
-impl FileEditorTab {
-    fn new(id: usize, path: String) -> Self {
-        Self {
-            id,
-            path,
-            files_editor: Rc::new(RefCell::new(
-                crate::app::native_files_editor::FilesEditor::new(),
-            )),
-            loading: false,
-            error: None,
-            dirty: false,
-            last_saved_text: None,
-            reload_epoch: 0,
-            reload_task: Task::ready(()),
-            save_loading: false,
-            save_epoch: 0,
-            save_task: Task::ready(()),
-            markdown_preview_task: Task::ready(()),
-            markdown_preview_blocks: Vec::new(),
-            markdown_preview_loading: false,
-            markdown_preview_revision: 0,
-            markdown_preview: false,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct RepoTreeContextMenuState {
-    target_path: Option<String>,
-    target_kind: RepoTreeNodeKind,
-    position: Point<gpui::Pixels>,
-}
-
 #[derive(Debug, Clone)]
 struct WorkspaceTextContextMenuState {
     target: WorkspaceTextContextMenuTarget,
@@ -154,18 +88,9 @@ struct AiBrowserMouseDownInput {
 
 #[derive(Debug, Clone)]
 enum WorkspaceTextContextMenuTarget {
-    FilesEditor(FilesEditorContextMenuTarget),
     SelectableText(SelectableTextContextMenuTarget),
     Terminal(TerminalContextMenuTarget),
     DiffRows(DiffRowsContextMenuTarget),
-}
-
-#[derive(Debug, Clone)]
-struct FilesEditorContextMenuTarget {
-    can_cut: bool,
-    can_copy: bool,
-    can_paste: bool,
-    can_select_all: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -399,13 +324,6 @@ enum WorkspaceTerminalKind {
     Files,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum FilesTerminalRestoreTarget {
-    Editor,
-    #[default]
-    WorkspaceRoot,
-}
-
 #[derive(Debug, Clone, Default)]
 struct AiTerminalSessionState {
     cwd: Option<PathBuf>,
@@ -492,7 +410,6 @@ struct FilesProjectTerminalState {
     active_tab_id: TerminalTabId,
     next_tab_id: TerminalTabId,
     tabs: Vec<TerminalTabState>,
-    restore_target: FilesTerminalRestoreTarget,
 }
 
 impl Default for FilesProjectTerminalState {
@@ -502,7 +419,6 @@ impl Default for FilesProjectTerminalState {
             active_tab_id: 1,
             next_tab_id: 2,
             tabs: default_terminal_tabs(),
-            restore_target: FilesTerminalRestoreTarget::default(),
         }
     }
 }

@@ -1,15 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use hunk_editor::{
-    WorkspaceDocument, WorkspaceDocumentId, WorkspaceExcerptId, WorkspaceExcerptKind,
-    WorkspaceExcerptSpec, WorkspaceLayout, WorkspaceLayoutError,
-};
-use hunk_text::BufferId;
+use hunk_editor::{WorkspaceDocument, WorkspaceDocumentId, WorkspaceExcerptId, WorkspaceLayout};
 
 #[derive(Clone)]
 pub(crate) struct WorkspaceEditorSession {
-    next_document_id: u64,
-    next_excerpt_id: u64,
     layout: WorkspaceLayout,
     active_document_id: Option<WorkspaceDocumentId>,
     active_excerpt_id: Option<WorkspaceExcerptId>,
@@ -18,8 +12,6 @@ pub(crate) struct WorkspaceEditorSession {
 impl WorkspaceEditorSession {
     pub(crate) fn new() -> Self {
         Self {
-            next_document_id: 1,
-            next_excerpt_id: 1,
             layout: WorkspaceLayout::new(Vec::new(), Vec::new(), 0)
                 .expect("empty workspace layout should be valid"),
             active_document_id: None,
@@ -52,39 +44,6 @@ impl WorkspaceEditorSession {
                     .first()
                     .map(|excerpt| excerpt.spec.id)
             });
-        self.sync_id_counters_from_layout();
-    }
-
-    pub(crate) fn open_full_file_documents(
-        &mut self,
-        documents: &[(PathBuf, BufferId, usize)],
-        preferred_path: Option<&Path>,
-    ) -> Result<(), WorkspaceLayoutError> {
-        let mut layout_documents = Vec::with_capacity(documents.len());
-        let mut excerpt_specs = Vec::with_capacity(documents.len());
-
-        for (path, buffer_id, line_count) in documents {
-            let document_id = WorkspaceDocumentId::new(self.next_document_id);
-            self.next_document_id = self.next_document_id.saturating_add(1);
-            let excerpt_id = WorkspaceExcerptId::new(self.next_excerpt_id);
-            self.next_excerpt_id = self.next_excerpt_id.saturating_add(1);
-            layout_documents.push(WorkspaceDocument::new(
-                document_id,
-                path.clone(),
-                *buffer_id,
-                *line_count,
-            ));
-            excerpt_specs.push(WorkspaceExcerptSpec::new(
-                excerpt_id,
-                document_id,
-                WorkspaceExcerptKind::FullFile,
-                0..*line_count,
-            ));
-        }
-
-        let layout = WorkspaceLayout::new(layout_documents, excerpt_specs, 0)?;
-        self.open_workspace_layout(layout, preferred_path);
-        Ok(())
     }
 
     pub(crate) fn activate_path(&mut self, path: &Path) -> bool {
@@ -101,25 +60,6 @@ impl WorkspaceEditorSession {
         self.active_document_id = Some(excerpt.spec.document_id);
         self.active_excerpt_id = Some(excerpt_id);
         true
-    }
-
-    fn sync_id_counters_from_layout(&mut self) {
-        self.next_document_id = self
-            .layout
-            .documents()
-            .iter()
-            .map(|document| document.id.get())
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1);
-        self.next_excerpt_id = self
-            .layout
-            .excerpts()
-            .iter()
-            .map(|excerpt| excerpt.spec.id.get())
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1);
     }
 
     fn document_id_for_path(&self, path: &Path) -> Option<WorkspaceDocumentId> {
@@ -159,6 +99,8 @@ impl WorkspaceEditorSession {
         self.active_document_id
     }
 
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn active_excerpt_id(&self) -> Option<WorkspaceExcerptId> {
         self.active_excerpt_id
     }

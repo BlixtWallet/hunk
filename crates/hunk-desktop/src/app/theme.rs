@@ -111,14 +111,8 @@ pub(crate) struct HunkEditorSyntaxColors {
 pub(crate) struct HunkEditorChromeColors {
     pub background: Hsla,
     pub foreground: Hsla,
-    pub active_line: Hsla,
     pub line_number: Hsla,
-    pub active_line_number: Hsla,
     pub selection: Hsla,
-    pub invisible: Hsla,
-    pub indent_guide: Hsla,
-    pub bracket_match: Hsla,
-    pub current_scope: Hsla,
 }
 
 pub(crate) fn install_hunk_themes(cx: &mut App) {
@@ -288,22 +282,10 @@ pub(crate) fn hunk_editor_chrome_colors(theme: &Theme, is_dark: bool) -> HunkEdi
             foreground: style
                 .editor_foreground
                 .unwrap_or_else(|| theme_hex("#d4d4d4")),
-            active_line: style
-                .editor_active_line
-                .unwrap_or_else(|| theme_hex("#2a2d2e")),
             line_number: style
                 .editor_line_number
                 .unwrap_or_else(|| theme_hex("#858585")),
-            active_line_number: style
-                .editor_active_line_number
-                .unwrap_or_else(|| theme_hex("#c6c6c6")),
             selection: theme_hex("#264f78"),
-            invisible: style
-                .editor_invisible
-                .unwrap_or_else(|| theme_hex("#404040")),
-            indent_guide: theme_hex("#404040"),
-            bracket_match: theme_hex("#515c6a"),
-            current_scope: theme_hex("#37373d"),
         }
     } else {
         HunkEditorChromeColors {
@@ -313,22 +295,10 @@ pub(crate) fn hunk_editor_chrome_colors(theme: &Theme, is_dark: bool) -> HunkEdi
             foreground: style
                 .editor_foreground
                 .unwrap_or_else(|| theme_hex("#000000")),
-            active_line: style
-                .editor_active_line
-                .unwrap_or_else(|| theme_hex("#f3f3f3")),
             line_number: style
                 .editor_line_number
                 .unwrap_or_else(|| theme_hex("#237893")),
-            active_line_number: style
-                .editor_active_line_number
-                .unwrap_or_else(|| theme_hex("#0b216f")),
             selection: theme_hex("#add6ff"),
-            invisible: style
-                .editor_invisible
-                .unwrap_or_else(|| theme_hex("#d0d0d0")),
-            indent_guide: theme_hex("#d8d8d8"),
-            bracket_match: theme_hex("#c5c5c5"),
-            current_scope: theme_hex("#eef6ff"),
         }
     }
 }

@@ -9,11 +9,9 @@ use refresh_policy::{
     GitWorkspaceRefreshRequest, SnapshotRefreshBehavior, SnapshotRefreshPriority,
     SnapshotRefreshRequest, diff_state_changed, line_stats_paths_from_dirty_paths,
     missing_line_stat_paths, post_git_action_refresh_plan, repo_watch_refresh_request,
-    retained_selection_path, should_bootstrap_empty_files_workspace_editor,
     should_refresh_line_stats_after_snapshot, should_reload_diff_after_snapshot,
-    should_reload_empty_files_workspace_tree, should_reload_repo_tree_after_snapshot,
-    should_request_startup_git_workspace_refresh, should_run_cold_start_reconcile,
-    should_scroll_selected_after_reload,
+    should_reload_repo_tree_after_snapshot, should_request_startup_git_workspace_refresh,
+    should_run_cold_start_reconcile, should_scroll_selected_after_reload,
 };
 
 #[test]
@@ -75,34 +73,6 @@ fn repo_tree_reload_only_tracks_file_list_changes_or_root_switches() {
     assert!(should_reload_repo_tree_after_snapshot(true, false, false));
     assert!(should_reload_repo_tree_after_snapshot(false, true, true));
     assert!(!should_reload_repo_tree_after_snapshot(false, true, false));
-}
-
-#[test]
-fn empty_files_workspace_tree_reload_only_happens_in_files_view() {
-    assert!(should_reload_empty_files_workspace_tree(true, true, false));
-    assert!(!should_reload_empty_files_workspace_tree(
-        true, false, false
-    ));
-    assert!(!should_reload_empty_files_workspace_tree(true, true, true));
-    assert!(!should_reload_empty_files_workspace_tree(
-        false, true, false
-    ));
-}
-
-#[test]
-fn empty_files_workspace_editor_bootstrap_runs_only_once() {
-    assert!(should_bootstrap_empty_files_workspace_editor(
-        true, true, false
-    ));
-    assert!(!should_bootstrap_empty_files_workspace_editor(
-        true, false, false
-    ));
-    assert!(!should_bootstrap_empty_files_workspace_editor(
-        true, true, true
-    ));
-    assert!(!should_bootstrap_empty_files_workspace_editor(
-        false, true, false
-    ));
 }
 
 #[test]
@@ -223,56 +193,6 @@ fn missing_line_stats_only_returns_changed_files_without_cached_stats() {
     let missing = missing_line_stat_paths(&files, &file_line_stats);
 
     assert_eq!(missing, BTreeSet::from([String::from("README.md")]));
-}
-
-#[test]
-fn retained_selection_path_keeps_matching_selection() {
-    let files = vec![
-        ChangedFile {
-            path: "src/main.rs".to_string(),
-            status: FileStatus::Modified,
-            staged: false,
-            unstaged: true,
-            untracked: false,
-        },
-        ChangedFile {
-            path: "src/lib.rs".to_string(),
-            status: FileStatus::Modified,
-            staged: false,
-            unstaged: true,
-            untracked: false,
-        },
-    ];
-
-    assert_eq!(
-        retained_selection_path(&files, Some("src/lib.rs")),
-        Some("src/lib.rs".to_string())
-    );
-}
-
-#[test]
-fn retained_selection_path_falls_back_to_first_file_when_selection_is_missing() {
-    let files = vec![
-        ChangedFile {
-            path: "src/main.rs".to_string(),
-            status: FileStatus::Modified,
-            staged: false,
-            unstaged: true,
-            untracked: false,
-        },
-        ChangedFile {
-            path: "src/lib.rs".to_string(),
-            status: FileStatus::Modified,
-            staged: false,
-            unstaged: true,
-            untracked: false,
-        },
-    ];
-
-    assert_eq!(
-        retained_selection_path(&files, Some("missing.rs")),
-        Some("src/main.rs".to_string())
-    );
 }
 
 #[test]

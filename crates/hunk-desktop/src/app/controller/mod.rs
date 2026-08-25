@@ -22,10 +22,9 @@ use crate::app::markdown_links::open_url_in_browser;
 use crate::app::workspace_view::WorkspaceSidebarKind;
 
 use super::data::{
-    DiffSegmentQuality, DiffStream, DiffStreamRowKind, RepoTreeNodeKind, build_changed_files_tree,
-    build_diff_row_segment_cache_from_cells, build_diff_stream_from_patch_map, build_repo_tree,
-    count_repo_tree_kind, flatten_repo_tree_rows, is_markdown_path, line_number_column_width,
-    load_file_editor_document, save_file_editor_document,
+    DiffSegmentQuality, DiffStream, DiffStreamRowKind, build_changed_file_rows,
+    build_diff_row_segment_cache_from_cells, build_diff_stream_from_patch_map,
+    line_number_column_width,
 };
 use super::*;
 use hunk_forge::{
@@ -40,12 +39,11 @@ use hunk_git::branch::{
 };
 use hunk_git::compare::{CompareSource, load_compare_snapshot, resolve_default_base_branch_name};
 use hunk_git::git::{
-    RepoSnapshotFingerprint, WorkflowSnapshot, count_non_ignored_repo_tree_entries,
-    invalidate_repo_metadata_caches, load_remote_tracking_branches_without_refresh,
+    RepoSnapshotFingerprint, WorkflowSnapshot, invalidate_repo_metadata_caches,
+    load_remote_tracking_branches_without_refresh,
     load_repo_file_line_stats_for_paths_without_refresh, load_repo_file_line_stats_without_refresh,
-    load_repo_tree, load_snapshot_fingerprint, load_workflow_snapshot,
-    load_workflow_snapshot_if_changed, load_workflow_snapshot_if_changed_without_refresh,
-    load_workflow_snapshot_with_fingerprint,
+    load_snapshot_fingerprint, load_workflow_snapshot, load_workflow_snapshot_if_changed,
+    load_workflow_snapshot_if_changed_without_refresh, load_workflow_snapshot_with_fingerprint,
     load_workflow_snapshot_with_fingerprint_without_refresh,
 };
 use hunk_git::history::{
@@ -80,11 +78,7 @@ include!("ai_composer_completion.rs");
 include!("ai_git_ops.rs");
 include!("file_terminal.rs");
 include!("file_tree.rs");
-include!("file_tree_fs.rs");
-include!("file_quick_open.rs");
-include!("editor_reuse.rs");
 include!("editor_search.rs");
-include!("editor.rs");
 include!("comments.rs");
 include!("comments_match.rs");
 include!("selection.rs");

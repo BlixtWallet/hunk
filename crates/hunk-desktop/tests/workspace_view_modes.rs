@@ -2,24 +2,22 @@
 mod workspace_view;
 
 use workspace_view::{
-    SHORTCUT_CONTEXT_AI_WORKSPACE, SHORTCUT_CONTEXT_FILES_WORKSPACE,
-    SHORTCUT_CONTEXT_GIT_WORKSPACE, SHORTCUT_CONTEXT_REVIEW_WORKSPACE,
-    SHORTCUT_CONTEXT_SELECTABLE_WORKSPACE, SHORTCUT_CONTEXT_TREE_WORKSPACE, WorkspaceSidebarKind,
-    WorkspaceSwitchAction, WorkspaceViewMode,
+    SHORTCUT_CONTEXT_AI_WORKSPACE, SHORTCUT_CONTEXT_GIT_WORKSPACE,
+    SHORTCUT_CONTEXT_REVIEW_WORKSPACE, SHORTCUT_CONTEXT_SELECTABLE_WORKSPACE,
+    SHORTCUT_CONTEXT_TREE_WORKSPACE, WorkspaceSidebarKind, WorkspaceSwitchAction,
+    WorkspaceViewMode,
 };
 
 #[test]
-fn mode_switching_keeps_existing_tabs_and_adds_ai_as_fourth_tab() {
+fn mode_switching_exposes_only_retained_product_tabs() {
     let tabs = [
-        WorkspaceViewMode::Files,
         WorkspaceViewMode::Diff,
         WorkspaceViewMode::GitWorkspace,
         WorkspaceViewMode::Ai,
     ];
-    assert_eq!(tabs[0], WorkspaceViewMode::Files);
-    assert_eq!(tabs[1], WorkspaceViewMode::Diff);
-    assert_eq!(tabs[2], WorkspaceViewMode::GitWorkspace);
-    assert_eq!(tabs[3], WorkspaceViewMode::Ai);
+    assert_eq!(tabs[0], WorkspaceViewMode::Diff);
+    assert_eq!(tabs[1], WorkspaceViewMode::GitWorkspace);
+    assert_eq!(tabs[2], WorkspaceViewMode::Ai);
 }
 
 #[test]
@@ -27,10 +25,6 @@ fn ai_controller_switch_action_targets_ai_mode() {
     assert_eq!(
         WorkspaceSwitchAction::Ai.target_mode(),
         WorkspaceViewMode::Ai
-    );
-    assert_eq!(
-        WorkspaceSwitchAction::Files.target_mode(),
-        WorkspaceViewMode::Files
     );
     assert_eq!(
         WorkspaceSwitchAction::Review.target_mode(),
@@ -46,8 +40,6 @@ fn ai_controller_switch_action_targets_ai_mode() {
 fn only_review_mode_enables_diff_stream() {
     assert!(!WorkspaceViewMode::Ai.supports_sidebar_tree());
     assert!(!WorkspaceViewMode::Ai.supports_diff_stream());
-    assert!(WorkspaceViewMode::Files.supports_sidebar_tree());
-    assert!(!WorkspaceViewMode::Files.supports_diff_stream());
     assert!(WorkspaceViewMode::Diff.supports_sidebar_tree());
     assert!(WorkspaceViewMode::Diff.supports_diff_stream());
     assert!(!WorkspaceViewMode::GitWorkspace.supports_sidebar_tree());
@@ -56,10 +48,6 @@ fn only_review_mode_enables_diff_stream() {
 
 #[test]
 fn collapsible_sidebar_kind_is_distinct_per_workspace() {
-    assert_eq!(
-        WorkspaceViewMode::Files.collapsible_sidebar_kind(),
-        Some(WorkspaceSidebarKind::Files)
-    );
     assert_eq!(
         WorkspaceViewMode::Diff.collapsible_sidebar_kind(),
         Some(WorkspaceSidebarKind::Review)
@@ -76,20 +64,16 @@ fn collapsible_sidebar_kind_is_distinct_per_workspace() {
 
 #[test]
 fn workspace_sidebar_kinds_expose_expected_behavior() {
-    assert_eq!(WorkspaceSidebarKind::Files.label(), "file tree");
-    assert_eq!(WorkspaceSidebarKind::Review.label(), "file tree");
+    assert_eq!(WorkspaceSidebarKind::Review.label(), "changed files");
     assert_eq!(WorkspaceSidebarKind::AiThreads.label(), "threads");
-    assert!(WorkspaceSidebarKind::Files.uses_repo_tree());
-    assert!(WorkspaceSidebarKind::Review.uses_repo_tree());
-    assert!(!WorkspaceSidebarKind::AiThreads.uses_repo_tree());
+    assert!(WorkspaceSidebarKind::Review.uses_changed_files());
+    assert!(!WorkspaceSidebarKind::AiThreads.uses_changed_files());
 }
 
 #[test]
 fn ai_mode_hides_primary_workspace_toolbar_treatment() {
     assert!(!WorkspaceViewMode::Ai.shows_toolbar_workspace_identity());
     assert!(!WorkspaceViewMode::Ai.shows_toolbar_change_summary());
-    assert!(WorkspaceViewMode::Files.shows_toolbar_workspace_identity());
-    assert!(WorkspaceViewMode::Files.shows_toolbar_change_summary());
     assert!(WorkspaceViewMode::Diff.shows_toolbar_workspace_identity());
     assert!(WorkspaceViewMode::Diff.shows_toolbar_change_summary());
     assert!(WorkspaceViewMode::GitWorkspace.shows_toolbar_workspace_identity());
@@ -98,10 +82,6 @@ fn ai_mode_hides_primary_workspace_toolbar_treatment() {
 
 #[test]
 fn workspace_modes_expose_distinct_shortcut_contexts() {
-    assert_eq!(
-        WorkspaceViewMode::Files.shortcut_context(),
-        SHORTCUT_CONTEXT_FILES_WORKSPACE
-    );
     assert_eq!(
         WorkspaceViewMode::Diff.shortcut_context(),
         SHORTCUT_CONTEXT_REVIEW_WORKSPACE
@@ -119,10 +99,6 @@ fn workspace_modes_expose_distinct_shortcut_contexts() {
 #[test]
 fn root_key_contexts_include_only_the_scopes_each_workspace_needs() {
     assert_eq!(
-        WorkspaceViewMode::Files.root_key_context(),
-        "DiffViewer FilesWorkspace TreeWorkspace"
-    );
-    assert_eq!(
         WorkspaceViewMode::Diff.root_key_context(),
         "DiffViewer ReviewWorkspace TreeWorkspace SelectableWorkspace"
     );
@@ -135,16 +111,6 @@ fn root_key_contexts_include_only_the_scopes_each_workspace_needs() {
         "DiffViewer AiWorkspace SelectableWorkspace"
     );
 
-    assert!(
-        WorkspaceViewMode::Files
-            .root_key_context()
-            .contains(SHORTCUT_CONTEXT_TREE_WORKSPACE)
-    );
-    assert!(
-        !WorkspaceViewMode::Files
-            .root_key_context()
-            .contains(SHORTCUT_CONTEXT_SELECTABLE_WORKSPACE)
-    );
     assert!(
         WorkspaceViewMode::Diff
             .root_key_context()

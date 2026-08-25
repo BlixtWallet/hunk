@@ -155,28 +155,28 @@ must not reproduce that redundant matrix.
 
 ### 1. Upgrade Embedded Codex
 
-- [ ] Resolve the latest supported upstream `rust-v...` tag from authoritative OpenAI sources and the upstream repository.
-- [ ] Audit the current Hunk fork delta and determine which patches remain necessary upstream.
-- [ ] Rebase or recreate `hunk/embedded-apply-patch-fix` on the selected upstream tag.
-- [ ] Reapply and review required Hunk patches.
-- [ ] Push the fork branch only after its exact target and patch set are verified.
-- [ ] Refresh all root workspace Codex dependencies in `Cargo.lock`.
-- [ ] Refresh macOS, Linux, and Windows bundled runtime assets.
-- [ ] Update `docs/AI_CODEX_SPEC.md` and stale version references.
-- [ ] Fix protocol/API drift in headless crates before Qt consumes the API.
-- [ ] Verify required thread, turn, approval, user-input, and apply-patch flows without blocking on keychain prompts.
-- [ ] Complete the mandatory working loop and stacked PR.
+- [x] Resolve the latest supported upstream `rust-v...` tag from authoritative OpenAI sources and the upstream repository.
+- [x] Audit the current Hunk fork delta and determine which patches remain necessary upstream.
+- [x] Rebase or recreate `hunk/embedded-apply-patch-fix` on the selected upstream tag.
+- [x] Reapply and review required Hunk patches.
+- [x] Push the fork branch only after its exact target and patch set are verified.
+- [x] Refresh all root workspace Codex dependencies in `Cargo.lock`.
+- [x] Refresh macOS, Linux, and Windows bundled runtime assets.
+- [x] Update `docs/AI_CODEX_SPEC.md` and stale version references.
+- [x] Fix protocol/API drift in headless crates before Qt consumes the API.
+- [x] Verify required thread, turn, approval, user-input, and apply-patch flows without blocking on keychain prompts.
+- [x] Complete the mandatory working loop and stacked PR: <https://github.com/smolcars/hunk/pull/176>.
 
 ### 2. Remove the Editable Files Product
 
-- [ ] Remove Files navigation and workspace modes.
-- [ ] Remove File Explorer/tree UI and filesystem mutation commands used only by it.
-- [ ] Remove quick-open and standalone file editor/file renderer UI.
-- [ ] Remove user-facing file creation, direct editing, save, undo/redo, editor search, and editor-only keybindings without removing Codex file changes or apply-patch review.
-- [ ] Remove editor-only tests and assets while preserving tests for retained headless primitives.
-- [ ] Trace every `hunk-editor`, `hunk-text`, and `hunk-language` consumer.
-- [ ] Keep only APIs required by Diff, AI, terminal, markdown, or review workflows.
-- [ ] Confirm Diff, Git, and AI remain reachable in the temporary GPUI shell.
+- [x] Remove Files navigation and workspace modes.
+- [x] Remove File Explorer/tree UI and filesystem mutation commands used only by it.
+- [x] Remove quick-open and standalone file editor/file renderer UI.
+- [x] Remove user-facing file creation, direct editing, save, undo/redo, editor search, and editor-only keybindings without removing Codex file changes or apply-patch review.
+- [x] Remove editor-only tests and assets while preserving tests for retained headless primitives.
+- [x] Trace every `hunk-editor`, `hunk-text`, and `hunk-language` consumer.
+- [x] Keep only APIs required by Diff, AI, terminal, markdown, or review workflows.
+- [x] Confirm Diff, Git, and AI remain reachable in the temporary GPUI shell.
 - [ ] Complete the mandatory working loop and stacked PR.
 
 ### 3. Establish a Headless Application Boundary

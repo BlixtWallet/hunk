@@ -37,7 +37,6 @@ impl DiffViewer {
             self.reset_recent_commits_state();
             self.hydrate_recent_commits_cache_if_available(cx);
         }
-        self.bootstrap_files_workspace_if_needed(cx);
         self.rebuild_ai_thread_sidebar_state();
         self.start_repo_watch(cx);
         self.request_snapshot_refresh_internal(SnapshotRefreshRequest::user(true), cx);
@@ -118,21 +117,12 @@ impl DiffViewer {
         self.reset_review_surface_runtime_state();
         self.repo_discovery_failed = true;
         self.error_message = None;
-        self.repo_tree.nodes.clear();
         self.repo_tree.rows.clear();
         self.repo_tree.file_count = 0;
-        self.repo_tree.folder_count = 0;
-        self.repo_tree.expanded_dirs.clear();
         self.repo_tree.scroll_anchor_path = None;
         self.repo_tree.row_count = 0;
         self.repo_tree.list_state.reset(0);
         self.rebuild_ai_thread_sidebar_state();
-        self.repo_tree.loading = false;
-        self.repo_tree.reload_pending = false;
-        self.repo_tree.error = None;
-        self.repo_tree.changed_only = false;
-        self.clear_full_repo_tree_cache();
-        self.clear_editor_state(cx);
         if clear_active_project_cache
             && let Some(cache_key) = active_project_cache_key
             && self
@@ -150,7 +140,6 @@ impl DiffViewer {
         self.files_terminal_tabs = default_terminal_tabs();
         self.files_terminal_follow_output = true;
         self.files_terminal_session = AiTerminalSessionState::default();
-        self.files_terminal_restore_target = FilesTerminalRestoreTarget::default();
         self.files_terminal_surface_focused = false;
         self.files_terminal_pending_input = None;
         self.files_terminal_grid_size = None;
@@ -621,13 +610,6 @@ impl DiffViewer {
         self.recompute_overall_line_stats_from_file_stats();
         self.collapsed_files
             .retain(|path| self.files.iter().any(|file| file.path == *path));
-        if self.workspace_view_mode == WorkspaceViewMode::Files {
-            self.selected_path = retained_selection_path(&self.files, self.selected_path.as_deref());
-            self.selected_status = self
-                .selected_path
-                .as_deref()
-                .and_then(|selected| self.status_for_path(selected));
-        }
         self.last_commit_subject = last_commit_subject;
         self.persist_workflow_cache();
     }
@@ -740,34 +722,15 @@ impl DiffViewer {
         if root_changed {
             self.start_repo_watch(cx);
             if full_refresh {
-                self.repo_tree.nodes.clear();
                 self.repo_tree.rows.clear();
                 self.repo_tree.file_count = 0;
-                self.repo_tree.folder_count = 0;
-                self.repo_tree.expanded_dirs.clear();
                 self.repo_tree.scroll_anchor_path = None;
                 self.repo_tree.row_count = 0;
                 self.repo_tree.list_state.reset(0);
-                self.repo_tree.error = None;
-                self.repo_tree.changed_only = false;
-                self.clear_full_repo_tree_cache();
-                self.clear_editor_state(cx);
             }
         }
         self.collapsed_files
             .retain(|path| self.files.iter().any(|file| file.path == *path));
-        if self.workspace_view_mode == WorkspaceViewMode::Files {
-            let current_selection = self.selected_path.clone();
-            self.selected_path = if full_refresh {
-                current_selection.or_else(|| self.files.first().map(|file| file.path.clone()))
-            } else {
-                retained_selection_path(&self.files, current_selection.as_deref())
-            };
-            self.selected_status = self
-                .selected_path
-                .as_deref()
-                .and_then(|selected| self.status_for_path(selected));
-        }
 
         if full_refresh {
             let selected_changed = self.selected_path != previous_selected_path
@@ -790,8 +753,6 @@ impl DiffViewer {
             if should_reload_repo_tree {
                 self.request_repo_tree_reload(cx);
             }
-
-            self.bootstrap_files_workspace_if_needed(cx);
 
             if !should_reload_diff_after_snapshot(
                 self.workspace_view_mode.supports_diff_stream(),
