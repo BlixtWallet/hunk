@@ -302,12 +302,6 @@ struct AiInlineReviewLoadedState {
     mode: AiInlineReviewMode,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AiPromptSkillReference {
-    pub(crate) name: String,
-    pub(crate) path: PathBuf,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum AiTerminalSessionStatus {
     #[default]
@@ -616,13 +610,6 @@ enum AiComposerFeedbackState {
     Activity(AiComposerFeedbackActivity),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AiComposerSkillBinding {
-    token: String,
-    range: Range<usize>,
-    reference: AiPromptSkillReference,
-}
-
 #[derive(Debug, Clone)]
 struct AiPendingThreadStart {
     workspace_key: String,
@@ -632,18 +619,6 @@ struct AiPendingThreadStart {
     started_at: Instant,
     start_mode: AiNewThreadStartMode,
     thread_id: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AiPendingSteer {
-    thread_id: String,
-    turn_id: String,
-    prompt: String,
-    local_images: Vec<PathBuf>,
-    selected_skills: Vec<AiPromptSkillReference>,
-    skill_bindings: Vec<AiComposerSkillBinding>,
-    accepted_after_sequence: u64,
-    started_at: Instant,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

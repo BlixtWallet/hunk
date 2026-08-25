@@ -1,5 +1,6 @@
 use std::fs;
 
+use hunk_app::ai::{self as ai_dynamic_tools, AiDynamicToolExecutor};
 use hunk_browser::{BrowserFrame, BrowserRuntime};
 use hunk_codex::android_tools::{ANDROID_DEVICES_TOOL, ANDROID_TOOL_NAMESPACE};
 use hunk_codex::browser_tools::{
@@ -11,11 +12,6 @@ use hunk_codex::protocol::{
     DynamicToolCallOutputContentItem, DynamicToolCallParams, DynamicToolCallResponse,
 };
 use tempfile::tempdir;
-
-#[path = "../src/app/ai_dynamic_tools.rs"]
-mod ai_dynamic_tools;
-
-use ai_dynamic_tools::AiDynamicToolExecutor;
 
 #[test]
 fn workspace_tool_calls_still_route_to_workspace_registry() {

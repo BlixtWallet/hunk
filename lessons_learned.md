@@ -93,3 +93,20 @@ append a correction when later evidence changes one.
   Returning the `CompareSnapshot` together with stable row metadata, binary and
   collapsed states, and optional segment caches prevents each frontend from
   parsing patches or inventing its own row identifiers.
+
+## 2026-08-25 — Headless AI worker boundary
+
+- Move the existing worker rather than wrapping or cloning it. `hunk-app` now
+  owns the single command/event loop, reconnect policy, rollout fallback,
+  workspace paths, and dynamic-tool execution; the GPUI layer only applies
+  events and performs renderer-owned browser confirmation and frame work.
+- A thin compatibility re-export lets the current frontend keep compiling while
+  the application boundary becomes the future Qt contract. This keeps the
+  cutover incremental without allowing GPUI types into the headless crate.
+- White-box worker tests still matter after extracting a public service. Keeping
+  their source under `crates/hunk-app/tests/support` and including it only for
+  the library test build preserves private policy coverage without exposing
+  reconnect and protocol helpers as production API.
+- Moving an implementation also moves its direct dependencies. Removing the
+  now-orphaned `base64`, `hunk-mobile`, and `webbrowser` dependencies from the
+  GPUI crate prevents the temporary adapter from hiding ownership mistakes.

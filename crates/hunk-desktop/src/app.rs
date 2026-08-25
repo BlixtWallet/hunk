@@ -33,6 +33,7 @@ use tracing::error;
 mod hunk_assets;
 mod hunk_picker;
 
+pub(crate) use hunk_app::ai::{AiComposerSkillBinding, AiPendingSteer, AiPromptSkillReference};
 use hunk_assets::HunkAssets;
 pub(crate) use hunk_assets::HunkIconName;
 
@@ -192,7 +193,6 @@ mod workspace_target_picker;
 include!("app/types.rs");
 
 mod ai_git_progress;
-mod ai_rollout_fallback;
 mod ai_runtime;
 mod controller;
 mod data;

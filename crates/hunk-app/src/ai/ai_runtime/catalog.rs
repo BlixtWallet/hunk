@@ -28,7 +28,7 @@ pub fn load_ai_workspace_thread_catalog(
     )
 }
 
-pub(crate) fn archive_ai_thread_for_workspace(
+pub fn archive_ai_thread_for_workspace(
     workspace_root: &std::path::Path,
     thread_id: &str,
     codex_executable: &std::path::Path,
@@ -119,24 +119,4 @@ fn load_ai_workspace_thread_catalog_with_session(
 
 fn workspace_root_exists_for_catalog(workspace_root: &std::path::Path) -> bool {
     workspace_root.exists()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::workspace_root_exists_for_catalog;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    #[test]
-    fn missing_workspace_root_is_skipped_from_catalog_refresh() {
-        let unique_suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time should be after epoch")
-            .as_nanos();
-        let missing = std::env::temp_dir().join(format!(
-            "hunk-ai-missing-workspace-{unique_suffix}"
-        ));
-
-        assert!(!missing.exists());
-        assert!(!workspace_root_exists_for_catalog(missing.as_path()));
-    }
 }
