@@ -122,9 +122,10 @@ master
   <- migration/05-qt-git
   <- migration/06-qt-forge
   <- migration/07-qt-diff
-  <- migration/08-qt-ai
-  <- migration/09-qt-cutover-ci
-  <- migration/10-release-hardening
+  <- migration/08-qt-diff-review-tools
+  <- migration/09-qt-ai
+  <- migration/10-qt-cutover-ci
+  <- migration/11-release-hardening
 ```
 
 Branch names may be divided into smaller layers when a listed layer would not
@@ -373,14 +374,15 @@ Phase 5 local validation through Nix:
 
 - [x] Define immutable, batched selected-file row snapshots with stable identifiers.
 - [x] Implement virtualized side-by-side diff presentation.
-- [ ] Implement virtualized unified diff presentation.
-- [ ] Restore syntax highlighting, selection, search, comments, folding, and review navigation required by the narrowed product.
-- [ ] Avoid one QObject per token or other high-churn bridge designs.
+- [x] Implement virtualized unified diff presentation.
+- [x] Restore syntax highlighting and current-file search/navigation.
+- [ ] Restore selection, comments, folding, and remaining review navigation required by the narrowed product.
+- [x] Avoid one QObject per token or other high-churn bridge designs.
 - [ ] Instrument frame time, model update time, object count, and allocation hot paths.
 - [ ] Verify ordinary QML delegates against representative large repositories.
 - [ ] Add the narrow custom `QQuickItem`/scene-graph renderer only if measurements require it.
 - [ ] Meet the 8 ms frame budget at 120 Hz for scroll, resize, selection, and streamed updates.
-- [ ] Complete the mandatory working loop and stacked PR.
+- [x] Complete the mandatory working loop and stacked PR: <https://github.com/smolcars/hunk/pull/186>.
 
 Phase 6 initial Qt slice decisions:
 
@@ -400,6 +402,25 @@ Phase 6 initial Qt slice decisions:
   folding, unified mode, instrumentation, and the final 120 Hz hardware gate
   remain subsequent Diff slices rather than hidden scope in this foundation.
 
+Phase 6 review-tools decisions:
+
+- Syntax and intra-line segments are produced with the selected-file payload on
+  the existing background worker. Rust emits one escaped semantic-markup string
+  per side and QML resolves its small token palette through `Theme.qml`; tokens
+  are not bridged as QObjects.
+- Detailed intra-line segments are retained through 4,000 projected rows. Larger
+  files use syntax-only segments to bound background projection cost until the
+  representative-repository performance gate provides a measured threshold.
+- Split and unified views derive from the same stable side-by-side row model.
+  A paired removal/addition consumes two fixed-height unified lines without a
+  second patch parse, model, or repository request.
+- Current-file search uses a lowercase row index built beside the payload off
+  the Qt thread. Keystrokes scan those pre-normalized strings, publish only row
+  indices, and move the existing virtualized `ListView` to the active match.
+- Semantic placeholder delimiters are HTML-escaped inside source text before
+  QML performs theme substitution, preventing code such as `@keyword@` from
+  being rewritten as renderer metadata.
+
 Phase 6 initial-slice macOS validation through Nix, using the existing
 external-volume Cargo target and caches:
 
@@ -409,6 +430,16 @@ external-volume Cargo target and caches:
 - `qmllint` and all 16 QML interaction/virtualization/visual tests passed. The
   Diff smoke case verified that a 5,000-row model does not instantiate a
   distant row, and the desktop-size rendered snapshot was visually inspected.
+
+Phase 6 review-tools macOS validation through Nix, reusing the same target and
+external caches:
+
+- The full workspace build passed in 9.61 seconds after the changed Qt crate
+  compiled, and the complete workspace test suite passed.
+- Workspace Clippy passed for all targets with warnings denied in 11.48 seconds.
+- `qmllint` and all 18 QML interaction/virtualization/visual tests passed in
+  467 milliseconds. The rendered desktop snapshot was inspected with semantic
+  syntax colors, preserved indentation, split controls, and cleared search.
 
 ### 7. AI Tab
 

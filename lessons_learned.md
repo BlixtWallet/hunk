@@ -241,3 +241,22 @@ append a correction when later evidence changes one.
   5,000-row smoke case kept distant delegates uninstantiated, but that proves
   object-count behavior only; real 8 ms frame measurements still belong at the
   cutover performance gate.
+
+## 2026-08-25 — Qt Diff review tools
+
+- Theme-controlled syntax can cross QtBridge without a QObject per token. Build
+  styled segments on the background projection worker, encode one semantic
+  markup string per diff side, and resolve its small color vocabulary in QML.
+- Renderer placeholders need the same injection discipline as HTML. Escaping
+  the placeholder delimiter inside source text prevents literal code such as
+  `@keyword@` from being replaced by a theme color during QML rendering.
+- Search preprocessing belongs beside diff projection rather than in a QML
+  keystroke handler or Qt model reset. Moving normalized row strings with the
+  immutable payload keeps interactive search to allocation-free row scans apart
+  from the normalized query and avoids repeatedly lowercasing source lines.
+- Unified mode does not require another backend representation. Projecting a
+  paired removal/addition as two fixed-height delegates from the existing
+  side-by-side row preserves stable IDs, virtualization, and one loading path.
+- When collected rows are consumed to build a secondary index before their
+  eventual struct assignment, annotate the collection type at the projection
+  boundary; the later payload field is no longer sufficient for Rust inference.

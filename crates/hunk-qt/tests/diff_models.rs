@@ -21,6 +21,37 @@ fn side_by_side_payload_preserves_lines_and_cell_kinds() {
     assert_eq!(payload.rows[1].right_kind, "added");
     assert_eq!(payload.rows[1].left_line, 1);
     assert_eq!(payload.rows[1].right_line, 1);
+    assert!(payload.rows[1].left_markup.contains("@keyword@"));
+    assert!(payload.rows[1].left_markup.contains("&nbsp;"));
+    assert_eq!(payload.matching_rows(" NEW "), vec![1]);
+    assert_eq!(payload.matching_rows("@@"), vec![0]);
+    assert!(payload.matching_rows("missing").is_empty());
+}
+
+#[test]
+fn syntax_markup_escapes_code_before_qml_renders_it() {
+    let summary = DiffFileSummary {
+        path: "src/main.rs".to_owned(),
+        status: FileStatus::Modified,
+        line_stats: LineStats {
+            added: 1,
+            removed: 1,
+        },
+    };
+    let payload = DiffSnapshotPayload::from_patch(
+        &summary,
+        "@@ -1 +1 @@\n-let old = a < b && c > d;\n+let new = \"@keyword@\";\n",
+    );
+
+    assert!(payload.rows[1].left_markup.contains("&lt;"));
+    assert!(payload.rows[1].left_markup.contains("&amp;"));
+    assert!(payload.rows[1].left_markup.contains("&gt;"));
+    assert!(
+        payload.rows[1]
+            .right_markup
+            .contains("&quot;&#64;keyword&#64;&quot;")
+    );
+    assert!(!payload.rows[1].left_markup.contains("a < b"));
 }
 
 #[test]
