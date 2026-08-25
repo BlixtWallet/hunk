@@ -24,6 +24,15 @@ QtObject {
     readonly property color negativeMuted: "#452b2e"
     readonly property color warning: "#d8a657"
     readonly property color overlay: "#b0141416"
+    readonly property color syntaxKeyword: "#c586c0"
+    readonly property color syntaxString: "#ce9178"
+    readonly property color syntaxNumber: "#b5cea8"
+    readonly property color syntaxComment: "#6a9955"
+    readonly property color syntaxFunction: "#dcdcaa"
+    readonly property color syntaxType: "#4ec9b0"
+    readonly property color syntaxConstant: "#4fc1ff"
+    readonly property color syntaxVariable: "#9cdcfe"
+    readonly property color syntaxOperator: "#d4d4d4"
 
     readonly property int headerHeight: 48
     readonly property int sidebarWidth: 264

@@ -7,9 +7,64 @@ Item {
 
     required property var backend
     readonly property alias diffListView: diffList
+    readonly property alias searchInput: searchInput
     readonly property bool loadingStateVisible: loadingState.visible
     readonly property bool errorStateVisible: errorState.visible
     readonly property bool emptyStateVisible: emptyState.visible
+    property bool unifiedMode: false
+
+    function setDiffMode(mode) {
+        unifiedMode = mode === "unified"
+    }
+
+    function positionSearchTarget() {
+        if (backend.diffSearchTargetRow < 0)
+            return
+        diffList.currentIndex = backend.diffSearchTargetRow
+        diffList.positionViewAtIndex(backend.diffSearchTargetRow, ListView.Center)
+    }
+
+    function applySearch(query) {
+        backend.set_diff_search(query)
+        positionSearchTarget()
+    }
+
+    function moveSearch(direction) {
+        backend.move_diff_search_match(direction)
+        positionSearchTarget()
+    }
+
+    function escapeCode(text) {
+        return String(text)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\"/g, "&quot;")
+            .replace(/'/g, "&#39;")
+            .replace(/@/g, "&#64;")
+            .replace(/ /g, "&nbsp;")
+            .replace(/\t/g, "&nbsp;&nbsp;&nbsp;&nbsp;")
+    }
+
+    function renderMarkup(markup, fallback) {
+        let rendered = markup.length > 0
+            ? markup : "<font color=\"@plain@\">" + escapeCode(fallback) + "</font>"
+        const colors = {
+            plain: Theme.foreground,
+            keyword: Theme.syntaxKeyword,
+            string: Theme.syntaxString,
+            number: Theme.syntaxNumber,
+            comment: Theme.syntaxComment,
+            function: Theme.syntaxFunction,
+            type: Theme.syntaxType,
+            constant: Theme.syntaxConstant,
+            variable: Theme.syntaxVariable,
+            operator: Theme.syntaxOperator
+        }
+        for (const token in colors)
+            rendered = rendered.split("@" + token + "@").join(String(colors[token]))
+        return rendered
+    }
 
     function cellColor(kind) {
         if (kind === "added")
@@ -25,6 +80,49 @@ Item {
         if (kind === "removed")
             return Theme.negative
         return Theme.faint
+    }
+
+    component UnifiedLine: Rectangle {
+        required property string cellKind
+        required property int lineNumber
+        required property string codeText
+        required property string codeMarkup
+
+        color: root.cellColor(cellKind)
+
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            width: 38
+            text: parent.lineNumber > 0 ? parent.lineNumber : ""
+            color: Theme.faint
+            horizontalAlignment: Text.AlignRight
+            font.family: Theme.monoFont
+            font.pixelSize: 9
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 52
+            anchors.verticalCenter: parent.verticalCenter
+            text: parent.cellKind === "removed" ? "−"
+                : (parent.cellKind === "added" ? "+" : " ")
+            color: root.markerColor(parent.cellKind)
+            font.family: Theme.monoFont
+            font.pixelSize: 11
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 68
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.renderMarkup(parent.codeMarkup, parent.codeText)
+            color: Theme.foreground
+            textFormat: Text.StyledText
+            font.family: Theme.monoFont
+            font.pixelSize: 11
+        }
     }
 
     Rectangle {
@@ -93,13 +191,106 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 7
 
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 186
+                height: 26
+                radius: 5
+                color: Theme.input
+                border.width: searchInput.activeFocus ? 1 : 0
+                border.color: Theme.accentStrong
+
+                TextInput {
+                    id: searchInput
+                    objectName: "diffSearchInput"
+                    anchors.left: parent.left
+                    anchors.right: searchCount.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 6
+                    text: root.backend.diffSearchQuery
+                    color: Theme.foreground
+                    selectionColor: Theme.accent
+                    selectedTextColor: Theme.foreground
+                    clip: true
+                    font.family: Theme.uiFont
+                    font.pixelSize: 10
+                    verticalAlignment: TextInput.AlignVCenter
+                    onTextEdited: root.applySearch(text)
+
+                    Keys.onPressed: event => {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            root.moveSearch(event.modifiers & Qt.ShiftModifier ? -1 : 1)
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Escape) {
+                            root.applySearch("")
+                            event.accepted = true
+                        }
+                    }
+                }
+
+                Text {
+                    anchors.left: searchInput.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: searchInput.text.length === 0 && !searchInput.activeFocus
+                    text: "Search diff"
+                    color: Theme.faint
+                    font.family: Theme.uiFont
+                    font.pixelSize: 10
+                }
+
+                Text {
+                    id: searchCount
+                    anchors.right: parent.right
+                    anchors.rightMargin: 7
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.backend.diffSearchMatchCount > 0
+                        ? (root.backend.diffSearchMatchIndex + 1) + "/"
+                            + root.backend.diffSearchMatchCount
+                        : (searchInput.text.length > 0 ? "0/0" : "")
+                    color: Theme.faint
+                    font.family: Theme.monoFont
+                    font.pixelSize: 8
+                }
+            }
+
+            ActionButton {
+                label: "↑"
+                compact: true
+                enabled: root.backend.diffSearchMatchCount > 0
+                onClicked: root.moveSearch(-1)
+            }
+
+            ActionButton {
+                label: "↓"
+                compact: true
+                enabled: root.backend.diffSearchMatchCount > 0
+                onClicked: root.moveSearch(1)
+            }
+
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.backend.diffLoading ? "LOADING" : "SIDE BY SIDE"
+                visible: root.backend.diffLoading
+                text: "LOADING"
                 color: Theme.faint
                 font.family: Theme.monoFont
                 font.pixelSize: 9
                 font.letterSpacing: 0.7
+            }
+
+            ActionButton {
+                label: "Split"
+                compact: true
+                primary: !root.unifiedMode
+                onClicked: root.setDiffMode("split")
+            }
+
+            ActionButton {
+                label: "Unified"
+                compact: true
+                primary: root.unifiedMode
+                onClicked: root.setDiffMode("unified")
             }
 
             ActionButton {
@@ -136,6 +327,7 @@ Item {
             anchors.leftMargin: 58
             anchors.verticalCenter: parent.verticalCenter
             text: "BEFORE"
+            visible: !root.unifiedMode
             color: Theme.muted
             font.family: Theme.monoFont
             font.pixelSize: 9
@@ -148,6 +340,7 @@ Item {
             anchors.leftMargin: 58
             anchors.verticalCenter: parent.verticalCenter
             text: "AFTER"
+            visible: !root.unifiedMode
             color: Theme.muted
             font.family: Theme.monoFont
             font.pixelSize: 9
@@ -160,6 +353,20 @@ Item {
             width: 1
             height: parent.height
             color: Theme.borderStrong
+            visible: !root.unifiedMode
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 58
+            anchors.verticalCenter: parent.verticalCenter
+            text: "UNIFIED"
+            visible: root.unifiedMode
+            color: Theme.muted
+            font.family: Theme.monoFont
+            font.pixelSize: 9
+            font.weight: Font.DemiBold
+            font.letterSpacing: 0.8
         }
 
         Rectangle {
@@ -196,18 +403,34 @@ Item {
             delegate: Item {
                 id: diffRow
 
+                required property int index
                 required property string stable_id
                 required property string row_kind
                 required property int left_line
                 required property string left_text
+                required property string left_markup
                 required property string left_kind
                 required property int right_line
                 required property string right_text
+                required property string right_markup
                 required property string right_kind
                 required property string text
 
+                readonly property bool pairedChange: left_kind === "removed"
+                    && right_kind === "added"
+                readonly property string unifiedPrimaryKind: left_kind === "removed"
+                    ? left_kind : (right_kind !== "none" ? right_kind : left_kind)
+                readonly property int unifiedPrimaryLine: left_kind === "removed"
+                    ? left_line : (right_kind !== "none" ? right_line : left_line)
+                readonly property string unifiedPrimaryText: left_kind === "removed"
+                    ? left_text : (right_kind !== "none" ? right_text : left_text)
+                readonly property string unifiedPrimaryMarkup: left_kind === "removed"
+                    ? left_markup : (right_kind !== "none" ? right_markup : left_markup)
+
                 width: diffList.width
-                height: diffRow.row_kind === "code" ? Theme.diffRowHeight
+                height: diffRow.row_kind === "code"
+                    ? (root.unifiedMode && diffRow.pairedChange
+                        ? Theme.diffRowHeight * 2 : Theme.diffRowHeight)
                     : (diffRow.row_kind === "hunk" ? 32 : 54)
 
                 Rectangle {
@@ -238,7 +461,7 @@ Item {
 
                 Item {
                     anchors.fill: parent
-                    visible: diffRow.row_kind === "code"
+                    visible: diffRow.row_kind === "code" && !root.unifiedMode
 
                     Rectangle {
                         anchors.left: parent.left
@@ -282,9 +505,9 @@ Item {
                         anchors.left: parent.left
                         anchors.leftMargin: 68
                         anchors.verticalCenter: parent.verticalCenter
-                        text: diffRow.left_text
+                        text: root.renderMarkup(diffRow.left_markup, diffRow.left_text)
                         color: Theme.foreground
-                        textFormat: Text.PlainText
+                        textFormat: Text.StyledText
                         font.family: Theme.monoFont
                         font.pixelSize: 11
                     }
@@ -315,9 +538,9 @@ Item {
                         anchors.left: parent.horizontalCenter
                         anchors.leftMargin: 68
                         anchors.verticalCenter: parent.verticalCenter
-                        text: diffRow.right_text
+                        text: root.renderMarkup(diffRow.right_markup, diffRow.right_text)
                         color: Theme.foreground
-                        textFormat: Text.PlainText
+                        textFormat: Text.StyledText
                         font.family: Theme.monoFont
                         font.pixelSize: 11
                     }
@@ -328,6 +551,44 @@ Item {
                         height: parent.height
                         color: Theme.borderStrong
                     }
+                }
+
+                Item {
+                    anchors.fill: parent
+                    visible: diffRow.row_kind === "code" && root.unifiedMode
+
+                    UnifiedLine {
+                        id: unifiedPrimary
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        height: Theme.diffRowHeight
+                        cellKind: diffRow.unifiedPrimaryKind
+                        lineNumber: diffRow.unifiedPrimaryLine
+                        codeText: diffRow.unifiedPrimaryText
+                        codeMarkup: diffRow.unifiedPrimaryMarkup
+                    }
+
+                    UnifiedLine {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: unifiedPrimary.bottom
+                        height: diffRow.pairedChange ? Theme.diffRowHeight : 0
+                        visible: diffRow.pairedChange
+                        cellKind: diffRow.right_kind
+                        lineNumber: diffRow.right_line
+                        codeText: diffRow.right_text
+                        codeMarkup: diffRow.right_markup
+                    }
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    z: 5
+                    visible: root.backend.diffSearchTargetRow === diffRow.index
+                    color: Theme.transparent
+                    border.width: 1
+                    border.color: Theme.warning
                 }
             }
         }

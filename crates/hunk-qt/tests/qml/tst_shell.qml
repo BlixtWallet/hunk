@@ -31,6 +31,11 @@ TestCase {
         property bool diffReady: true
         property bool diffLoading: false
         property string diffError: ""
+        property string diffSearchQuery: ""
+        property int diffSearchMatchCount: 0
+        property int diffSearchMatchIndex: -1
+        property int diffSearchTargetRow: -1
+        property var diffSearchMatches: []
         property var gitFiles: gitFilesModel
         property var gitBranches: gitBranchesModel
         property var gitCommits: gitCommitsModel
@@ -97,6 +102,32 @@ TestCase {
             diffSelectedPath = path
         }
         function refresh_diff() { record("refresh_diff") }
+        function set_diff_search(query) {
+            record("set_diff_search", query)
+            diffSearchQuery = query
+            const normalized = query.trim().toLowerCase()
+            const matches = []
+            if (normalized.length > 0) {
+                for (let index = 0; index < diffRowsModel.count; ++index) {
+                    const row = diffRowsModel.get(index)
+                    const text = row.left_text + "\n" + row.right_text + "\n" + row.text
+                    if (text.toLowerCase().includes(normalized))
+                        matches.push(index)
+                }
+            }
+            diffSearchMatches = matches
+            diffSearchMatchCount = matches.length
+            diffSearchMatchIndex = matches.length > 0 ? 0 : -1
+            diffSearchTargetRow = matches.length > 0 ? matches[0] : -1
+        }
+        function move_diff_search_match(direction) {
+            record("move_diff_search_match", String(direction))
+            if (diffSearchMatches.length === 0)
+                return
+            diffSearchMatchIndex = (diffSearchMatchIndex + direction
+                + diffSearchMatches.length) % diffSearchMatches.length
+            diffSearchTargetRow = diffSearchMatches[diffSearchMatchIndex]
+        }
         function select_git_root(root) { record("select_root", root) }
         function stage_path(path) { record("stage", path) }
         function unstage_path(path) { record("unstage", path) }
@@ -182,9 +213,11 @@ TestCase {
             row_kind: "hunk",
             left_line: 0,
             left_text: "",
+            left_markup: "",
             left_kind: "none",
             right_line: 0,
             right_text: "",
+            right_markup: "",
             right_kind: "none",
             text: "@@ -22,7 +22,8 @@ impl Backend"
         })
@@ -193,9 +226,11 @@ TestCase {
             row_kind: "code",
             left_line: 22,
             left_text: "    qproperty!(\"gitFiles\", Read = git_files, Constant);",
+            left_markup: "<font color=\"@plain@\">&nbsp;&nbsp;&nbsp;&nbsp;</font><font color=\"@function@\"><b>qproperty!</b></font><font color=\"@plain@\">(&quot;gitFiles&quot;,&nbsp;Read&nbsp;=&nbsp;</font><font color=\"@variable@\">git_files</font><font color=\"@plain@\">,&nbsp;Constant);</font>",
             left_kind: "context",
             right_line: 22,
             right_text: "    qproperty!(\"gitFiles\", Read = git_files, Constant);",
+            right_markup: "<font color=\"@plain@\">&nbsp;&nbsp;&nbsp;&nbsp;</font><font color=\"@function@\"><b>qproperty!</b></font><font color=\"@plain@\">(&quot;gitFiles&quot;,&nbsp;Read&nbsp;=&nbsp;</font><font color=\"@variable@\">git_files</font><font color=\"@plain@\">,&nbsp;Constant);</font>",
             right_kind: "context",
             text: ""
         })
@@ -204,9 +239,11 @@ TestCase {
             row_kind: "code",
             left_line: 23,
             left_text: "    qproperty!(\"gitBranches\", Read = git_branches, Constant);",
+            left_markup: "<font color=\"@plain@\">&nbsp;&nbsp;&nbsp;&nbsp;</font><font color=\"@function@\"><b>qproperty!</b></font><font color=\"@plain@\">(&quot;gitBranches&quot;,&nbsp;Read&nbsp;=&nbsp;</font><font color=\"@variable@\">git_branches</font><font color=\"@plain@\">,&nbsp;Constant);</font>",
             left_kind: "removed",
             right_line: 23,
             right_text: "    qproperty!(\"diffRows\", Read = diff_rows, Constant);",
+            right_markup: "<font color=\"@plain@\">&nbsp;&nbsp;&nbsp;&nbsp;</font><font color=\"@function@\"><b>qproperty!</b></font><font color=\"@plain@\">(&quot;diffRows&quot;,&nbsp;Read&nbsp;=&nbsp;</font><font color=\"@variable@\">diff_rows</font><font color=\"@plain@\">,&nbsp;Constant);</font>",
             right_kind: "added",
             text: ""
         })
@@ -276,6 +313,11 @@ TestCase {
         fakeBackend.diffReady = true
         fakeBackend.diffLoading = false
         fakeBackend.diffError = ""
+        fakeBackend.diffSearchQuery = ""
+        fakeBackend.diffSearchMatchCount = 0
+        fakeBackend.diffSearchMatchIndex = -1
+        fakeBackend.diffSearchTargetRow = -1
+        fakeBackend.diffSearchMatches = []
         fakeBackend.gitChangedFileCount = 3
         fakeBackend.gitStagedFileCount = 1
         fakeBackend.gitUnstagedFileCount = 2
@@ -350,9 +392,11 @@ TestCase {
                 row_kind: "code",
                 left_line: index + 1,
                 left_text: "let before_" + index + " = value;",
+                left_markup: "",
                 left_kind: "removed",
                 right_line: index + 1,
                 right_text: "let after_" + index + " = value;",
+                right_markup: "",
                 right_kind: "added",
                 text: ""
             })
@@ -365,8 +409,52 @@ TestCase {
         verify(shell.workspaceItem.diffListView.itemAtIndex(1000) === null)
     }
 
+    function test_diffViewSwitchesBetweenSplitAndUnifiedRows() {
+        openDiffWorkspace()
+        shell.workspaceItem.diffListView.forceLayout()
+        const changedRow = shell.workspaceItem.diffListView.itemAtIndex(2)
+        verify(changedRow !== null)
+        compare(changedRow.height, Theme.diffRowHeight)
+        verify(changedRow.pairedChange)
+        compare(changedRow.unifiedPrimaryText,
+            "    qproperty!(\"gitBranches\", Read = git_branches, Constant);")
+
+        shell.workspaceItem.setDiffMode("unified")
+        shell.workspaceItem.diffListView.forceLayout()
+        verify(shell.workspaceItem.unifiedMode)
+        compare(changedRow.height, Theme.diffRowHeight * 2)
+
+        shell.workspaceItem.setDiffMode("split")
+        verify(!shell.workspaceItem.unifiedMode)
+    }
+
+    function test_diffSearchFindsAndNavigatesMatchingRows() {
+        openDiffWorkspace()
+        shell.workspaceItem.searchInput.text = "qproperty"
+        shell.workspaceItem.applySearch(shell.workspaceItem.searchInput.text)
+        compare(fakeBackend.diffSearchMatchCount, 2)
+        compare(fakeBackend.diffSearchTargetRow, 1)
+        compare(shell.workspaceItem.diffListView.currentIndex, 1)
+
+        shell.workspaceItem.moveSearch(1)
+        compare(fakeBackend.diffSearchMatchIndex, 1)
+        compare(fakeBackend.diffSearchTargetRow, 2)
+        compare(shell.workspaceItem.diffListView.currentIndex, 2)
+
+        shell.workspaceItem.moveSearch(1)
+        compare(fakeBackend.diffSearchMatchIndex, 0)
+        compare(fakeBackend.diffSearchTargetRow, 1)
+
+        shell.workspaceItem.searchInput.text = "missing"
+        shell.workspaceItem.applySearch(shell.workspaceItem.searchInput.text)
+        compare(fakeBackend.diffSearchMatchCount, 0)
+        compare(fakeBackend.diffSearchTargetRow, -1)
+    }
+
     function test_diffWorkspaceRendersAtDesktopSize() {
         openDiffWorkspace()
+        shell.workspaceItem.searchInput.text = ""
+        shell.workspaceItem.applySearch("")
         captureSnapshot("target/hunk-qt-diff.png")
     }
 

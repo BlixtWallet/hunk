@@ -66,6 +66,26 @@ impl Backend {
         Member = diff_error,
         Notify = diff_state_changed
     );
+    qproperty!(
+        "diffSearchQuery",
+        Member = diff_search_query,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffSearchMatchCount",
+        Member = diff_search_match_count,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffSearchMatchIndex",
+        Member = diff_search_match_index,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffSearchTargetRow",
+        Member = diff_search_target_row,
+        Notify = diff_state_changed
+    );
     qproperty!("gitFiles", Read = git_files, Constant);
     qproperty!("gitBranches", Read = git_branches, Constant);
     qproperty!("gitCommits", Read = git_commits, Constant);
@@ -366,7 +386,8 @@ impl Backend {
         self.diff_loading = true;
         self.diff_ready = false;
         self.diff_error.clear();
-        self.diff_rows.borrow_mut().replace(Vec::new());
+        self.diff_rows.borrow_mut().replace(Vec::new(), Vec::new());
+        self.clear_diff_search_results();
         self.diff_state_changed();
 
         let root = PathBuf::from(self.git_root.clone());
@@ -407,7 +428,10 @@ impl Backend {
                 self.diff_status_tag = payload.status_tag;
                 self.diff_additions = payload.additions;
                 self.diff_removals = payload.removals;
-                self.diff_rows.borrow_mut().replace(payload.rows);
+                self.diff_rows
+                    .borrow_mut()
+                    .replace(payload.rows, payload.search_texts);
+                self.rebuild_diff_search_results();
                 self.diff_ready = true;
                 self.diff_error.clear();
             }
@@ -421,6 +445,37 @@ impl Backend {
                 self.diff_error = "Diff refresh completed without a queued result".to_owned();
             }
         }
+        self.diff_state_changed();
+    }
+
+    #[qslot]
+    fn set_diff_search(&mut self, query: String) {
+        if self.diff_search_query == query {
+            return;
+        }
+        self.diff_search_query = query;
+        self.rebuild_diff_search_results();
+        self.diff_state_changed();
+    }
+
+    #[qslot]
+    fn move_diff_search_match(&mut self, direction: i32) {
+        let count = self.diff_search_matches.len();
+        if count == 0 {
+            return;
+        }
+        let count = i32::try_from(count).unwrap_or(i32::MAX);
+        let current = if self.diff_search_match_index < 0 {
+            0
+        } else {
+            (self.diff_search_match_index + direction).rem_euclid(count)
+        };
+        self.diff_search_match_index = current;
+        self.diff_search_target_row = self
+            .diff_search_matches
+            .get(current as usize)
+            .and_then(|index| i32::try_from(*index).ok())
+            .unwrap_or(-1);
         self.diff_state_changed();
     }
 
@@ -988,7 +1043,8 @@ impl Backend {
         self.diff_loading = false;
         self.diff_ready = false;
         self.diff_error.clear();
-        self.diff_rows.borrow_mut().replace(Vec::new());
+        self.diff_rows.borrow_mut().replace(Vec::new(), Vec::new());
+        self.clear_diff_search_results();
         self.diff_files.borrow_mut().replace(files);
         self.diff_file_summaries = summaries
             .into_iter()
@@ -1020,7 +1076,8 @@ impl Backend {
     fn apply_diff_selection(&mut self, summary: &DiffFileSummary) {
         self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
         self.diff_loading = false;
-        self.diff_rows.borrow_mut().replace(Vec::new());
+        self.diff_rows.borrow_mut().replace(Vec::new(), Vec::new());
+        self.clear_diff_search_results();
         self.diff_selected_path = summary.path.clone();
         self.diff_status_tag = summary.status.tag().to_owned();
         self.diff_additions = i32::try_from(summary.line_stats.added).unwrap_or(i32::MAX);
@@ -1033,7 +1090,7 @@ impl Backend {
     fn reset_diff_state(&mut self) {
         self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
         self.diff_files.borrow_mut().replace(Vec::new());
-        self.diff_rows.borrow_mut().replace(Vec::new());
+        self.diff_rows.borrow_mut().replace(Vec::new(), Vec::new());
         self.diff_selected_path.clear();
         self.diff_status_tag.clear();
         self.diff_additions = 0;
@@ -1042,7 +1099,32 @@ impl Backend {
         self.diff_loading = false;
         self.diff_error.clear();
         self.diff_file_summaries.clear();
+        self.diff_search_query.clear();
+        self.clear_diff_search_results();
         self.diff_state_changed();
+    }
+
+    fn rebuild_diff_search_results(&mut self) {
+        self.diff_search_matches = self
+            .diff_rows
+            .borrow()
+            .matching_rows(self.diff_search_query.as_str());
+        self.diff_search_match_count =
+            i32::try_from(self.diff_search_matches.len()).unwrap_or(i32::MAX);
+        if let Some(target) = self.diff_search_matches.first().copied() {
+            self.diff_search_match_index = 0;
+            self.diff_search_target_row = i32::try_from(target).unwrap_or(i32::MAX);
+        } else {
+            self.diff_search_match_index = -1;
+            self.diff_search_target_row = -1;
+        }
+    }
+
+    fn clear_diff_search_results(&mut self) {
+        self.diff_search_matches.clear();
+        self.diff_search_match_count = 0;
+        self.diff_search_match_index = -1;
+        self.diff_search_target_row = -1;
     }
 
     fn next_forge_epoch(&mut self) -> i32 {
