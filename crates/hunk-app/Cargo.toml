@@ -7,7 +7,9 @@ authors = ["Nitesh Balusu"]
 
 [dependencies]
 anyhow = "1.0"
+hunk-domain = { path = "../hunk-domain" }
 hunk-git = { path = "../hunk-git" }
+hunk-language = { path = "../hunk-language" }
 tracing = "0.1"
 
 [dev-dependencies]

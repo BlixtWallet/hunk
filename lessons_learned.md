@@ -82,3 +82,14 @@ append a correction when later evidence changes one.
   application snapshot prevents the GPUI and Qt adapters from developing
   different repository refresh semantics while all Git access remains in
   `hunk-git`.
+
+## 2026-08-25 — Headless Diff command and projection
+
+- `gpui::SharedString` had leaked into the cached syntax-segment model even
+  though the data itself was not UI-specific. Using owned `String` values in
+  the headless snapshot keeps renderer-specific allocation and conversion at
+  the adapter edge and makes the same projection consumable by Qt.
+- Comparison loading and row projection must be one application operation.
+  Returning the `CompareSnapshot` together with stable row metadata, binary and
+  collapsed states, and optional segment caches prevents each frontend from
+  parsing patches or inventing its own row identifiers.

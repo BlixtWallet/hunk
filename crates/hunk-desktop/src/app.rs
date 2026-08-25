@@ -14,10 +14,9 @@ use gpui::{
     EntityId, EntityInputHandler, FocusHandle, Focusable as _, InteractiveElement as _, KeyBinding,
     ListAlignment, ListOffset, ListSizingBehavior, ListState, Menu, MenuItem, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, OsAction, ParentElement as _, PathPromptOptions,
-    Pixels, Point, Render, ScrollHandle, ScrollWheelEvent, SharedString,
-    StatefulInteractiveElement as _, Styled as _, SystemMenuType, Task, TitlebarOptions, Window,
-    WindowOptions, actions, anchored, canvas, deferred, div, list, point,
-    prelude::FluentBuilder as _, px,
+    Pixels, Point, Render, ScrollHandle, ScrollWheelEvent, StatefulInteractiveElement as _,
+    Styled as _, SystemMenuType, Task, TitlebarOptions, Window, WindowOptions, actions, anchored,
+    canvas, deferred, div, list, point, prelude::FluentBuilder as _, px,
 };
 use gpui_component::{
     ActiveTheme as _, Colorize as _, GlobalState, Root, RopeExt, StyledExt as _, Theme, ThemeMode,
@@ -45,7 +44,7 @@ use hunk_domain::db::{
     CommentLineSide, CommentRecord, CommentStatus, DatabaseStore, NewComment,
     format_comment_clipboard_blob, next_status_for_unmatched_anchor, now_unix_ms,
 };
-use hunk_domain::diff::{DiffCell, DiffCellKind, DiffRowKind, SideBySideRow};
+use hunk_domain::diff::{DiffCellKind, DiffRowKind, SideBySideRow};
 use hunk_domain::state::{
     AiCollaborationModeSelection, AiServiceTierSelection, AppState, AppStateStore,
     CachedChangedFileState, CachedLocalBranchState, CachedRecentCommitState,
@@ -169,7 +168,6 @@ mod ai_composer_commands;
 mod ai_composer_completion;
 mod ai_dynamic_tools;
 mod ai_inline_review;
-mod ai_inline_review_snapshot;
 mod ai_paths;
 mod ai_thread_catalog_scheduler;
 mod ai_thread_flow;
@@ -198,7 +196,6 @@ mod ai_rollout_fallback;
 mod ai_runtime;
 mod controller;
 mod data;
-mod data_segments;
 mod highlight;
 mod markdown_links;
 mod native_files_editor;

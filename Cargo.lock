@@ -8437,7 +8437,9 @@ version = "0.0.11"
 dependencies = [
  "anyhow",
  "git2",
+ "hunk-domain",
  "hunk-git",
+ "hunk-language",
  "tempfile",
  "tracing",
 ]

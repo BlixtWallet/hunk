@@ -276,7 +276,24 @@ impl DiffViewer {
             return;
         };
 
-        let snapshot = crate::app::ai_inline_review_snapshot::compare_snapshot_from_turn_diff(diff);
+        let DiffSnapshot {
+            comparison: snapshot,
+            projection: stream,
+        } = match load_diff_snapshot(
+            DiffCommand::HistoricalTurn {
+                patch: diff.clone(),
+            },
+            DiffProjectionOptions::default(),
+        ) {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                self.ai_inline_review_session = None;
+                self.ai_inline_review_loaded_state = Some(next_loaded_state);
+                self.ai_inline_review_error = Some(err.to_string());
+                self.ai_inline_review_status_message = None;
+                return;
+            }
+        };
         if snapshot.files.is_empty() {
             self.ai_inline_review_session = None;
             self.ai_inline_review_loaded_state = Some(next_loaded_state);
@@ -286,13 +303,6 @@ impl DiffViewer {
             return;
         }
 
-        let stream = crate::app::data::build_diff_stream_from_patch_map(
-            &snapshot.files,
-            &std::collections::BTreeSet::new(),
-            &snapshot.file_line_stats,
-            &snapshot.patches_by_path,
-            &std::collections::BTreeSet::new(),
-        );
         match crate::app::review_workspace_session::ReviewWorkspaceSession::from_compare_snapshot(
             &snapshot,
             &std::collections::BTreeSet::new(),

@@ -1,6 +1,3 @@
-#[path = "../src/app/highlight.rs"]
-mod highlight;
-
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
@@ -8,6 +5,7 @@ use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow, bail};
+use hunk_app::diff::{build_line_segments, build_syntax_only_line_segments};
 use hunk_domain::diff::{DiffCellKind, DiffRowKind, parse_patch_side_by_side};
 use hunk_git::git::{ChangedFile, FileStatus, load_patches_for_files, load_snapshot};
 
@@ -460,7 +458,7 @@ fn compute_cell_segment_count(
     };
 
     let segment_count = if row.use_detailed_segments {
-        highlight::build_line_segments(
+        build_line_segments(
             Some(row.file_path.as_str()),
             line,
             kind,
@@ -470,7 +468,7 @@ fn compute_cell_segment_count(
         .len()
         .max(1)
     } else {
-        highlight::build_syntax_only_line_segments(Some(row.file_path.as_str()), line)
+        build_syntax_only_line_segments(Some(row.file_path.as_str()), line)
             .len()
             .max(1)
     };
