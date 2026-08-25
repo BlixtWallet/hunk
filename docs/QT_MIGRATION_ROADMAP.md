@@ -188,7 +188,7 @@ must not reproduce that redundant matrix.
 - [x] Keep Codex protocol/reducer/lifecycle behavior in `hunk-codex`.
 - [x] Keep Qt types out of all domain crates.
 - [x] Add crate-level tests for the extracted behavior.
-- [ ] Complete the mandatory working loop and stacked PR.
+- [x] Complete the mandatory working loop and stacked PR: <https://github.com/smolcars/hunk/pull/179>.
 
 Phase 3 ownership inventory:
 
