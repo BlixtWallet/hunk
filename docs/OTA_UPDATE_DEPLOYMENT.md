@@ -179,10 +179,10 @@ export HUNK_UPDATE_MANIFEST_URL="https://hunkstablereleases.smolcars.com/test/<r
 ```
 
 5. Launch Hunk.
-6. Use `Check for Updates...` or the Settings updater controls.
+6. Use the `Updates` control in the Qt application header.
 7. Confirm:
    - the app detects the newer version
-   - `Install Update` appears
+   - `Restart to update` appears after the verified download
    - the update downloads
    - the app exits
    - the helper applies the update
@@ -214,6 +214,8 @@ export HUNK_UPDATE_MANIFEST_URL="https://hunkstablereleases.smolcars.com/test/<r
 - install the `.deb` or `.rpm`
 - confirm self-update stays disabled
 - confirm the explanation text tells the user to update via the package manager
+- confirm the `/usr/bin/hunk-desktop` package wrapper exports
+  `HUNK_UPDATE_EXPLANATION` before starting the private launcher
 
 ## What does not need to be deployed
 

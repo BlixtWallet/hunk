@@ -320,7 +320,7 @@ fn apply_staged_update_syncs_linux_bundle_in_place() {
     assert_eq!(
         applied_update,
         AppliedUpdate {
-            relaunch_executable: current_executable,
+            relaunch_executable: tempdir.path().join("Hunk").join("hunk-desktop"),
         }
     );
     assert!(!staged_archive.exists(), "staged archive should be removed");

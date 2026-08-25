@@ -15,8 +15,19 @@ Window {
 
     Backend {
         id: backend
-        Component.onCompleted: backend.bootstrap()
-        Component.onDestruction: backend.browser.shutdown()
+        Component.onCompleted: {
+            backend.bootstrap()
+            backend.updates.bootstrap()
+        }
+        Component.onDestruction: {
+            backend.browser.shutdown()
+            backend.updates.shutdown()
+        }
+    }
+
+    Connections {
+        target: backend.updates
+        function onQuitRequested() { Qt.quit() }
     }
 
     Component {

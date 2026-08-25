@@ -51,6 +51,10 @@ Item {
         tabs: browserTabs
     }
 
+    FakeUpdater {
+        id: fakeUpdates
+    }
+
     QtObject {
         id: fakeBackend
 
@@ -58,6 +62,7 @@ Item {
         property bool ready: true
         property string statusMessage: "Test backend ready"
         property QtObject browser: fakeBrowser
+        property QtObject updates: fakeUpdates
         property string gitRepositoryName: "hunk"
         property bool terminalOpen: false
         property int terminalFocusRevision: 0

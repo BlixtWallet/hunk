@@ -1199,12 +1199,20 @@ model documented by Qt:
   workspace Clippy all passed through Nix. The initial parallel test invocation
   exposed an existing nanosecond temp-database collision in three comment-store
   tests; the isolated suite and the complete serialized rerun both passed.
+- The Qt desktop now owns the updater lifecycle through a dedicated QObject:
+  startup/manual/periodic checks and verified downloads run off the Qt thread,
+  the header exposes progress and restart controls, and macOS/Linux apply via a
+  post-exit helper while Windows retains the staged MSI helper. Release
+  manifest targets and artifact names still match the stable `hunk_desktop`
+  package contract. Linux direct bundles relaunch through their public launcher,
+  while DEB/RPM wrappers explicitly disable self-update.
 
 ### 9. Release Hardening and Completion Audit
 
 - [x] Package Qt libraries, platform plugins, image plugins, QML modules, and accessibility plugins required by the application.
 - [ ] Produce and install-test macOS DMG/app, Windows MSI, and Linux tarball/DEB/RPM artifacts.
-- [ ] Verify updater manifests and OTA behavior for the renamed/repackaged binary.
+- [x] Restore the updater in Qt and verify signed manifest/asset contracts for the retained packaged binary.
+- [ ] Run end-to-end packaged OTA apply/relaunch smoke tests on macOS, Windows, and Linux.
 - [ ] Verify DPI scaling, fonts, IME, clipboard, drag/drop, shortcuts, notifications, dialogs, accessibility, and sleep inhibition on all platforms.
 - [ ] Verify terminal and any retained browser surface on all platforms.
 - [ ] Run automated QML tests and representative UI smoke tests.

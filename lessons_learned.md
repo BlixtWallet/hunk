@@ -732,3 +732,23 @@ append a correction when later evidence changes one.
   installation on Ubuntu 25.10. Run Hunk's exact aqt installer inside Nix on
   Linux instead, with Nix owning Python/virtualenv and the runner cache owning
   the downloaded Qt SDK.
+
+## 2026-08-25 — Qt updater restoration
+
+- Keep blocking updater work outside the UI framework. A dedicated QtBridge
+  QObject can expose scalar state while manifest fetches, signature checks, and
+  package downloads stay on one worker thread and return through queued Qt
+  invocations.
+- Applying an update is a process-lifecycle problem, not a renderer problem.
+  Spawning the current executable in helper mode before requesting `Qt.quit()`
+  preserves the existing signed updater core and avoids replacing a running
+  macOS app or Linux bundle in-process.
+- Relaunch the supported public entry point. A Linux update that starts
+  `hunk_desktop_bin` directly bypasses the bundle launcher contract; the updater
+  should reopen `hunk-desktop` after syncing the replacement tree.
+- Package-manager detection must be encoded by the package. DEB/RPM wrappers
+  now export the updater explanation before launching Hunk, preventing a system
+  install from being mistaken for a writable direct tarball.
+- OTA compatibility is broader than the executable name. Regression tests
+  should pin manifest target keys, asset formats, and release filenames so a UI
+  migration cannot silently break the static update service.

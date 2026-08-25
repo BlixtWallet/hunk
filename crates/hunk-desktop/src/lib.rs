@@ -26,6 +26,8 @@ mod git_models;
 mod path;
 mod terminal;
 mod terminal_models;
+mod updater;
+mod updater_helper;
 
 #[cfg(debug_assertions)]
 use std::path::{Path, PathBuf};
@@ -70,6 +72,7 @@ pub use terminal_models::{
     TerminalRowItem, TerminalRowListModel, TerminalScreenProjection, TerminalTabItem,
     TerminalTabListModel, project_terminal_screen, terminal_selection_text,
 };
+pub use updater::UpdateBridge;
 
 #[cfg(debug_assertions)]
 const QML_MODULE_DIRECTORY: &str = "Hunk";
@@ -77,6 +80,9 @@ const QML_MODULE_DIRECTORY: &str = "Hunk";
 const QML_ENTRY_FILE: &str = "Main.qml";
 
 pub fn run() -> Result<()> {
+    if updater_helper::maybe_handle_updater_helper_mode()? {
+        return Ok(());
+    }
     if hunk_terminal::maybe_handle_terminal_env_helper_mode()? {
         return Ok(());
     }
@@ -104,6 +110,7 @@ pub fn run() -> Result<()> {
         .register::<TerminalRowListModel>()
         .register::<BrowserTabListModel>()
         .register::<BrowserBridge>()
+        .register::<UpdateBridge>()
         .register::<Backend>();
     load_qml(&mut app)?;
 

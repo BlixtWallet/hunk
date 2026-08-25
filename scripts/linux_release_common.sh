@@ -615,6 +615,7 @@ write_linux_system_wrapper() {
   cat >"$wrapper_path" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
+export HUNK_UPDATE_EXPLANATION="This Hunk install is managed by your Linux package manager. Update it through your package manager."
 exec "$launcher_path" "\$@"
 EOF
   chmod 755 "$wrapper_path"

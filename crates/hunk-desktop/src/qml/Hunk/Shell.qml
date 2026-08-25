@@ -19,6 +19,7 @@ Item {
     readonly property real minimumWorkspaceHeight: activeWorkspace === "ai" && backend.browser.open ? 300 : 160
     property bool terminalWasOpen: false
     property Item terminalPreviousFocusItem: null
+    property bool updateConfirmationVisible: false
     readonly property int observedTerminalFocusRevision: backend.terminalFocusRevision
     readonly property bool browserFrameRequested: {
         const hostWindow = root.Window.window
@@ -151,6 +152,12 @@ Item {
             anchors.rightMargin: 16
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
+
+            UpdateControl {
+                anchors.verticalCenter: parent.verticalCenter
+                updates: root.backend.updates
+                onRestartRequested: root.updateConfirmationVisible = true
+            }
 
             ActionButton {
                 anchors.verticalCenter: parent.verticalCenter
@@ -303,6 +310,28 @@ Item {
         repeat: true
         running: root.backend.browser.pumpActive
         onTriggered: root.backend.browser.pump(root.browserFrameRequested)
+    }
+
+    Timer {
+        interval: 10 * 60 * 1000
+        repeat: true
+        running: root.backend.updates.enabled
+            && !root.backend.updates.readyToRestart
+        onTriggered: root.backend.updates.poll()
+    }
+
+    ConfirmationDialog {
+        anchors.fill: parent
+        visible: root.updateConfirmationVisible
+        title: qsTr("Restart to update?")
+        message: qsTr("Hunk %1 has been downloaded and verified. Restart now to install it?")
+            .arg(root.backend.updates.version)
+        confirmLabel: qsTr("Restart now")
+        onAccepted: {
+            root.updateConfirmationVisible = false
+            root.backend.updates.restart_to_update()
+        }
+        onRejected: root.updateConfirmationVisible = false
     }
 
     ConfirmationDialog {

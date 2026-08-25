@@ -104,5 +104,6 @@ fn platform_packagers_require_deployed_qt_runtimes() {
     assert!(linux.contains("libQt6Core.so.6"));
     assert!(linux.contains("plugins/platforms/libqxcb.so"));
     assert!(linux.contains("plugins/platforms/libqwayland-generic.so"));
+    assert!(linux.contains("export HUNK_UPDATE_EXPLANATION="));
     assert!(linux.contains("validate_linux_runtime_tree"));
 }

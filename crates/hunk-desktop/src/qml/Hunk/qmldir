@@ -6,6 +6,7 @@ AiAttachmentStrip 1.0 AiAttachmentStrip.qml
 TerminalDrawer 1.0 TerminalDrawer.qml
 TerminalScreen 1.0 TerminalScreen.qml
 TerminalRow 1.0 TerminalRow.qml
+UpdateControl 1.0 UpdateControl.qml
 AiRequestPanel 1.0 AiRequestPanel.qml
 AiSidebar 1.0 AiSidebar.qml
 AiSessionControls 1.0 AiSessionControls.qml

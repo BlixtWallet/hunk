@@ -44,6 +44,7 @@ hunk-domain = { path = "../hunk-domain", default-features = false, features = ["
 hunk-forge = { path = "../hunk-forge" }
 hunk-git = { path = "../hunk-git" }
 hunk-terminal = { path = "../hunk-terminal" }
+hunk-updater = { path = "../hunk-updater" }
 qtbridge.workspace = true
 serde_json = "1.0"
 tracing = "0.1"

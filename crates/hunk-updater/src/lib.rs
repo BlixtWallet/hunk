@@ -367,14 +367,8 @@ pub fn detect_install_target(current_executable: &Path) -> Result<UpdateInstallT
         if let Some(install_root) =
             linux_bundle_install_root_from_current_executable(current_executable)
         {
-            let executable_name = current_executable.file_name().ok_or_else(|| {
-                anyhow!(
-                    "current executable has no file name: {}",
-                    current_executable.display()
-                )
-            })?;
             return Ok(UpdateInstallTarget::LinuxBundle {
-                relaunch_executable: install_root.join(executable_name),
+                relaunch_executable: install_root.join("hunk-desktop"),
                 install_root,
             });
         }

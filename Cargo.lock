@@ -7287,6 +7287,7 @@ dependencies = [
  "hunk-forge",
  "hunk-git",
  "hunk-terminal",
+ "hunk-updater",
  "qtbridge",
  "qtbridge-build-utils",
  "serde_json",

@@ -709,6 +709,7 @@ impl Backend {
         Notify = forge_state_changed
     );
     qproperty!("ready", Member = ready, Notify = ready_changed);
+    qproperty!("updates", Member = updates, Constant);
     qproperty!(
         "statusMessage",
         Member = status_message,

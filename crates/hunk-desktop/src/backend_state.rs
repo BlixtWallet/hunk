@@ -32,6 +32,7 @@ use crate::git_models::{
 };
 use crate::terminal::TerminalRuntimeState;
 use crate::terminal_models::{TerminalRowListModel, TerminalTabListModel};
+use crate::updater::UpdateBridge;
 use crate::{AiMessageQueue, AiPromptReceipt};
 
 pub(super) type GitRefreshResult = Result<GitSnapshotPayload, String>;
@@ -172,6 +173,7 @@ pub struct Backend {
     pub(super) terminal_screen_revision: i32,
     pub(super) terminal_focus_revision: i32,
     pub(super) browser: Rc<RefCell<BrowserBridge>>,
+    pub(super) updates: Rc<RefCell<UpdateBridge>>,
     pub(super) ai_threads: Rc<RefCell<AiThreadListModel>>,
     pub(super) ai_timeline: Rc<RefCell<AiTimelineListModel>>,
     pub(super) ai_attachments: Rc<RefCell<AiAttachmentListModel>>,
@@ -372,6 +374,7 @@ impl Default for Backend {
             terminal_screen_revision: 0,
             terminal_focus_revision: 0,
             browser: BrowserBridge::default_with_attached_qobject(),
+            updates: UpdateBridge::default_with_attached_qobject(),
             ai_threads: AiThreadListModel::default_with_attached_qobject(),
             ai_timeline: AiTimelineListModel::default_with_attached_qobject(),
             ai_attachments: AiAttachmentListModel::default_with_attached_qobject(),
