@@ -21,6 +21,7 @@ ai = [
   "dep:webbrowser",
 ]
 diff = ["dep:anyhow", "dep:hunk-domain", "dep:hunk-git", "dep:hunk-language"]
+comments = ["diff"]
 git = ["dep:anyhow", "dep:hunk-domain", "dep:hunk-git", "dep:tracing"]
 
 [dependencies]

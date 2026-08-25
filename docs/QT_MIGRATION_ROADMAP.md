@@ -124,9 +124,11 @@ master
   <- migration/07-qt-diff
   <- migration/08-qt-diff-review-tools
   <- migration/09-qt-diff-selection
-  <- migration/10-qt-ai
-  <- migration/11-qt-cutover-ci
-  <- migration/12-release-hardening
+  <- migration/10-qt-diff-comment-core
+  <- migration/11-qt-diff-comments
+  <- migration/12-qt-ai
+  <- migration/13-qt-cutover-ci
+  <- migration/14-release-hardening
 ```
 
 Branch names may be divided into smaller layers when a listed layer would not
@@ -384,10 +386,11 @@ Phase 5 local validation through Nix:
 - [ ] Verify ordinary QML delegates against representative large repositories.
 - [ ] Add the narrow custom `QQuickItem`/scene-graph renderer only if measurements require it.
 - [ ] Meet the 8 ms frame budget at 120 Hz for scroll, resize, selection, and streamed updates.
-- [ ] Complete the remaining mandatory working loop and stacked PRs. Completed
+- [ ] Complete the remaining mandatory working loop and stacked PRs. Delivered
   Diff layers: [#185](https://github.com/smolcars/hunk/pull/185),
-  [#186](https://github.com/smolcars/hunk/pull/186), and
-  [#187](https://github.com/smolcars/hunk/pull/187).
+  [#186](https://github.com/smolcars/hunk/pull/186),
+  [#187](https://github.com/smolcars/hunk/pull/187), and
+  [#188](https://github.com/smolcars/hunk/pull/188).
 
 Phase 6 initial Qt slice decisions:
 
@@ -444,6 +447,23 @@ Phase 6 selection-layer decisions:
 - A single transparent QML `TextEdit` performs the native clipboard operation
   for the Rust-projected selected text, then restores focus to the Diff surface.
 
+Phase 6 comment-core decisions:
+
+- Comment line-side vocabulary and deterministic anchor hashing are pure domain
+  behavior, so they remain available without activating the SQLite feature.
+  The existing `hunk_domain::db` re-exports remain intact for legacy callers;
+  persistence is enabled only by the subsequent comment-store layer.
+- `hunk-app::diff` projects comment anchors with the legacy two-row context
+  radius, same-file context bounds, current hunk header, stable row identifier,
+  and left/right/meta location semantics. Hunk and synthetic state rows remain
+  non-commentable.
+- The selected-file worker builds anchors beside syntax, search, and copy data.
+  Filtering the internal file-header row removes its aligned anchor in the same
+  pass, and the resulting vectors move into the Qt list model in one reset.
+- Qt enables the narrow `hunk-app` comments feature explicitly. The legacy
+  default feature set stays unchanged, and this prerequisite adds no QML object
+  or database mutation before the asynchronous comment UI/store layer.
+
 Phase 6 initial-slice macOS validation through Nix, using the existing
 external-volume Cargo target and caches:
 
@@ -473,6 +493,17 @@ and external caches:
 - `qmllint` and all 20 QML interaction/virtualization/visual tests passed in
   472 milliseconds. The rendered desktop snapshot was inspected with syntax,
   split diff coloring, and the selected-row treatment visible together.
+
+Phase 6 comment-core macOS validation through Nix, reusing the same target and
+external caches:
+
+- The full workspace build passed in 47.91 seconds, and the complete workspace
+  test suite passed in 1 minute 26 seconds, including anchor-side/context and Qt
+  row-alignment coverage.
+- Workspace Clippy passed for all targets with warnings denied in 7.10 seconds.
+- `qmllint` and all 20 existing QML interaction/virtualization/visual tests
+  passed in 482 milliseconds. This prerequisite intentionally changes no QML
+  presentation; comment editing and persistence are the next Diff layer.
 
 ### 7. AI Tab
 

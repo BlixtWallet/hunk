@@ -388,7 +388,7 @@ impl Backend {
         self.diff_error.clear();
         self.diff_rows
             .borrow_mut()
-            .replace(Vec::new(), Vec::new(), Vec::new());
+            .replace(Vec::new(), Vec::new(), Vec::new(), Vec::new());
         self.clear_diff_search_results();
         self.diff_state_changed();
 
@@ -434,6 +434,7 @@ impl Backend {
                     payload.rows,
                     payload.search_texts,
                     payload.copy_texts,
+                    payload.comment_anchors,
                 );
                 self.rebuild_diff_search_results();
                 self.diff_ready = true;
@@ -1059,7 +1060,7 @@ impl Backend {
         self.diff_error.clear();
         self.diff_rows
             .borrow_mut()
-            .replace(Vec::new(), Vec::new(), Vec::new());
+            .replace(Vec::new(), Vec::new(), Vec::new(), Vec::new());
         self.clear_diff_search_results();
         self.diff_files.borrow_mut().replace(files);
         self.diff_file_summaries = summaries
@@ -1094,7 +1095,7 @@ impl Backend {
         self.diff_loading = false;
         self.diff_rows
             .borrow_mut()
-            .replace(Vec::new(), Vec::new(), Vec::new());
+            .replace(Vec::new(), Vec::new(), Vec::new(), Vec::new());
         self.clear_diff_search_results();
         self.diff_selected_path = summary.path.clone();
         self.diff_status_tag = summary.status.tag().to_owned();
@@ -1110,7 +1111,7 @@ impl Backend {
         self.diff_files.borrow_mut().replace(Vec::new());
         self.diff_rows
             .borrow_mut()
-            .replace(Vec::new(), Vec::new(), Vec::new());
+            .replace(Vec::new(), Vec::new(), Vec::new(), Vec::new());
         self.diff_selected_path.clear();
         self.diff_status_tag.clear();
         self.diff_additions = 0;
