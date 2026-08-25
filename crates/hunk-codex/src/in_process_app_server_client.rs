@@ -21,7 +21,7 @@ use crate::protocol::SessionSource;
 pub use codex_app_server::in_process::InProcessServerEvent;
 use codex_app_server::in_process::InProcessStartArgs;
 use codex_arg0::Arg0DispatchPaths;
-use codex_config::CloudRequirementsLoader;
+use codex_config::CloudConfigBundleLoader;
 use codex_config::LoaderOverrides;
 use codex_config::NoopThreadConfigLoader;
 use codex_core::config::Config;
@@ -106,6 +106,7 @@ impl InProcessClientStartArgs {
             } else {
                 Some(self.opt_out_notification_methods.clone())
             },
+            ..InitializeCapabilities::default()
         };
 
         InitializeParams {
@@ -126,7 +127,7 @@ impl InProcessClientStartArgs {
             cli_overrides: Vec::new(),
             loader_overrides: self.loader_overrides,
             strict_config: false,
-            cloud_requirements: CloudRequirementsLoader::default(),
+            cloud_config_bundle: CloudConfigBundleLoader::default(),
             thread_config_loader: Arc::new(NoopThreadConfigLoader),
             feedback: self.feedback,
             log_db: None,
@@ -225,7 +226,7 @@ where
                     *skipped_events = skipped_events.saturating_add(1);
                     warn!("dropping in-process app-server event because consumer queue is full");
                     if let InProcessServerEvent::ServerRequest(request) = event {
-                        reject_server_request(request);
+                        reject_server_request(*request);
                     }
                     return ForwardEventResult::Continue;
                 }
@@ -249,7 +250,7 @@ where
             *skipped_events = skipped_events.saturating_add(1);
             warn!("dropping in-process app-server event because consumer queue is full");
             if let InProcessServerEvent::ServerRequest(request) = event {
-                reject_server_request(request);
+                reject_server_request(*request);
             }
             ForwardEventResult::Continue
         }
@@ -313,9 +314,9 @@ impl InProcessAppServerClient {
                         let Some(event) = event else {
                             break;
                         };
-                        if let InProcessServerEvent::ServerRequest(
-                            ServerRequest::ChatgptAuthTokensRefresh { request_id, .. }
-                        ) = &event
+                        if let InProcessServerEvent::ServerRequest(request) = &event
+                            && let ServerRequest::ChatgptAuthTokensRefresh { request_id, .. } =
+                                request.as_ref()
                         {
                             let send_result = request_sender.fail_server_request(
                                 request_id.clone(),

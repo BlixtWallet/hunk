@@ -216,7 +216,8 @@ fn response_text(response: &DynamicToolCallResponse) -> String {
         .iter()
         .find_map(|item| match item {
             DynamicToolCallOutputContentItem::InputText { text } => Some(text.clone()),
-            DynamicToolCallOutputContentItem::InputImage { .. } => None,
+            DynamicToolCallOutputContentItem::InputImage { .. }
+            | DynamicToolCallOutputContentItem::InputAudio { .. } => None,
         })
         .unwrap_or_default()
 }

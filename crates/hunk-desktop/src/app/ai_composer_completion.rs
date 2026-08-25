@@ -1035,6 +1035,8 @@ mod tests {
             short_description: Some("Reusable GPUI UI components".to_string()),
             icon_small: None,
             icon_large: None,
+            icon_small_url: None,
+            icon_large_url: None,
             brand_color: None,
             default_prompt: None,
         });

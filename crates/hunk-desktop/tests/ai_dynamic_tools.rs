@@ -474,7 +474,8 @@ fn android_tool_params(tool: &str, arguments: serde_json::Value) -> DynamicToolC
 
 fn response_image_url(response: &DynamicToolCallResponse) -> Option<String> {
     response.content_items.iter().find_map(|item| match item {
-        DynamicToolCallOutputContentItem::InputText { .. } => None,
+        DynamicToolCallOutputContentItem::InputText { .. }
+        | DynamicToolCallOutputContentItem::InputAudio { .. } => None,
         DynamicToolCallOutputContentItem::InputImage { image_url } => Some(image_url.clone()),
     })
 }
@@ -489,7 +490,8 @@ fn response_text(response: &DynamicToolCallResponse) -> String {
         .iter()
         .find_map(|item| match item {
             DynamicToolCallOutputContentItem::InputText { text } => Some(text.clone()),
-            DynamicToolCallOutputContentItem::InputImage { .. } => None,
+            DynamicToolCallOutputContentItem::InputImage { .. }
+            | DynamicToolCallOutputContentItem::InputAudio { .. } => None,
         })
         .unwrap_or_default()
 }

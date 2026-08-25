@@ -357,7 +357,10 @@ fn ai_account_summary(
             "Signed in with API key.".to_string()
         }
         Some(hunk_codex::protocol::Account::Chatgpt { email, plan_type }) => {
-            format!("ChatGPT: {email} ({plan_type:?})")
+            match email.as_deref() {
+                Some(email) => format!("ChatGPT: {email} ({plan_type:?})"),
+                None => format!("ChatGPT ({plan_type:?})"),
+            }
         }
         Some(hunk_codex::protocol::Account::AmazonBedrock { .. }) => {
             "Signed in with Amazon Bedrock.".to_string()

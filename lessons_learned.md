@@ -27,3 +27,29 @@ append a correction when later evidence changes one.
 - `AGENTS.md` had an existing user-owned modification when the migration began.
   It must remain outside migration commits unless the user explicitly asks to
   incorporate that exact worktree change.
+
+## 2026-08-24 — Codex 0.149.1 upgrade
+
+- The `hunk/embedded-apply-patch-fix` fork branch had no fork-only commit delta;
+  it was identical to its previous upstream baseline. Upgrading it to the new
+  upstream tag therefore required no patch reapplication, despite the branch
+  name implying otherwise.
+- Cargo packages with the same native `links` value must resolve to one version
+  across the workspace. Codex 0.149.1 required `tree-sitter-powershell` 0.26.4
+  and `libsqlite3-sys` 0.37, so Hunk moved to `tree-sitter-powershell` 0.26.4
+  and `rusqlite` 0.39 before the lockfile could resolve.
+- Codex dynamic tools are now canonical namespace objects containing function
+  entries. Keeping Hunk's browser and Android tools grouped under their existing
+  namespaces preserves the public tool names while satisfying the new protocol.
+- Several app-server payloads became boxed or wrapped and gained optional
+  fields. Adapt the Hunk protocol seam with explicit defaults rather than
+  enabling new capabilities or history modes implicitly.
+- Preserve Codex's boxing for large server notifications and requests across
+  Hunk's event boundary. Unboxing them enlarged every event to hundreds of
+  bytes and failed the workspace's `large_enum_variant` lint.
+- Versioned Codex runtime archives and the Codex source audit checkout live in
+  `/Volumes/hulk/dev/cache`; Hunk's ignored runtime assets and Cargo `target/`
+  remain on the external workspace volume. The cached official archives were
+  verified against GitHub's published SHA-256 digests before staging.
+- Correction to the migration baseline: the user explicitly requested that the
+  existing `AGENTS.md` worktree change be included in the next commit.

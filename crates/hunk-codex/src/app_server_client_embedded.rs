@@ -105,14 +105,17 @@ impl EmbeddedAppServerClient {
                 None,
             )
             .map_err(CodexIntegrationError::HostProcessIo)?;
-            let environment_manager =
-                EnvironmentManager::from_codex_home(args.codex_home.clone(), Some(runtime_paths))
-                    .await
-                    .map_err(|error| {
-                        CodexIntegrationError::WebSocketTransport(format!(
-                            "failed to load embedded Codex environments: {error}"
-                        ))
-                    })?;
+            let environment_manager = EnvironmentManager::from_codex_home(
+                args.codex_home.clone(),
+                Some(runtime_paths),
+                config.http_client_factory(),
+            )
+            .await
+            .map_err(|error| {
+                CodexIntegrationError::WebSocketTransport(format!(
+                    "failed to load embedded Codex environments: {error}"
+                ))
+            })?;
 
             InProcessAppServerClient::start(InProcessClientStartArgs {
                 arg0_paths: Arg0DispatchPaths {

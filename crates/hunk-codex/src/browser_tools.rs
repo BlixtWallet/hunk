@@ -1,4 +1,7 @@
 use crate::protocol::DynamicToolCallParams;
+use crate::protocol::DynamicToolFunctionSpec;
+use crate::protocol::DynamicToolNamespaceSpec;
+use crate::protocol::DynamicToolNamespaceTool;
 use crate::protocol::DynamicToolSpec;
 use crate::protocol::ThreadStartParams;
 use hunk_browser::{BrowserAction, BrowserConsoleLevel, BrowserTabId};
@@ -35,7 +38,7 @@ Use hunk_browser.reload, hunk_browser.stop, hunk_browser.back, and hunk_browser.
 If a browser action reports that confirmation is required, stop and wait for the user decision before continuing."#;
 
 pub fn browser_dynamic_tool_specs() -> Vec<DynamicToolSpec> {
-    vec![
+    let tools = vec![
         spec(
             BROWSER_NAVIGATE_TOOL,
             "Navigate the embedded Hunk browser for the active AI thread to a URL.",
@@ -249,7 +252,12 @@ pub fn browser_dynamic_tool_specs() -> Vec<DynamicToolSpec> {
                 &["tabId"],
             ),
         ),
-    ]
+    ];
+    vec![DynamicToolSpec::Namespace(DynamicToolNamespaceSpec {
+        name: BROWSER_TOOL_NAMESPACE.to_string(),
+        description: "Inspect and control Hunk's embedded browser.".to_string(),
+        tools,
+    })]
 }
 
 pub fn is_browser_dynamic_tool(tool: &str) -> bool {
@@ -282,13 +290,11 @@ pub fn apply_browser_thread_start_context(params: &mut ThreadStartParams) {
     append_browser_developer_instructions(&mut params.developer_instructions);
 
     let mut dynamic_tools = params.dynamic_tools.take().unwrap_or_default();
-    for spec in browser_dynamic_tool_specs() {
-        if !dynamic_tools
-            .iter()
-            .any(|existing| existing.name == spec.name && existing.namespace == spec.namespace)
-        {
-            dynamic_tools.push(spec);
-        }
+    let has_browser_namespace = dynamic_tools.iter().any(
+        |spec| matches!(spec, DynamicToolSpec::Namespace(namespace) if namespace.name == BROWSER_TOOL_NAMESPACE),
+    );
+    if !has_browser_namespace {
+        dynamic_tools.extend(browser_dynamic_tool_specs());
     }
     params.dynamic_tools = Some(dynamic_tools);
 }
@@ -591,14 +597,13 @@ where
         .map_err(|error| format!("invalid browser dynamic tool arguments: {error}"))
 }
 
-fn spec(name: &str, description: &str, input_schema: Value) -> DynamicToolSpec {
-    DynamicToolSpec {
-        namespace: Some(BROWSER_TOOL_NAMESPACE.to_string()),
+fn spec(name: &str, description: &str, input_schema: Value) -> DynamicToolNamespaceTool {
+    DynamicToolNamespaceTool::Function(DynamicToolFunctionSpec {
         name: name.to_string(),
         description: description.to_string(),
         input_schema,
         defer_loading: false,
-    }
+    })
 }
 
 fn object_schema(properties: Value, required: &[&str]) -> Value {

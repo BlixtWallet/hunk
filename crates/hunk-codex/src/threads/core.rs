@@ -246,9 +246,13 @@ impl ThreadService {
             model_providers: None,
             source_kinds: None,
             archived: Some(false),
+            section_id: None,
+            project_id: None,
             cwd: Some(ThreadListCwdFilter::One(cwd)),
             use_state_db_only: false,
             search_term: None,
+            parent_thread_id: None,
+            ancestor_thread_id: None,
         };
 
         self.request_and_reconcile(
