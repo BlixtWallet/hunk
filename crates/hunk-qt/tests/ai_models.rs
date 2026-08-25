@@ -162,6 +162,8 @@ fn thread_model_skips_identical_streaming_resets() {
 
     assert!(model.replace_if_changed(vec![item.clone()]));
     assert_eq!(model.len(), 1);
+    assert!(model.contains_thread_id("thread"));
+    assert!(!model.contains_thread_id("outside-catalog"));
     assert!(!model.replace_if_changed(vec![item]));
     assert_eq!(model.len(), 1);
 }

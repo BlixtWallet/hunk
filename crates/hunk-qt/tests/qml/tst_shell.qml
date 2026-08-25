@@ -88,6 +88,7 @@ TestCase {
         property string aiActiveThreadCwd: "/Volumes/hulk/dev/projects/hunk"
         property string aiActiveTurnId: "turn-2"
         property bool aiTurnRunning: true
+        property bool aiThreadActionPending: false
         property bool aiPromptPending: false
         property int aiPromptAcceptedRevision: 0
         property bool aiInterruptPending: false
@@ -398,6 +399,19 @@ TestCase {
             aiStateChanged()
         }
         function create_ai_thread() { record("create_ai_thread") }
+        function fork_ai_thread() {
+            if (!aiReady || aiLoading || aiRequiresAuthentication
+                    || aiActiveThreadId.length === 0 || aiTurnRunning
+                    || aiThreadActionPending || aiPromptPending
+                    || aiInterruptPending || aiRequestId.length > 0
+                    || aiRequestResolving) {
+                return false
+            }
+            record("fork_ai_thread", aiActiveThreadId)
+            aiThreadActionPending = true
+            aiStateChanged()
+            return true
+        }
         function archive_ai_thread(threadId) {
             for (let index = 0; index < aiThreadsModel.count; ++index) {
                 const thread = aiThreadsModel.get(index)
@@ -445,7 +459,8 @@ TestCase {
             aiStateChanged()
         }
         function interrupt_ai_turn() {
-            if (!aiTurnRunning || aiPromptPending || aiInterruptPending)
+            if (!aiTurnRunning || aiThreadActionPending || aiPromptPending
+                    || aiInterruptPending)
                 return false
             record("interrupt_ai_turn", aiActiveTurnId)
             aiInterruptPending = true
@@ -835,6 +850,7 @@ TestCase {
         fakeBackend.aiActiveThreadCwd = "/Volumes/hulk/dev/projects/hunk"
         fakeBackend.aiActiveTurnId = "turn-2"
         fakeBackend.aiTurnRunning = true
+        fakeBackend.aiThreadActionPending = false
         fakeBackend.aiPromptPending = false
         fakeBackend.aiPromptAcceptedRevision = 0
         fakeBackend.aiInterruptPending = false
@@ -972,6 +988,67 @@ TestCase {
         compare(fakeBackend.lastCommand, "archive_ai_thread")
         compare(fakeBackend.lastArgument, "thread-qt-migration")
         compare(fakeBackend.aiThreadCount, 1)
+    }
+
+    function test_aiForkRequiresAnIdleThreadAndDeduplicatesUntilCompletion() {
+        openAiWorkspace()
+        const workspace = shell.workspaceItem
+
+        verify(!workspace.forkButton.enabled)
+        verify(workspace.composer.stopButton.enabled)
+        fakeBackend.aiThreadActionPending = true
+        fakeBackend.aiStateChanged()
+        verify(!workspace.composer.stopButton.enabled)
+        fakeBackend.aiThreadActionPending = false
+        fakeBackend.aiStateChanged()
+
+        fakeBackend.aiTurnRunning = false
+        fakeBackend.aiActiveTurnId = ""
+        fakeBackend.aiStateChanged()
+        fakeBackend.aiReady = false
+        fakeBackend.aiStateChanged()
+        verify(!workspace.forkButton.enabled)
+
+        fakeBackend.aiReady = true
+        fakeBackend.aiStateChanged()
+        tryVerify(() => workspace.forkButton.enabled)
+
+        verify(workspace.forkThread())
+        compare(fakeBackend.lastCommand, "fork_ai_thread")
+        compare(fakeBackend.lastArgument, "thread-qt-migration")
+        verify(fakeBackend.aiThreadActionPending)
+        verify(!workspace.forkButton.enabled)
+        verify(!workspace.composer.editor.enabled)
+
+        fakeBackend.show_ai_approval("approval-during-fork")
+        tryCompare(workspace.requestPanel, "loadedRequestId", "approval-during-fork")
+        verify(shell.sidebarItem.commandPending)
+        verify(!workspace.requestPanel.acceptButton.enabled)
+        compare(workspace.requestPanel.acceptButton.label, "Accept")
+
+        const commandCount = fakeBackend.commandCount
+        verify(!workspace.forkThread())
+        compare(fakeBackend.commandCount, commandCount)
+
+        fakeBackend.aiThreadActionPending = false
+        fakeBackend.aiStateChanged()
+        tryVerify(() => workspace.requestPanel.acceptButton.enabled
+            && workspace.requestPanel.acceptButton.activeFocus)
+
+        fakeBackend.complete_ai_request()
+        tryVerify(() => workspace.composer.editor.enabled
+            && workspace.composer.editor.activeFocus
+            && workspace.forkButton.enabled
+            && !shell.sidebarItem.commandPending)
+    }
+
+    function test_aiArchiveConfirmationClosesWhenARequestArrives() {
+        openAiWorkspace()
+        shell.sidebarItem.requestArchive("thread-review", "Review thread")
+        verify(shell.sidebarItem.archiveConfirmationVisible)
+
+        fakeBackend.show_ai_approval("approval-cancels-archive")
+        tryVerify(() => !shell.sidebarItem.archiveConfirmationVisible)
     }
 
     function test_aiTimelineRemainsVirtualizedAtItsRustBound() {

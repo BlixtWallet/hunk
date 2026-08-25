@@ -178,6 +178,12 @@ mod thread_model {
             self.replace(items);
             true
         }
+
+        pub fn contains_thread_id(&self, thread_id: &str) -> bool {
+            self.items
+                .iter()
+                .any(|thread| thread.thread_id == thread_id)
+        }
     }
 
     impl QListModel for AiThreadListModel {

@@ -36,8 +36,8 @@ fn run_ai_worker(
                         } else {
                             runtime.send_event(
                                 event_tx,
-                                AiWorkerEventPayload::Status(format!(
-                                    "AI connection restored after {}. Refreshed state without replaying the last action.",
+                                AiWorkerEventPayload::Error(format!(
+                                    "AI connection restored after {}. The last action was not replayed; retry it.",
                                     command_context_message(&retry_command)
                                 )),
                             );
@@ -277,6 +277,7 @@ fn command_context_message(command: &AiWorkerCommand) -> &'static str {
         AiWorkerCommand::SetIncludeHiddenModels { .. } => "updating AI model visibility",
         AiWorkerCommand::StartThread { .. } => "starting a new AI thread",
         AiWorkerCommand::SelectThread { .. } => "opening the AI thread",
+        AiWorkerCommand::ForkThread { .. } => "forking the AI thread",
         AiWorkerCommand::ArchiveThread { .. } => "archiving the AI thread",
         AiWorkerCommand::SendPrompt { .. } => "sending the AI prompt",
         AiWorkerCommand::InterruptTurn { .. } => "interrupting the AI turn",

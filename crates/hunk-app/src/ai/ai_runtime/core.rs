@@ -31,7 +31,7 @@ use hunk_codex::protocol::SandboxMode;
 use hunk_codex::protocol::SandboxPolicy;
 use hunk_codex::protocol::ServerNotification;
 use hunk_codex::protocol::ServerRequest;
-use hunk_codex::protocol::ThreadResumeParams;
+use hunk_codex::protocol::{ThreadForkParams, ThreadResumeParams};
 use hunk_codex::protocol::ThreadStartParams;
 use hunk_codex::protocol::ToolRequestUserInputAnswer;
 use hunk_codex::protocol::ToolRequestUserInputQuestion;
@@ -220,6 +220,9 @@ pub enum AiWorkerCommand {
     SelectThread {
         thread_id: String,
     },
+    ForkThread {
+        thread_id: String,
+    },
     ArchiveThread {
         thread_id: String,
     },
@@ -378,6 +381,28 @@ impl AiWorkerRuntime {
             }
             AiWorkerCommand::SelectThread { thread_id } => {
                 self.load_thread_snapshot(thread_id)?;
+                self.emit_snapshot_after_sync(event_tx)?;
+            }
+            AiWorkerCommand::ForkThread { thread_id } => {
+                let response = self.service.fork_thread(
+                    &mut self.session,
+                    ThreadForkParams {
+                        thread_id,
+                        defer_goal_continuation: true,
+                        ..ThreadForkParams::default()
+                    },
+                    self.request_timeout,
+                )?;
+                self.service.state_mut().set_active_thread_for_cwd(
+                    self.workspace_key.clone(),
+                    response.thread.id.clone(),
+                );
+                self.send_event(
+                    event_tx,
+                    AiWorkerEventPayload::ThreadStarted {
+                        thread_id: response.thread.id,
+                    },
+                );
                 self.emit_snapshot_after_sync(event_tx)?;
             }
             AiWorkerCommand::ArchiveThread { thread_id } => {

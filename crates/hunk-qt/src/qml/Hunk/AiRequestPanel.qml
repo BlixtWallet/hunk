@@ -11,13 +11,16 @@ FocusScope {
     property var questions: []
     property var answers: ({})
     property bool parseError: false
+    property bool responseWasAvailable: false
     readonly property bool approvalRequest: backend.aiRequestKind === "approval"
     readonly property bool inputRequest: backend.aiRequestKind === "userInput"
     readonly property bool responseBusy: backend.aiRequestResolving
+    readonly property bool interactionBlocked: backend.aiThreadActionPending
+        || responseBusy
     readonly property bool hasRequest: backend.aiRequestId.length > 0
     readonly property bool canRespond: backend.aiReady && !backend.aiLoading
         && !backend.aiRequiresAuthentication && backend.aiRequestAnswerable
-        && !responseBusy && loadedRequestId.length > 0 && !parseError
+        && !interactionBlocked && loadedRequestId.length > 0 && !parseError
     readonly property alias acceptButton: acceptAction
     readonly property alias declineButton: declineAction
     readonly property alias submitButton: submitAction
@@ -51,7 +54,7 @@ FocusScope {
     }
 
     function setAnswer(questionId, answer) {
-        if (!inputRequest || responseBusy)
+        if (!inputRequest || interactionBlocked)
             return
         const next = copyAnswers()
         next[questionId] = answer
@@ -127,6 +130,14 @@ FocusScope {
         return false
     }
 
+    function syncBackendState() {
+        syncRequest()
+        const focusNewlyAvailableResponse = canRespond && !responseWasAvailable
+        responseWasAvailable = canRespond
+        if (focusNewlyAvailableResponse)
+            responseFocusTimer.restart()
+    }
+
     function resolveApproval(accept) {
         if (!approvalRequest || !canRespond)
             return false
@@ -137,6 +148,12 @@ FocusScope {
         if (!inputRequest || !canRespond)
             return false
         return backend.submit_ai_user_input(loadedRequestId, serializedAnswers())
+    }
+
+    Timer {
+        id: responseFocusTimer
+        interval: 0
+        onTriggered: root.focusFirstControl()
     }
 
     Rectangle {
@@ -512,9 +529,9 @@ FocusScope {
         target: root.backend
 
         function onAiStateChanged() {
-            root.syncRequest()
+            root.syncBackendState()
         }
     }
 
-    Component.onCompleted: syncRequest()
+    Component.onCompleted: syncBackendState()
 }

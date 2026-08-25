@@ -722,6 +722,11 @@ fn reconnect_policy_retries_only_safe_read_like_commands() {
         }
     ));
     assert!(!command_can_retry_after_reconnect(
+        &AiWorkerCommand::ForkThread {
+            thread_id: "thread-1".to_string(),
+        }
+    ));
+    assert!(!command_can_retry_after_reconnect(
         &AiWorkerCommand::SendPrompt {
             thread_id: "thread-1".to_string(),
             prompt: Some("continue".to_string()),

@@ -14,8 +14,15 @@ Item {
     readonly property bool loadingStateVisible: backend.aiLoading && !backend.aiReady
     readonly property bool emptyStateVisible: threadList.count === 0
         && backend.aiReady && !backend.aiLoading
-    readonly property bool commandPending: backend.aiPromptPending
-        || backend.aiInterruptPending || backend.aiRequestResolving
+    readonly property bool commandPending: backend.aiThreadActionPending
+        || backend.aiPromptPending
+        || backend.aiInterruptPending || backend.aiRequestId.length > 0
+        || backend.aiRequestResolving
+
+    onCommandPendingChanged: {
+        if (commandPending && archiveConfirmationVisible)
+            cancelArchive()
+    }
 
     function selectThread(threadId) {
         if (threadId.length > 0 && threadId !== backend.aiActiveThreadId)
@@ -33,7 +40,7 @@ Item {
     function requestArchive(threadId, title) {
         pendingArchiveId = threadId
         pendingArchiveTitle = title
-        archiveConfirmationVisible = threadId.length > 0
+        archiveConfirmationVisible = threadId.length > 0 && !commandPending
     }
 
     function cancelArchive() {
@@ -45,7 +52,7 @@ Item {
     function confirmArchive() {
         const threadId = pendingArchiveId
         cancelArchive()
-        if (threadId.length > 0)
+        if (threadId.length > 0 && !commandPending)
             backend.archive_ai_thread(threadId)
     }
 

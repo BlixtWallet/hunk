@@ -2,6 +2,7 @@ mod ai_composer;
 mod ai_models;
 mod ai_requests;
 mod ai_runtime;
+mod ai_thread_actions;
 mod ai_timeline_models;
 mod backend;
 mod backend_ai;
@@ -28,6 +29,7 @@ pub use ai_requests::{
     AiPendingOption, AiPendingQuestion, AiPendingRequest, AiPendingRequestProjection,
 };
 pub use ai_runtime::{AiEventMailbox, AiProjectedSnapshot, AiRuntimeEvent};
+pub use ai_thread_actions::{AiThreadActionKind, AiThreadActionReceipt};
 pub use ai_timeline_models::{AiTimelineItem, AiTimelineListModel, AiTimelineProjection};
 pub use backend::{Backend, Workspace};
 pub use comment_models::{DiffCommentItem, DiffCommentListModel, DiffCommentProjection};
