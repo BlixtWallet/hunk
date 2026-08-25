@@ -153,3 +153,8 @@ append a correction when later evidence changes one.
   service. Do not silently fall back to internal storage for a multi-gigabyte
   Qt SDK and Rust target. Keep the exact macOS gates local until the runner is
   explicitly provisioned with external-volume access.
+- Correction to the Windows installer decision: the official Online Installer
+  requires Qt Account credentials even for this unattended open-source package
+  command. Upstream aqt merge commit `8c3695d4` contains the unreleased Qt 6.11
+  Windows repository-layout fix, so pin that revision and keep CI account-free
+  instead of introducing personal credentials.

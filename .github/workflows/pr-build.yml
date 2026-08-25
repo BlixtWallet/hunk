@@ -133,15 +133,14 @@ jobs:
           use-cache: false
           version: 0.15.2
 
-      - name: Cache pinned Qt
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}\hunk-qt
-          key: hunk-qt-${{ env.HUNK_QT_VERSION }}-windows-msvc2022-x64-v1
-
       - name: Install pinned Qt
-        run: ./scripts/qt/install_qt_windows.ps1 -InstallRoot "${{ runner.temp }}\hunk-qt"
-        shell: pwsh
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.HUNK_QT_VERSION }}
+          arch: win64_msvc2022_64
+          cache: true
+          cache-key-prefix: hunk-qt-${{ env.HUNK_QT_VERSION }}-windows-aqt-8c3695d4
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b
 
       # - name: Cache cargo registry and Rust dependencies
       #   if: runner.os == 'macOS'
