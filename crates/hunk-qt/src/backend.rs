@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use hunk_app::ai::{AiTurnSessionOverrides, AiWorkerCommand};
+use hunk_app::ai::AiWorkerCommand;
 use hunk_app::diff::DiffCommentStoreCommand;
 use hunk_domain::db::CommentStatus;
 use hunk_forge::{ForgeCredentialKind, ForgeProvider, ForgeReviewWorkspace};
@@ -16,9 +16,10 @@ use crate::backend_ai::{
     ai_active_request_count, ai_interrupt_pending, ai_pending_request_count, ai_prompt_pending,
     ai_request_answerable, ai_request_description, ai_request_id, ai_request_kind,
     ai_request_questions_json, ai_request_reason, ai_request_resolving, ai_request_title,
-    apply_ai_runtime_events, ensure_ai_runtime_started, queue_ai_approval, queue_ai_interrupt,
-    queue_ai_prompt, queue_ai_user_input, reset_ai_runtime_state, send_ai_worker_command,
-    stop_ai_runtime,
+    ai_thread_action_pending, apply_ai_runtime_events, ensure_ai_runtime_started,
+    queue_ai_approval, queue_ai_archive_thread, queue_ai_create_thread, queue_ai_fork_thread,
+    queue_ai_interrupt, queue_ai_prompt, queue_ai_select_thread, queue_ai_user_input,
+    reset_ai_runtime_state, send_ai_worker_command, stop_ai_runtime,
 };
 pub use crate::backend_state::{Backend, Workspace};
 use crate::backend_state::{
@@ -271,6 +272,11 @@ impl Backend {
     qproperty!(
         "aiTurnRunning",
         Member = ai_turn_running,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiThreadActionPending",
+        Read = ai_thread_action_pending,
         Notify = ai_state_changed
     );
     qproperty!(
@@ -994,54 +1000,31 @@ impl Backend {
 
     #[qslot]
     fn select_ai_thread(&mut self, thread_id: String) {
-        if self.ai_prompt_pending()
-            || self.ai_interrupt_pending()
-            || self.ai_request_resolving()
-            || thread_id.trim().is_empty()
-            || thread_id == self.ai_active_thread_id
-        {
-            return;
-        }
         self.ensure_ai_runtime_started();
-        self.send_ai_worker_command(
-            AiWorkerCommand::SelectThread { thread_id },
-            "Opening Codex thread…",
-        );
+        let _ = queue_ai_select_thread(self, thread_id);
+        self.ai_state_changed();
     }
 
     #[qslot]
     fn create_ai_thread(&mut self) {
-        if self.ai_prompt_pending() || self.ai_interrupt_pending() || self.ai_request_resolving() {
-            return;
-        }
         self.ensure_ai_runtime_started();
-        self.send_ai_worker_command(
-            AiWorkerCommand::StartThread {
-                prompt: None,
-                local_image_paths: Vec::new(),
-                selected_skills: Vec::new(),
-                skill_bindings: Vec::new(),
-                session_overrides: AiTurnSessionOverrides::default(),
-            },
-            "Creating a Codex thread…",
-        );
+        let _ = queue_ai_create_thread(self);
+        self.ai_state_changed();
+    }
+
+    #[qslot]
+    fn fork_ai_thread(&mut self) -> bool {
+        self.ensure_ai_runtime_started();
+        let queued = queue_ai_fork_thread(self);
+        self.ai_state_changed();
+        queued
     }
 
     #[qslot]
     fn archive_ai_thread(&mut self, thread_id: String) {
-        if self.ai_prompt_pending()
-            || self.ai_interrupt_pending()
-            || self.ai_request_resolving()
-            || self.ai_requests.thread_needs_attention(thread_id.trim())
-            || thread_id.trim().is_empty()
-        {
-            return;
-        }
         self.ensure_ai_runtime_started();
-        self.send_ai_worker_command(
-            AiWorkerCommand::ArchiveThread { thread_id },
-            "Archiving Codex thread…",
-        );
+        let _ = queue_ai_archive_thread(self, thread_id);
+        self.ai_state_changed();
     }
 
     #[qslot]
@@ -1588,6 +1571,10 @@ impl Backend {
 
     fn ai_interrupt_pending(&self) -> bool {
         ai_interrupt_pending(self)
+    }
+
+    fn ai_thread_action_pending(&self) -> bool {
+        ai_thread_action_pending(self)
     }
 
     fn ai_pending_request_count(&self) -> i32 {

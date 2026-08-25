@@ -13,6 +13,10 @@ Item {
     readonly property alias timelineListView: timeline
     readonly property alias composer: composer
     readonly property alias requestPanel: requestPanel
+    readonly property alias forkButton: forkAction
+    readonly property bool commandPending: backend.aiThreadActionPending
+        || backend.aiPromptPending || backend.aiInterruptPending
+        || backend.aiRequestResolving || backend.aiRequestId.length > 0
     readonly property bool errorStateVisible: backend.aiError.length > 0 && !backend.aiReady
     readonly property bool loadingStateVisible: backend.aiLoading && !backend.aiReady
         && !errorStateVisible
@@ -47,6 +51,10 @@ Item {
                 ? "Choose a thread from the catalog to load its conversation."
                 : "Create a thread from the sidebar to begin."
         return "This thread does not contain a visible turn yet."
+    }
+
+    function forkThread() {
+        return root.backend.fork_ai_thread()
     }
 
     onVisibleThreadIdChanged: {
@@ -102,6 +110,19 @@ Item {
             anchors.rightMargin: 20
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
+
+            ActionButton {
+                id: forkAction
+                label: "Fork"
+                compact: true
+                enabled: root.backend.aiReady
+                    && root.backend.aiActiveThreadId.length > 0
+                    && !root.backend.aiTurnRunning
+                    && !root.backend.aiLoading
+                    && !root.backend.aiRequiresAuthentication
+                    && !root.commandPending
+                onClicked: root.forkThread()
+            }
 
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter

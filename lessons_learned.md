@@ -487,3 +487,24 @@ append a correction when later evidence changes one.
   metadata, inherited crate manifests, Nix's rust-overlay selection and lock,
   non-Nix CI setup actions, and patched vendor manifests must move together or
   different platforms silently compile with different toolchains.
+
+## 2026-08-25 — Qt Codex thread lifecycle
+
+- A lifecycle command needs an exact receipt, not a generic busy bit. Select,
+  create, fork, and archive complete under different authoritative snapshot
+  conditions; clearing any of them on an unrelated catalog update re-enables
+  conflicting commands before the requested mutation is known to have landed.
+- Reconnect success does not imply command success. When a non-idempotent
+  command cannot be safely replayed, emit a terminal failure for that command so
+  every frontend clears its pending receipt and asks the user to retry. A
+  connection-restored status alone can leave controls disabled forever.
+- Backend guards and visible enablement must describe the same state. If Rust
+  rejects prompts, interrupts, approvals, or catalog changes during a lifecycle
+  receipt, QML must disable those controls too; enabled silent no-ops are state
+  bugs even when the backend remains safe.
+- Blocking and resolving are different presentation states. An approval that
+  arrives during a thread mutation should be disabled without claiming it is
+  already being submitted, then receive focus when the mutation completes.
+- Deferred QML focus work should belong to the component that owns the control.
+  A zero-delay `Timer` is destroyed with its panel; a free `Qt.callLater`
+  callback can outlive a workspace loader and invoke a method on a dead object.

@@ -592,7 +592,7 @@ external caches:
 - [x] Establish the lazy, repository-scoped Qt worker lifecycle, bounded thread catalog, active-thread state, and basic refresh/start/select/archive commands.
 - [x] Expose the thread catalog, active thread, bounded read-only turn timeline, streaming rows, and runtime state through QtBridge.
 - [x] Expose the text composer and its send/steer/interrupt state through QtBridge.
-- [ ] Implement thread load/start/resume/fork/archive and cwd scoping.
+- [x] Implement thread load/start/resume/fork/archive and cwd scoping.
 - [x] Implement streaming messages and tool output without per-token QObject churn or structural model resets.
 - [x] Implement approvals and request-user-input with exact pending-command state.
 - [x] Implement text steering, interruption, and plan-state presentation.
@@ -819,6 +819,48 @@ Cargo target, Cargo cache, and Qt 6.11.2 SDK:
   drove the final accessibility, focus, bounded-state, archive, and geometry
   corrections; system `qmllint` remained clean afterward.
 - Validation used Rust/QML fixtures only and did not launch Hunk, Codex, or any
+  credential/keychain path.
+
+Phase 7 Qt thread-lifecycle decisions:
+
+- Qt thread selection resumes and reads the exact catalog thread through the
+  shared worker. Create, full-history Fork, and Archive also remain worker
+  commands; QML does not call Codex or duplicate repository policy.
+- Fork is available only for an idle selected thread. The shared service injects
+  the repository cwd, rejects returned threads outside that workspace, and asks
+  Codex to defer inherited goal continuation so the copied history does not
+  begin working again before the user sends a message.
+- Qt accepts lifecycle targets only from its repository-scoped catalog. Each
+  mutation retains an exact receipt: Select waits for that thread to become
+  active, Create and Fork wait for both the returned new ID and its active
+  snapshot, and Archive waits for the exact ID to leave the catalog.
+- Lifecycle receipts lock prompts, interrupts, approvals, request input, and
+  other catalog mutations at both the QML and Rust boundaries. Controls regain
+  focus only when the authoritative receipt clears, and an open archive
+  confirmation is canceled if another blocking action arrives.
+- Non-idempotent Start, Fork, and Archive commands are never replayed after a
+  transport reconnect. A restored connection reports the abandoned command as
+  an error rather than a passive status, which clears pending receipts in both
+  frontends and tells the user to retry instead of leaving the UI locked.
+
+Phase 7 Qt thread-lifecycle validation through Nix, reusing the external Cargo
+target, Cargo cache, and Qt 6.11.2 SDK:
+
+- The full workspace all-target build passed in 1 minute 59 seconds, and the
+  complete workspace all-target test suite passed in about 2 minutes 48
+  seconds, including the new reconnect policy and exact lifecycle receipt tests.
+- System `qmllint` passed for the complete module, and all 42 QML interaction,
+  lifecycle-lock, focus-recovery, virtualization, and rendered-state tests
+  passed in 1.185 seconds.
+- The deterministic QML lint and six focused read-only review passes found and
+  drove fixes for reconnect receipt cleanup, reciprocal command guards,
+  misleading request progress, archive-dialog cancellation, and deferred focus
+  ownership. System lint and the QML suite remained clean afterward.
+- The inspected 1280-by-760 render preserved the dense thread rail and unboxed
+  conversation plane, with one compact Fork action in the header and no new
+  per-frame model or object work.
+- Workspace Clippy passed for all targets with warnings denied in 51.44 seconds.
+  Validation used Rust/QML fixtures only and did not launch Hunk, Codex, or any
   credential/keychain path.
 
 ### 8. Atomic Qt Cutover and CI Replacement

@@ -14,6 +14,7 @@ use crate::AiPromptReceipt;
 use crate::ai_models::AiThreadListModel;
 use crate::ai_requests::AiPendingRequestProjection;
 use crate::ai_runtime::AiRuntimeSlot;
+use crate::ai_thread_actions::AiThreadActionReceipt;
 use crate::ai_timeline_models::AiTimelineListModel;
 use crate::comment_models::{DiffCommentListModel, DiffCommentProjection};
 use crate::diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
@@ -156,6 +157,7 @@ pub struct Backend {
     pub(super) ai_active_turn_id: String,
     pub(super) ai_turn_running: bool,
     pub(super) ai_prompt_receipt: Option<AiPromptReceipt>,
+    pub(super) ai_thread_action: Option<AiThreadActionReceipt>,
     pub(super) ai_prompt_accepted_revision: i32,
     pub(super) ai_interrupt_thread_id: String,
     pub(super) ai_interrupt_turn_id: String,
@@ -287,6 +289,7 @@ impl Default for Backend {
             ai_active_turn_id: String::new(),
             ai_turn_running: false,
             ai_prompt_receipt: None,
+            ai_thread_action: None,
             ai_prompt_accepted_revision: 0,
             ai_interrupt_thread_id: String::new(),
             ai_interrupt_turn_id: String::new(),

@@ -20,6 +20,7 @@ FocusScope {
         || backend.aiRequestResolving
     readonly property bool editable: backend.aiReady && !backend.aiLoading
         && !backend.aiRequiresAuthentication && backend.aiActiveThreadId.length > 0
+        && !backend.aiThreadActionPending
         && !backend.aiPromptPending && !backend.aiInterruptPending
         && !requestBlocking
     readonly property bool canSubmit: editable && editor.text.trim().length > 0
@@ -127,7 +128,8 @@ FocusScope {
     }
 
     function interrupt() {
-        if (backend.aiTurnRunning && !backend.aiInterruptPending)
+        if (backend.aiTurnRunning && !backend.aiThreadActionPending
+                && !backend.aiInterruptPending)
             backend.interrupt_ai_turn()
     }
 
@@ -191,7 +193,8 @@ FocusScope {
                     if (activeFocus && !root.requestBlocking)
                         root.restoreFocusAfterRequest = true
                     else if (!activeFocus && !root.requestBlocking
-                            && !root.requestWasBlocking)
+                            && !root.requestWasBlocking
+                            && !root.backend.aiThreadActionPending)
                         root.restoreFocusAfterRequest = false
                 }
                 onTextChanged: root.saveCurrentDraft()
@@ -258,6 +261,7 @@ FocusScope {
                 compact: true
                 visible: root.backend.aiTurnRunning
                 enabled: root.backend.aiReady && !root.backend.aiInterruptPending
+                    && !root.backend.aiThreadActionPending
                     && !root.backend.aiPromptPending
                 onClicked: root.interrupt()
             }

@@ -12,6 +12,7 @@ use crate::ai_runtime::{
     AiProjectedSnapshot, AiRuntimeEvent, prepare_ai_worker_config, reject_browser_call,
     start_ai_runtime,
 };
+use crate::ai_thread_actions::AiThreadActionReceipt;
 use crate::backend_state::Backend;
 
 pub(super) fn reset_ai_runtime_state(backend: &mut Backend) {
@@ -29,6 +30,7 @@ pub(super) fn reset_ai_runtime_state(backend: &mut Backend) {
     backend.ai_active_turn_id.clear();
     backend.ai_turn_running = false;
     backend.ai_prompt_receipt = None;
+    backend.ai_thread_action = None;
     backend.ai_interrupt_thread_id.clear();
     backend.ai_interrupt_turn_id.clear();
     backend.ai_requests = AiPendingRequestProjection::default();
@@ -82,8 +84,14 @@ pub(super) fn apply_ai_runtime_events(backend: &mut Backend, events: Vec<AiRunti
                     AiWorkerEventPayload::BootstrapCompleted => {
                         backend.ai_loading = false;
                     }
-                    AiWorkerEventPayload::ThreadStarted { .. } => {
-                        backend.ai_status_message = "Created a new Codex thread.".to_owned();
+                    AiWorkerEventPayload::ThreadStarted { thread_id } => {
+                        let recorded = backend
+                            .ai_thread_action
+                            .as_mut()
+                            .is_some_and(|receipt| receipt.record_started_thread(thread_id));
+                        if !recorded {
+                            backend.ai_status_message = "Created a new Codex thread.".to_owned();
+                        }
                     }
                     AiWorkerEventPayload::SteerAccepted(pending) => {
                         if backend
@@ -147,6 +155,14 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
         requests,
         ..
     } = projected;
+    let completed_thread_action = backend
+        .ai_thread_action
+        .as_ref()
+        .filter(|receipt| receipt.is_complete(&projection))
+        .cloned();
+    if completed_thread_action.is_some() {
+        backend.ai_thread_action = None;
+    }
     if backend.ai_prompt_receipt.as_ref().is_some_and(|receipt| {
         receipt.is_accepted_by(projection.active_thread_id.as_str(), &timeline)
     }) {
@@ -191,7 +207,11 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     backend.ai_loading = false;
     backend.ai_connection_state = "ready".to_owned();
     backend.ai_error.clear();
-    backend.ai_status_message.clear();
+    if let Some(receipt) = completed_thread_action {
+        backend.ai_status_message = receipt.completion_message().to_owned();
+    } else if backend.ai_thread_action.is_none() {
+        backend.ai_status_message.clear();
+    }
 }
 
 fn fail_ai_runtime(backend: &mut Backend, message: String) {
@@ -210,6 +230,7 @@ pub(super) fn queue_ai_prompt(backend: &mut Backend, prompt: String) -> bool {
         || backend.ai_loading
         || backend.ai_requires_authentication
         || backend.ai_active_thread_id.is_empty()
+        || backend.ai_thread_action.is_some()
         || backend.ai_prompt_receipt.is_some()
         || !backend.ai_interrupt_turn_id.is_empty()
         || backend.ai_requests.current.is_some()
@@ -242,6 +263,7 @@ pub(super) fn queue_ai_interrupt(backend: &mut Backend) -> bool {
         || backend.ai_loading
         || backend.ai_active_thread_id.is_empty()
         || backend.ai_active_turn_id.is_empty()
+        || backend.ai_thread_action.is_some()
         || backend.ai_prompt_receipt.is_some()
         || !backend.ai_interrupt_turn_id.is_empty()
     {
@@ -270,6 +292,7 @@ pub(super) fn queue_ai_approval(backend: &mut Backend, request_id: String, accep
             && backend.ai_ready
             && !backend.ai_loading
             && !backend.ai_requires_authentication
+            && backend.ai_thread_action.is_none()
             && backend.ai_requests.current.as_ref().is_some_and(|request| {
                 request.kind == "approval" && request.request_id == request_id
             });
@@ -307,6 +330,7 @@ pub(super) fn queue_ai_user_input(
     if !backend.ai_ready
         || backend.ai_loading
         || backend.ai_requires_authentication
+        || backend.ai_thread_action.is_some()
         || !backend.ai_request_resolving_id.is_empty()
     {
         return false;
@@ -330,6 +354,104 @@ pub(super) fn queue_ai_user_input(
     }
     backend.ai_request_resolving_id = request_id;
     true
+}
+
+pub(super) fn queue_ai_select_thread(backend: &mut Backend, thread_id: String) -> bool {
+    let thread_id = thread_id.trim();
+    if thread_action_blocked(backend)
+        || thread_id.is_empty()
+        || thread_id == backend.ai_active_thread_id
+        || !backend.ai_threads.borrow().contains_thread_id(thread_id)
+    {
+        return false;
+    }
+    let thread_id = thread_id.to_owned();
+    queue_ai_thread_action(
+        backend,
+        AiThreadActionReceipt::select(thread_id.clone()),
+        AiWorkerCommand::SelectThread { thread_id },
+        "Opening Codex thread…",
+    )
+}
+
+pub(super) fn queue_ai_create_thread(backend: &mut Backend) -> bool {
+    if thread_action_blocked(backend) {
+        return false;
+    }
+    queue_ai_thread_action(
+        backend,
+        AiThreadActionReceipt::create(),
+        AiWorkerCommand::StartThread {
+            prompt: None,
+            local_image_paths: Vec::new(),
+            selected_skills: Vec::new(),
+            skill_bindings: Vec::new(),
+            session_overrides: AiTurnSessionOverrides::default(),
+        },
+        "Creating a Codex thread…",
+    )
+}
+
+pub(super) fn queue_ai_fork_thread(backend: &mut Backend) -> bool {
+    let thread_id = backend.ai_active_thread_id.clone();
+    if thread_action_blocked(backend)
+        || backend.ai_turn_running
+        || thread_id.is_empty()
+        || !backend
+            .ai_threads
+            .borrow()
+            .contains_thread_id(thread_id.as_str())
+    {
+        return false;
+    }
+    queue_ai_thread_action(
+        backend,
+        AiThreadActionReceipt::fork(thread_id.clone()),
+        AiWorkerCommand::ForkThread { thread_id },
+        "Forking Codex thread…",
+    )
+}
+
+pub(super) fn queue_ai_archive_thread(backend: &mut Backend, thread_id: String) -> bool {
+    let thread_id = thread_id.trim();
+    if thread_action_blocked(backend)
+        || thread_id.is_empty()
+        || backend.ai_requests.thread_needs_attention(thread_id)
+        || !backend.ai_threads.borrow().contains_thread_id(thread_id)
+    {
+        return false;
+    }
+    let thread_id = thread_id.to_owned();
+    queue_ai_thread_action(
+        backend,
+        AiThreadActionReceipt::archive(thread_id.clone()),
+        AiWorkerCommand::ArchiveThread { thread_id },
+        "Archiving Codex thread…",
+    )
+}
+
+fn queue_ai_thread_action(
+    backend: &mut Backend,
+    receipt: AiThreadActionReceipt,
+    command: AiWorkerCommand,
+    status: &str,
+) -> bool {
+    if !send_ai_command(backend, command, status) {
+        return false;
+    }
+    backend.ai_thread_action = Some(receipt);
+    true
+}
+
+fn thread_action_blocked(backend: &Backend) -> bool {
+    !backend.ai_ready
+        || backend.ai_loading
+        || backend.ai_requires_authentication
+        || backend.ai_thread_action.is_some()
+        || backend.ai_prompt_receipt.is_some()
+        || !backend.ai_interrupt_thread_id.is_empty()
+        || backend.ai_requests.current.is_some()
+        || !backend.ai_request_resolving_id.is_empty()
 }
 
 pub(super) fn ensure_ai_runtime_started(backend: &mut Backend) -> bool {
@@ -420,6 +542,7 @@ fn accept_pending_prompt(backend: &mut Backend) {
 
 fn clear_pending_ai_commands(backend: &mut Backend) {
     backend.ai_prompt_receipt = None;
+    backend.ai_thread_action = None;
     backend.ai_interrupt_thread_id.clear();
     backend.ai_interrupt_turn_id.clear();
     backend.ai_request_resolving_id.clear();
@@ -437,6 +560,10 @@ pub(super) fn ai_prompt_pending(backend: &Backend) -> bool {
 
 pub(super) fn ai_interrupt_pending(backend: &Backend) -> bool {
     !backend.ai_interrupt_turn_id.is_empty()
+}
+
+pub(super) fn ai_thread_action_pending(backend: &Backend) -> bool {
+    backend.ai_thread_action.is_some()
 }
 
 pub(super) fn ai_pending_request_count(backend: &Backend) -> i32 {
