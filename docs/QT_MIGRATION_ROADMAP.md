@@ -285,7 +285,8 @@ selection, and expansion feedback is immediate and never ornamental.
 - [ ] Implement forge authentication/review actions while skipping unattended keychain-blocked validation paths.
 - [x] Add Rust service tests and QML interaction tests.
 - [x] Visually inspect empty, loading, error, and populated states.
-- [ ] Complete the mandatory working loop and stacked PR.
+- [x] Complete the mandatory working loop and stacked PR
+  ([#181](https://github.com/smolcars/hunk/pull/181)).
 
 Phase 5 implementation decisions:
 
