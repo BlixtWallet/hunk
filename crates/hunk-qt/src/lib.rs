@@ -1,4 +1,6 @@
 mod backend;
+mod git_models;
+mod path;
 
 #[cfg(debug_assertions)]
 use std::path::{Path, PathBuf};
@@ -10,6 +12,8 @@ use qtbridge::include_bytes_qml;
 use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 
 pub use backend::{Backend, Workspace};
+pub use git_models::{GitBranchListModel, GitCommitListModel, GitFileListModel};
+pub use path::local_path_from_qml_folder_url;
 
 #[cfg(debug_assertions)]
 const QML_MODULE_DIRECTORY: &str = "Hunk";
@@ -21,7 +25,11 @@ pub fn run() -> Result<()> {
     install_panic_hook();
 
     let mut app = QApp::new();
-    app.application_name("Hunk").register::<Backend>();
+    app.application_name("Hunk")
+        .register::<GitFileListModel>()
+        .register::<GitBranchListModel>()
+        .register::<GitCommitListModel>()
+        .register::<Backend>();
     load_qml(&mut app)?;
 
     let exit_code = app.run();

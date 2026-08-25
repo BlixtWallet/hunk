@@ -7,7 +7,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0"
 gix = { version = "0.81.0", default-features = false, features = ["parallel", "revision", "sha1", "status"] }
-hunk-domain = { path = "../hunk-domain" }
+hunk-domain = { path = "../hunk-domain", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 git2 = { version = "0.20", features = ["https", "ssh", "vendored-libgit2", "vendored-openssl"] }

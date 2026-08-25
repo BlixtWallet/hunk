@@ -13,7 +13,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: pointer.containsMouse ? Theme.hover : "transparent"
+        color: pointer.containsMouse ? Theme.hover : Theme.transparent
 
         Behavior on color {
             ColorAnimation { duration: Theme.transitionDuration }

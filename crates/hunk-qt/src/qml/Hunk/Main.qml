@@ -15,7 +15,7 @@ Window {
 
     Backend {
         id: backend
-        Component.onCompleted: bootstrap()
+        Component.onCompleted: backend.bootstrap()
     }
 
     Shell {

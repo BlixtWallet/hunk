@@ -89,7 +89,12 @@ jobs:
         shell: bash
 
       - name: Run tests
-        run: nix develop --accept-flake-config -c cargo test --workspace --exclude hunk-desktop
+        run: |
+          nix develop --accept-flake-config -c bash -c '
+            unset CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER
+            export LD_LIBRARY_PATH="$QT_ROOT_DIR/lib:$HUNK_LINUX_PACKAGING_LIBRARY_PATH"
+            cargo test --workspace --exclude hunk-desktop
+          '
         shell: bash
 
       - name: Run Qt QML smoke tests

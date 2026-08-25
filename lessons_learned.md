@@ -162,3 +162,42 @@ append a correction when later evidence changes one.
   the job: the Qt foundation check remained unassigned for more than 13 minutes.
   Use an ephemeral Ubuntu runner with pinned Nix, Qt, and Rust caches for PR
   feedback; keep release-runner changes separate until Qt packaging is ready.
+
+## 2026-08-25 — Qt Git adapter and dependency boundaries
+
+- Depending on a broad application crate from a thin UI adapter defeats much
+  of the build-time reason for separating the frontend. The first real Qt Git
+  build through `hunk-app` compiled the Codex, browser, AWS, image, and language
+  graph and took 4 minutes 26 seconds. Moving the production snapshot/command
+  API to `hunk-git` reduced the affected build to 2 minutes 54 seconds while
+  keeping Qt types out of the core.
+- A small type dependency can still hide a large compile graph. `hunk-git`
+  needed only Hunk Domain config/path/state types, but unconditional database
+  and Markdown dependencies pulled SQLite, Comrak, Hunk Language, and every
+  Tree-sitter grammar. Optional default-on Domain features preserve existing
+  consumers while letting the Git-only graph build in 1 minute 24 seconds on
+  the same cache; its immediate rebuild took 0.41 seconds.
+- QtBridge list models should be replaced once per owned snapshot on the Qt
+  thread. Recycling QML `ListView` delegates with bounded cache buffers kept a
+  1,500-file interaction test virtualized without per-row Rust QObjects.
+- Cross-thread invocation does not require converting an owned snapshot to
+  JSON. Store it in a small epoch-keyed Rust mailbox and queue only the epoch
+  through QtBridge; the Qt thread can then take the already-built payload
+  without parse work inside the frame budget.
+- Switching repositories is also a refresh-cancellation boundary. Increment
+  the adapter epoch before starting the new load so an older background result
+  cannot overwrite the newly selected root.
+- Installing the Qt SDK on Ubuntu does not satisfy the OpenGL linker entry that
+  Qt Quick exposes as `-lGL` inside a Nix shell. Installing a host package is
+  insufficient when Nix isolates its linker paths; include `libglvnd` and its
+  library directory in the dev shell itself. QML-only smoke tests can otherwise
+  conceal the missing native link dependency.
+- Do not run headless Nix-built tests through the Linux host-graphics wrapper.
+  Adding Ubuntu's full library directory to `LD_LIBRARY_PATH` can replace the
+  matching Nix glibc and fail on private symbols. CI tests should unset the
+  graphics runner and expose only the external Qt directory plus the
+  Nix-provided runtime-library path.
+- Fontconfig does not put FreeType itself on a path consumable by an externally
+  installed Qt SDK. Qt GUI links `libfreetype` directly, so include `freetype`
+  explicitly in the Nix-owned Linux runtime closure instead of relying on a
+  transitive package relationship.
