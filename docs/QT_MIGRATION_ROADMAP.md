@@ -227,7 +227,7 @@ shared Cargo cache under `/Volumes/hulk/dev/cache`.
 - [x] Add lifecycle, logging, panic/error presentation, and asynchronous Rust-to-Qt invocation.
 - [x] Build and run through Nix on macOS; visually inspect the rendered Qt shell and compare the retained visual language where useful.
 - [x] Establish basic QML smoke tests.
-- [ ] Complete the mandatory working loop and stacked PR.
+- [x] Complete the mandatory working loop and stacked PR: <https://github.com/smolcars/hunk/pull/180>.
 
 Phase 4 toolchain decisions:
 
