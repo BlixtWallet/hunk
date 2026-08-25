@@ -62,6 +62,7 @@ time = { version = "0.3", features = ["formatting", "local-offset"] }
 rust-embed = "8.11.0"
 webbrowser = "1.2.1"
 hunk-domain = { path = "../hunk-domain" }
+hunk-app = { path = "../hunk-app" }
 hunk-browser = { path = "../hunk-browser" }
 hunk-browser-helper = { path = "../hunk-browser-helper" }
 hunk-mobile = { path = "../hunk-mobile" }

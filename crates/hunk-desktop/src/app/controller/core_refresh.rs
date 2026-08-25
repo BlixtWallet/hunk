@@ -641,28 +641,10 @@ impl DiffViewer {
 
         self.git_workspace_refresh_task = cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async move {
-                let (fingerprint, workflow_snapshot) =
-                    load_workflow_snapshot_if_changed_without_refresh(
-                        refresh_root.as_path(),
-                        previous_fingerprint.as_ref(),
-                    )?;
-                let remote_branches =
-                    load_remote_tracking_branches_without_refresh(refresh_root.as_path())?;
-                let file_line_stats = if let Some(workflow_snapshot) = workflow_snapshot.as_ref() {
-                    if workflow_snapshot.files.is_empty() {
-                        BTreeMap::new()
-                    } else {
-                        load_repo_file_line_stats_without_refresh(refresh_root.as_path())?
-                    }
-                } else {
-                    BTreeMap::new()
-                };
-                Ok::<_, anyhow::Error>((
-                    fingerprint,
-                    workflow_snapshot,
-                    remote_branches,
-                    file_line_stats,
-                ))
+                load_git_workspace_refresh(
+                    refresh_root.as_path(),
+                    previous_fingerprint.as_ref(),
+                )
             });
             let result = result.await;
 
@@ -676,7 +658,12 @@ impl DiffViewer {
                     this.git_workspace_active_root = None;
                     this.workspace_target_switch_loading = false;
                     match result {
-                        Ok((fingerprint, Some(workflow_snapshot), remote_branches, file_line_stats)) => {
+                        Ok(GitWorkspaceRefreshSnapshot {
+                            fingerprint,
+                            workflow: Some(workflow_snapshot),
+                            remote_branches,
+                            file_line_stats,
+                        }) => {
                             debug!(
                                 "git workspace state refresh complete: epoch={} recent_commits={} root={} files={}",
                                 epoch,
@@ -696,7 +683,12 @@ impl DiffViewer {
                                 this.request_recent_commits_refresh(true, cx);
                             }
                         }
-                        Ok((fingerprint, None, remote_branches, _)) => {
+                        Ok(GitWorkspaceRefreshSnapshot {
+                            fingerprint,
+                            workflow: None,
+                            remote_branches,
+                            ..
+                        }) => {
                             debug!(
                                 "git workspace state refresh skipped: epoch={} recent_commits={} root={} (no repo changes)",
                                 epoch,

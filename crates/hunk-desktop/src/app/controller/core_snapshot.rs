@@ -249,46 +249,12 @@ impl DiffViewer {
                 Ok(source_dir) => {
                     cx.background_executor()
                         .spawn(async move {
-                            let load_once = || -> Result<SnapshotRefreshStageA> {
-                                load_snapshot_stage_a_for_path(
-                                    snapshot_stage_a_load_path(
-                                        request.behavior,
-                                        prefer_stale_first,
-                                    ),
-                                    &source_dir,
-                                    previous_fingerprint.as_ref(),
-                                )
-                            };
-
-                            match load_once() {
-                                Ok(result) => Ok(result),
-                                Err(primary_err) => {
-                                    if matches!(request.behavior, SnapshotRefreshBehavior::ReadOnly)
-                                    {
-                                        return Err(primary_err);
-                                    }
-                                    warn!(
-                                        "snapshot stage A stale-first load failed; retrying with working-copy refresh: {primary_err:#}"
-                                    );
-
-                                    let fallback = || -> Result<SnapshotRefreshStageA> {
-                                        load_snapshot_stage_a_for_path(
-                                            snapshot_stage_a_fallback_load_path(
-                                                prefer_stale_first,
-                                            ),
-                                            &source_dir,
-                                            previous_fingerprint.as_ref(),
-                                        )
-                                    };
-
-                                    match fallback() {
-                                        Ok(result) => Ok(result),
-                                        Err(fallback_err) => Err(primary_err.context(format!(
-                                            "snapshot stage A fallback load failed: {fallback_err:#}"
-                                        ))),
-                                    }
-                                }
-                            }
+                            load_snapshot_refresh(
+                                &source_dir,
+                                previous_fingerprint.as_ref(),
+                                request,
+                                prefer_stale_first,
+                            )
                         })
                         .await
                 }
@@ -296,12 +262,12 @@ impl DiffViewer {
             };
 
             let (fingerprint, workflow_snapshot, loaded_without_refresh) = match stage_a_result {
-                Ok(SnapshotRefreshStageA::Loaded {
+                Ok(SnapshotRefreshResult::Loaded {
                     fingerprint,
                     workflow,
                     loaded_without_refresh,
                 }) => (fingerprint, workflow, loaded_without_refresh),
-                Ok(SnapshotRefreshStageA::Unchanged(fingerprint)) => {
+                Ok(SnapshotRefreshResult::Unchanged(fingerprint)) => {
                     if let Some(this) = this.upgrade() {
                         this.update(cx, |this, cx| {
                             if epoch != this.snapshot_epoch {

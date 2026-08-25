@@ -4,6 +4,7 @@ members = [
   "crates/hunk-text",
   "crates/hunk-language",
   "crates/hunk-editor",
+  "crates/hunk-app",
   "crates/hunk-domain",
   "crates/hunk-git",
   "crates/hunk-forge",

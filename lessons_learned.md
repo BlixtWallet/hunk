@@ -70,3 +70,15 @@ append a correction when later evidence changes one.
   the active comparison. A full checkout tree, ignored-file scan, filesystem
   mutation context menu, and directory expansion cache are File Explorer
   behavior and do not belong in the narrowed product.
+
+## 2026-08-25 — Headless Git application boundary
+
+- GPUI's background executor did not need to move into the headless service.
+  Keeping scheduling, refresh epochs, and repaint notifications in the UI
+  adapter while moving load policy and snapshot assembly into `hunk-app`
+  produces a synchronous service that Qt can also invoke off its UI thread.
+- A frontend should not independently coordinate workflow fingerprints, remote
+  branches, and per-file line statistics. Returning those values as one owned
+  application snapshot prevents the GPUI and Qt adapters from developing
+  different repository refresh semantics while all Git access remains in
+  `hunk-git`.
