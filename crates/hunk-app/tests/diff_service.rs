@@ -6,7 +6,10 @@ use hunk_app::diff::{
     compact_cached_segments_for_render, load_diff_snapshot,
 };
 #[cfg(feature = "comments")]
-use hunk_app::diff::{DIFF_COMMENT_CONTEXT_RADIUS_ROWS, build_diff_comment_anchors};
+use hunk_app::diff::{
+    DIFF_COMMENT_CONTEXT_RADIUS_ROWS, DiffCommentLookup, build_diff_comment_anchors,
+    find_diff_comment_row,
+};
 #[cfg(feature = "comments")]
 use hunk_domain::comments::CommentLineSide;
 use hunk_domain::diff::DiffCellKind;
@@ -248,6 +251,75 @@ fn comment_anchors_preserve_hunk_location_and_same_file_context() {
             .enumerate()
             .filter(|(_, metadata)| metadata.kind == DiffStreamRowKind::CoreHunkHeader)
             .all(|(index, _)| anchors[index].is_none())
+    );
+}
+
+#[test]
+#[cfg(feature = "comments")]
+fn comment_anchor_matching_supports_exact_renamed_and_unmatched_rows() {
+    let files = [ChangedFile {
+        path: "src/new_name.rs".to_owned(),
+        status: FileStatus::Modified,
+        staged: false,
+        unstaged: true,
+        untracked: false,
+    }];
+    let patches = BTreeMap::from([(
+        "src/new_name.rs".to_owned(),
+        "@@ -10 +10 @@\n-let value = 10;\n+let value = 11;\n".to_owned(),
+    )]);
+    let stream = build_diff_stream_from_patch_map(
+        &files,
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &patches,
+        &BTreeSet::new(),
+    );
+    let anchors = build_diff_comment_anchors(&stream, DIFF_COMMENT_CONTEXT_RADIUS_ROWS);
+    let row = anchors
+        .iter()
+        .position(Option::is_some)
+        .expect("changed row should have an anchor");
+    let anchor = anchors[row].as_ref().expect("anchor at changed row");
+    let lookup = DiffCommentLookup {
+        file_path: "src/new_name.rs",
+        line_side: anchor.line_side,
+        old_line: anchor.old_line,
+        new_line: anchor.new_line,
+        hunk_header: anchor.hunk_header.as_deref(),
+        line_text: anchor.line_text.as_str(),
+        context_before: anchor.context_before.as_str(),
+        context_after: anchor.context_after.as_str(),
+        anchor_hash: anchor.anchor_hash.as_str(),
+    };
+
+    assert_eq!(find_diff_comment_row(&anchors, lookup), Some(row));
+    assert_eq!(
+        find_diff_comment_row(
+            &anchors,
+            DiffCommentLookup {
+                file_path: "src/old_name.rs",
+                ..lookup
+            },
+        ),
+        Some(row)
+    );
+    assert_eq!(
+        find_diff_comment_row(
+            &anchors,
+            DiffCommentLookup {
+                file_path: "src/missing.rs",
+                line_side: CommentLineSide::Left,
+                old_line: Some(900),
+                new_line: None,
+                hunk_header: None,
+                line_text: "-unrelated content",
+                context_before: "",
+                context_after: "",
+                anchor_hash: "missing-anchor",
+            },
+        ),
+        None
     );
 }
 

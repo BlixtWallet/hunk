@@ -22,6 +22,7 @@ ai = [
 ]
 diff = ["dep:anyhow", "dep:hunk-domain", "dep:hunk-git", "dep:hunk-language"]
 comments = ["diff"]
+comment-store = ["comments", "hunk-domain/database"]
 git = ["dep:anyhow", "dep:hunk-domain", "dep:hunk-git", "dep:tracing"]
 
 [dependencies]
