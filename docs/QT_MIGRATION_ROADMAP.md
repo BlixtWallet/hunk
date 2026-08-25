@@ -127,9 +127,11 @@ master
   <- migration/10-qt-diff-comment-core
   <- migration/11-qt-diff-comments
   <- migration/12-qt-diff-comments-ui
-  <- migration/13-qt-ai
-  <- migration/14-qt-cutover-ci
-  <- migration/15-release-hardening
+  <- migration/13-ai-runtime-paths
+  <- migration/14-qt-ai-runtime
+  <- additional independently reviewable Qt AI layers
+  <- atomic Qt cutover and CI replacement
+  <- release hardening
 ```
 
 Branch names may be divided into smaller layers when a listed layer would not
@@ -583,6 +585,8 @@ external caches:
 
 ### 7. AI Tab
 
+- [x] Move Codex executable discovery and validation below both frontends.
+- [x] Establish the lazy, repository-scoped Qt worker lifecycle, bounded thread catalog, active-thread state, and basic refresh/start/select/archive commands.
 - [ ] Expose thread catalog, active thread, turn timeline, composer, and runtime state through QtBridge.
 - [ ] Implement thread load/start/resume/fork/archive and cwd scoping.
 - [ ] Implement streaming messages and tool output without per-token QObject churn.
@@ -620,6 +624,47 @@ same external-volume target and Cargo cache:
 - Workspace Clippy passed for all targets with warnings denied in 9.41 seconds.
   Validation used inert temporary launchers and did not start Codex or access
   the keychain.
+
+Phase 7 Qt worker-foundation decisions:
+
+- Qt starts one retained `hunk-app::ai` worker lazily when the AI workspace is
+  first selected. Diff/Git-only launches do not start Codex, and changing the
+  repository invalidates and shuts down the previous worker before the new
+  repository can publish AI state.
+- A mutex-protected epoch mailbox coalesces only consecutive full snapshots and
+  schedules at most one queued Qt callback until the UI thread drains it. Status,
+  error, tool, and lifecycle events remain ordered and are never coalesced.
+- Repository switches and QObject destruction drain abandoned events. Every
+  queued or late browser-tool request receives an explicit unavailable response,
+  even though browser tools are disabled in this foundation, so the Codex worker
+  cannot wait forever on a frontend that no longer owns the request.
+- Worker shutdown never joins on the Qt thread. Dropping the repository-scoped
+  session sends `Shutdown` and moves worker/listener joins to a small reaper
+  thread, keeping tab and repository interaction non-blocking.
+- The QtBridge thread model excludes archived threads, preserves the GPUI
+  created-time ordering, marks the active and in-progress rows, and caps visible
+  replacement at 200 items. The complete latest `AiSnapshot` remains in Rust for
+  the following timeline/composer layers; QML receives no reducer/domain state.
+- This layer exposes runtime state and refresh/start/select/archive commands but
+  deliberately adds no placeholder AI presentation. Timeline projection,
+  composer/streaming behavior, approvals, and the final visual surface remain
+  separate reviewable layers.
+
+Phase 7 Qt worker-foundation macOS validation through Nix, reusing the external
+Cargo target and cache:
+
+- The warm full-workspace all-target build passed in 14.80 seconds, and the full
+  workspace test suite passed in about 57 seconds.
+- Workspace Clippy passed for all targets with warnings denied. Its review found
+  and removed large-enum padding in the mailbox by boxing worker events; the
+  post-fix focused `hunk-qt` suite passed all 22 tests and doc tests.
+- The first exact `hunk-qt` test-profile build after enabling `hunk-app/ai` took
+  2 minutes 48 seconds. The workspace-wide test artifact had used a different
+  feature-unified dependency combination, so Cargo correctly built the Qt-only
+  AI combination once. This cost came from the retained Codex/network/image
+  graph, not GPUI or Qt rendering, and now populates the shared external cache.
+- Validation constructed only inert Qt models and mailbox events. It did not
+  launch Hunk or Codex and did not access the keychain.
 
 ### 8. Atomic Qt Cutover and CI Replacement
 
