@@ -1,0 +1,17 @@
+[package]
+name = "hunk-qt"
+version = "0.0.11"
+license.workspace = true
+edition = "2024"
+authors = ["Nitesh Balusu"]
+build = "build.rs"
+
+[[bin]]
+name = "hunk_qt"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+qtbridge.workspace = true
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

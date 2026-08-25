@@ -54,8 +54,11 @@ be run while investigating, but repeated full-workspace validation is avoided.
 ### Qt
 
 Qt 6.11.2 is the latest stable Qt release as of 2026-08-24 and is the required
-baseline. The current flake lock resolves Qt 6.10.2, so Qt work cannot be called
-complete until Nix supplies 6.11.2 on supported development and CI systems.
+baseline. The current flake lock resolves Qt 6.10.2, while the first Nixpkgs
+revision containing 6.11.2 has no usable binary cache for this environment.
+Hunk therefore consumes the official prebuilt 6.11.2 SDK from a persistent
+external cache while Cargo and the rest of the toolchain continue to run through
+the Nix shell. Local builds and CI both reject any other Qt version.
 
 References:
 
@@ -136,7 +139,7 @@ equivalent to this roadmap.
 - [x] Establish the stack order.
 - [x] Create the requested `lessons_learned.md` log.
 - [x] Confirm latest stable Qt is 6.11.2.
-- [x] Confirm the current Nix lock provides Qt 6.10.2 and therefore needs an update.
+- [x] Confirm the current Nix lock provides Qt 6.10.2 and document the exact prebuilt-SDK path required to avoid an uncached Qt source build.
 - [x] Record current CI structure and recent wall-clock ranges.
 - [x] Review this layer and fix its scope/path findings.
 - [x] Commit this layer.
@@ -214,17 +217,45 @@ shared Cargo cache under `/Volumes/hulk/dev/cache`.
 
 ### 4. Qt Foundation
 
-- [ ] Update the flake lock and flake packages so macOS and Linux expose Qt 6.11.2, Qt Declarative/Quick, private headers required by QtBridge, and required build tools.
-- [ ] Define the Windows CI installation of the exact same Qt version and MSVC 2022 ABI.
-- [ ] Pin an audited official QtBridge revision compatible with Qt 6.11.2.
-- [ ] Add the Qt desktop binary/adapter crate without duplicating domain logic.
-- [ ] Add a QML module/resource layout and fast development loading path.
-- [ ] Centralize all colors and metrics in the Qt theme module.
-- [ ] Recreate the restrained Hunk shell with Diff, Git, and AI navigation only.
-- [ ] Add lifecycle, logging, panic/error presentation, and asynchronous Rust-to-Qt invocation.
-- [ ] Build and run through Nix on macOS; visually compare the open GPUI app where useful.
-- [ ] Establish basic QML smoke tests.
+- [x] Expose the official prebuilt Qt 6.11.2 SDK, Qt Declarative/Quick, private headers required by QtBridge, and build tools inside the macOS/Linux Nix shell without realizing an uncached Qt source build.
+- [x] Define the Windows CI installation of the exact same Qt version and MSVC 2022 ABI.
+- [x] Pin an audited official QtBridge revision compatible with Qt 6.11.2.
+- [x] Add the Qt desktop binary/adapter crate without duplicating domain logic.
+- [x] Add a QML module/resource layout and fast development loading path.
+- [x] Centralize all colors and metrics in the Qt theme module.
+- [x] Recreate the restrained Hunk shell with Diff, Git, and AI navigation only.
+- [x] Add lifecycle, logging, panic/error presentation, and asynchronous Rust-to-Qt invocation.
+- [x] Build and run through Nix on macOS; visually inspect the rendered Qt shell and compare the retained visual language where useful.
+- [x] Establish basic QML smoke tests.
 - [ ] Complete the mandatory working loop and stacked PR.
+
+Phase 4 toolchain decisions:
+
+- Qt is installed once with `aqtinstall` 3.3.0 under the configurable
+  `HUNK_QT_CACHE_ROOT`; this machine uses `/Volumes/hulk/dev/cache/qt` and the
+  repository continues to use its existing external-volume Cargo `target/`.
+- `hunk-qt` rejects builds unless `qmake -query QT_VERSION` returns exactly
+  6.11.2. QtBridge is pinned to official commit
+  `cad0d6cd81d1af294ec87c67f21d39133196dbc1`.
+- CI installs and caches the same SDK with `jurplel/install-qt-action@v4` for
+  Linux `linux_gcc_64`, macOS `clang_64`, and Windows
+  `win64_msvc2022_64`. Duplicate CEF-enabled GPUI builds are removed in this
+  layer, while one legacy frontend build remains on each platform until the
+  atomic Qt cutover.
+- The debug executable loads QML directly for fast iteration, the release build
+  compiles the same module into `qrc:/qml`, and the offscreen smoke suite captures
+  the rendered desktop-size shell under Cargo's ignored `target/` for visual
+  inspection.
+
+Phase 4 macOS validation through Nix:
+
+- `qmake -query QT_VERSION` reported 6.11.2 from the external cached SDK.
+- `cargo build --workspace --all-targets` passed; the first post-lockfile build
+  took 5 minutes 14 seconds and populated the existing external Cargo target.
+- `cargo test --workspace` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- The release-only `hunk-qt` resource build passed, the live Qt executable loaded
+  without QML errors, and all five offscreen QML smoke assertions passed.
 
 Visual thesis: a dense, calm code-review workspace with a near-black neutral
 surface, one restrained blue accent, sharp typography, minimal chrome, and no

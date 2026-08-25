@@ -113,3 +113,29 @@ append a correction when later evidence changes one.
 - Compatibility re-exports used only by the legacy frontend's internal tests
   must be gated with `cfg(test)`; test-target checks can otherwise conceal an
   unused import that the normal binary and workspace clippy correctly reject.
+
+## 2026-08-25 — Qt foundation and external SDK cache
+
+- Correction to the migration baseline: moving the flake to the first Nixpkgs
+  revision containing Qt 6.11.2 would require locally building hundreds of
+  uncached derivations, including Qt itself. That is incompatible with the
+  machine's constrained internal storage. Keep Cargo inside the Nix shell, but
+  consume Qt's official prebuilt SDK from the persistent external-volume cache.
+- Pinning both sides matters: `hunk-qt` verifies `qmake` reports exactly 6.11.2,
+  and the official QtBridge dependency is locked to one commit instead of a
+  moving branch or wildcard version.
+- QtBridge's experimental macOS arm64 path discovers the online SDK's framework
+  headers but does not add the parent framework search directory. Supplying the
+  SDK's `lib` directory through `-F` fixes generated `<QtCore/...>` includes
+  without patching or forking QtBridge.
+- Cross-thread QtBridge invocation serializes arguments through `QVariant`.
+  Rust `String` is valid for QObject slots but is not itself a `QVariantValue`;
+  queue a `QString` and let the slot boundary convert it back to Rust.
+- The first QtBridge/C++ build is material, but subsequent focused checks reuse
+  the existing workspace `target/`. CI should cache the exact Qt SDK and avoid
+  compiling the legacy desktop a second time solely for its CEF feature while
+  Qt is still being introduced.
+- Nix development shells replace the caller's `TMPDIR` with an internal-disk
+  shell directory. Export the configurable `HUNK_BUILD_TMPDIR` again from the
+  shell hook (and prefer this machine's existing external cache) so generated
+  C++ and linker temporary files do not consume scarce internal storage.
