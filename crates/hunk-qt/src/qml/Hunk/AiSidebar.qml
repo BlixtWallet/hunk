@@ -14,6 +14,8 @@ Item {
     readonly property bool loadingStateVisible: backend.aiLoading && !backend.aiReady
     readonly property bool emptyStateVisible: threadList.count === 0
         && backend.aiReady && !backend.aiLoading
+    readonly property bool commandPending: backend.aiPromptPending
+        || backend.aiInterruptPending
 
     function selectThread(threadId) {
         if (threadId.length > 0 && threadId !== backend.aiActiveThreadId)
@@ -82,7 +84,7 @@ Item {
             ActionButton {
                 label: "Refresh"
                 compact: true
-                enabled: !root.backend.aiLoading
+                enabled: !root.backend.aiLoading && !root.commandPending
                 onClicked: root.refreshThreads()
             }
 
@@ -91,6 +93,7 @@ Item {
                 compact: true
                 primary: true
                 enabled: !root.backend.aiLoading && !root.backend.aiRequiresAuthentication
+                    && !root.commandPending
                 onClicked: root.createThread()
             }
         }
@@ -227,7 +230,7 @@ Item {
                 label: "Archive"
                 compact: true
                 visible: threadRow.active || rowHover.hovered
-                enabled: !root.backend.aiLoading
+                enabled: !root.backend.aiLoading && !root.commandPending
                 z: 2
                 onClicked: root.requestArchive(threadRow.thread_id, threadRow.title)
             }
@@ -235,7 +238,7 @@ Item {
             MouseArea {
                 id: threadPointer
                 anchors.fill: parent
-                enabled: !threadRow.active && !root.backend.aiLoading
+                enabled: !threadRow.active && !root.backend.aiLoading && !root.commandPending
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: root.selectThread(threadRow.thread_id)
             }

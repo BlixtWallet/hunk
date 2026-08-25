@@ -1,6 +1,7 @@
 module Hunk
 singleton Theme 1.0 Theme.qml
 ActionButton 1.0 ActionButton.qml
+AiComposer 1.0 AiComposer.qml
 AiSidebar 1.0 AiSidebar.qml
 AiTimelineRow 1.0 AiTimelineRow.qml
 AiWorkspace 1.0 AiWorkspace.qml

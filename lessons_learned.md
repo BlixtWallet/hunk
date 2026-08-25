@@ -419,3 +419,28 @@ append a correction when later evidence changes one.
   `TextEdit` supports read-only selection but has no `lineHeight` property. Let
   QML lint the component after converting a message body instead of assuming a
   styling property transfers between the two types.
+
+## 2026-08-25 — Qt Codex text composer and turn controls
+
+- Successfully enqueueing an AI command is not the same as accepting the user's
+  prompt. Keep the draft until a domain acknowledgement arrives; otherwise a
+  worker failure after channel delivery silently loses user input.
+- Stream sequence growth is not a safe steer acknowledgement because the
+  already-running turn can produce output before the steer is processed. Use
+  the explicit `SteerAccepted` event for steering, and use new turn identity or
+  aggregate turn-count growth for an idle prompt.
+- A workspace `Loader` destroys its QML child when the user changes tabs. Draft
+  ownership must sit above that loader if drafts are expected to survive a
+  Diff/Git round trip, while repository-root changes should replace the store so
+  text cannot leak into another workspace.
+- Pending state needs defense at both boundaries. Disabling buttons prevents
+  accidental interaction, but Rust must still reject duplicate prompt,
+  interrupt, select, create, and archive commands because QML methods and future
+  callers can bypass pointer enabled state.
+- Interrupt intent is scoped to a `(thread_id, turn_id)` pair. Clear its pending
+  state only after an authoritative snapshot shows that exact turn is no longer
+  active, or after a terminal worker error; a generic running-count change can
+  refer to a different thread.
+- Keep acceptance revisions monotonic for the backend lifetime. Resetting the
+  revision during a reconnect can make a still-retained QML receipt look newly
+  accepted even though no prompt acknowledgement occurred.

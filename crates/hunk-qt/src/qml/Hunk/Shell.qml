@@ -11,9 +11,18 @@ Item {
     readonly property string activeWorkspace: backend.activeWorkspace
     readonly property var sidebarItem: sidebarLoader.item
     readonly property var workspaceItem: workspaceLoader.item
+    property var aiDraftStore: ({})
+    property string aiDraftWorkspaceRoot: ""
 
     function activateWorkspace(workspace) {
         backend.select_workspace(workspace)
+    }
+
+    function syncAiDraftWorkspace() {
+        if (aiDraftWorkspaceRoot === backend.aiWorkspaceRoot)
+            return
+        aiDraftWorkspaceRoot = backend.aiWorkspaceRoot
+        aiDraftStore = ({})
     }
 
     Rectangle {
@@ -182,6 +191,17 @@ Item {
         AiWorkspace {
             objectName: "aiWorkspace"
             backend: root.backend
+            draftStore: root.aiDraftStore
         }
     }
+
+    Connections {
+        target: root.backend
+
+        function onAiStateChanged() {
+            root.syncAiDraftWorkspace()
+        }
+    }
+
+    Component.onCompleted: syncAiDraftWorkspace()
 }

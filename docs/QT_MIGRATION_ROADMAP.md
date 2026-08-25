@@ -130,6 +130,7 @@ master
   <- migration/13-ai-runtime-paths
   <- migration/14-qt-ai-runtime
   <- migration/15-qt-ai-catalog
+  <- migration/16-qt-ai-composer
   <- additional independently reviewable Qt AI layers
   <- atomic Qt cutover and CI replacement
   <- release hardening
@@ -589,7 +590,7 @@ external caches:
 - [x] Move Codex executable discovery and validation below both frontends.
 - [x] Establish the lazy, repository-scoped Qt worker lifecycle, bounded thread catalog, active-thread state, and basic refresh/start/select/archive commands.
 - [x] Expose the thread catalog, active thread, bounded read-only turn timeline, streaming rows, and runtime state through QtBridge.
-- [ ] Expose the composer and its send/steer/interrupt state through QtBridge.
+- [x] Expose the text composer and its send/steer/interrupt state through QtBridge.
 - [ ] Implement thread load/start/resume/fork/archive and cwd scoping.
 - [x] Implement streaming messages and tool output without per-token QObject churn or structural model resets.
 - [ ] Implement approvals, request-user-input, queued messages, steering, interruption, and plan state.
@@ -709,6 +710,51 @@ Cargo target, Cargo cache, and Qt 6.11.2 SDK:
   compact streaming tool row without instantiating the distant 1,000-row item.
 - Workspace Clippy passed for all targets with warnings denied in 6.32 seconds.
   Validation used model fixtures only and did not launch Hunk, Codex, or any
+  credential/keychain path.
+
+Phase 7 Qt text-composer decisions:
+
+- Qt sends text-only prompts through the retained `AiWorkerCommand::SendPrompt`
+  path. The worker continues to decide whether that command starts a new turn or
+  steers the current in-progress turn; QML does not duplicate Codex lifecycle
+  policy.
+- Channel delivery is not treated as prompt acceptance. The backend keeps a
+  receipt for the selected thread and baseline turn. A new-turn prompt is
+  accepted only when an authoritative snapshot exposes a new active turn or a
+  larger turn count, while a steer waits for the worker's explicit
+  `SteerAccepted` event.
+- The submitted draft stays visible and disabled until that receipt is accepted.
+  Worker errors and disconnects clear backend pending state without advancing
+  the acceptance revision, allowing QML to restore the exact draft for editing.
+- Drafts are memory-only, keyed by thread, and owned above the workspace loader
+  so they survive Diff/Git tab switches. Changing repository roots replaces the
+  entire draft store; prompts, images, tokens, or other composer data are not
+  persisted or logged by this layer.
+- Interrupt commands capture both the selected thread and exact active turn.
+  Duplicate send/steer/interrupt commands and catalog mutations are disabled in
+  QML and rejected again by Rust until the authoritative state resolves the
+  pending command.
+- The fixed bottom composer uses only theme colors, plain-text `TextEdit`, and a
+  bounded local `Flickable`. Editing mutates only a small JavaScript draft entry;
+  streamed timeline updates retain the existing bounded model and virtualized
+  delegates.
+- This layer intentionally excludes attachments, skills, approvals, queued
+  message recovery, model/service-tier controls, and persistence. Those remain
+  separate AI layers instead of entering the first writable composer contract.
+
+Phase 7 Qt text-composer macOS validation through Nix, reusing the external
+Cargo target, Cargo cache, and Qt 6.11.2 SDK:
+
+- The full workspace all-target build passed in 27.08 seconds; only `hunk-qt`
+  required compilation. The complete workspace test suite then passed,
+  including the new prompt-receipt and running-turn projection tests.
+- `qmllint` and all 36 QML interaction, state, virtualization, keyboard, draft,
+  command-deduplication, and rendered snapshot tests passed in 1.34 seconds.
+- The inspected 1280-by-760 render showed a focused bottom composer below the
+  still-virtualized timeline, with theme-native Send/Steer and exact-turn Stop
+  controls. The conversation hierarchy and dense catalog remain unchanged.
+- Workspace Clippy passed for all targets with warnings denied in 7.30 seconds.
+  Validation used Rust/QML fixtures only and did not launch Hunk, Codex, or any
   credential/keychain path.
 
 ### 8. Atomic Qt Cutover and CI Replacement

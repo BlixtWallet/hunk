@@ -6,9 +6,11 @@ Item {
     id: root
 
     required property var backend
+    required property var draftStore
     property bool followTail: true
     property string visibleThreadId: backend.aiActiveThreadId
     readonly property alias timelineListView: timeline
+    readonly property alias composer: composer
     readonly property bool errorStateVisible: backend.aiError.length > 0 && !backend.aiReady
     readonly property bool loadingStateVisible: backend.aiLoading && !backend.aiReady
         && !errorStateVisible
@@ -99,15 +101,6 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
 
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "READ ONLY"
-                color: Theme.faint
-                font.family: Theme.monoFont
-                font.pixelSize: 9
-                font.letterSpacing: 0.7
-            }
-
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 7
@@ -186,7 +179,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: statusBanner.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: composer.top
 
         Rectangle {
             id: historyNotice
@@ -281,5 +274,14 @@ Item {
                 font.pixelSize: 12
             }
         }
+    }
+
+    AiComposer {
+        id: composer
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        backend: root.backend
+        draftStore: root.draftStore
     }
 }

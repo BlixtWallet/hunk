@@ -1,3 +1,4 @@
+mod ai_composer;
 mod ai_models;
 mod ai_runtime;
 mod ai_timeline_models;
@@ -20,6 +21,7 @@ use qtbridge::QApp;
 use qtbridge::include_bytes_qml;
 use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 
+pub use ai_composer::AiPromptReceipt;
 pub use ai_models::{AiThreadCatalogProjection, AiThreadItem, AiThreadListModel};
 pub use ai_runtime::{AiEventMailbox, AiProjectedSnapshot, AiRuntimeEvent};
 pub use ai_timeline_models::{AiTimelineItem, AiTimelineListModel, AiTimelineProjection};
