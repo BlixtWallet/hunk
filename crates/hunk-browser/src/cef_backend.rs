@@ -472,18 +472,29 @@ impl CefBrowserBackend {
     pub(crate) fn pump(
         &mut self,
         sessions: &mut BTreeMap<BrowserSessionId, BrowserSession>,
+        visible_session_id: Option<&BrowserSessionId>,
+        request_frame: bool,
     ) -> Result<bool, BrowserError> {
+        let visible_key = if request_frame {
+            visible_session_id.and_then(|session_id| {
+                sessions.get(session_id).map(|session| {
+                    CefBrowserKey::new(session_id.clone(), session.active_tab_id().clone())
+                })
+            })
+        } else {
+            None
+        };
         self.shared.borrow_mut().set_active_tabs(
-            sessions
+            visible_key
                 .iter()
-                .map(|(session_id, session)| (session_id.clone(), session.active_tab_id().clone())),
+                .map(|key| (key.session_id.clone(), key.tab_id.clone())),
         );
         do_message_loop_work();
 
-        for handle in self.browsers.values() {
-            if let Some(host) = handle.browser.host() {
-                host.send_external_begin_frame();
-            }
+        if let Some(handle) = visible_key.and_then(|key| self.browsers.get(&key))
+            && let Some(host) = handle.browser.host()
+        {
+            host.send_external_begin_frame();
         }
 
         let events = self.shared.borrow_mut().drain();
@@ -759,6 +770,12 @@ impl CefSharedState {
         self.active_tabs = active_tabs.into_iter().collect();
     }
 
+    fn accepts_frame(&self, key: &CefBrowserKey) -> bool {
+        self.active_tabs
+            .get(&key.session_id)
+            .is_some_and(|active_tab_id| active_tab_id == &key.tab_id)
+    }
+
     fn take_context_menu_target(
         &mut self,
         key: &CefBrowserKey,
@@ -1011,10 +1028,16 @@ wrap_render_handler! {
             if type_ != PaintElementType::VIEW || buffer.is_null() || width <= 0 || height <= 0 {
                 return;
             }
+            if !self.handler.shared.borrow().accepts_frame(&self.handler.key) {
+                return;
+            }
 
-            let buffer_len = (width as usize)
-                .saturating_mul(height as usize)
-                .saturating_mul(4);
+            let Some(buffer_len) = (width as usize)
+                .checked_mul(height as usize)
+                .and_then(|pixels| pixels.checked_mul(4))
+            else {
+                return;
+            };
             let pixels = unsafe { std::slice::from_raw_parts(buffer, buffer_len) }.to_vec();
             self.handler.shared.borrow_mut().push_frame(
                 self.handler.key.clone(),
@@ -1498,6 +1521,17 @@ fn parse_key_press(keys: &str) -> Option<ParsedKeyPress> {
         "pageup" => (33, 0),
         "pagedown" => (34, 0),
         "space" => (32, b' ' as u16),
+        "equal" | "plus" => (187, 0),
+        "minus" => (189, 0),
+        "comma" => (188, 0),
+        "period" => (190, 0),
+        "slash" => (191, 0),
+        "backtick" => (192, 0),
+        "bracketleft" => (219, 0),
+        "backslash" => (220, 0),
+        "bracketright" => (221, 0),
+        "apostrophe" => (222, 0),
+        "semicolon" => (186, 0),
         _ => parse_printable_key(key, flags)?,
     };
 

@@ -23,6 +23,7 @@ use crate::ai_session::{
 };
 use crate::ai_thread_actions::AiThreadActionReceipt;
 use crate::ai_timeline_models::AiTimelineListModel;
+use crate::browser::BrowserBridge;
 use crate::comment_models::{DiffCommentListModel, DiffCommentProjection};
 use crate::diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
 use crate::forge::ForgeSnapshotPayload;
@@ -170,6 +171,7 @@ pub struct Backend {
     pub(super) terminal_cursor_visible: bool,
     pub(super) terminal_screen_revision: i32,
     pub(super) terminal_focus_revision: i32,
+    pub(super) browser: Rc<RefCell<BrowserBridge>>,
     pub(super) ai_threads: Rc<RefCell<AiThreadListModel>>,
     pub(super) ai_timeline: Rc<RefCell<AiTimelineListModel>>,
     pub(super) ai_attachments: Rc<RefCell<AiAttachmentListModel>>,
@@ -369,6 +371,7 @@ impl Default for Backend {
             terminal_cursor_visible: false,
             terminal_screen_revision: 0,
             terminal_focus_revision: 0,
+            browser: BrowserBridge::default_with_attached_qobject(),
             ai_threads: AiThreadListModel::default_with_attached_qobject(),
             ai_timeline: AiTimelineListModel::default_with_attached_qobject(),
             ai_attachments: AiAttachmentListModel::default_with_attached_qobject(),

@@ -223,6 +223,7 @@ impl Backend {
     );
     qproperty!("terminalTabs", Member = terminal_tabs, Constant);
     qproperty!("terminalRows", Member = terminal_rows, Constant);
+    qproperty!("browser", Member = browser, Constant);
     qproperty!(
         "terminalOpen",
         Member = terminal_open,

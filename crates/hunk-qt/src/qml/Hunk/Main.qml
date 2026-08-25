@@ -1,6 +1,6 @@
 import QtQuick
-import QtQuick.Window
 import hunk_qt
+import Hunk.Native
 
 Window {
     id: window
@@ -16,10 +16,18 @@ Window {
     Backend {
         id: backend
         Component.onCompleted: backend.bootstrap()
+        Component.onDestruction: backend.browser.shutdown()
+    }
+
+    Component {
+        id: browserSurfaceComponent
+
+        BrowserFrameItem {}
     }
 
     Shell {
         anchors.fill: parent
         backend: backend
+        browserSurfaceComponent: browserSurfaceComponent
     }
 }

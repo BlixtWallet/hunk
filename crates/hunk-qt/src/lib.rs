@@ -15,6 +15,9 @@ mod backend_diff;
 mod backend_forge;
 mod backend_git;
 mod backend_state;
+mod browser;
+mod browser_frame;
+mod browser_models;
 mod comment_models;
 mod comments;
 mod diff_models;
@@ -54,6 +57,11 @@ pub use ai_timeline_models::{
     AI_TIMELINE_MAX_VISIBLE_ROWS, AiTimelineItem, AiTimelineListModel, AiTimelineProjection,
 };
 pub use backend::{Backend, Workspace};
+pub use browser::BrowserBridge;
+pub use browser_models::{
+    BrowserTabItem, BrowserTabListModel, BrowserTabProjectionSource,
+    browser_tab_projection_changed, project_browser_tab_sources, project_browser_tabs,
+};
 pub use comment_models::{DiffCommentItem, DiffCommentListModel, DiffCommentProjection};
 pub use diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
 pub use git_models::{GitBranchListModel, GitCommitListModel, GitFileListModel};
@@ -81,6 +89,7 @@ pub fn run() -> Result<()> {
     }
 
     let mut app = QApp::new();
+    browser_frame::register_browser_frame_item();
     app.application_name("Hunk")
         .register::<AiThreadListModel>()
         .register::<AiTimelineListModel>()
@@ -93,6 +102,8 @@ pub fn run() -> Result<()> {
         .register::<GitCommitListModel>()
         .register::<TerminalTabListModel>()
         .register::<TerminalRowListModel>()
+        .register::<BrowserTabListModel>()
+        .register::<BrowserBridge>()
         .register::<Backend>();
     load_qml(&mut app)?;
 

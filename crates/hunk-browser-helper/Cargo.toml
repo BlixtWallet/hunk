@@ -10,5 +10,5 @@ default = []
 cef-subprocess = ["dep:cef"]
 
 [dependencies]
-cef = { git = "https://github.com/tauri-apps/cef-rs.git", rev = "f20249dd2e34afdc0102af347f30f0218dd67e7b", default-features = false, features = ["sandbox"], optional = true }
+cef = { git = "https://github.com/tauri-apps/cef-rs.git", rev = "a2e15ae659c4b3957883e34de879bd8b38360ce5", default-features = false, features = ["sandbox"], optional = true }
 libc = "0.2"

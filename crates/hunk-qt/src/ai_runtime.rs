@@ -114,6 +114,7 @@ pub fn prepare_ai_worker_config(
     let mut config = AiWorkerStartConfig::new(root.to_path_buf(), codex_executable, codex_home);
     config.mad_max_mode = mad_max_mode;
     config.include_hidden_models = include_hidden_models;
+    config.browser_tools_enabled = cfg!(feature = "cef-browser");
     Ok(config)
 }
 

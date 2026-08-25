@@ -39,6 +39,7 @@ codex-protocol = { git = "https://github.com/niteshbalusu11/codex.git", branch =
 codex-utils-absolute-path = { git = "https://github.com/niteshbalusu11/codex.git", branch = "hunk/embedded-apply-patch-fix" }
 codex-utils-rustls-provider = { git = "https://github.com/niteshbalusu11/codex.git", branch = "hunk/embedded-apply-patch-fix" }
 qtbridge = { git = "https://github.com/qt/qtbridge-rust.git", rev = "cad0d6cd81d1af294ec87c67f21d39133196dbc1" }
+qtbridge-build-utils = { git = "https://github.com/qt/qtbridge-rust.git", rev = "cad0d6cd81d1af294ec87c67f21d39133196dbc1" }
 
 [profile.ci]
 inherits = "dev"

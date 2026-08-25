@@ -13,6 +13,8 @@ fn bgra_frame_keeps_metadata_and_pixels() {
     assert_eq!(frame.metadata().height, 1);
     assert_eq!(frame.metadata().frame_epoch, 9);
     assert_eq!(frame.bgra(), &[0, 0, 255, 255, 0, 255, 0, 255]);
+    let shared = frame.shared_bgra();
+    assert_eq!(shared.as_ptr(), frame.bgra().as_ptr());
     assert!(!frame.is_blank());
 }
 

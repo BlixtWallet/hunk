@@ -11,6 +11,7 @@ AiSidebar 1.0 AiSidebar.qml
 AiSessionControls 1.0 AiSessionControls.qml
 AiTimelineRow 1.0 AiTimelineRow.qml
 AiWorkspace 1.0 AiWorkspace.qml
+BrowserPane 1.0 BrowserPane.qml
 ConfirmationDialog 1.0 ConfirmationDialog.qml
 DiffCommentComposer 1.0 DiffCommentComposer.qml
 DiffCommentInspector 1.0 DiffCommentInspector.qml

@@ -6,6 +6,7 @@ Item {
     id: root
 
     required property QtObject backend
+    property Component browserSurfaceComponent: null
     readonly property var workspaceIds: ["diff", "git", "ai"]
     readonly property int workspaceCount: workspaceIds.length
     readonly property string activeWorkspace: backend.activeWorkspace
@@ -15,9 +16,18 @@ Item {
     property var aiRequestAnswerStore: ({})
     property string aiDraftWorkspaceRoot: ""
     property real terminalDrawerHeight: 330
+    readonly property real minimumWorkspaceHeight: activeWorkspace === "ai" && backend.browser.open ? 300 : 160
     property bool terminalWasOpen: false
     property Item terminalPreviousFocusItem: null
     readonly property int observedTerminalFocusRevision: backend.terminalFocusRevision
+    readonly property bool browserFrameRequested: {
+        const hostWindow = root.Window.window
+        return root.activeWorkspace === "ai"
+            && root.backend.browser.open
+            && hostWindow !== null
+            && hostWindow.visible
+            && hostWindow.visibility !== Window.Minimized
+    }
 
     function activateWorkspace(workspace) {
         backend.select_workspace(workspace)
@@ -211,7 +221,7 @@ Item {
         anchors.bottom: parent.bottom
         height: active
             ? Math.min(root.terminalDrawerHeight,
-                Math.max(180, root.height - Theme.headerHeight - 160)) : 0
+                Math.max(180, root.height - Theme.headerHeight - root.minimumWorkspaceHeight)) : 0
         active: root.backend.terminalOpen
         visible: active
         sourceComponent: terminalDrawerComponent
@@ -228,7 +238,7 @@ Item {
             backend: root.backend
             onResizeRequested: height => {
                 root.terminalDrawerHeight = Math.max(180,
-                    Math.min(height, root.height - Theme.headerHeight - 160))
+                    Math.min(height, root.height - Theme.headerHeight - root.minimumWorkspaceHeight))
             }
             onCloseRequested: root.setTerminalOpen(false)
         }
@@ -284,6 +294,31 @@ Item {
             backend: root.backend
             draftStore: root.aiDraftStore
             requestAnswerStore: root.aiRequestAnswerStore
+            browserSurfaceComponent: root.browserSurfaceComponent
+        }
+    }
+
+    Timer {
+        interval: 16
+        repeat: true
+        running: root.backend.browser.pumpActive
+        onTriggered: root.backend.browser.pump(root.browserFrameRequested)
+    }
+
+    ConfirmationDialog {
+        anchors.fill: parent
+        visible: root.backend.browser.approvalPending
+        title: root.backend.browser.approvalKind
+        message: root.backend.browser.approvalSummary + "\n\nCodex requested this sensitive browser action."
+        confirmLabel: qsTr("Allow once")
+        onAccepted: root.backend.browser.resolve_approval(true)
+        onRejected: root.backend.browser.resolve_approval(false)
+        onFocusRestorationFailed: {
+            if (root.activeWorkspace === "ai"
+                    && root.backend.browser.open
+                    && workspaceLoader.item !== null) {
+                workspaceLoader.item.focusBrowserSurface()
+            }
         }
     }
 

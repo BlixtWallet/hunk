@@ -43,9 +43,16 @@ case "$TARGET_TRIPLE" in
 esac
 
 RUNTIME_DIR="${2:-$DEFAULT_RUNTIME_DIR}"
+if [[ "$RUNTIME_DIR" != /* ]]; then
+  RUNTIME_DIR="$ROOT_DIR/$RUNTIME_DIR"
+fi
 CEF_RS_REPO="${HUNK_CEF_RS_REPO:-https://github.com/tauri-apps/cef-rs.git}"
-CEF_RS_REV="${HUNK_CEF_RS_REV:-f20249dd2e34afdc0102af347f30f0218dd67e7b}"
-CEF_RS_DIR="${HUNK_CEF_RS_DIR:-/tmp/cef-rs}"
+CEF_RS_REV="${HUNK_CEF_RS_REV:-a2e15ae659c4b3957883e34de879bd8b38360ce5}"
+DEFAULT_CEF_RS_DIR="${TMPDIR:-/tmp}/hunk-cef-rs"
+if [[ -n "${XDG_CACHE_HOME:-}" ]]; then
+  DEFAULT_CEF_RS_DIR="$XDG_CACHE_HOME/hunk/cef-rs"
+fi
+CEF_RS_DIR="${HUNK_CEF_RS_DIR:-$DEFAULT_CEF_RS_DIR}"
 FORCE_EXPORT="${HUNK_CEF_FORCE_EXPORT:-0}"
 
 validate_runtime() {
@@ -70,8 +77,12 @@ if ! command -v cargo >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ -e "$CEF_RS_DIR" && ! -d "$CEF_RS_DIR/.git" ]]; then
+  echo "error: refusing to replace non-checkout CEF path: $CEF_RS_DIR" >&2
+  exit 1
+fi
 if [[ ! -d "$CEF_RS_DIR/.git" ]]; then
-  rm -rf "$CEF_RS_DIR"
+  mkdir -p "$(dirname "$CEF_RS_DIR")"
   git clone --depth=1 "$CEF_RS_REPO" "$CEF_RS_DIR"
 fi
 

@@ -34,6 +34,10 @@ pub(super) fn reset_ai_runtime_state(backend: &mut Backend) {
     backend.ai_connection_state = "disconnected".to_owned();
     backend.ai_workspace_root.clear();
     backend.ai_active_thread_id.clear();
+    backend
+        .browser
+        .borrow_mut()
+        .set_active_thread(String::new());
     backend.ai_active_thread_title.clear();
     backend.ai_active_thread_cwd.clear();
     backend.ai_active_turn_id.clear();
@@ -132,11 +136,10 @@ pub(super) fn apply_ai_runtime_events(backend: &mut Backend, events: Vec<AiRunti
                         params,
                         response_tx,
                     } => {
-                        let response = hunk_app::ai::browser_unavailable_response(
-                            &params,
-                            "The embedded browser is not connected to the Qt frontend yet.",
-                        );
-                        let _ = response_tx.send(response);
+                        backend
+                            .browser
+                            .borrow_mut()
+                            .handle_ai_tool_call(params, response_tx);
                     }
                     AiWorkerEventPayload::Reconnecting(message) => {
                         backend.ai_connection_state = "reconnecting".to_owned();
@@ -225,6 +228,12 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
         .replace_if_changed(projection.items);
     let timeline_items = timeline.items;
     backend.ai_active_thread_id = projection.active_thread_id;
+    if active_thread_changed {
+        backend
+            .browser
+            .borrow_mut()
+            .set_active_thread(backend.ai_active_thread_id.clone());
+    }
     if active_thread_changed {
         sync_ai_attachments(backend);
     }

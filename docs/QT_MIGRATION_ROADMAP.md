@@ -601,7 +601,7 @@ external caches:
 - [x] Implement context usage, model/settings, collaboration-mode, approval-policy, and service-tier controls still in product scope.
 - [x] Implement prompt attachments still in product scope.
 - [x] Port required terminal surfaces with correct input, focus, cursor, selection, and resize behavior.
-- [ ] Port the required embedded CEF browser surface, controls, input routing, and AI tool bridge to Qt.
+- [x] Port the required embedded CEF browser surface, controls, input routing, and AI tool bridge to Qt.
 - [ ] Validate key flows without triggering unattended keychain prompts.
 - [ ] Complete the mandatory working loop and stacked PR.
 
@@ -1071,6 +1071,59 @@ target, external Cargo cache, and Qt 6.11.2 SDK:
   denied in 6.21 seconds on the warm cache.
 - Validation used only Rust/QML fixtures. It did not launch Hunk or Codex and
   did not access any credential or keychain path.
+
+Qt browser decisions:
+
+- `hunk-browser` remains the sole CEF runtime, session, snapshot, console,
+  safety, and input authority. Qt adds a thin `BrowserBridge`, bounded tab
+  model, QML controls, and a narrow native `QQuickItem`; it does not add Qt
+  WebEngine or fork browser behavior into QML.
+- CEF initializes lazily on first user or AI browser action. The ordinary Qt
+  dependency graph stays CEF-free, while `hunk-qt/cef-browser` enables the
+  matching `hunk-browser` and helper subprocess features for production builds.
+- Changed CEF BGRA frames retain their Rust `Arc<[u8]>` allocation across a
+  read-only `QImage` ownership callback and upload through
+  `QSGSimpleTextureNode`. The Qt boundary adds no second full-frame CPU copy,
+  QML never receives encoded frame data, and changed epochs reuse one
+  persistent QRhi texture allocation.
+- CEF publication remains capped at 60 fps. Its message loop stays serviced at
+  16 ms while the backend is active, but external frame requests target only
+  the visible session and stop when the pane is hidden or the window is
+  minimized. Tab projection also ignores frame-only metadata changes. The rest
+  of the Qt Quick shell retains its 120 Hz/8 ms target; live hardware profiling
+  remains a cutover gate.
+- AI browser tools operate on the selected thread's visible CEF session.
+  Sensitive actions pause in the global Qt allow-once/deny dialog, preserving
+  the retained browser safety policy and structured tool responses.
+- The native item exposes first-frame readiness. Pointer, keyboard, and focus
+  forwarding remain disabled until pixels exist, and approval dialogs restore
+  the exact previously focused control. If opening the browser hid that
+  control, approval completion hands focus to the ready browser surface.
+- cef-rs is pinned to `cef-v151.8.0+151.3.24` at commit
+  `a2e15ae659c4b3957883e34de879bd8b38360ce5`, backed by CEF
+  `151.3.24+g2384915+chromium-151.0.7922.174` and Chromium
+  `151.0.7922.174`.
+
+Qt browser validation on macOS through Nix reused the repository target,
+external Cargo/CEF caches, and Qt 6.11.2 SDK:
+
+- The staged CEF 151.3.24 runtime passed the Hunk macOS layout validator.
+- `cargo check -p hunk-qt --features cef-browser --locked` passed against the
+  staged runtime and exact cef-rs release.
+- The standalone Qt Quick suite passed all 109 browser, terminal, AI, Git, and
+  Diff interaction tests in 1.747 seconds. Browser coverage includes injected
+  native-surface ownership, address state, first-frame input gating, approval
+  focus restoration, modified printable shortcuts, active-tab model resets,
+  and shell state toggling.
+- Six focused read-only QML review passes drove corrections for first-frame
+  ownership, approval focus, hidden/minimized frame requests, tab projection,
+  and browser input routing. System `qmllint` then passed with only the expected
+  dynamic QObject-property warnings.
+- `cargo build --workspace --all-targets --locked`,
+  `cargo test --workspace --all-targets --locked`, and warning-denied workspace
+  Clippy all passed. The warm-cache build took 3 minutes 54 seconds; the final
+  Clippy pass took 6.02 seconds.
+- Validation did not launch Hunk, Codex, or a keychain-facing runtime.
 
 ### 8. Atomic Qt Cutover and CI Replacement
 

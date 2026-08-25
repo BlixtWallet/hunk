@@ -17,7 +17,7 @@ TestCase {
     ListModel { id: aiThreadsModel }
     ListModel { id: aiTimelineModel }
     ListModel { id: aiAttachmentsModel }
-    ListModel { id: terminalTabsModel } ListModel { id: terminalRowsModel }
+    ListModel { id: terminalTabsModel } ListModel { id: terminalRowsModel } ListModel { id: browserTabsModel; ListElement { tab_id: "tab-1"; title: "New tab"; url: "about:blank"; loading: false } } FakeBrowser { id: fakeBrowser; tabs: browserTabsModel }
     ListModel { id: aiModelsModel; ListElement { value: ""; label: "Server default" } ListElement { value: "gpt-5.5"; label: "GPT-5.5" } }
     ListModel { id: aiEffortsModel; ListElement { value: ""; label: "Model default" } ListElement { value: "high"; label: "High" } }
     ListModel { id: aiServiceTiersModel; ListElement { value: "standard"; label: "Standard" } ListElement { value: "fast"; label: "Fast" } ListElement { value: "flex"; label: "Flex" } }
@@ -25,7 +25,7 @@ TestCase {
         id: fakeBackend
         property string activeWorkspace: "diff"
         property bool ready: true
-        property string statusMessage: "Test backend ready"
+        property string statusMessage: "Test backend ready"; property QtObject browser: fakeBrowser
         property string lastRequestedWorkspace: ""
         property var diffFiles: diffFilesModel
         property var diffRows: diffRowsModel

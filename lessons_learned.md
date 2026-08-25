@@ -636,3 +636,46 @@ append a correction when later evidence changes one.
 - Bottom-panel focus restoration should retain the actual prior focus item.
   Focusing a workspace root on close does not restore the AI composer, Git
   commit editor, or any other nested editing control.
+
+## 2026-08-25 — Qt embedded browser surface
+
+- Keep large offscreen browser frames out of QML value bindings. A narrow
+  `QQuickItem` can wrap a retained Rust `Arc<[u8]>` in a read-only `QImage`,
+  release it through the image cleanup callback after upload, and reuse one
+  QRhi texture without a second CPU pixel copy, base64, data-URL, or
+  image-provider churn.
+- Browser frame cadence and shell cadence are separate budgets. Retaining the
+  CEF adapter's 60 fps publication limit does not prevent the surrounding Qt
+  Quick application from rendering at 120 Hz; it prevents duplicate 8 ms
+  uploads for a source that publishes at half that rate.
+- Lazy initialization is also a build/test boundary. Keep CEF behind the Qt
+  production feature and start it on first browser use so ordinary model and
+  QML tests do not touch browser profiles, helper processes, or keychain-facing
+  application state.
+- Machine-specific cache policy belongs in the invocation environment, not a
+  repository script. Portable preparation defaults can use `TMPDIR` or
+  `XDG_CACHE_HOME`; this machine passes `/Volumes/hulk/dev/cache/cef-rs`
+  explicitly through `HUNK_CEF_RS_DIR`.
+- Qt Quick's `visible` value is affected by ancestor visibility. An offscreen
+  shell integration test should assert the browser's authoritative open state
+  and the control label, while the component-level rendered test owns direct
+  surface visibility assertions.
+- `Loader.Ready` only proves that a native browser item exists; it does not
+  prove that CEF has delivered pixels. Expose a first-frame property from the
+  native item and keep pointer, keyboard, and focus forwarding disabled until
+  that property is true.
+- An external CEF message pump and an external begin-frame request are separate
+  responsibilities. Keep servicing the backend loop while it is active, but
+  request pixels only for the visible session and only while its pane is shown;
+  otherwise background tabs consume frame-copy and upload budget unnecessarily.
+- Cache the exact rows exposed by a Qt list model, not a broader domain summary.
+  Browser tab summaries include changing frame metadata; comparing those at
+  presentation time needlessly reprojects tab rows for every browser frame even
+  when the tab label, loading state, and identity did not change.
+- Visibility includes the application window, not only the pane. A minimized
+  window should keep servicing CEF's lightweight message loop but must stop
+  requesting pixels that cannot be presented.
+- Dialog focus restoration needs a visible fallback. If a browser approval
+  hides the control captured before the dialog opened, resolution should hand
+  focus to the already-ready browser surface instead of leaving the window
+  without an active focus item.

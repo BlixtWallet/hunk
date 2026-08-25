@@ -6,8 +6,10 @@ FocusScope {
     property string title: "Confirm action"
     property string message: ""
     property string confirmLabel: "Confirm"
+    property Item previousFocusItem: null
     signal accepted
     signal rejected
+    signal focusRestorationFailed
 
     visible: false
     z: 100
@@ -84,7 +86,20 @@ FocusScope {
     }
 
     onVisibleChanged: {
-        if (visible)
+        if (visible) {
+            const hostWindow = root.Window.window
+            root.previousFocusItem = hostWindow === null ? null : hostWindow.activeFocusItem
             forceActiveFocus()
+        } else {
+            const restoreTarget = root.previousFocusItem
+            root.previousFocusItem = null
+            Qt.callLater(() => {
+                if (restoreTarget !== null && restoreTarget.visible && restoreTarget.enabled) {
+                    restoreTarget.forceActiveFocus()
+                } else {
+                    root.focusRestorationFailed()
+                }
+            })
+        }
     }
 }

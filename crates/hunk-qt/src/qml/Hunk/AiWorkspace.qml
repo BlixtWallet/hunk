@@ -8,6 +8,8 @@ Item {
     required property var backend
     required property var draftStore
     required property var requestAnswerStore
+    property Component browserSurfaceComponent: null
+    property Item browserPreviousFocusItem: null
     property bool followTail: true
     property string visibleThreadId: backend.aiActiveThreadId
     readonly property alias timelineListView: timeline
@@ -20,6 +22,7 @@ Item {
     readonly property bool timelineStateVisible: backend.aiActiveThreadId.length > 0 && timeline.count > 0 && !errorStateVisible
     readonly property bool authenticationStateVisible: backend.aiRequiresAuthentication && !timelineStateVisible && !errorStateVisible && !loadingStateVisible
     readonly property bool emptyStateVisible: !timelineStateVisible && !errorStateVisible && !loadingStateVisible && !authenticationStateVisible
+    readonly property bool browserVisible: backend.browser.open
 
     function stateTitle() {
         if (root.errorStateVisible)
@@ -49,9 +52,39 @@ Item {
         return root.backend.fork_ai_thread();
     }
 
+    function toggleBrowser() {
+        if (!root.browserVisible) {
+            const hostWindow = root.Window.window;
+            root.browserPreviousFocusItem = hostWindow === null ? null : hostWindow.activeFocusItem;
+            if (!root.backend.browser.set_open(true))
+                Qt.callLater(root.restoreConversationFocus);
+        } else {
+            root.backend.browser.set_open(false);
+        }
+    }
+
+    function restoreConversationFocus() {
+        if (root.browserPreviousFocusItem !== null && root.browserPreviousFocusItem.visible && root.browserPreviousFocusItem.enabled) {
+            root.browserPreviousFocusItem.forceActiveFocus();
+        } else if (requestPanel.hasRequest) {
+            requestPanel.focusFirstControl();
+        } else if (composer.editable) {
+            composer.editor.forceActiveFocus();
+        }
+        root.browserPreviousFocusItem = null;
+    }
+
+    function focusBrowserSurface() {
+        browserPane.focusBrowserWhenReady();
+    }
+
     onVisibleThreadIdChanged: {
         followTail = true;
         Qt.callLater(() => timeline.positionViewAtEnd());
+    }
+    onBrowserVisibleChanged: {
+        if (!browserVisible)
+            Qt.callLater(restoreConversationFocus);
     }
 
     Rectangle {
@@ -113,6 +146,15 @@ Item {
                 compact: true
                 enabled: root.backend.aiReady && root.backend.aiActiveThreadId.length > 0 && !root.backend.aiTurnRunning && !root.backend.aiLoading && !root.backend.aiRequiresAuthentication && !root.commandPending
                 onClicked: root.forkThread()
+            }
+
+            ActionButton {
+                id: browserAction
+                objectName: "browserAction"
+                label: root.browserVisible ? qsTr("Conversation") : qsTr("Browser")
+                compact: true
+                enabled: root.browserVisible || root.backend.aiActiveThreadId.length > 0
+                onClicked: root.toggleBrowser()
             }
 
             Rectangle {
@@ -184,6 +226,7 @@ Item {
         anchors.right: parent.right
         anchors.top: statusBanner.bottom
         anchors.bottom: requestPanel.top
+        visible: !root.browserVisible
 
         Rectangle {
             id: historyNotice
@@ -285,6 +328,7 @@ Item {
         height: implicitHeight
         backend: root.backend
         answerStore: root.requestAnswerStore
+        visible: !root.browserVisible
     }
 
     AiComposer {
@@ -294,6 +338,19 @@ Item {
         anchors.bottom: parent.bottom
         backend: root.backend
         draftStore: root.draftStore
+        visible: !root.browserVisible
         onRequestFocusRequested: requestPanel.focusFirstControl()
+    }
+
+    BrowserPane {
+        id: browserPane
+        objectName: "browserPane"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: statusBanner.bottom
+        anchors.bottom: parent.bottom
+        visible: root.browserVisible
+        browser: root.backend.browser
+        surfaceComponent: root.browserSurfaceComponent
     }
 }
