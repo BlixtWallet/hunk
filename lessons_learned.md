@@ -187,3 +187,7 @@ append a correction when later evidence changes one.
 - Switching repositories is also a refresh-cancellation boundary. Increment
   the adapter epoch before starting the new load so an older background result
   cannot overwrite the newly selected root.
+- Installing the Qt SDK on Ubuntu does not install the system OpenGL
+  development linker entry that Qt Quick exposes as `-lGL`. Provision
+  `libgl1-mesa-dev` on the runner before linking Qt-backed Rust tests; QML-only
+  smoke tests can otherwise conceal the missing native link dependency.

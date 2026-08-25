@@ -46,6 +46,12 @@ jobs:
         with:
           clean: false
 
+      - name: Install Qt system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes libgl1-mesa-dev
+        shell: bash
+
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
         with:
