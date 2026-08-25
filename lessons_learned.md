@@ -349,3 +349,16 @@ append a correction when later evidence changes one.
   positive. On its first zero-to-open transition that can reserve layout space
   while its contents remain transparent. Include the requested open state in
   the visibility binding and keep the width check only to finish closing.
+
+## 2026-08-25 — Toolkit-neutral Codex runtime discovery
+
+- Packaging logic can look toolkit-neutral while still depending on the crate
+  that compiled it. In particular, moving `env!("CARGO_PKG_NAME")` from
+  `hunk-desktop` into `hunk-app` would silently search Linux package resources
+  under `hunk-app`. Encode the supported legacy and Qt package directory names
+  explicitly, while preferring the actual executable name, when ownership
+  moves below both frontends.
+- Runtime discovery is an application service, not UI state. Keeping override,
+  development asset, app-bundle, Windows launcher, and Linux packager rules in
+  `hunk-app::ai` prevents the Qt migration from growing a second resolver that
+  would drift only after packaging on a different operating system.

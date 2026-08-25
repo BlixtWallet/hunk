@@ -405,97 +405,11 @@ impl DiffViewer {
     }
 
     fn resolve_codex_executable_path() -> std::path::PathBuf {
-        std::env::var_os("HUNK_CODEX_EXECUTABLE")
-            .map(std::path::PathBuf::from)
-            .map(Self::resolve_windows_codex_command_path)
-            .or_else(|| {
-                let current_exe = std::env::current_exe().ok()?;
-                resolve_workspace_codex_executable_from_exe(current_exe.as_path()).or_else(|| {
-                    resolve_bundled_codex_executable_from_exe(current_exe.as_path()).or_else(|| {
-                        running_from_packaged_bundle().then(|| {
-                            expected_bundled_codex_executable_from_exe(current_exe.as_path())
-                        })?
-                    })
-                })
-            })
-            .or({
-                #[cfg(target_os = "windows")]
-                {
-                    resolve_windows_command_path(std::path::Path::new("codex"))
-                }
-                #[cfg(not(target_os = "windows"))]
-                {
-                    None
-                }
-            })
-            .unwrap_or_else(|| std::path::PathBuf::from("codex"))
+        hunk_app::ai::resolve_codex_executable_path()
     }
 
     fn validate_codex_executable_path(path: &std::path::Path) -> Result<(), String> {
-        if is_command_name_without_path(path) {
-            #[cfg(target_os = "windows")]
-            {
-                return Err(format!(
-                    "Unable to find a spawnable Codex executable for '{}'. Install Codex so that 'codex.cmd' or 'codex.exe' is on PATH, or set HUNK_CODEX_EXECUTABLE to the full launcher path.",
-                    path.display()
-                ));
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                if running_from_packaged_bundle() {
-                    return Err(format!(
-                        "Bundled Codex executable was not found for this packaged build; refusing to fall back to PATH for '{}'.",
-                        path.display()
-                    ));
-                }
-                return Ok(());
-            }
-        }
-        if !path.exists() {
-            return Err(format!(
-                "Bundled Codex executable not found at {}",
-                path.display()
-            ));
-        }
-        if !path.is_file() {
-            return Err(format!(
-                "Bundled Codex executable path is not a file: {}",
-                path.display()
-            ));
-        }
-        #[cfg(target_os = "windows")]
-        {
-            if !windows_path_is_spawnable(path) {
-                return Err(format!(
-                    "Codex executable is not spawnable on Windows: {}. Point HUNK_CODEX_EXECUTABLE at a real '.cmd' or '.exe' launcher, not the Unix shim.",
-                    path.display()
-                ));
-            }
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let metadata = std::fs::metadata(path)
-                .map_err(|error| format!("Unable to inspect Codex executable: {error}"))?;
-            if metadata.permissions().mode() & 0o111 == 0 {
-                return Err(format!(
-                    "Bundled Codex executable is not marked executable: {}",
-                    path.display()
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    fn resolve_windows_codex_command_path(path: std::path::PathBuf) -> std::path::PathBuf {
-        #[cfg(target_os = "windows")]
-        {
-            resolve_windows_command_path(path.as_path()).unwrap_or(path)
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            path
-        }
+        hunk_app::ai::validate_codex_executable_path(path)
     }
 
     fn default_ai_workspace_state_for_workspace_key(
