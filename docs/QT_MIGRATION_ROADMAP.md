@@ -177,7 +177,7 @@ must not reproduce that redundant matrix.
 - [x] Trace every `hunk-editor`, `hunk-text`, and `hunk-language` consumer.
 - [x] Keep only APIs required by Diff, AI, terminal, markdown, or review workflows.
 - [x] Confirm Diff, Git, and AI remain reachable in the temporary GPUI shell.
-- [ ] Complete the mandatory working loop and stacked PR.
+- [x] Complete the mandatory working loop and stacked PR: <https://github.com/smolcars/hunk/pull/178>.
 
 ### 3. Establish a Headless Application Boundary
 
