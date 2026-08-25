@@ -91,7 +91,7 @@ Qt Quick / QML
   shell, navigation, Git, AI, settings, ordinary diff chrome
                          |
                          v
-hunk-qt adapter layer
+hunk-desktop adapter layer
   QtBridge QObjects and models; UI commands; immutable snapshots
                          |
                          v
@@ -1079,7 +1079,7 @@ Qt browser decisions:
   model, QML controls, and a narrow native `QQuickItem`; it does not add Qt
   WebEngine or fork browser behavior into QML.
 - CEF initializes lazily on first user or AI browser action. The ordinary Qt
-  dependency graph stays CEF-free, while `hunk-qt/cef-browser` enables the
+  dependency graph stays CEF-free, while `hunk-desktop/cef-browser` enables the
   matching `hunk-browser` and helper subprocess features for production builds.
 - Changed CEF BGRA frames retain their Rust `Arc<[u8]>` allocation across a
   read-only `QImage` ownership callback and upload through
@@ -1108,7 +1108,7 @@ Qt browser validation on macOS through Nix reused the repository target,
 external Cargo/CEF caches, and Qt 6.11.2 SDK:
 
 - The staged CEF 151.3.24 runtime passed the Hunk macOS layout validator.
-- `cargo check -p hunk-qt --features cef-browser --locked` passed against the
+- `cargo check -p hunk-desktop --features cef-browser --locked` passed against the
   staged runtime and exact cef-rs release.
 - The standalone Qt Quick suite passed all 109 browser, terminal, AI, Git, and
   Diff interaction tests in 1.747 seconds. Browser coverage includes injected
@@ -1127,14 +1127,14 @@ external Cargo/CEF caches, and Qt 6.11.2 SDK:
 
 ### 8. Atomic Qt Cutover and CI Replacement
 
-- [ ] Make the Qt binary the workspace default desktop application.
-- [ ] Remove GPUI, `gpui_platform`, GPUI Component, GPUI assets, shaders, and GPUI-only build inputs.
-- [ ] Remove all remaining GPUI source and compatibility adapters.
-- [ ] Remove orphaned editor/file-workspace crates or features proven unused after Diff and AI are complete.
+- [x] Make the Qt binary the workspace default desktop application.
+- [x] Remove GPUI, `gpui_platform`, GPUI Component, GPUI assets, shaders, and GPUI-only build inputs.
+- [x] Remove all remaining GPUI source and compatibility adapters.
+- [x] Remove orphaned editor/file-workspace crates or features proven unused after Diff and AI are complete.
 - [ ] Replace GPUI-oriented packaging scripts and resources with Qt deployment tooling.
-- [ ] Change PR CI so no job resolves or builds a GPUI package.
-- [ ] Cache or preinstall exact-version Qt binaries; never compile Qt from source in ordinary CI.
-- [ ] Run core fmt/clippy/tests independently from the final Qt desktop build.
+- [x] Change PR CI so no job resolves or builds a GPUI package.
+- [x] Cache or preinstall exact-version Qt binaries; never compile Qt from source in ordinary CI.
+- [x] Run core fmt/clippy/tests independently from the final Qt desktop build.
 - [ ] Build one production feature configuration per platform instead of plain and CEF duplicates.
 - [ ] Add path-aware QML validation so QML-only changes do not trigger needless Rust rebuild work.
 - [ ] Build the Qt app on Linux, Windows, and macOS in PR CI.
@@ -1142,6 +1142,31 @@ external Cargo/CEF caches, and Qt 6.11.2 SDK:
 
 The GPUI build is removed in the same reviewed layer that makes Qt the default.
 There must not be a merged state where the shipping frontend has no CI build.
+
+Cutover validation on macOS through Nix reused the repository `target/`, the
+approved external Cargo cache, and the exact Qt 6.11.2 and CEF 151 runtimes:
+
+- `hunk-desktop` is now the only desktop package and the workspace default; its
+  binary remains `hunk_desktop`, preserving the existing launcher, updater, and
+  release naming contract while changing the implementation to Qt.
+- The old GPUI source tree, GPUI-specific assets and skills, the `hunk-editor`
+  crate, and the temporary `hunk-qt` package are removed. The lockfile contains
+  no GPUI package and shrank from 1,678 to 1,329 packages.
+- PR CI builds `hunk-desktop` on Linux and Windows, runs the QML suite, and
+  keeps core workspace validation separate from the Qt desktop build. The
+  macOS PR job and production deployment configuration remain release-hardening
+  work and are intentionally not claimed here.
+- The CEF production-feature check passed against the staged CEF 151.3.24
+  runtime. The Qt Quick suite passed all 109 tests in 2.001 seconds.
+- The full all-target workspace build passed in 3 minutes 13 seconds, the full
+  workspace test suite passed, and warning-denied workspace Clippy passed in
+  1 minute 19 seconds.
+- Review confirmed the moved Qt source and test behavior is unchanged from the
+  previously reviewed frontend: diffs are limited to the stable package/module
+  rename and Rustfmt's corresponding import sorting. The remaining oversized
+  CEF backend was reduced to 1,973 lines by extracting a 55-line macOS
+  sidecar-staging helper.
+- Validation did not launch Hunk, Codex, CEF, or a keychain-facing runtime.
 
 ### 9. Release Hardening and Completion Audit
 

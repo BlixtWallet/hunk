@@ -12,6 +12,9 @@ use std::time::{Duration, Instant};
 use cef::{args::Args, *};
 use serde_json::json;
 
+#[cfg(target_os = "macos")]
+mod macos_sidecars;
+
 use crate::config::BrowserRuntimeConfig;
 use crate::frame::{BrowserFrame, BrowserFrameRateLimiter};
 use crate::session::{
@@ -48,12 +51,9 @@ pub(crate) struct CefBrowserBackend {
 impl CefBrowserBackend {
     pub(crate) fn initialize(config: &BrowserRuntimeConfig) -> Result<Self, BrowserError> {
         #[cfg(target_os = "macos")]
-        install_macos_nsapplication_compatibility();
-
-        #[cfg(target_os = "macos")]
         let cef_paths = resolve_macos_cef_paths(config)?;
         #[cfg(target_os = "macos")]
-        stage_macos_cef_sidecars_for_bare_run(&cef_paths)?;
+        macos_sidecars::stage_for_bare_run(&cef_paths.framework_dir)?;
         #[cfg(target_os = "macos")]
         let loader = load_macos_cef_framework(&cef_paths)?;
         #[cfg(any(target_os = "linux", target_os = "windows"))]
@@ -1970,146 +1970,4 @@ fn os_str_is_non_empty(value: Option<&OsStr>) -> bool {
     value
         .map(|value| !value.to_string_lossy().is_empty())
         .unwrap_or(false)
-}
-
-#[cfg(target_os = "macos")]
-fn install_macos_nsapplication_compatibility() {
-    use std::ffi::c_void;
-    use std::os::raw::{c_char, c_schar};
-    use std::sync::OnceLock;
-
-    static INSTALLED: OnceLock<()> = OnceLock::new();
-
-    INSTALLED.get_or_init(|| {
-        unsafe extern "C" {
-            fn objc_getClass(name: *const c_char) -> *mut c_void;
-            fn sel_registerName(name: *const c_char) -> *mut c_void;
-            fn class_getInstanceMethod(cls: *mut c_void, name: *mut c_void) -> *mut c_void;
-            fn class_addMethod(
-                cls: *mut c_void,
-                name: *mut c_void,
-                imp: *const c_void,
-                types: *const c_char,
-            ) -> bool;
-        }
-
-        extern "C" fn is_handling_send_event(
-            _this: *mut c_void,
-            _selector: *mut c_void,
-        ) -> c_schar {
-            0
-        }
-
-        extern "C" fn set_handling_send_event(
-            _this: *mut c_void,
-            _selector: *mut c_void,
-            _handling_send_event: c_schar,
-        ) {
-        }
-
-        // Some Chromium macOS paths ask NSApp whether it is inside sendEvent:.
-        // GPUI's NSApplication subclass does not currently implement Chromium's
-        // private CrAppProtocol selectors, so add conservative no-op responses.
-        unsafe {
-            let class_name = c"GPUIApplication";
-            let class = objc_getClass(class_name.as_ptr());
-            if class.is_null() {
-                return;
-            }
-            add_missing_macos_method(
-                class,
-                c"isHandlingSendEvent",
-                is_handling_send_event as *const c_void,
-                c"c@:",
-                sel_registerName,
-                class_getInstanceMethod,
-                class_addMethod,
-            );
-            add_missing_macos_method(
-                class,
-                c"setHandlingSendEvent:",
-                set_handling_send_event as *const c_void,
-                c"v@:c",
-                sel_registerName,
-                class_getInstanceMethod,
-                class_addMethod,
-            );
-        }
-    });
-}
-
-#[cfg(target_os = "macos")]
-unsafe fn add_missing_macos_method(
-    class: *mut std::ffi::c_void,
-    selector_name: &'static std::ffi::CStr,
-    implementation: *const std::ffi::c_void,
-    type_encoding: &'static std::ffi::CStr,
-    sel_register_name: unsafe extern "C" fn(*const std::os::raw::c_char) -> *mut std::ffi::c_void,
-    class_get_instance_method: unsafe extern "C" fn(
-        *mut std::ffi::c_void,
-        *mut std::ffi::c_void,
-    ) -> *mut std::ffi::c_void,
-    class_add_method: unsafe extern "C" fn(
-        *mut std::ffi::c_void,
-        *mut std::ffi::c_void,
-        *const std::ffi::c_void,
-        *const std::os::raw::c_char,
-    ) -> bool,
-) {
-    let selector = unsafe { sel_register_name(selector_name.as_ptr()) };
-    if selector.is_null() || !unsafe { class_get_instance_method(class, selector) }.is_null() {
-        return;
-    }
-    unsafe {
-        class_add_method(class, selector, implementation, type_encoding.as_ptr());
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn stage_macos_cef_sidecars_for_bare_run(paths: &MacCefPaths) -> Result<(), BrowserError> {
-    let Some(exe_dir) = std::env::current_exe()
-        .ok()
-        .and_then(|current_exe| current_exe.parent().map(PathBuf::from))
-    else {
-        return Ok(());
-    };
-    if exe_dir.file_name().is_some_and(|name| name == "MacOS")
-        && exe_dir.parent().is_some_and(|contents_dir| {
-            contents_dir
-                .file_name()
-                .is_some_and(|name| name == "Contents")
-        })
-    {
-        return Ok(());
-    }
-
-    let libraries_dir = paths.framework_dir.join("Libraries");
-    for sidecar in [
-        "libEGL.dylib",
-        "libGLESv2.dylib",
-        "libvk_swiftshader.dylib",
-        "vk_swiftshader_icd.json",
-    ] {
-        let source = libraries_dir.join(sidecar);
-        if !source.is_file() {
-            return Err(backend_error(format!(
-                "Chromium Embedded Framework sidecar is missing {}",
-                source.display()
-            )));
-        }
-
-        let dest = exe_dir.join(sidecar);
-        if dest.is_file() {
-            continue;
-        }
-        std::fs::copy(&source, &dest).map_err(|error| {
-            backend_error(format!(
-                "failed to stage Chromium Embedded Framework sidecar {} to {}: {error}",
-                source.display(),
-                dest.display()
-            ))
-        })?;
-    }
-
-    Ok(())
 }

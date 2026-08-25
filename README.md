@@ -1,6 +1,6 @@
 # hunk
 
-A cross-platform Git diff viewer and Codex orchestrator built with `gpui` + `gpui-component`.
+A cross-platform Git diff viewer and Codex orchestrator with a Rust core and a Qt Quick/QML desktop UI.
 
 ## License
 
@@ -20,11 +20,11 @@ Hunk is also has full codex integration so you can use Codex inside of Hunk inst
 
 - Uses a native Git backend built on `gix` with narrow `git2` fallbacks for unsupported write flows
 - Managed Git worktrees with per-worktree branch publishing
-- File tree for changed files
+- Changed-file list for diff navigation
 - Side-by-side diff viewer with per-line styling and line numbers
 - Review compare mode for `base branch <-> workspace target` and custom branch/worktree pairs
 - AI drafts and threads scoped to the selected project checkout or worktree
-- Resizable split panes (tree + diff)
+- Embedded terminal and Chromium browser surfaces
 - Light/Dark mode toggle
 - Refresh action
 - `anyhow`-based error handling
@@ -35,7 +35,6 @@ Hunk is also has full codex integration so you can use Codex inside of Hunk inst
 - `crates/hunk-terminal`: terminal integration, shell/session support, and terminal-facing workspace surfaces
 - `crates/hunk-text`: rope-backed text model, positions/ranges, transactions, and undo/redo primitives
 - `crates/hunk-language`: Tree-sitter language registry, syntax highlighting, preview highlighting, folds, and language-intelligence seams
-- `crates/hunk-editor`: headless editor state, selections, display rows, folds, overlays, and editor commands
 - `crates/hunk-domain`: shared config/state types, SQLite-backed comment storage, markdown, and other app domain logic
 - `crates/hunk-git`: Git backend for repo discovery, diffing, branches, commits, push, publish, and sync
 - `crates/hunk-forge`: forge integration logic for GitHub and related remote/review workflows
@@ -43,14 +42,14 @@ Hunk is also has full codex integration so you can use Codex inside of Hunk inst
 - `crates/hunk-browser`: embedded browser runtime state, CEF backend integration, offscreen frames, input routing, snapshots, console logs, and safety checks
 - `crates/hunk-browser-helper`: CEF subprocess helper binary used by the embedded browser runtime
 - `crates/hunk-sleep-inhibitor`: cross-platform idle sleep prevention for long-running AI turns
-- `crates/hunk-desktop`: GPUI desktop app binary, controllers, and rendering surface
+- `crates/hunk-desktop`: Qt desktop app, QtBridge models, QML UI, and native Qt rendering adapters
 - `crates/hunk-codex`: embedded Codex app-server integration, thread service, AI reducers, and protocol boundary
 
 ## Requirements
 
-- macOS
-- Xcode + command line tools
-- Metal toolchain for GPUI shader compilation
+- Rust 1.98
+- Qt 6.11.2
+- macOS, Windows, or Linux development tools for the target platform
 
 ### Run Dev Locally
 
@@ -70,10 +69,10 @@ just start-windows
 
 Those helpers apply the macOS SDK wrapper when needed and stage the bundled Windows Codex runtime automatically where required.
 
-If you want the raw macOS cargo command, use:
+If you want the raw macOS Cargo command, enter the pinned development shell:
 
 ```bash
-cargo run -p hunk-desktop
+nix develop -c cargo run -p hunk-desktop
 ```
 
 Launch from anywhere, then use `File > Open Project...` (or `Cmd/Ctrl+Shift+O`) to choose a Git repository.
@@ -86,18 +85,18 @@ Hunk treats the primary checkout and each linked Git worktree as separate worksp
 
 - Create and switch worktrees from the Git tab.
 - Managed worktrees live under `~/.hunkdiff/worktrees/<repo-key>/worktree-N`.
-- The Files and Git tabs follow the currently active workspace target.
+- The Diff and Git tabs follow the currently active workspace target.
 - The Review tab defaults to comparing the active workspace target against the repo base branch, but you can also compare custom branch/worktree pairs.
 - The AI tab can start a new thread in the primary checkout with `Cmd/Ctrl+N` or in a worktree-targeted draft with `Cmd/Ctrl+Shift+N`.
 
 ### Validate Workspace
 
-On macOS:
+On macOS, use the pinned Nix shell:
 
 ```bash
-cargo build --workspace
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
+nix develop -c cargo build --workspace
+nix develop -c cargo test --workspace
+nix develop -c cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 On Linux and Windows, run the same Cargo commands directly or use the `just` recipes so Cargo writes to its default `target/` directory.
@@ -213,7 +212,7 @@ just bundle
 
 ## Syntax Highlighting
 
-The Files editor, file preview, and markdown fenced-code highlighting now use the shared Tree-sitter language registry in `crates/hunk-language`.
+Diff previews and markdown fenced-code highlighting use the shared Tree-sitter language registry in `crates/hunk-language`.
 
 Built-in languages/config formats:
 
@@ -261,7 +260,7 @@ Generate a synthetic Git repository with a very large working-copy diff:
 ./scripts/create_large_diff_repo.sh --lines 25000 --files 1 --force
 ```
 
-The script prints the generated repo path and total diff size. Open that folder in Hunk to stress scrolling/render performance and watch the FPS badge in the toolbar.
+The script prints the generated repo path and total diff size. Open that folder in Hunk to stress diff projection and scrolling/render performance.
 
 Generate code-like diffs instead of plain text (`txt`, `js`, or `ts`):
 
@@ -276,23 +275,6 @@ To spread the same total load across multiple files:
 ./scripts/create_large_diff_repo.sh --lines 6000 --files 4 --force
 ```
 
-### Automated Perf Harness
-
-Run the repeatable large-diff perf harness with threshold gating:
-
-```bash
-./scripts/run_perf_harness.sh
-```
-
-Run without threshold gating (metrics only):
-
-```bash
-./scripts/run_perf_harness.sh --no-gate
-```
-
-Protocol and metric definitions are documented in [PERFORMANCE_BENCHMARK.md](./docs/PERFORMANCE_BENCHMARK.md).
-The harness script currently targets Unix-like shells (`bash`).
-
 ## Config
 
 Hunk reads config from `~/.hunkdiff/config.toml`.
@@ -300,9 +282,7 @@ Keyboard shortcuts are configured in the `[keyboard_shortcuts]` table:
 
 ```toml
 [keyboard_shortcuts]
-toggle_sidebar_tree = ["cmd-b", "ctrl-b"]
 open_project = ["cmd-shift-o", "ctrl-shift-o"]
-save_current_file = ["cmd-s", "ctrl-s"]
 open_settings = ["cmd-,", "ctrl-,"]
 quit_app = ["cmd-q"]
 ```
@@ -364,6 +344,5 @@ Keybindings in bacon UI:
 
 ## Credits
 
-- [Zed](https://zed.dev/) was a major inspiration for Hunk. We directly studied and copied parts of their open-source code as reference implementations, especially around editor/text-system behavior and terminal-related implementation details, and their architecture heavily influenced this project.
-- [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui) deserves credit as the UI framework Hunk is built on.
-- [gpui-component](https://github.com/longbridge/gpui-component) by Longbridge deserves credit as well. Hunk relies heavily on their component library throughout the app.
+- [Zed](https://zed.dev/) was a major inspiration for Hunk, especially its review, text, and terminal architecture.
+- [Qt](https://www.qt.io/) provides Hunk's cross-platform native desktop UI and scene graph.

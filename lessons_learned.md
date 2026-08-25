@@ -679,3 +679,30 @@ append a correction when later evidence changes one.
   hides the control captured before the dialog opened, resolution should hand
   focus to the already-ready browser surface instead of leaving the window
   without an active focus item.
+
+## 2026-08-25 — Atomic Qt cutover
+
+- Preserve the stable package and binary contract at cutover. Moving the
+  reviewed Qt adapter into `crates/hunk-desktop` and keeping the
+  `hunk_desktop` binary avoids simultaneous churn in launchers, runtime lookup,
+  updater targets, and release artifact names.
+- Regenerating the lockfile after removing the old frontend is the clearest
+  dependency audit. Deleting GPUI, GPUI Component, and the orphaned editor
+  crate removed 349 locked packages; searches of manifests and the lockfile
+  then prove that remaining historical GPUI text is attribution or migration
+  documentation rather than a production dependency.
+- The removed File Explorer can leave non-visual residue. A shortcut field
+  referenced only by config defaults and tests is still dead product surface,
+  even when it no longer has a controller, so remove it together with stale
+  README examples.
+- A legacy performance script is not useful merely because its filename still
+  sounds relevant. The old harness targeted a deleted GPUI integration test and
+  had to be removed; retain the toolkit-neutral large-diff fixture and rebuild
+  measured 120 Hz coverage around the Qt renderer during release hardening.
+- File-size cleanup should follow ownership. Extracting macOS CEF sidecar
+  staging into a focused module brought the backend below 2,000 lines without
+  changing cross-platform browser logic or disguising the limit with formatting.
+- A much smaller UI dependency graph does not make the retained application
+  graph small. The first all-target cutover build still spent most of its time
+  compiling the embedded Codex graph, so packaging and CI optimization must be
+  measured independently from the frontend replacement.

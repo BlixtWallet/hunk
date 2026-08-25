@@ -1,6 +1,6 @@
 # AI Browser CEF TODO
 
-Status: The retained CEF backend compiles behind both `hunk-desktop/cef-browser` and `hunk-qt/cef-browser`. The Qt adapter presents the same per-thread browser sessions, forwards input, and routes AI browser tools without introducing Qt WebEngine or a second browser engine.
+Status: The retained CEF backend compiles behind `hunk-desktop/cef-browser`. The Qt desktop presents the same per-thread browser sessions, forwards input, and routes AI browser tools without introducing Qt WebEngine or a second browser engine.
 
 This tracks the implementation of a true in-app browser for Hunk that can be controlled by the AI agent. CEF offscreen rendering and browser state remain toolkit-neutral Rust responsibilities; the active frontend owns only presentation, scene-graph upload, and input translation.
 
@@ -170,7 +170,7 @@ Implementation notes:
 ### Qt presentation migration
 
 - [x] Add a QtBridge browser object and bounded tab list model without moving browser state out of `hunk-browser`.
-- [x] Start CEF lazily on first browser use and keep ordinary Qt builds CEF-free behind `hunk-qt/cef-browser`.
+- [x] Start CEF lazily on first browser use and keep ordinary Qt builds CEF-free behind `hunk-desktop/cef-browser`.
 - [x] Upload validated BGRA frames through a narrow native `QQuickItem` and `QSGSimpleTextureNode` instead of encoding frames through QML.
 - [x] Port tabs, navigation, address entry, DevTools, context actions, focus, resize, pointer, wheel, key, and text input.
 - [x] Route the retained Codex browser tools to the visible Qt-owned session.

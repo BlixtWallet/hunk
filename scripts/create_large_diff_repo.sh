@@ -427,4 +427,4 @@ fi
 printf "Language mode: %s (.%s)\n" "$language" "$file_extension"
 printf "Randomization seed: %s\n" "$run_seed"
 printf "Active branch: %s\n" "$branch_name"
-printf "\nOpen this folder in Hunk and watch the FPS badge while scrolling.\n"
+printf "\nOpen this folder in Hunk and inspect scrolling performance.\n"

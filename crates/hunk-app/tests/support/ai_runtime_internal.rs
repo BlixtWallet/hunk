@@ -299,9 +299,9 @@ fn notification_refresh_flags_reload_skills_on_skills_changed() {
 #[test]
 fn prompt_user_input_items_appends_structured_skills_after_text() {
     let inputs = prompt_user_input_items(
-        Some("Use $gpui and $gpui-component"),
+        Some("Use $qt-qml and $qt-ui-design"),
         &[PathBuf::from("/tmp/diagram.png")],
-        &[selected_skill("gpui"), selected_skill("gpui-component")],
+        &[selected_skill("qt-qml"), selected_skill("qt-ui-design")],
     );
 
     assert_eq!(
@@ -312,16 +312,16 @@ fn prompt_user_input_items_appends_structured_skills_after_text() {
                 detail: None,
             },
             UserInput::Text {
-                text: "Use $gpui and $gpui-component".to_string(),
+                text: "Use $qt-qml and $qt-ui-design".to_string(),
                 text_elements: Vec::new(),
             },
             UserInput::Skill {
-                name: "gpui".to_string(),
-                path: PathBuf::from("/skills/gpui/SKILL.md"),
+                name: "qt-qml".to_string(),
+                path: PathBuf::from("/skills/qt-qml/SKILL.md"),
             },
             UserInput::Skill {
-                name: "gpui-component".to_string(),
-                path: PathBuf::from("/skills/gpui-component/SKILL.md"),
+                name: "qt-ui-design".to_string(),
+                path: PathBuf::from("/skills/qt-ui-design/SKILL.md"),
             },
         ]
     );
