@@ -260,3 +260,24 @@ append a correction when later evidence changes one.
 - When collected rows are consumed to build a secondary index before their
   eventual struct assignment, annotate the collection type at the projection
   boundary; the later payload field is no longer sufficient for Rust inference.
+
+## 2026-08-25 — Qt Diff selection and navigation
+
+- Diff row selection is presentation state. Keeping anchor/head indices in the
+  QML workspace avoids bridge notifications for every pointer or arrow-key move;
+  Rust only needs to provide semantic operations that depend on row content.
+- Precompute each row's unified copy text beside syntax/search projection. A
+  copy action can then concatenate the selected slice without cloning every
+  intermediate string or teaching QML how removals, additions, and context map
+  back to patch prefixes.
+- Avoid building a temporary hunk-index vector for each F7 press. Forward and
+  reverse iterator scans provide wrapped navigation with no per-action
+  allocation and keep this small interaction well inside the UI-thread budget.
+- Nested Flickables may take a mouse grab before a delegate `MouseArea` observes
+  it. A `TapHandler` participates in pointer gesture arbitration, preserving row
+  taps while allowing the gesture to become horizontal or vertical scrolling.
+- QtTest keyboard synthesis reaches the focused shell reliably, while pointer
+  synthesis in the offscreen nested-Flickable fixture does not. Test pointer
+  range semantics directly, assert the delegate contains its `TapHandler`, and
+  retain rendered/manual interaction checks rather than weakening production
+  gesture handling for the harness.

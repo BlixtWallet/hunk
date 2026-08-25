@@ -386,7 +386,9 @@ impl Backend {
         self.diff_loading = true;
         self.diff_ready = false;
         self.diff_error.clear();
-        self.diff_rows.borrow_mut().replace(Vec::new(), Vec::new());
+        self.diff_rows
+            .borrow_mut()
+            .replace(Vec::new(), Vec::new(), Vec::new());
         self.clear_diff_search_results();
         self.diff_state_changed();
 
@@ -428,9 +430,11 @@ impl Backend {
                 self.diff_status_tag = payload.status_tag;
                 self.diff_additions = payload.additions;
                 self.diff_removals = payload.removals;
-                self.diff_rows
-                    .borrow_mut()
-                    .replace(payload.rows, payload.search_texts);
+                self.diff_rows.borrow_mut().replace(
+                    payload.rows,
+                    payload.search_texts,
+                    payload.copy_texts,
+                );
                 self.rebuild_diff_search_results();
                 self.diff_ready = true;
                 self.diff_error.clear();
@@ -477,6 +481,16 @@ impl Backend {
             .and_then(|index| i32::try_from(*index).ok())
             .unwrap_or(-1);
         self.diff_state_changed();
+    }
+
+    #[qslot]
+    fn diff_selection_text(&self, anchor: i32, head: i32) -> String {
+        self.diff_rows.borrow().selection_text(anchor, head)
+    }
+
+    #[qslot]
+    fn diff_hunk_target(&self, start: i32, direction: i32) -> i32 {
+        self.diff_rows.borrow().hunk_target(start, direction)
     }
 
     #[qslot]
@@ -1043,7 +1057,9 @@ impl Backend {
         self.diff_loading = false;
         self.diff_ready = false;
         self.diff_error.clear();
-        self.diff_rows.borrow_mut().replace(Vec::new(), Vec::new());
+        self.diff_rows
+            .borrow_mut()
+            .replace(Vec::new(), Vec::new(), Vec::new());
         self.clear_diff_search_results();
         self.diff_files.borrow_mut().replace(files);
         self.diff_file_summaries = summaries
@@ -1076,7 +1092,9 @@ impl Backend {
     fn apply_diff_selection(&mut self, summary: &DiffFileSummary) {
         self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
         self.diff_loading = false;
-        self.diff_rows.borrow_mut().replace(Vec::new(), Vec::new());
+        self.diff_rows
+            .borrow_mut()
+            .replace(Vec::new(), Vec::new(), Vec::new());
         self.clear_diff_search_results();
         self.diff_selected_path = summary.path.clone();
         self.diff_status_tag = summary.status.tag().to_owned();
@@ -1090,7 +1108,9 @@ impl Backend {
     fn reset_diff_state(&mut self) {
         self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
         self.diff_files.borrow_mut().replace(Vec::new());
-        self.diff_rows.borrow_mut().replace(Vec::new(), Vec::new());
+        self.diff_rows
+            .borrow_mut()
+            .replace(Vec::new(), Vec::new(), Vec::new());
         self.diff_selected_path.clear();
         self.diff_status_tag.clear();
         self.diff_additions = 0;

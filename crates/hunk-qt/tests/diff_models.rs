@@ -26,6 +26,32 @@ fn side_by_side_payload_preserves_lines_and_cell_kinds() {
     assert_eq!(payload.matching_rows(" NEW "), vec![1]);
     assert_eq!(payload.matching_rows("@@"), vec![0]);
     assert!(payload.matching_rows("missing").is_empty());
+    assert_eq!(payload.selection_text(0, 1), "-let old = 1;\n+let new = 2;");
+    assert_eq!(payload.selection_text(1, 0), "-let old = 1;\n+let new = 2;");
+    assert!(payload.selection_text(-1, -1).is_empty());
+}
+
+#[test]
+fn hunk_navigation_wraps_in_both_directions() {
+    let summary = DiffFileSummary {
+        path: "src/main.rs".to_owned(),
+        status: FileStatus::Modified,
+        line_stats: LineStats {
+            added: 2,
+            removed: 2,
+        },
+    };
+    let payload = DiffSnapshotPayload::from_patch(
+        &summary,
+        "@@ -1 +1 @@\n-let one = 1;\n+let one = 2;\n@@ -10 +10 @@\n-let ten = 10;\n+let ten = 11;\n",
+    );
+
+    assert_eq!(payload.hunk_target(-1, 1), 0);
+    assert_eq!(payload.hunk_target(0, 1), 2);
+    assert_eq!(payload.hunk_target(2, 1), 0);
+    assert_eq!(payload.hunk_target(-1, -1), 2);
+    assert_eq!(payload.hunk_target(2, -1), 0);
+    assert_eq!(payload.hunk_target(0, -1), 2);
 }
 
 #[test]

@@ -39,6 +39,7 @@ pub struct DiffSnapshotPayload {
     pub removals: i32,
     pub rows: Vec<DiffRowItem>,
     pub(crate) search_texts: Vec<String>,
+    pub(crate) copy_texts: Vec<String>,
 }
 
 impl DiffSnapshotPayload {
@@ -97,6 +98,7 @@ impl DiffSnapshotPayload {
             .collect();
 
         let search_texts = rows.iter().map(searchable_row_text).collect();
+        let copy_texts = rows.iter().map(diff_row_copy_text).collect();
         Self {
             path: summary.path.clone(),
             status_tag: summary.status.tag().to_owned(),
@@ -104,11 +106,20 @@ impl DiffSnapshotPayload {
             removals: saturating_u64_to_i32(summary.line_stats.removed),
             rows,
             search_texts,
+            copy_texts,
         }
     }
 
     pub fn matching_rows(&self, query: &str) -> Vec<usize> {
         matching_text_indices(self.search_texts.as_slice(), query)
+    }
+
+    pub fn selection_text(&self, anchor: i32, head: i32) -> String {
+        selection_text(self.copy_texts.as_slice(), anchor, head)
+    }
+
+    pub fn hunk_target(&self, start: i32, direction: i32) -> i32 {
+        wrapped_hunk_target(self.rows.as_slice(), start, direction)
     }
 }
 
@@ -207,6 +218,83 @@ fn searchable_row_text(item: &DiffRowItem) -> String {
     text.to_lowercase()
 }
 
+fn diff_row_copy_text(item: &DiffRowItem) -> String {
+    match item.row_kind.as_str() {
+        "code" => {
+            let mut lines = Vec::with_capacity(2);
+            if item.left_kind == "removed" {
+                lines.push(format!("-{}", item.left_text));
+            }
+            if item.right_kind == "added" {
+                lines.push(format!("+{}", item.right_text));
+            }
+            if item.left_kind == "context" {
+                lines.push(format!(" {}", item.left_text));
+            }
+            if item.left_kind == "none" && item.right_kind == "none" && !item.text.is_empty() {
+                lines.push(item.text.clone());
+            }
+            lines.join("\n")
+        }
+        "meta" | "empty" => item.text.clone(),
+        _ => String::new(),
+    }
+}
+
+fn selection_text(copy_texts: &[String], anchor: i32, head: i32) -> String {
+    if copy_texts.is_empty() || anchor < 0 || head < 0 {
+        return String::new();
+    }
+    let last = copy_texts.len().saturating_sub(1);
+    let anchor = usize::try_from(anchor).unwrap_or(last).min(last);
+    let head = usize::try_from(head).unwrap_or(last).min(last);
+    let start = anchor.min(head);
+    let end = anchor.max(head);
+    let mut selected = String::new();
+    for text in copy_texts[start..=end]
+        .iter()
+        .filter(|text| !text.is_empty())
+    {
+        if !selected.is_empty() {
+            selected.push('\n');
+        }
+        selected.push_str(text.as_str());
+    }
+    selected
+}
+
+fn wrapped_hunk_target(rows: &[DiffRowItem], start: i32, direction: i32) -> i32 {
+    let Some(first) = rows.iter().position(|row| row.row_kind == "hunk") else {
+        return -1;
+    };
+    let last = rows
+        .iter()
+        .rposition(|row| row.row_kind == "hunk")
+        .unwrap_or(first);
+    let target = if start < 0 {
+        if direction >= 0 { first } else { last }
+    } else {
+        let start = usize::try_from(start)
+            .unwrap_or(rows.len().saturating_sub(1))
+            .min(rows.len().saturating_sub(1));
+        if direction >= 0 {
+            rows.iter()
+                .enumerate()
+                .skip(start.saturating_add(1))
+                .find_map(|(index, row)| (row.row_kind == "hunk").then_some(index))
+                .unwrap_or(first)
+        } else {
+            rows[..start]
+                .iter()
+                .enumerate()
+                .rev()
+                .find_map(|(index, row)| (row.row_kind == "hunk").then_some(index))
+                .unwrap_or(last)
+        }
+    };
+    i32::try_from(target).unwrap_or(i32::MAX)
+}
+
 fn row_kind_label(kind: DiffRowKind) -> &'static str {
     match kind {
         DiffRowKind::Code => "code",
@@ -235,24 +323,42 @@ fn saturating_u64_to_i32(value: u64) -> i32 {
 
 #[qobject(Base = QListModel)]
 mod row_model {
-    use super::{DiffRowItem, QListModel, QListModelBase, matching_text_indices};
+    use super::{
+        DiffRowItem, QListModel, QListModelBase, matching_text_indices, selection_text,
+        wrapped_hunk_target,
+    };
 
     #[derive(Default)]
     pub struct DiffRowListModel {
         items: Vec<DiffRowItem>,
         search_texts: Vec<String>,
-        replacement: Option<(Vec<DiffRowItem>, Vec<String>)>,
+        copy_texts: Vec<String>,
+        replacement: Option<(Vec<DiffRowItem>, Vec<String>, Vec<String>)>,
     }
 
     impl DiffRowListModel {
-        pub fn replace(&mut self, items: Vec<DiffRowItem>, search_texts: Vec<String>) {
+        pub fn replace(
+            &mut self,
+            items: Vec<DiffRowItem>,
+            search_texts: Vec<String>,
+            copy_texts: Vec<String>,
+        ) {
             debug_assert_eq!(items.len(), search_texts.len());
-            self.replacement = Some((items, search_texts));
+            debug_assert_eq!(items.len(), copy_texts.len());
+            self.replacement = Some((items, search_texts, copy_texts));
             self.reset();
         }
 
         pub fn matching_rows(&self, query: &str) -> Vec<usize> {
             matching_text_indices(self.search_texts.as_slice(), query)
+        }
+
+        pub fn selection_text(&self, anchor: i32, head: i32) -> String {
+            selection_text(self.copy_texts.as_slice(), anchor, head)
+        }
+
+        pub fn hunk_target(&self, start: i32, direction: i32) -> i32 {
+            wrapped_hunk_target(self.items.as_slice(), start, direction)
         }
     }
 
@@ -268,7 +374,8 @@ mod row_model {
         }
 
         fn reset_unnotified(&mut self) {
-            (self.items, self.search_texts) = self.replacement.take().unwrap_or_default();
+            (self.items, self.search_texts, self.copy_texts) =
+                self.replacement.take().unwrap_or_default();
         }
     }
 }

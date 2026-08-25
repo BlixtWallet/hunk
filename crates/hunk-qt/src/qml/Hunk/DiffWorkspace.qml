@@ -6,12 +6,91 @@ Item {
     id: root
 
     required property var backend
+    focus: true
     readonly property alias diffListView: diffList
     readonly property alias searchInput: searchInput
     readonly property bool loadingStateVisible: loadingState.visible
     readonly property bool errorStateVisible: errorState.visible
     readonly property bool emptyStateVisible: emptyState.visible
+    readonly property int selectionStart: selectionAnchorRow < 0 || selectionHeadRow < 0
+        ? -1 : Math.min(selectionAnchorRow, selectionHeadRow)
+    readonly property int selectionEnd: selectionAnchorRow < 0 || selectionHeadRow < 0
+        ? -1 : Math.max(selectionAnchorRow, selectionHeadRow)
     property bool unifiedMode: false
+    property int selectionAnchorRow: -1
+    property int selectionHeadRow: -1
+    readonly property string selectionPath: backend.diffSelectedPath
+
+    onSelectionPathChanged: resetSelection()
+
+    function resetSelection() {
+        selectionAnchorRow = -1
+        selectionHeadRow = -1
+        diffList.currentIndex = -1
+    }
+
+    function clampSelection() {
+        if (diffList.count <= 0) {
+            resetSelection()
+            return
+        }
+        if (selectionAnchorRow >= diffList.count)
+            selectionAnchorRow = diffList.count - 1
+        if (selectionHeadRow >= diffList.count)
+            selectionHeadRow = diffList.count - 1
+    }
+
+    function rowIsSelected(index) {
+        return selectionStart >= 0 && index >= selectionStart && index <= selectionEnd
+    }
+
+    function selectRow(index, extendSelection) {
+        if (diffList.count <= 0)
+            return
+        const target = Math.max(0, Math.min(index, diffList.count - 1))
+        if (extendSelection && selectionAnchorRow >= 0)
+            selectionHeadRow = target
+        else {
+            selectionAnchorRow = target
+            selectionHeadRow = target
+        }
+        diffList.currentIndex = target
+        diffList.positionViewAtIndex(target, ListView.Contain)
+        forceActiveFocus()
+    }
+
+    function moveSelection(delta, extendSelection) {
+        const base = selectionHeadRow >= 0
+            ? selectionHeadRow : (delta > 0 ? -1 : 0)
+        selectRow(base + delta, extendSelection)
+    }
+
+    function selectAllRows() {
+        if (diffList.count <= 0)
+            return
+        selectionAnchorRow = 0
+        selectionHeadRow = diffList.count - 1
+        diffList.currentIndex = selectionHeadRow
+        forceActiveFocus()
+    }
+
+    function jumpHunk(direction) {
+        const target = backend.diff_hunk_target(selectionHeadRow, direction)
+        if (target >= 0)
+            selectRow(target, false)
+    }
+
+    function copySelection() {
+        const selectedText = backend.diff_selection_text(selectionAnchorRow, selectionHeadRow)
+        if (selectedText.length === 0)
+            return
+        clipboardProxy.text = selectedText
+        clipboardProxy.forceActiveFocus()
+        clipboardProxy.selectAll()
+        clipboardProxy.copy()
+        clipboardProxy.deselect()
+        forceActiveFocus()
+    }
 
     function setDiffMode(mode) {
         unifiedMode = mode === "unified"
@@ -80,6 +159,31 @@ Item {
         if (kind === "removed")
             return Theme.negative
         return Theme.faint
+    }
+
+    Keys.priority: Keys.BeforeItem
+    Keys.onPressed: event => {
+        if (searchInput.activeFocus)
+            return
+        const extendSelection = (event.modifiers & Qt.ShiftModifier) !== 0
+        const commandModifier = (event.modifiers
+            & (Qt.ControlModifier | Qt.MetaModifier)) !== 0
+        if (event.key === Qt.Key_Down) {
+            moveSelection(1, extendSelection)
+            event.accepted = true
+        } else if (event.key === Qt.Key_Up) {
+            moveSelection(-1, extendSelection)
+            event.accepted = true
+        } else if (event.key === Qt.Key_F7) {
+            jumpHunk(extendSelection ? -1 : 1)
+            event.accepted = true
+        } else if (commandModifier && event.key === Qt.Key_A) {
+            selectAllRows()
+            event.accepted = true
+        } else if (commandModifier && event.key === Qt.Key_C) {
+            copySelection()
+            event.accepted = true
+        }
     }
 
     component UnifiedLine: Rectangle {
@@ -399,6 +503,7 @@ Item {
             reuseItems: true
             cacheBuffer: Theme.diffRowHeight * 12
             boundsBehavior: Flickable.StopAtBounds
+            onCountChanged: root.clampSelection()
 
             delegate: Item {
                 id: diffRow
@@ -590,8 +695,43 @@ Item {
                     border.width: 1
                     border.color: Theme.warning
                 }
+
+                Rectangle {
+                    anchors.fill: parent
+                    z: 4
+                    visible: root.rowIsSelected(diffRow.index)
+                    color: Qt.rgba(
+                        Theme.selected.r,
+                        Theme.selected.g,
+                        Theme.selected.b,
+                        0.28
+                    )
+                    border.width: 2
+                    border.color: Theme.accentStrong
+                }
+
+                TapHandler {
+                    objectName: "diffRowTapHandler"
+                    acceptedButtons: Qt.LeftButton
+                    onTapped: root.selectRow(
+                        diffRow.index,
+                        (point.modifiers & Qt.ShiftModifier) !== 0
+                    )
+                }
             }
         }
+    }
+
+    TextEdit {
+        id: clipboardProxy
+        objectName: "diffClipboardProxy"
+        x: -2
+        y: -2
+        width: 1
+        height: 1
+        opacity: 0
+        readOnly: true
+        textFormat: TextEdit.PlainText
     }
 
     Text {
