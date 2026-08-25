@@ -1,3 +1,4 @@
+pub mod comments;
 pub mod config;
 #[cfg(feature = "database")]
 pub mod db;

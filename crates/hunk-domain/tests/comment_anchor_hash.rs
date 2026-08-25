@@ -1,4 +1,4 @@
-use hunk_domain::db::compute_comment_anchor_hash;
+use hunk_domain::comments::compute_comment_anchor_hash;
 
 #[test]
 fn anchor_hash_is_deterministic_for_same_input() {

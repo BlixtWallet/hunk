@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
 use hunk_app::diff::{
-    CachedStyledSegment, DiffSegmentQuality, DiffStreamRowKind, SyntaxTokenKind,
+    CachedStyledSegment, DIFF_COMMENT_CONTEXT_RADIUS_ROWS, DiffCommentAnchor, DiffSegmentQuality,
+    DiffStreamRowKind, SyntaxTokenKind, build_diff_comment_anchors,
     build_diff_row_segment_cache_from_cells, build_diff_stream_from_patch_map,
 };
 use hunk_domain::diff::{DiffCellKind, DiffRowKind, SideBySideRow};
@@ -40,6 +41,7 @@ pub struct DiffSnapshotPayload {
     pub rows: Vec<DiffRowItem>,
     pub(crate) search_texts: Vec<String>,
     pub(crate) copy_texts: Vec<String>,
+    pub(crate) comment_anchors: Vec<Option<DiffCommentAnchor>>,
 }
 
 impl DiffSnapshotPayload {
@@ -71,31 +73,38 @@ impl DiffSnapshotPayload {
         } else {
             DiffSegmentQuality::Detailed
         };
-        let rows: Vec<DiffRowItem> = projection
+        let projected_comment_anchors =
+            build_diff_comment_anchors(&projection, DIFF_COMMENT_CONTEXT_RADIUS_ROWS);
+        let mut rows = Vec::with_capacity(projection.rows.len());
+        let mut comment_anchors = Vec::with_capacity(projection.rows.len());
+        for ((row, metadata), comment_anchor) in projection
             .rows
             .into_iter()
             .zip(projection.row_metadata)
-            .filter(|(_, metadata)| metadata.kind != DiffStreamRowKind::FileHeader)
-            .map(|(row, metadata)| {
-                let segments = (metadata.kind == DiffStreamRowKind::CoreCode).then(|| {
-                    build_diff_row_segment_cache_from_cells(
-                        Some(summary.path.as_str()),
-                        row.left.text.as_str(),
-                        row.left.kind,
-                        row.right.text.as_str(),
-                        row.right.kind,
-                        segment_quality,
-                    )
-                });
-                let mut item = DiffRowItem::from(row);
-                item.stable_id = metadata.stable_id.to_string();
-                if let Some(segments) = segments {
-                    item.left_markup = encode_styled_segments(segments.left.as_slice());
-                    item.right_markup = encode_styled_segments(segments.right.as_slice());
-                }
-                item
-            })
-            .collect();
+            .zip(projected_comment_anchors)
+        {
+            if metadata.kind == DiffStreamRowKind::FileHeader {
+                continue;
+            }
+            let segments = (metadata.kind == DiffStreamRowKind::CoreCode).then(|| {
+                build_diff_row_segment_cache_from_cells(
+                    Some(summary.path.as_str()),
+                    row.left.text.as_str(),
+                    row.left.kind,
+                    row.right.text.as_str(),
+                    row.right.kind,
+                    segment_quality,
+                )
+            });
+            let mut item = DiffRowItem::from(row);
+            item.stable_id = metadata.stable_id.to_string();
+            if let Some(segments) = segments {
+                item.left_markup = encode_styled_segments(segments.left.as_slice());
+                item.right_markup = encode_styled_segments(segments.right.as_slice());
+            }
+            rows.push(item);
+            comment_anchors.push(comment_anchor);
+        }
 
         let search_texts = rows.iter().map(searchable_row_text).collect();
         let copy_texts = rows.iter().map(diff_row_copy_text).collect();
@@ -107,6 +116,7 @@ impl DiffSnapshotPayload {
             rows,
             search_texts,
             copy_texts,
+            comment_anchors,
         }
     }
 
@@ -120,6 +130,11 @@ impl DiffSnapshotPayload {
 
     pub fn hunk_target(&self, start: i32, direction: i32) -> i32 {
         wrapped_hunk_target(self.rows.as_slice(), start, direction)
+    }
+
+    pub fn comment_anchor(&self, row: i32) -> Option<&DiffCommentAnchor> {
+        let row = usize::try_from(row).ok()?;
+        self.comment_anchors.get(row)?.as_ref()
     }
 }
 
@@ -324,16 +339,24 @@ fn saturating_u64_to_i32(value: u64) -> i32 {
 #[qobject(Base = QListModel)]
 mod row_model {
     use super::{
-        DiffRowItem, QListModel, QListModelBase, matching_text_indices, selection_text,
-        wrapped_hunk_target,
+        DiffCommentAnchor, DiffRowItem, QListModel, QListModelBase, matching_text_indices,
+        selection_text, wrapped_hunk_target,
     };
+
+    type DiffRowReplacement = (
+        Vec<DiffRowItem>,
+        Vec<String>,
+        Vec<String>,
+        Vec<Option<DiffCommentAnchor>>,
+    );
 
     #[derive(Default)]
     pub struct DiffRowListModel {
         items: Vec<DiffRowItem>,
         search_texts: Vec<String>,
         copy_texts: Vec<String>,
-        replacement: Option<(Vec<DiffRowItem>, Vec<String>, Vec<String>)>,
+        comment_anchors: Vec<Option<DiffCommentAnchor>>,
+        replacement: Option<DiffRowReplacement>,
     }
 
     impl DiffRowListModel {
@@ -342,10 +365,12 @@ mod row_model {
             items: Vec<DiffRowItem>,
             search_texts: Vec<String>,
             copy_texts: Vec<String>,
+            comment_anchors: Vec<Option<DiffCommentAnchor>>,
         ) {
             debug_assert_eq!(items.len(), search_texts.len());
             debug_assert_eq!(items.len(), copy_texts.len());
-            self.replacement = Some((items, search_texts, copy_texts));
+            debug_assert_eq!(items.len(), comment_anchors.len());
+            self.replacement = Some((items, search_texts, copy_texts, comment_anchors));
             self.reset();
         }
 
@@ -359,6 +384,11 @@ mod row_model {
 
         pub fn hunk_target(&self, start: i32, direction: i32) -> i32 {
             wrapped_hunk_target(self.items.as_slice(), start, direction)
+        }
+
+        pub fn comment_anchor(&self, row: i32) -> Option<&DiffCommentAnchor> {
+            let row = usize::try_from(row).ok()?;
+            self.comment_anchors.get(row)?.as_ref()
         }
     }
 
@@ -374,8 +404,12 @@ mod row_model {
         }
 
         fn reset_unnotified(&mut self) {
-            (self.items, self.search_texts, self.copy_texts) =
-                self.replacement.take().unwrap_or_default();
+            (
+                self.items,
+                self.search_texts,
+                self.copy_texts,
+                self.comment_anchors,
+            ) = self.replacement.take().unwrap_or_default();
         }
     }
 }

@@ -281,3 +281,22 @@ append a correction when later evidence changes one.
   range semantics directly, assert the delegate contains its `TapHandler`, and
   retain rendered/manual interaction checks rather than weakening production
   gesture handling for the harness.
+
+## 2026-08-25 — Qt Diff comment anchors
+
+- Do not make a pure UI projection activate persistence merely because its
+  value types historically lived in a database module. Moving comment-side
+  vocabulary and deterministic anchor hashing into an always-available domain
+  module keeps the Qt Diff graph free of bundled SQLite until CRUD is required,
+  while compatibility re-exports avoid churn in the legacy frontend.
+- Build comment anchors before removing internal projection rows, then filter
+  rows and anchors together. Filtering independently risks shifting every
+  visible row-to-anchor association after the first hidden row.
+- Comment context must be both radius-bounded and file-bounded. The inherited
+  behavior uses two surrounding surface rows, includes same-file header/meta
+  text when it is in range, and never allows an adjacent file to contaminate a
+  persisted anchor hash.
+- When a Qt list-model reset moves several aligned vectors together, name the
+  replacement tuple. Besides satisfying type-complexity linting, the alias
+  makes it explicit that rows, search text, copy text, and anchors form one
+  atomic snapshot.

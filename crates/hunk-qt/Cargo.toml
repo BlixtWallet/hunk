@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
-hunk-app = { path = "../hunk-app", default-features = false, features = ["diff"] }
+hunk-app = { path = "../hunk-app", default-features = false, features = ["comments", "diff"] }
 hunk-domain = { path = "../hunk-domain", default-features = false }
 hunk-forge = { path = "../hunk-forge" }
 hunk-git = { path = "../hunk-git" }

@@ -1,3 +1,5 @@
+#[cfg(feature = "comments")]
+mod comments;
 mod highlight;
 mod segments;
 mod stream;
@@ -10,6 +12,10 @@ use anyhow::Result;
 use hunk_git::compare::{CompareSnapshot, CompareSource, load_compare_snapshot};
 use hunk_git::git::LineStats;
 
+#[cfg(feature = "comments")]
+pub use comments::{
+    DIFF_COMMENT_CONTEXT_RADIUS_ROWS, DiffCommentAnchor, build_diff_comment_anchors,
+};
 pub use highlight::{
     StyledSegment, SyntaxTokenKind, build_line_segments, build_plain_line_segments,
     build_syntax_only_line_segments,

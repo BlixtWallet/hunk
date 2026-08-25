@@ -1,3 +1,4 @@
+use hunk_domain::comments::CommentLineSide;
 use hunk_git::git::{FileStatus, LineStats};
 use hunk_qt::{DiffFileSummary, DiffSnapshotPayload};
 
@@ -29,6 +30,15 @@ fn side_by_side_payload_preserves_lines_and_cell_kinds() {
     assert_eq!(payload.selection_text(0, 1), "-let old = 1;\n+let new = 2;");
     assert_eq!(payload.selection_text(1, 0), "-let old = 1;\n+let new = 2;");
     assert!(payload.selection_text(-1, -1).is_empty());
+    let anchor = payload
+        .comment_anchor(1)
+        .expect("changed row should carry its comment anchor");
+    assert_eq!(anchor.stable_id.to_string(), payload.rows[1].stable_id);
+    assert_eq!(anchor.file_path, "src/main.rs");
+    assert_eq!(anchor.line_side, CommentLineSide::Right);
+    assert_eq!(anchor.hunk_header.as_deref(), Some("@@ -1 +1 @@"));
+    assert!(payload.comment_anchor(0).is_none());
+    assert!(payload.comment_anchor(-1).is_none());
 }
 
 #[test]

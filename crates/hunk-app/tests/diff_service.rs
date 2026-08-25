@@ -5,6 +5,10 @@ use hunk_app::diff::{
     SyntaxTokenKind, build_diff_row_segment_cache_from_cells, build_diff_stream_from_patch_map,
     compact_cached_segments_for_render, load_diff_snapshot,
 };
+#[cfg(feature = "comments")]
+use hunk_app::diff::{DIFF_COMMENT_CONTEXT_RADIUS_ROWS, build_diff_comment_anchors};
+#[cfg(feature = "comments")]
+use hunk_domain::comments::CommentLineSide;
 use hunk_domain::diff::DiffCellKind;
 use hunk_git::git::{ChangedFile, FileStatus};
 
@@ -165,6 +169,85 @@ fn projection_emits_owned_binary_error_rows() {
             .rows
             .iter()
             .any(|row| row.text.contains("binary file type"))
+    );
+}
+
+#[test]
+#[cfg(feature = "comments")]
+fn comment_anchors_preserve_hunk_location_and_same_file_context() {
+    let files = vec![
+        ChangedFile {
+            path: "src/first.rs".to_string(),
+            status: FileStatus::Modified,
+            staged: false,
+            unstaged: true,
+            untracked: false,
+        },
+        ChangedFile {
+            path: "src/second.rs".to_string(),
+            status: FileStatus::Modified,
+            staged: false,
+            unstaged: true,
+            untracked: false,
+        },
+    ];
+    let patches = BTreeMap::from([
+        (
+            "src/first.rs".to_string(),
+            "@@ -1 +1 @@\n-let first = 1;\n+let first = 2;\n".to_string(),
+        ),
+        (
+            "src/second.rs".to_string(),
+            "@@ -10,2 +10 @@\n-let second = 10;\n-let removed_only = 12;\n+let second = 11;\n"
+                .to_string(),
+        ),
+    ]);
+    let stream = build_diff_stream_from_patch_map(
+        &files,
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &patches,
+        &BTreeSet::new(),
+    );
+    let anchors = build_diff_comment_anchors(&stream, DIFF_COMMENT_CONTEXT_RADIUS_ROWS);
+    let second_row = stream
+        .rows
+        .iter()
+        .position(|row| row.right.text == "let second = 11;")
+        .expect("second changed row should exist");
+    let anchor = anchors[second_row]
+        .as_ref()
+        .expect("changed code row should be commentable");
+
+    assert_eq!(anchors.len(), stream.rows.len());
+    assert_eq!(anchor.stable_id, stream.row_metadata[second_row].stable_id);
+    assert_eq!(anchor.file_path, "src/second.rs");
+    assert_eq!(anchor.line_side, CommentLineSide::Right);
+    assert_eq!(anchor.old_line, Some(10));
+    assert_eq!(anchor.new_line, Some(10));
+    assert_eq!(anchor.hunk_header.as_deref(), Some("@@ -10,2 +10 @@"));
+    assert_eq!(anchor.line_text, "-let second = 10;\n+let second = 11;");
+    assert!(anchor.context_before.contains("src/second.rs"));
+    assert!(!anchor.context_before.contains("first"));
+    assert!(!anchor.anchor_hash.is_empty());
+    let removed_row = stream
+        .rows
+        .iter()
+        .position(|row| row.left.text == "let removed_only = 12;")
+        .expect("removed-only row should exist");
+    let removed_anchor = anchors[removed_row]
+        .as_ref()
+        .expect("removed-only row should be commentable");
+    assert_eq!(removed_anchor.line_side, CommentLineSide::Left);
+    assert_eq!(removed_anchor.old_line, Some(11));
+    assert_eq!(removed_anchor.new_line, None);
+    assert!(
+        stream
+            .row_metadata
+            .iter()
+            .enumerate()
+            .filter(|(_, metadata)| metadata.kind == DiffStreamRowKind::CoreHunkHeader)
+            .all(|(index, _)| anchors[index].is_none())
     );
 }
 
