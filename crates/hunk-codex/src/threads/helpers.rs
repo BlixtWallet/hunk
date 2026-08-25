@@ -18,9 +18,11 @@ fn thread_item_kind(item: &ThreadItem) -> &'static str {
         ThreadItem::McpToolCall { .. } => "mcpToolCall",
         ThreadItem::DynamicToolCall { .. } => "dynamicToolCall",
         ThreadItem::CollabAgentToolCall { .. } => "collabAgentToolCall",
-        ThreadItem::WebSearch { .. } => "webSearch",
+        ThreadItem::SubAgentActivity { .. } => "subAgentActivity",
+        ThreadItem::WebSearch(_) => "webSearch",
         ThreadItem::ImageView { .. } => "imageView",
-        ThreadItem::ImageGeneration { .. } => "imageGeneration",
+        ThreadItem::Sleep(_) => "sleep",
+        ThreadItem::ImageGeneration(_) => "imageGeneration",
         ThreadItem::EnteredReviewMode { .. } => "enteredReviewMode",
         ThreadItem::ExitedReviewMode { .. } => "exitedReviewMode",
         ThreadItem::ContextCompaction { .. } => "contextCompaction",
@@ -68,7 +70,7 @@ fn thread_item_display_details_json(item: &ThreadItem) -> Option<String> {
                 MAX_COMMAND_DISPLAY_BYTES,
             ),
             "cwd": truncate_utf8_inline_for_display(
-                cwd.display().to_string(),
+                cwd.to_string(),
                 MAX_COMMAND_CWD_DISPLAY_BYTES,
             ),
             "processId": process_id
@@ -184,7 +186,7 @@ fn command_execution_status_text(
 fn command_action_summary(action: &crate::protocol::CommandAction) -> String {
     let summary = match action {
         crate::protocol::CommandAction::Read { name, path, .. } => {
-            format!("Read {name} from {}", path.display())
+            format!("Read {name} from {path}")
         }
         crate::protocol::CommandAction::ListFiles { path, .. } => {
             let scope = path.as_deref().unwrap_or(".");
@@ -237,16 +239,16 @@ fn thread_item_seed_content(item: &ThreadItem) -> Option<String> {
         | ThreadItem::ExitedReviewMode { review, .. } => {
             (!review.is_empty()).then(|| review.clone())
         }
-        ThreadItem::WebSearch { query, action, .. } => {
+        ThreadItem::WebSearch(item) => {
+            let query = &item.query;
+            let action = &item.action;
             let detail = web_search_detail(action.as_ref(), query.as_str());
             (!detail.is_empty()).then(|| format!("Searched {detail}"))
         }
-        ThreadItem::ImageGeneration {
-            status,
-            revised_prompt,
-            result,
-            ..
-        } => {
+        ThreadItem::ImageGeneration(item) => {
+            let status = &item.status;
+            let revised_prompt = &item.revised_prompt;
+            let result = &item.result;
             let detail = revised_prompt
                 .as_deref()
                 .filter(|value| !value.is_empty())
@@ -264,8 +266,10 @@ fn thread_item_seed_content(item: &ThreadItem) -> Option<String> {
         }
         ThreadItem::DynamicToolCall { .. }
         | ThreadItem::CollabAgentToolCall { .. }
+        | ThreadItem::SubAgentActivity { .. }
         | ThreadItem::HookPrompt { .. }
         | ThreadItem::ImageView { .. }
+        | ThreadItem::Sleep(_)
         | ThreadItem::ContextCompaction { .. } => None,
     }
 }
@@ -415,7 +419,7 @@ fn thread_item_is_complete(item: &ThreadItem) -> bool {
         ThreadItem::CollabAgentToolCall { status, .. } => {
             !matches!(status, CollabAgentToolCallStatus::InProgress)
         }
-        ThreadItem::ImageGeneration { status, .. } => !status.trim().is_empty(),
+        ThreadItem::ImageGeneration(item) => !item.status.trim().is_empty(),
         _ => false,
     }
 }
@@ -433,14 +437,15 @@ mod tests {
 
     #[test]
     fn web_search_seed_content_prefers_action_query() {
-        let item = ThreadItem::WebSearch {
+        let item = ThreadItem::WebSearch(crate::protocol::WebSearchItem {
             id: "ws_1".to_string(),
             query: "fallback".to_string(),
             action: Some(crate::protocol::WebSearchAction::Search {
                 query: Some("weather: 30009".to_string()),
                 queries: None,
             }),
-        };
+            results: None,
+        });
 
         assert_eq!(
             thread_item_seed_content(&item).as_deref(),
@@ -450,11 +455,12 @@ mod tests {
 
     #[test]
     fn web_search_seed_content_uses_fallback_query_when_action_empty() {
-        let item = ThreadItem::WebSearch {
+        let item = ThreadItem::WebSearch(crate::protocol::WebSearchItem {
             id: "ws_2".to_string(),
             query: "weather: New York, NY".to_string(),
             action: None,
-        };
+            results: None,
+        });
 
         assert_eq!(
             thread_item_seed_content(&item).as_deref(),
@@ -464,14 +470,15 @@ mod tests {
 
     #[test]
     fn web_search_seed_content_formats_find_in_page() {
-        let item = ThreadItem::WebSearch {
+        let item = ThreadItem::WebSearch(crate::protocol::WebSearchItem {
             id: "ws_3".to_string(),
             query: "fallback".to_string(),
             action: Some(crate::protocol::WebSearchAction::FindInPage {
                 pattern: Some("rain".to_string()),
                 url: Some("https://example.com/weather".to_string()),
             }),
-        };
+            results: None,
+        });
 
         assert_eq!(
             thread_item_seed_content(&item).as_deref(),
@@ -483,6 +490,7 @@ mod tests {
     fn user_message_seed_content_formats_anonymous_image_inputs() {
         let item = ThreadItem::UserMessage {
             id: "user-1".to_string(),
+            client_id: None,
             content: vec![
                 UserInput::Text {
                     text: "check screenshot".to_string(),

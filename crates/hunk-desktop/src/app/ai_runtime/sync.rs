@@ -293,12 +293,13 @@ impl AiWorkerRuntime {
 
             match event {
                 AppServerEvent::ServerNotification(notification) => {
-                    self.service.apply_server_notification(notification.clone());
+                    self.service
+                        .apply_server_notification((*notification).clone());
                     self.mark_stream_activity_from_notification(&notification, Instant::now());
-                    drained.notifications.push(notification);
+                    drained.notifications.push(*notification);
                 }
                 AppServerEvent::ServerRequest(request) => {
-                    drained.server_requests.push(request);
+                    drained.server_requests.push(*request);
                 }
                 AppServerEvent::Lagged { skipped } => {
                     drained.lagged = drained.lagged.saturating_add(skipped);
@@ -451,7 +452,7 @@ impl AiWorkerRuntime {
                         kind: AiApprovalKind::CommandExecution,
                         reason: params.reason,
                         command: params.command,
-                        cwd: params.cwd.map(|cwd| cwd.to_path_buf()),
+                        cwd: params.cwd.map(|cwd| PathBuf::from(cwd.into_string())),
                         grant_root: None,
                     };
                     self.pending_approvals.insert(

@@ -8,19 +8,16 @@ use hunk_codex::browser_tools::{
     apply_browser_thread_start_context, browser_dynamic_tool_specs, is_browser_dynamic_tool,
     is_browser_dynamic_tool_call, parse_browser_dynamic_tool_request,
 };
-use hunk_codex::protocol::{DynamicToolCallParams, DynamicToolSpec, ThreadStartParams};
+use hunk_codex::protocol::{
+    DynamicToolCallParams, DynamicToolNamespaceTool, DynamicToolSpec, ThreadStartParams,
+};
 
 #[test]
 fn browser_tool_specs_include_core_controls() {
     let specs = browser_dynamic_tool_specs();
-    assert!(
-        specs
-            .iter()
-            .all(|spec| spec.namespace.as_deref() == Some(BROWSER_TOOL_NAMESPACE))
-    );
-    let names = specs
+    let names = namespace_tools(&specs, BROWSER_TOOL_NAMESPACE)
         .iter()
-        .map(|spec| spec.name.as_str())
+        .map(dynamic_tool_name)
         .collect::<Vec<_>>();
 
     assert!(names.contains(&BROWSER_NAVIGATE_TOOL));
@@ -95,17 +92,18 @@ fn apply_browser_thread_start_context_adds_tools_and_instructions() {
     assert!(instructions.contains("Existing instructions."));
     assert!(instructions.contains(BROWSER_DEVELOPER_INSTRUCTIONS));
 
-    let tool_names = params
+    let dynamic_tools = params
         .dynamic_tools
         .as_ref()
-        .expect("dynamic tools should be set")
+        .expect("dynamic tools should be set");
+    let tool_names = namespace_tools(dynamic_tools, BROWSER_TOOL_NAMESPACE)
         .iter()
-        .map(|spec| (spec.namespace.as_deref(), spec.name.as_str()))
+        .map(dynamic_tool_name)
         .collect::<Vec<_>>();
-    assert!(tool_names.contains(&(Some(BROWSER_TOOL_NAMESPACE), BROWSER_NAVIGATE_TOOL)));
-    assert!(tool_names.contains(&(Some(BROWSER_TOOL_NAMESPACE), BROWSER_RELOAD_TOOL)));
-    assert!(tool_names.contains(&(Some(BROWSER_TOOL_NAMESPACE), BROWSER_SNAPSHOT_TOOL)));
-    assert!(tool_names.contains(&(Some(BROWSER_TOOL_NAMESPACE), BROWSER_CONSOLE_TOOL)));
+    assert!(tool_names.contains(&BROWSER_NAVIGATE_TOOL));
+    assert!(tool_names.contains(&BROWSER_RELOAD_TOOL));
+    assert!(tool_names.contains(&BROWSER_SNAPSHOT_TOOL));
+    assert!(tool_names.contains(&BROWSER_CONSOLE_TOOL));
 }
 
 #[test]
@@ -124,25 +122,21 @@ fn apply_browser_thread_start_context_is_idempotent() {
         1
     );
 
-    let navigate_count = params
+    let namespace_count = params
         .dynamic_tools
         .as_ref()
         .expect("dynamic tools should be set")
         .iter()
         .filter(|spec| {
-            spec.namespace.as_deref() == Some(BROWSER_TOOL_NAMESPACE)
-                && spec.name == BROWSER_NAVIGATE_TOOL
+            matches!(spec, DynamicToolSpec::Namespace(namespace) if namespace.name == BROWSER_TOOL_NAMESPACE)
         })
         .count();
-    assert_eq!(navigate_count, 1);
+    assert_eq!(namespace_count, 1);
 }
 
 #[test]
 fn browser_thread_start_params_are_serializable() {
-    let mut params = ThreadStartParams {
-        persist_extended_history: true,
-        ..ThreadStartParams::default()
-    };
+    let mut params = ThreadStartParams::default();
     apply_browser_thread_start_context(&mut params);
 
     let value = serde_json::to_value(&params).expect("thread params should serialize");
@@ -150,10 +144,22 @@ fn browser_thread_start_params_are_serializable() {
         .get("dynamicTools")
         .and_then(serde_json::Value::as_array)
         .expect("dynamic tools should serialize");
-    assert!(tools.iter().any(|tool| {
-        tool.get("namespace").and_then(serde_json::Value::as_str) == Some(BROWSER_TOOL_NAMESPACE)
-            && tool.get("name").and_then(serde_json::Value::as_str) == Some(BROWSER_NAVIGATE_TOOL)
-    }));
+    let namespace = tools
+        .iter()
+        .find(|tool| {
+            tool.get("type").and_then(serde_json::Value::as_str) == Some("namespace")
+                && tool.get("name").and_then(serde_json::Value::as_str)
+                    == Some(BROWSER_TOOL_NAMESPACE)
+        })
+        .expect("browser namespace should serialize");
+    assert!(
+        namespace
+            .get("tools")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|tools| tools.iter().any(|tool| {
+                tool.get("name").and_then(serde_json::Value::as_str) == Some(BROWSER_NAVIGATE_TOOL)
+            }))
+    );
 }
 
 #[test]
@@ -395,5 +401,26 @@ fn dynamic_tool_params(tool: &str, arguments: serde_json::Value) -> DynamicToolC
         namespace: Some(BROWSER_TOOL_NAMESPACE.to_string()),
         tool: tool.to_string(),
         arguments,
+    }
+}
+
+fn namespace_tools<'a>(
+    specs: &'a [DynamicToolSpec],
+    expected_namespace: &str,
+) -> &'a [DynamicToolNamespaceTool] {
+    specs
+        .iter()
+        .find_map(|spec| match spec {
+            DynamicToolSpec::Namespace(namespace) if namespace.name == expected_namespace => {
+                Some(namespace.tools.as_slice())
+            }
+            _ => None,
+        })
+        .expect("dynamic tool namespace should exist")
+}
+
+fn dynamic_tool_name(tool: &DynamicToolNamespaceTool) -> &str {
+    match tool {
+        DynamicToolNamespaceTool::Function(function) => function.name.as_str(),
     }
 }

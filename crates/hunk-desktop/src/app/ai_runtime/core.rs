@@ -42,6 +42,8 @@ use hunk_codex::protocol::TurnSteerParams;
 use hunk_codex::protocol::UserInput;
 use hunk_codex::protocol::DynamicToolCallParams;
 use hunk_codex::protocol::DynamicToolCallResponse;
+use hunk_codex::protocol::DynamicToolNamespaceTool;
+use hunk_codex::protocol::DynamicToolSpec;
 use hunk_codex::protocol::CollaborationMode;
 use hunk_codex::protocol::ModeKind;
 use hunk_codex::protocol::Settings;
@@ -333,10 +335,7 @@ impl AiWorkerRuntime {
                 skill_bindings,
                 session_overrides,
             } => {
-                let mut params = ThreadStartParams {
-                    persist_extended_history: true,
-                    ..ThreadStartParams::default()
-                };
+                let mut params = ThreadStartParams::default();
                 apply_thread_start_policy(self.mad_max_mode, &mut params);
                 apply_thread_start_session_overrides(&session_overrides, &mut params);
                 apply_android_thread_start_context(&mut params);
@@ -468,6 +467,8 @@ impl AiWorkerRuntime {
                     &mut self.session,
                     LoginAccountParams::Chatgpt {
                         codex_streamlined_login: false,
+                        use_hosted_login_success_page: false,
+                        app_brand: None,
                     },
                     self.request_timeout,
                 )?;
@@ -534,6 +535,15 @@ impl AiWorkerRuntime {
                             event_tx,
                             AiWorkerEventPayload::Status(
                                 "Server returned external auth token mode.".to_string(),
+                            ),
+                        );
+                    }
+                    LoginAccountResponse::AmazonBedrock { .. } => {
+                        self.send_event(
+                            event_tx,
+                            AiWorkerEventPayload::Status(
+                                "Server returned Amazon Bedrock login mode; expected ChatGPT login."
+                                    .to_string(),
                             ),
                         );
                     }
@@ -616,8 +626,10 @@ impl AiWorkerRuntime {
                 &mut self.session,
                 TurnSteerParams {
                     thread_id: thread_id.clone(),
+                    client_user_message_id: None,
                     input: input.clone(),
                     responsesapi_client_metadata: None,
+                    additional_context: None,
                     expected_turn_id: in_progress_turn_id.clone(),
                 },
                 self.request_timeout,
@@ -646,8 +658,10 @@ impl AiWorkerRuntime {
                             &mut self.session,
                             TurnSteerParams {
                                 thread_id: thread_id.clone(),
+                                client_user_message_id: None,
                                 input: input.clone(),
                                 responsesapi_client_metadata: None,
+                                additional_context: None,
                                 expected_turn_id: refreshed_turn_id.clone(),
                             },
                             self.request_timeout,
@@ -696,7 +710,6 @@ impl AiWorkerRuntime {
                     &mut self.session,
                     ThreadResumeParams {
                         thread_id: thread_id.clone(),
-                        persist_extended_history: true,
                         ..ThreadResumeParams::default()
                     },
                     self.request_timeout,
@@ -871,7 +884,7 @@ impl AiWorkerRuntime {
             .effort
             .as_deref()
             .and_then(parse_reasoning_effort)
-            .or_else(|| mode_mask.and_then(|mask| mask.reasoning_effort.unwrap_or(None)));
+            .or_else(|| mode_mask.and_then(|mask| mask.reasoning_effort.clone().unwrap_or(None)));
         params.collaboration_mode = collaboration_mode_for_turn(
             mode_kind,
             model,

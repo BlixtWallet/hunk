@@ -275,82 +275,82 @@ fn embedded_turn_apply_patch_updates_workspace_file() -> Result<()> {
         };
 
         match event {
-            AppServerEvent::ServerNotification(ServerNotification::ItemStarted(notification)) => {
-                if notification.thread_id != thread_start.thread.id
-                    || notification.turn_id != turn_start.turn.id
-                {
-                    continue;
-                }
-                if let ThreadItem::FileChange {
-                    id,
-                    status,
-                    changes,
-                } = notification.item
-                {
-                    assert_eq!(id, "patch-call");
-                    assert_eq!(status, PatchApplyStatus::InProgress);
-                    assert_eq!(changes.len(), 1);
-                    saw_file_change_started = true;
+            AppServerEvent::ServerRequest(request) => {
+                if let ServerRequest::FileChangeRequestApproval { request_id, params } = *request {
+                    assert_eq!(params.thread_id, thread_start.thread.id);
+                    assert_eq!(params.turn_id, turn_start.turn.id);
+                    assert_eq!(params.item_id, "patch-call");
+                    client.respond_typed(
+                        request_id,
+                        &FileChangeRequestApprovalResponse {
+                            decision: FileChangeApprovalDecision::Accept,
+                        },
+                    )?;
                 }
             }
-            AppServerEvent::ServerRequest(ServerRequest::FileChangeRequestApproval {
-                request_id,
-                params,
-            }) => {
-                assert_eq!(params.thread_id, thread_start.thread.id);
-                assert_eq!(params.turn_id, turn_start.turn.id);
-                assert_eq!(params.item_id, "patch-call");
-                client.respond_typed(
-                    request_id,
-                    &FileChangeRequestApprovalResponse {
-                        decision: FileChangeApprovalDecision::Accept,
-                    },
-                )?;
-            }
-            AppServerEvent::ServerNotification(ServerNotification::FileChangeOutputDelta(
-                FileChangeOutputDeltaNotification {
+            AppServerEvent::ServerNotification(notification) => match *notification {
+                ServerNotification::ItemStarted(notification) => {
+                    if notification.thread_id != thread_start.thread.id
+                        || notification.turn_id != turn_start.turn.id
+                    {
+                        continue;
+                    }
+                    if let ThreadItem::FileChange {
+                        id,
+                        status,
+                        changes,
+                    } = notification.item
+                    {
+                        assert_eq!(id, "patch-call");
+                        assert_eq!(status, PatchApplyStatus::InProgress);
+                        assert_eq!(changes.len(), 1);
+                        saw_file_change_started = true;
+                    }
+                }
+                ServerNotification::FileChangeOutputDelta(FileChangeOutputDeltaNotification {
                     thread_id,
                     turn_id,
                     item_id,
                     delta,
-                },
-            )) => {
-                if thread_id == thread_start.thread.id
-                    && turn_id == turn_start.turn.id
-                    && item_id == "patch-call"
-                {
-                    file_change_output.push_str(&delta);
-                }
-            }
-            AppServerEvent::ServerNotification(ServerNotification::ItemCompleted(notification)) => {
-                if notification.thread_id != thread_start.thread.id
-                    || notification.turn_id != turn_start.turn.id
-                {
-                    continue;
-                }
-                if let ThreadItem::FileChange { id, status, .. } = notification.item {
-                    assert_eq!(id, "patch-call");
-                    file_change_completion_status = Some(status.clone());
-                    if status == PatchApplyStatus::Completed {
-                        saw_file_change_completed = true;
+                }) => {
+                    if thread_id == thread_start.thread.id
+                        && turn_id == turn_start.turn.id
+                        && item_id == "patch-call"
+                    {
+                        file_change_output.push_str(&delta);
                     }
                 }
-            }
-            AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(notification)) => {
-                if notification.thread_id == thread_start.thread.id
-                    && notification.turn.id == turn_start.turn.id
-                {
-                    saw_turn_completed = true;
+                ServerNotification::ItemCompleted(notification) => {
+                    if notification.thread_id != thread_start.thread.id
+                        || notification.turn_id != turn_start.turn.id
+                    {
+                        continue;
+                    }
+                    if let ThreadItem::FileChange { id, status, .. } = notification.item {
+                        assert_eq!(id, "patch-call");
+                        file_change_completion_status = Some(status.clone());
+                        if status == PatchApplyStatus::Completed {
+                            saw_file_change_completed = true;
+                        }
+                    }
                 }
-            }
-            AppServerEvent::ServerNotification(ServerNotification::Error(notification)) => {
-                if notification.thread_id == thread_start.thread.id
-                    && notification.turn_id == turn_start.turn.id
-                {
-                    let details = notification.error.additional_details.unwrap_or_default();
-                    turn_error = Some(format!("{} | {}", notification.error.message, details));
+                ServerNotification::TurnCompleted(notification) => {
+                    if notification.thread_id == thread_start.thread.id
+                        && notification.turn.id == turn_start.turn.id
+                    {
+                        saw_turn_completed = true;
+                    }
                 }
-            }
+                ServerNotification::Error(notification) => {
+                    if notification.thread_id == thread_start.thread.id
+                        && notification.turn_id == turn_start.turn.id
+                    {
+                        let details = notification.error.additional_details.unwrap_or_default();
+                        turn_error = Some(format!("{} | {}", notification.error.message, details));
+                    }
+                }
+                _ => {}
+            },
             AppServerEvent::Lagged { skipped } => {
                 bail!(
                     "embedded client lagged during apply_patch regression: skipped {skipped} events"
@@ -359,7 +359,6 @@ fn embedded_turn_apply_patch_updates_workspace_file() -> Result<()> {
             AppServerEvent::Disconnected { message } => {
                 bail!("embedded client disconnected during apply_patch regression: {message}");
             }
-            _ => {}
         }
     }
 

@@ -418,6 +418,7 @@ mod ai_tests {
             availability_nux: None,
             display_name: display_name.to_string(),
             description: String::new(),
+            model_specialty: None,
             hidden: false,
             supported_reasoning_efforts: supported_reasoning_efforts
                 .iter()
@@ -430,6 +431,7 @@ mod ai_tests {
             default_reasoning_effort,
             input_modalities: Vec::new(),
             supports_personality: false,
+            multi_agent_version: None,
             additional_speed_tiers: Vec::new(),
             service_tiers: Vec::new(),
             default_service_tier: None,

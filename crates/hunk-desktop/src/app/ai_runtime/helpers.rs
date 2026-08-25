@@ -127,20 +127,40 @@ fn trace_thread_start_browser_context(browser_tools_enabled: bool, params: &Thre
         .as_deref()
         .unwrap_or_default()
         .iter()
-        .filter(|tool| {
-            hunk_codex::browser_tools::is_browser_dynamic_tool_call(
-                tool.namespace.as_deref(),
-                tool.name.as_str(),
-            )
+        .filter_map(|spec| match spec {
+            DynamicToolSpec::Namespace(namespace)
+                if namespace.name == hunk_codex::browser_tools::BROWSER_TOOL_NAMESPACE =>
+            {
+                Some(namespace)
+            }
+            _ => None,
         })
-        .map(|tool| match tool.namespace.as_deref() {
-            Some(namespace) => format!("{namespace}.{}", tool.name),
-            None => tool.name.clone(),
+        .flat_map(|namespace| {
+            namespace.tools.iter().filter_map(|tool| match tool {
+                DynamicToolNamespaceTool::Function(function)
+                    if hunk_codex::browser_tools::is_browser_dynamic_tool(
+                        function.name.as_str(),
+                    ) =>
+                {
+                    Some(format!("{}.{}", namespace.name, function.name))
+                }
+                _ => None,
+            })
         })
         .collect::<Vec<_>>();
+    let dynamic_tool_count = params
+        .dynamic_tools
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .map(|spec| match spec {
+            DynamicToolSpec::Function(_) => 1,
+            DynamicToolSpec::Namespace(namespace) => namespace.tools.len(),
+        })
+        .sum::<usize>();
     tracing::debug!(
         browser_tools_enabled,
-        dynamic_tool_count = params.dynamic_tools.as_ref().map_or(0, Vec::len),
+        dynamic_tool_count,
         browser_tool_count = browser_tool_names.len(),
         browser_tool_names = ?browser_tool_names,
         developer_instructions_bytes = params

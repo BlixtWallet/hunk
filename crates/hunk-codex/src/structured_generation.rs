@@ -84,7 +84,6 @@ fn generate_structured_output_with_client(
             dynamic_tools: None,
             mock_experimental_field: None,
             experimental_raw_events: false,
-            persist_extended_history: false,
             ..ThreadStartParams::default()
         }),
         request.timeout,
@@ -95,8 +94,10 @@ fn generate_structured_output_with_client(
         api::method::TURN_START,
         Some(&TurnStartParams {
             thread_id: thread_id.clone(),
+            client_user_message_id: None,
             input: build_user_input(request.prompt, request.image_paths),
             responsesapi_client_metadata: None,
+            additional_context: None,
             environments: None,
             cwd: Some(request.cwd.to_path_buf()),
             runtime_workspace_roots: None,
@@ -108,11 +109,12 @@ fn generate_structured_output_with_client(
             permissions: None,
             model: None,
             service_tier: None,
-            effort: Some(request.reasoning_effort),
+            effort: Some(request.reasoning_effort.clone()),
             summary: None,
             personality: None,
             output_schema: Some(request.output_schema.clone()),
             collaboration_mode: None,
+            multi_agent_mode: None,
         }),
         request.timeout,
     )?;
@@ -188,7 +190,7 @@ fn wait_for_turn_completion(
                     },
                 )?;
             }
-            AppServerEvent::ServerNotification(notification) => match notification {
+            AppServerEvent::ServerNotification(notification) => match *notification {
                 ServerNotification::AgentMessageDelta(payload)
                     if payload.thread_id == thread_id && payload.turn_id == turn_id =>
                 {

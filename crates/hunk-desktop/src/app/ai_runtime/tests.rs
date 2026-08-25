@@ -8,6 +8,8 @@ mod ai_tests {
 
     use hunk_codex::protocol::AccountLoginCompletedNotification;
     use hunk_codex::protocol::AskForApproval;
+    use hunk_codex::protocol::DynamicToolNamespaceTool;
+    use hunk_codex::protocol::DynamicToolSpec;
     use hunk_codex::protocol::ModeKind;
     use hunk_codex::protocol::RateLimitSnapshot;
     use hunk_codex::protocol::RateLimitWindow;
@@ -58,6 +60,23 @@ mod ai_tests {
     use super::should_retry_stale_turn_after_steer_error;
     use super::thread_missing_item_turn_ids;
 
+    fn dynamic_tool_namespace_contains(
+        specs: &[DynamicToolSpec],
+        expected_namespace: &str,
+        expected_tool: &str,
+    ) -> bool {
+        specs.iter().any(|spec| match spec {
+            DynamicToolSpec::Namespace(namespace) if namespace.name == expected_namespace => {
+                namespace.tools.iter().any(|tool| match tool {
+                    DynamicToolNamespaceTool::Function(function) => {
+                        function.name == expected_tool
+                    }
+                })
+            }
+            _ => false,
+        })
+    }
+
     #[test]
     fn thread_policy_defaults_to_on_request_when_not_mad_max() {
         let mut params = ThreadStartParams::default();
@@ -105,15 +124,11 @@ mod ai_tests {
             .dynamic_tools
             .as_ref()
             .expect("browser tools should be present");
-        assert!(
-            tools
-                .iter()
-                .any(|tool| {
-                    tool.namespace.as_deref()
-                        == Some(hunk_codex::browser_tools::BROWSER_TOOL_NAMESPACE)
-                        && tool.name == hunk_codex::browser_tools::BROWSER_SNAPSHOT_TOOL
-                })
-        );
+        assert!(dynamic_tool_namespace_contains(
+            tools,
+            hunk_codex::browser_tools::BROWSER_TOOL_NAMESPACE,
+            hunk_codex::browser_tools::BROWSER_SNAPSHOT_TOOL,
+        ));
         assert!(
             params
                 .developer_instructions
@@ -131,10 +146,11 @@ mod ai_tests {
             .dynamic_tools
             .as_ref()
             .expect("Android tools should be present");
-        assert!(tools.iter().any(|tool| {
-            tool.namespace.as_deref() == Some(hunk_codex::android_tools::ANDROID_TOOL_NAMESPACE)
-                && tool.name == hunk_codex::android_tools::ANDROID_SNAPSHOT_TOOL
-        }));
+        assert!(dynamic_tool_namespace_contains(
+            tools,
+            hunk_codex::android_tools::ANDROID_TOOL_NAMESPACE,
+            hunk_codex::android_tools::ANDROID_SNAPSHOT_TOOL,
+        ));
         assert!(
             params
                 .developer_instructions
@@ -361,6 +377,8 @@ mod ai_tests {
                 resets_at: Some(1_700_100_000),
             }),
             credits: None,
+            individual_limit: None,
+            spend_control_reached: None,
             plan_type: None,
             rate_limit_reached_type: None,
         }
@@ -420,6 +438,7 @@ mod ai_tests {
                 login_id: Some("login-1".to_string()),
                 success: true,
                 error: None,
+                onboarding_entrypoint: None,
             },
         );
 
@@ -439,6 +458,7 @@ mod ai_tests {
                 login_id: Some("login-2".to_string()),
                 success: false,
                 error: Some("token expired".to_string()),
+                onboarding_entrypoint: None,
             },
         );
 

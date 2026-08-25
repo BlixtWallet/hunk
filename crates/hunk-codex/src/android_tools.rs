@@ -1,4 +1,7 @@
 use crate::protocol::DynamicToolCallParams;
+use crate::protocol::DynamicToolFunctionSpec;
+use crate::protocol::DynamicToolNamespaceSpec;
+use crate::protocol::DynamicToolNamespaceTool;
 use crate::protocol::DynamicToolSpec;
 use crate::protocol::ThreadStartParams;
 use hunk_mobile::{AndroidAction, AndroidKey, AndroidTapTarget, MobileDeviceId};
@@ -28,7 +31,7 @@ Use hunk_android.screenshot when visual verification is needed.
 Use hunk_android.logs when the user asks for Android logs, Logcat, crashes, or runtime debugging output."#;
 
 pub fn android_dynamic_tool_specs() -> Vec<DynamicToolSpec> {
-    vec![
+    let tools = vec![
         spec(
             ANDROID_DEVICES_TOOL,
             "List Android SDK tool availability, running emulators, and available AVDs.",
@@ -201,7 +204,12 @@ pub fn android_dynamic_tool_specs() -> Vec<DynamicToolSpec> {
                 &[],
             ),
         ),
-    ]
+    ];
+    vec![DynamicToolSpec::Namespace(DynamicToolNamespaceSpec {
+        name: ANDROID_TOOL_NAMESPACE.to_string(),
+        description: "Inspect and control Android emulators from Hunk.".to_string(),
+        tools,
+    })]
 }
 
 pub fn is_android_dynamic_tool(tool: &str) -> bool {
@@ -230,13 +238,11 @@ pub fn apply_android_thread_start_context(params: &mut ThreadStartParams) {
     append_android_developer_instructions(&mut params.developer_instructions);
 
     let mut dynamic_tools = params.dynamic_tools.take().unwrap_or_default();
-    for spec in android_dynamic_tool_specs() {
-        if !dynamic_tools
-            .iter()
-            .any(|existing| existing.name == spec.name && existing.namespace == spec.namespace)
-        {
-            dynamic_tools.push(spec);
-        }
+    let has_android_namespace = dynamic_tools.iter().any(
+        |spec| matches!(spec, DynamicToolSpec::Namespace(namespace) if namespace.name == ANDROID_TOOL_NAMESPACE),
+    );
+    if !has_android_namespace {
+        dynamic_tools.extend(android_dynamic_tool_specs());
     }
     params.dynamic_tools = Some(dynamic_tools);
 }
@@ -556,14 +562,13 @@ where
         .map_err(|error| format!("invalid Android dynamic tool arguments: {error}"))
 }
 
-fn spec(name: &str, description: &str, input_schema: Value) -> DynamicToolSpec {
-    DynamicToolSpec {
-        namespace: Some(ANDROID_TOOL_NAMESPACE.to_string()),
+fn spec(name: &str, description: &str, input_schema: Value) -> DynamicToolNamespaceTool {
+    DynamicToolNamespaceTool::Function(DynamicToolFunctionSpec {
         name: name.to_string(),
         description: description.to_string(),
         input_schema,
         defer_loading: false,
-    }
+    })
 }
 
 fn object_schema(properties: Value, required: &[&str]) -> Value {

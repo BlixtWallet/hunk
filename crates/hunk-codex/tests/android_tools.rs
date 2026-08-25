@@ -4,20 +4,17 @@ use hunk_codex::android_tools::{
     AndroidDynamicToolRequest, android_dynamic_tool_specs, apply_android_thread_start_context,
     is_android_dynamic_tool, is_android_dynamic_tool_call, parse_android_dynamic_tool_request,
 };
-use hunk_codex::protocol::{DynamicToolCallParams, DynamicToolSpec, ThreadStartParams};
+use hunk_codex::protocol::{
+    DynamicToolCallParams, DynamicToolNamespaceTool, DynamicToolSpec, ThreadStartParams,
+};
 use hunk_mobile::{AndroidAction, AndroidKey};
 
 #[test]
 fn android_tool_specs_include_core_controls() {
     let specs = android_dynamic_tool_specs();
-    assert!(
-        specs
-            .iter()
-            .all(|spec| spec.namespace.as_deref() == Some(ANDROID_TOOL_NAMESPACE))
-    );
-    let names = specs
+    let names = namespace_tools(&specs, ANDROID_TOOL_NAMESPACE)
         .iter()
-        .map(|spec| spec.name.as_str())
+        .map(dynamic_tool_name)
         .collect::<Vec<_>>();
 
     assert!(names.contains(&ANDROID_DEVICES_TOOL));
@@ -78,15 +75,16 @@ fn apply_android_thread_start_context_adds_tools_and_instructions() {
     assert!(instructions.contains("Existing instructions."));
     assert!(instructions.contains(ANDROID_DEVELOPER_INSTRUCTIONS));
 
-    let tool_names = params
+    let dynamic_tools = params
         .dynamic_tools
         .as_ref()
-        .expect("dynamic tools should be set")
+        .expect("dynamic tools should be set");
+    let tool_names = namespace_tools(dynamic_tools, ANDROID_TOOL_NAMESPACE)
         .iter()
-        .map(|spec| (spec.namespace.as_deref(), spec.name.as_str()))
+        .map(dynamic_tool_name)
         .collect::<Vec<_>>();
-    assert!(tool_names.contains(&(Some(ANDROID_TOOL_NAMESPACE), ANDROID_DEVICES_TOOL)));
-    assert!(tool_names.contains(&(Some(ANDROID_TOOL_NAMESPACE), ANDROID_SNAPSHOT_TOOL)));
+    assert!(tool_names.contains(&ANDROID_DEVICES_TOOL));
+    assert!(tool_names.contains(&ANDROID_SNAPSHOT_TOOL));
 }
 
 #[test]
@@ -105,17 +103,16 @@ fn apply_android_thread_start_context_is_idempotent() {
         1
     );
 
-    let devices_count = params
+    let namespace_count = params
         .dynamic_tools
         .as_ref()
         .expect("dynamic tools should be set")
         .iter()
         .filter(|spec| {
-            spec.namespace.as_deref() == Some(ANDROID_TOOL_NAMESPACE)
-                && spec.name == ANDROID_DEVICES_TOOL
+            matches!(spec, DynamicToolSpec::Namespace(namespace) if namespace.name == ANDROID_TOOL_NAMESPACE)
         })
         .count();
-    assert_eq!(devices_count, 1);
+    assert_eq!(namespace_count, 1);
 }
 
 #[test]
@@ -183,5 +180,26 @@ fn dynamic_tool_params(tool: &str, arguments: serde_json::Value) -> DynamicToolC
         thread_id: "thread-1".to_string(),
         turn_id: "turn-1".to_string(),
         call_id: "call-1".to_string(),
+    }
+}
+
+fn namespace_tools<'a>(
+    specs: &'a [DynamicToolSpec],
+    expected_namespace: &str,
+) -> &'a [DynamicToolNamespaceTool] {
+    specs
+        .iter()
+        .find_map(|spec| match spec {
+            DynamicToolSpec::Namespace(namespace) if namespace.name == expected_namespace => {
+                Some(namespace.tools.as_slice())
+            }
+            _ => None,
+        })
+        .expect("dynamic tool namespace should exist")
+}
+
+fn dynamic_tool_name(tool: &DynamicToolNamespaceTool) -> &str {
+    match tool {
+        DynamicToolNamespaceTool::Function(function) => function.name.as_str(),
     }
 }
