@@ -8,8 +8,13 @@ Item {
     required property var backend
     property string pendingDiscardPath: ""
     property bool discardConfirmationVisible: false
+    property bool forgeTokenDialogVisible: false
+    property bool forgeReviewDialogVisible: false
     readonly property alias fileListView: fileList
     readonly property alias commitMessageInput: commitMessage
+    readonly property alias forgePanelItem: forgePanel
+    readonly property alias forgeTokenDialog: tokenDialog
+    readonly property alias forgeReviewDialog: reviewDialog
     readonly property bool loadingStateVisible: backend.gitLoading && !backend.gitReady
     readonly property bool emptyStateVisible: fileList.count === 0
         && backend.gitReady && !backend.gitLoading
@@ -38,6 +43,23 @@ Item {
             return
         backend.commit_staged(message)
         commitMessage.text = ""
+    }
+
+    function requestForgeAuthentication() {
+        if (backend.forgeAuthMode === "device")
+            backend.start_github_device_flow()
+        else {
+            tokenDialog.prepare()
+            forgeTokenDialogVisible = true
+        }
+    }
+
+    function openForgeReviewDialog() {
+        const title = backend.gitLastCommitSubject.length > 0
+            ? backend.gitLastCommitSubject
+            : backend.gitBranchName
+        reviewDialog.prepare(backend.forgeDefaultTargetBranch, title)
+        forgeReviewDialogVisible = true
     }
 
     Rectangle {
@@ -543,11 +565,31 @@ Item {
                 color: Theme.border
             }
 
+            ForgePanel {
+                id: forgePanel
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: composerDivider.bottom
+                height: implicitHeight
+                backend: root.backend
+                onAuthenticationRequested: root.requestForgeAuthentication()
+                onReviewRequested: root.openForgeReviewDialog()
+            }
+
+            Rectangle {
+                id: forgeDivider
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: forgePanel.bottom
+                height: 1
+                color: Theme.border
+            }
+
             Text {
                 id: historyHeading
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.top: composerDivider.bottom
+                anchors.top: forgeDivider.bottom
                 height: 42
                 leftPadding: 16
                 verticalAlignment: Text.AlignVCenter
@@ -636,5 +678,36 @@ Item {
         confirmLabel: "Discard"
         onAccepted: root.confirmDiscard()
         onRejected: root.cancelDiscard()
+    }
+
+    ForgeTokenDialog {
+        id: tokenDialog
+        objectName: "forgeTokenDialog"
+        anchors.fill: parent
+        visible: root.forgeTokenDialogVisible
+        providerLabel: root.backend.forgeProviderLabel
+        onSubmitted: token => {
+            root.backend.save_forge_personal_access_token(token)
+            root.forgeTokenDialogVisible = false
+            clear()
+        }
+        onRejected: {
+            root.forgeTokenDialogVisible = false
+            clear()
+        }
+    }
+
+    ForgeReviewDialog {
+        id: reviewDialog
+        objectName: "forgeReviewDialog"
+        anchors.fill: parent
+        visible: root.forgeReviewDialogVisible
+        providerLabel: root.backend.forgeProviderLabel
+        reviewKindLabel: root.backend.forgeReviewKindLabel
+        onSubmitted: (targetBranch, title, body, draft) => {
+            root.backend.create_forge_review(targetBranch, title, body, draft)
+            root.forgeReviewDialogVisible = false
+        }
+        onRejected: root.forgeReviewDialogVisible = false
     }
 }

@@ -8687,7 +8687,6 @@ dependencies = [
  "hunk-text",
  "hunk-updater",
  "image",
- "keyring",
  "libc",
  "lsp-types",
  "notify 8.2.0",
@@ -8731,6 +8730,7 @@ dependencies = [
  "anyhow",
  "gitlab",
  "hunk-git",
+ "keyring",
  "octocrab",
  "reqwest 0.13.2",
  "serde",
@@ -8795,6 +8795,7 @@ version = "0.0.11"
 dependencies = [
  "anyhow",
  "hunk-domain",
+ "hunk-forge",
  "hunk-git",
  "qtbridge",
  "tracing",

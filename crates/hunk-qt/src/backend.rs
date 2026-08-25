@@ -1,114 +1,25 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use hunk_domain::state::AppStateStore;
+use hunk_forge::{ForgeCredentialKind, ForgeProvider, ForgeReviewWorkspace};
 use hunk_git::workspace::{GitWorkspaceCommand, execute_git_workspace_command, load_git_workspace};
 use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString};
 
+use crate::backend_state::ForgeAsyncPayload;
+pub use crate::backend_state::{Backend, Workspace};
+use crate::forge::{
+    ForgeSnapshotPayload, create_or_find_review, load_forge_snapshot, provider_label,
+    review_kind_label, review_short_label, review_state_label, run_github_device_flow,
+    save_forge_token,
+};
 use crate::git_models::{
     GitBranchListModel, GitCommitListModel, GitFileListModel, GitSnapshotPayload,
 };
 use crate::local_path_from_qml_folder_url;
-
-type GitRefreshResult = Result<GitSnapshotPayload, String>;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Workspace {
-    Diff,
-    Git,
-    Ai,
-}
-
-impl Workspace {
-    pub const ALL: [Self; 3] = [Self::Diff, Self::Git, Self::Ai];
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Diff => "diff",
-            Self::Git => "git",
-            Self::Ai => "ai",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "diff" => Some(Self::Diff),
-            "git" => Some(Self::Git),
-            "ai" => Some(Self::Ai),
-            _ => None,
-        }
-    }
-}
-
-pub struct Backend {
-    active_workspace: String,
-    ready: bool,
-    status_message: String,
-    bootstrap_started: bool,
-    git_files: Rc<RefCell<GitFileListModel>>,
-    git_branches: Rc<RefCell<GitBranchListModel>>,
-    git_commits: Rc<RefCell<GitCommitListModel>>,
-    git_root: String,
-    git_repository_name: String,
-    git_branch_name: String,
-    git_branch_has_upstream: bool,
-    git_branch_ahead_count: i32,
-    git_branch_behind_count: i32,
-    git_changed_file_count: i32,
-    git_staged_file_count: i32,
-    git_unstaged_file_count: i32,
-    git_last_commit_subject: String,
-    git_ready: bool,
-    git_loading: bool,
-    git_busy: bool,
-    git_error: String,
-    git_status_message: String,
-    git_action_label: String,
-    git_epoch: i32,
-    git_refresh_results: Arc<Mutex<HashMap<i32, GitRefreshResult>>>,
-    git_root_pending_persist: bool,
-    git_staged_paths: Vec<String>,
-    git_unstaged_paths: Vec<String>,
-}
-
-impl Default for Backend {
-    fn default() -> Self {
-        let git_root = initial_git_root();
-        Self {
-            active_workspace: Workspace::Diff.as_str().to_owned(),
-            ready: false,
-            status_message: "Connecting Rust application services…".to_owned(),
-            bootstrap_started: false,
-            git_files: GitFileListModel::default_with_attached_qobject(),
-            git_branches: GitBranchListModel::default_with_attached_qobject(),
-            git_commits: GitCommitListModel::default_with_attached_qobject(),
-            git_root: git_root.display().to_string(),
-            git_repository_name: "Repository".to_owned(),
-            git_branch_name: String::new(),
-            git_branch_has_upstream: false,
-            git_branch_ahead_count: 0,
-            git_branch_behind_count: 0,
-            git_changed_file_count: 0,
-            git_staged_file_count: 0,
-            git_unstaged_file_count: 0,
-            git_last_commit_subject: String::new(),
-            git_ready: false,
-            git_loading: false,
-            git_busy: false,
-            git_error: String::new(),
-            git_status_message: String::new(),
-            git_action_label: String::new(),
-            git_epoch: 0,
-            git_refresh_results: Arc::new(Mutex::new(HashMap::new())),
-            git_root_pending_persist: false,
-            git_staged_paths: Vec::new(),
-            git_unstaged_paths: Vec::new(),
-        }
-    }
-}
 
 #[qobject]
 impl Backend {
@@ -184,6 +95,126 @@ impl Backend {
         Member = git_action_label,
         Notify = git_state_changed
     );
+    qproperty!(
+        "forgeAvailable",
+        Member = forge_available,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeProviderLabel",
+        Member = forge_provider_label,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeReviewKindLabel",
+        Member = forge_review_kind_label,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeHost",
+        Member = forge_host,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeRepositoryPath",
+        Member = forge_repository_path,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeAuthenticated",
+        Member = forge_authenticated,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeAccountLabel",
+        Member = forge_account_label,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeAuthMode",
+        Member = forge_auth_mode,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeReady",
+        Member = forge_ready,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeLoading",
+        Member = forge_loading,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeBusy",
+        Member = forge_busy,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeError",
+        Member = forge_error,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeStatusMessage",
+        Member = forge_status_message,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeActionLabel",
+        Member = forge_action_label,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeDefaultTargetBranch",
+        Member = forge_default_target_branch,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeReviewExists",
+        Member = forge_review_exists,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeReviewNumber",
+        Member = forge_review_number,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeReviewTitle",
+        Member = forge_review_title,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeReviewUrl",
+        Member = forge_review_url,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeReviewState",
+        Member = forge_review_state,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeReviewDraft",
+        Member = forge_review_draft,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeDeviceFlowActive",
+        Member = forge_device_flow_active,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeDeviceUserCode",
+        Member = forge_device_user_code,
+        Notify = forge_state_changed
+    );
+    qproperty!(
+        "forgeDeviceVerificationUrl",
+        Member = forge_device_verification_url,
+        Notify = forge_state_changed
+    );
     qproperty!("ready", Member = ready, Notify = ready_changed);
     qproperty!(
         "statusMessage",
@@ -202,6 +233,9 @@ impl Backend {
 
     #[qsignal]
     fn git_state_changed(&mut self);
+
+    #[qsignal]
+    fn forge_state_changed(&mut self);
 
     #[qslot]
     fn select_workspace(&mut self, workspace: String) {
@@ -339,7 +373,9 @@ impl Backend {
         self.git_files.borrow_mut().replace(Vec::new());
         self.git_branches.borrow_mut().replace(Vec::new());
         self.git_commits.borrow_mut().replace(Vec::new());
+        self.reset_forge_state();
         self.git_state_changed();
+        self.forge_state_changed();
         self.refresh_git_workspace();
     }
 
@@ -472,6 +508,251 @@ impl Backend {
     }
 
     #[qslot]
+    fn refresh_forge_review(&mut self) {
+        if !self.git_ready || self.forge_loading || self.forge_busy {
+            return;
+        }
+
+        let epoch = self.next_forge_epoch();
+        self.forge_loading = true;
+        self.forge_error.clear();
+        self.forge_status_message.clear();
+        self.forge_state_changed();
+
+        let root = PathBuf::from(self.git_root.clone());
+        let branch = self.git_branch_name.clone();
+        let invoker = self.get_qml_method_invoker();
+        let results = Arc::clone(&self.forge_results);
+        let spawn_result = std::thread::Builder::new()
+            .name("hunk-qt-forge-refresh".to_owned())
+            .spawn(move || {
+                let result = load_forge_snapshot(root.as_path(), branch.as_str())
+                    .map(Box::new)
+                    .map(ForgeAsyncPayload::Snapshot)
+                    .map_err(|error| format!("{error:#}"));
+                if let Ok(mut pending) = results.lock() {
+                    pending.insert(epoch, result);
+                }
+                invoke_method!(invoker, "apply_forge_result", epoch);
+            });
+
+        if let Err(error) = spawn_result {
+            self.forge_loading = false;
+            self.forge_error = format!("Failed to start review refresh: {error}");
+            self.forge_state_changed();
+        }
+    }
+
+    #[qslot]
+    fn save_forge_personal_access_token(&mut self, token: String) {
+        let Some(workspace) = self.forge_context.clone() else {
+            self.forge_error = "No forge repository is available for this branch".to_owned();
+            self.forge_state_changed();
+            return;
+        };
+        let token = token.trim().to_string();
+        if token.is_empty() {
+            self.forge_error = "Access token is required".to_owned();
+            self.forge_state_changed();
+            return;
+        }
+
+        self.run_save_forge_token(
+            "Saving credential",
+            workspace,
+            token,
+            ForgeCredentialKind::PersonalAccessToken,
+        );
+    }
+
+    #[qslot]
+    fn create_forge_review(
+        &mut self,
+        target_branch: String,
+        title: String,
+        body: String,
+        draft: bool,
+    ) {
+        if self.forge_loading || self.forge_busy {
+            return;
+        }
+        let Some(workspace) = self.forge_context.clone() else {
+            self.forge_error = "No forge repository is available for this branch".to_owned();
+            self.forge_state_changed();
+            return;
+        };
+        let Some(token) = self.forge_token.clone() else {
+            self.forge_error = format!("{} authentication is required", self.forge_provider_label);
+            self.forge_state_changed();
+            return;
+        };
+
+        let epoch = self.begin_forge_action(format!(
+            "Creating or finding {}",
+            self.forge_review_kind_label
+        ));
+        let invoker = self.get_qml_method_invoker();
+        let results = Arc::clone(&self.forge_results);
+        let spawn_result = std::thread::Builder::new()
+            .name("hunk-qt-forge-review".to_owned())
+            .spawn(move || {
+                let result = create_or_find_review(
+                    &workspace,
+                    token.as_str(),
+                    target_branch.as_str(),
+                    title.as_str(),
+                    (!body.trim().is_empty()).then_some(body),
+                    draft,
+                )
+                .map(ForgeAsyncPayload::Review)
+                .map_err(|error| format!("{error:#}"));
+                if let Ok(mut pending) = results.lock() {
+                    pending.insert(epoch, result);
+                }
+                invoke_method!(invoker, "apply_forge_result", epoch);
+            });
+        if let Err(error) = spawn_result {
+            self.fail_forge_spawn("review operation", error);
+        }
+    }
+
+    #[qslot]
+    fn start_github_device_flow(&mut self) {
+        if self.forge_loading || self.forge_busy {
+            return;
+        }
+        let Some(workspace) = self.forge_context.clone() else {
+            self.forge_error = "No GitHub repository is available for this branch".to_owned();
+            self.forge_state_changed();
+            return;
+        };
+        if workspace.base_repo.provider != ForgeProvider::GitHub || self.forge_auth_mode != "device"
+        {
+            self.forge_error = "GitHub device sign-in is only available for github.com".to_owned();
+            self.forge_state_changed();
+            return;
+        }
+
+        let epoch = self.begin_forge_action("Starting GitHub sign-in".to_owned());
+        let current_epoch = Arc::clone(&self.forge_current_epoch);
+        let start_results = Arc::clone(&self.forge_device_start_results);
+        let final_results = Arc::clone(&self.forge_results);
+        let invoker = self.get_qml_method_invoker();
+        let spawn_result = std::thread::Builder::new()
+            .name("hunk-qt-github-auth".to_owned())
+            .spawn(move || {
+                let result =
+                    run_github_device_flow(workspace, epoch, current_epoch, |start_result| {
+                        if let Ok(mut pending) = start_results.lock() {
+                            pending.insert(epoch, start_result);
+                        }
+                        invoke_method!(invoker, "apply_github_device_authorization", epoch);
+                    });
+                let Some(result) = result else {
+                    return;
+                };
+                if let Ok(mut pending) = final_results.lock() {
+                    pending.insert(epoch, result.map(Box::new).map(ForgeAsyncPayload::Snapshot));
+                }
+                invoke_method!(invoker, "apply_forge_result", epoch);
+            });
+        if let Err(error) = spawn_result {
+            self.fail_forge_spawn("GitHub sign-in", error);
+        }
+    }
+
+    #[qslot]
+    fn cancel_github_device_flow(&mut self) {
+        if !self.forge_device_flow_active && !self.forge_busy {
+            return;
+        }
+        self.next_forge_epoch();
+        self.forge_busy = false;
+        self.forge_action_label.clear();
+        self.forge_device_flow_active = false;
+        self.forge_device_user_code.clear();
+        self.forge_device_verification_url.clear();
+        self.forge_status_message = "GitHub sign-in cancelled".to_owned();
+        self.forge_state_changed();
+    }
+
+    #[qslot]
+    fn apply_github_device_authorization(&mut self, epoch: i32) {
+        let result = self
+            .forge_device_start_results
+            .lock()
+            .ok()
+            .and_then(|mut pending| pending.remove(&epoch));
+        if epoch != self.forge_epoch {
+            return;
+        }
+        match result {
+            Some(Ok(authorization)) => {
+                self.forge_device_flow_active = true;
+                self.forge_device_user_code = authorization.user_code;
+                self.forge_device_verification_url = authorization.verification_uri;
+                self.forge_action_label = "Waiting for GitHub authorization".to_owned();
+                self.forge_status_message =
+                    "Enter the displayed code in GitHub to finish sign-in".to_owned();
+            }
+            Some(Err(error)) => {
+                self.forge_busy = false;
+                self.forge_action_label.clear();
+                self.forge_error = error;
+            }
+            None => {
+                self.forge_busy = false;
+                self.forge_action_label.clear();
+                self.forge_error =
+                    "GitHub sign-in started without a queued authorization".to_owned();
+            }
+        }
+        self.forge_state_changed();
+    }
+
+    #[qslot]
+    fn apply_forge_result(&mut self, epoch: i32) {
+        let result = self
+            .forge_results
+            .lock()
+            .ok()
+            .and_then(|mut pending| pending.remove(&epoch));
+        if epoch != self.forge_epoch {
+            return;
+        }
+
+        self.forge_loading = false;
+        self.forge_busy = false;
+        self.forge_action_label.clear();
+        self.forge_device_flow_active = false;
+        self.forge_device_user_code.clear();
+        self.forge_device_verification_url.clear();
+        match result {
+            Some(Ok(ForgeAsyncPayload::Snapshot(payload))) => {
+                self.apply_forge_payload(*payload);
+            }
+            Some(Ok(ForgeAsyncPayload::Review(outcome))) => {
+                let action = if outcome.existed { "Using" } else { "Created" };
+                let short_label = review_short_label(outcome.review.provider);
+                self.forge_status_message = format!(
+                    "{action} {short_label} #{} for {}",
+                    outcome.review.number, outcome.review.source_branch
+                );
+                self.apply_review_summary(Some(outcome.review));
+            }
+            Some(Err(error)) => {
+                self.forge_ready = true;
+                self.forge_error = error;
+            }
+            None => {
+                self.forge_ready = true;
+                self.forge_error = "Forge operation completed without a queued result".to_owned();
+            }
+        }
+        self.forge_state_changed();
+    }
+
+    #[qslot]
     fn complete_git_command(&mut self, success: bool, message: String) {
         self.git_busy = false;
         self.git_action_label.clear();
@@ -506,6 +787,9 @@ impl Backend {
     }
 
     fn apply_git_payload(&mut self, payload: GitSnapshotPayload) {
+        let forge_context_changed = self.git_root != payload.root
+            || self.git_branch_name != payload.branch_name
+            || !self.forge_ready;
         self.git_staged_paths = payload
             .files
             .iter()
@@ -541,6 +825,135 @@ impl Backend {
             }
         }
         self.git_state_changed();
+        if forge_context_changed {
+            self.reset_forge_state();
+            self.forge_state_changed();
+            self.refresh_forge_review();
+        }
+    }
+
+    fn next_forge_epoch(&mut self) -> i32 {
+        self.forge_epoch = self.forge_epoch.wrapping_add(1).max(1);
+        self.forge_current_epoch
+            .store(self.forge_epoch, Ordering::Release);
+        self.forge_epoch
+    }
+
+    fn begin_forge_action(&mut self, label: String) -> i32 {
+        let epoch = self.next_forge_epoch();
+        self.forge_busy = true;
+        self.forge_error.clear();
+        self.forge_status_message.clear();
+        self.forge_action_label = label;
+        self.forge_state_changed();
+        epoch
+    }
+
+    fn run_save_forge_token(
+        &mut self,
+        label: &str,
+        workspace: ForgeReviewWorkspace,
+        token: String,
+        kind: ForgeCredentialKind,
+    ) {
+        if self.forge_loading || self.forge_busy {
+            return;
+        }
+        let epoch = self.begin_forge_action(label.to_owned());
+        let invoker = self.get_qml_method_invoker();
+        let results = Arc::clone(&self.forge_results);
+        let spawn_result = std::thread::Builder::new()
+            .name("hunk-qt-forge-credential".to_owned())
+            .spawn(move || {
+                let result = save_forge_token(workspace, token.as_str(), kind)
+                    .map(Box::new)
+                    .map(ForgeAsyncPayload::Snapshot)
+                    .map_err(|error| format!("{error:#}"));
+                if let Ok(mut pending) = results.lock() {
+                    pending.insert(epoch, result);
+                }
+                invoke_method!(invoker, "apply_forge_result", epoch);
+            });
+        if let Err(error) = spawn_result {
+            self.fail_forge_spawn("credential operation", error);
+        }
+    }
+
+    fn fail_forge_spawn(&mut self, operation: &str, error: std::io::Error) {
+        self.forge_loading = false;
+        self.forge_busy = false;
+        self.forge_action_label.clear();
+        self.forge_error = format!("Failed to start {operation}: {error}");
+        self.forge_state_changed();
+    }
+
+    fn apply_forge_payload(&mut self, payload: ForgeSnapshotPayload) {
+        let provider = payload.workspace.base_repo.provider;
+        let authenticated = payload.authenticated();
+        let auth_mode = payload.auth_mode().to_owned();
+        self.forge_available = true;
+        self.forge_provider_label = provider_label(provider).to_owned();
+        self.forge_review_kind_label = review_kind_label(provider).to_owned();
+        self.forge_host = payload.workspace.base_repo.host.clone();
+        self.forge_repository_path = payload.workspace.base_repo.path.clone();
+        self.forge_authenticated = authenticated;
+        self.forge_account_label = payload.account_label;
+        self.forge_auth_mode = auth_mode;
+        self.forge_default_target_branch = payload.workspace.target_branch.clone();
+        self.forge_context = Some(payload.workspace);
+        self.forge_token = payload.token;
+        self.forge_ready = true;
+        self.forge_error.clear();
+        if self.forge_authenticated {
+            self.forge_status_message = format!("{} connected", self.forge_provider_label);
+        } else {
+            self.forge_status_message.clear();
+        }
+        self.apply_review_summary(payload.review);
+    }
+
+    fn apply_review_summary(&mut self, review: Option<hunk_forge::OpenReviewSummary>) {
+        let Some(review) = review else {
+            self.forge_review_exists = false;
+            self.forge_review_number = 0;
+            self.forge_review_title.clear();
+            self.forge_review_url.clear();
+            self.forge_review_state.clear();
+            self.forge_review_draft = false;
+            return;
+        };
+        let state_label = review_state_label(&review).to_owned();
+        self.forge_review_exists = true;
+        self.forge_review_number = i32::try_from(review.number).unwrap_or(i32::MAX);
+        self.forge_review_title = review.title;
+        self.forge_review_url = review.url;
+        self.forge_review_state = state_label;
+        self.forge_review_draft = review.draft;
+    }
+
+    fn reset_forge_state(&mut self) {
+        self.next_forge_epoch();
+        self.forge_available = false;
+        self.forge_provider_label.clear();
+        self.forge_review_kind_label.clear();
+        self.forge_host.clear();
+        self.forge_repository_path.clear();
+        self.forge_authenticated = false;
+        self.forge_account_label.clear();
+        self.forge_auth_mode.clear();
+        self.forge_ready = false;
+        self.forge_loading = false;
+        self.forge_busy = false;
+        self.forge_error.clear();
+        self.forge_status_message.clear();
+        self.forge_action_label.clear();
+        self.forge_default_target_branch.clear();
+        self.apply_review_summary(None);
+        self.forge_device_flow_active = false;
+        self.forge_device_user_code.clear();
+        self.forge_device_verification_url.clear();
+        self.forge_context = None;
+        self.forge_token = None;
     }
 
     fn run_git_command(&mut self, label: &str, command: GitWorkspaceCommand) {
@@ -577,16 +990,6 @@ impl Backend {
             self.git_state_changed();
         }
     }
-}
-
-fn initial_git_root() -> PathBuf {
-    AppStateStore::new()
-        .and_then(|store| store.load_or_default())
-        .ok()
-        .and_then(|state| state.active_project_path().cloned())
-        .filter(|path| path.is_dir())
-        .or_else(|| std::env::current_dir().ok())
-        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn persist_active_project(root: PathBuf) -> anyhow::Result<()> {

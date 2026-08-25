@@ -201,3 +201,14 @@ append a correction when later evidence changes one.
   installed Qt SDK. Qt GUI links `libfreetype` directly, so include `freetype`
   explicitly in the Nix-owned Linux runtime closure instead of relying on a
   transitive package relationship.
+- A Qt migration should not leave OS credential behavior owned by the outgoing
+  toolkit crate. Moving the existing keyring adapter into `hunk-forge` lets
+  both frontends share one serialized platform implementation while QML sees
+  only non-secret presentation state. Fake-client and fake-backend tests can
+  then cover review/auth routing without opening an unattended keychain prompt.
+- Removing GPUI from PR gates cuts a material desktop build, but it does not
+  make the retained Rust graph free. In the final green Qt Git run, Windows
+  finished in 2 minutes 47 seconds while Linux took 11 minutes 42 seconds; 6
+  minutes 51 seconds belonged to the full non-GPUI workspace tests. Treat core
+  dependency boundaries and test partitioning as separate CI work from the UI
+  toolkit migration.

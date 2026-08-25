@@ -39,8 +39,36 @@ TestCase {
         property string gitError: ""
         property string gitStatusMessage: "Repository refreshed"
         property string gitActionLabel: ""
+        property bool forgeAvailable: true
+        property string forgeProviderLabel: "GitHub"
+        property string forgeReviewKindLabel: "Pull Request"
+        property string forgeHost: "github.com"
+        property string forgeRepositoryPath: "smolcars/hunk"
+        property bool forgeAuthenticated: true
+        property string forgeAccountLabel: "Nitesh"
+        property string forgeAuthMode: "device"
+        property bool forgeReady: true
+        property bool forgeLoading: false
+        property bool forgeBusy: false
+        property string forgeError: ""
+        property string forgeStatusMessage: "GitHub connected"
+        property string forgeActionLabel: ""
+        property string forgeDefaultTargetBranch: "master"
+        property bool forgeReviewExists: false
+        property int forgeReviewNumber: 0
+        property string forgeReviewTitle: ""
+        property string forgeReviewUrl: ""
+        property string forgeReviewState: ""
+        property bool forgeReviewDraft: false
+        property bool forgeDeviceFlowActive: false
+        property string forgeDeviceUserCode: ""
+        property string forgeDeviceVerificationUrl: ""
         property string lastCommand: ""
         property string lastArgument: ""
+        property string lastTargetBranch: ""
+        property string lastReviewTitle: ""
+        property string lastReviewBody: ""
+        property bool lastReviewDraft: false
 
         function record(command, argument) {
             lastCommand = command
@@ -66,6 +94,17 @@ TestCase {
         function push_branch() { record("push") }
         function sync_branch() { record("sync") }
         function pull_branch_with_rebase() { record("pull_rebase") }
+        function refresh_forge_review() { record("refresh_forge") }
+        function save_forge_personal_access_token(token) { record("save_forge_token", token) }
+        function start_github_device_flow() { record("start_github_device_flow") }
+        function cancel_github_device_flow() { record("cancel_github_device_flow") }
+        function create_forge_review(targetBranch, title, body, draft) {
+            record("create_forge_review")
+            lastTargetBranch = targetBranch
+            lastReviewTitle = title
+            lastReviewBody = body
+            lastReviewDraft = draft
+        }
     }
 
     Shell {
@@ -161,6 +200,34 @@ TestCase {
         fakeBackend.gitError = ""
         fakeBackend.gitStatusMessage = "Repository refreshed"
         fakeBackend.gitActionLabel = ""
+        fakeBackend.forgeAvailable = true
+        fakeBackend.forgeProviderLabel = "GitHub"
+        fakeBackend.forgeReviewKindLabel = "Pull Request"
+        fakeBackend.forgeHost = "github.com"
+        fakeBackend.forgeRepositoryPath = "smolcars/hunk"
+        fakeBackend.forgeAuthenticated = true
+        fakeBackend.forgeAccountLabel = "Nitesh"
+        fakeBackend.forgeAuthMode = "device"
+        fakeBackend.forgeReady = true
+        fakeBackend.forgeLoading = false
+        fakeBackend.forgeBusy = false
+        fakeBackend.forgeError = ""
+        fakeBackend.forgeStatusMessage = "GitHub connected"
+        fakeBackend.forgeActionLabel = ""
+        fakeBackend.forgeDefaultTargetBranch = "master"
+        fakeBackend.forgeReviewExists = false
+        fakeBackend.forgeReviewNumber = 0
+        fakeBackend.forgeReviewTitle = ""
+        fakeBackend.forgeReviewUrl = ""
+        fakeBackend.forgeReviewState = ""
+        fakeBackend.forgeReviewDraft = false
+        fakeBackend.forgeDeviceFlowActive = false
+        fakeBackend.forgeDeviceUserCode = ""
+        fakeBackend.forgeDeviceVerificationUrl = ""
+        fakeBackend.lastTargetBranch = ""
+        fakeBackend.lastReviewTitle = ""
+        fakeBackend.lastReviewBody = ""
+        fakeBackend.lastReviewDraft = false
         snapshotReady = false
         snapshotSaved = false
         populateModels()
@@ -196,6 +263,64 @@ TestCase {
         compare(fakeBackend.lastCommand, "commit")
         compare(fakeBackend.lastArgument, "Migrate the Git workspace")
         compare(shell.workspaceItem.commitMessageInput.text, "")
+    }
+
+    function test_githubDeviceAuthenticationUsesRustCommand() {
+        fakeBackend.forgeAuthenticated = false
+        openGitWorkspace()
+
+        shell.workspaceItem.requestForgeAuthentication()
+
+        compare(fakeBackend.lastCommand, "start_github_device_flow")
+        verify(!shell.workspaceItem.forgeTokenDialogVisible)
+    }
+
+    function test_personalAccessTokenIsClearedAfterSubmission() {
+        fakeBackend.forgeAuthenticated = false
+        fakeBackend.forgeProviderLabel = "GitLab"
+        fakeBackend.forgeReviewKindLabel = "Merge Request"
+        fakeBackend.forgeAuthMode = "token"
+        openGitWorkspace()
+
+        shell.workspaceItem.requestForgeAuthentication()
+        verify(shell.workspaceItem.forgeTokenDialogVisible)
+        captureSnapshot("target/hunk-qt-forge-token.png")
+        shell.workspaceItem.forgeTokenDialog.tokenInput.text = "secret-token"
+        shell.workspaceItem.forgeTokenDialog.submitted("secret-token")
+
+        compare(fakeBackend.lastCommand, "save_forge_token")
+        compare(fakeBackend.lastArgument, "secret-token")
+        verify(!shell.workspaceItem.forgeTokenDialogVisible)
+        compare(shell.workspaceItem.forgeTokenDialog.tokenInput.text, "")
+    }
+
+    function test_reviewDialogSubmitsFindOrCreateFields() {
+        openGitWorkspace()
+        shell.workspaceItem.openForgeReviewDialog()
+        verify(shell.workspaceItem.forgeReviewDialogVisible)
+        captureSnapshot("target/hunk-qt-forge-review.png")
+        compare(shell.workspaceItem.forgeReviewDialog.targetInput.text, "master")
+        compare(
+            shell.workspaceItem.forgeReviewDialog.titleInput.text,
+            "Connect QtBridge to the Rust Git core"
+        )
+
+        shell.workspaceItem.forgeReviewDialog.titleInput.text = "Qt forge controls"
+        shell.workspaceItem.forgeReviewDialog.bodyInput.text = "Move review actions to Qt."
+        shell.workspaceItem.forgeReviewDialog.draft = true
+        shell.workspaceItem.forgeReviewDialog.submitted(
+            "master",
+            "Qt forge controls",
+            "Move review actions to Qt.",
+            true
+        )
+
+        compare(fakeBackend.lastCommand, "create_forge_review")
+        compare(fakeBackend.lastTargetBranch, "master")
+        compare(fakeBackend.lastReviewTitle, "Qt forge controls")
+        compare(fakeBackend.lastReviewBody, "Move review actions to Qt.")
+        verify(fakeBackend.lastReviewDraft)
+        verify(!shell.workspaceItem.forgeReviewDialogVisible)
     }
 
     function test_fileListRemainsVirtualizedForLargeRepositories() {
