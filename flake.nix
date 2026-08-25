@@ -95,6 +95,7 @@
               pkgs.dbus.dev
               pkgs.dbus.lib
               pkgs.libcap
+              pkgs.libglvnd
             ];
             packages =
               with pkgs;
@@ -142,7 +143,7 @@
 
             RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
             NIX_LDFLAGS = pkgs.lib.optionalString pkgs.stdenv.isLinux (
-              "-rpath ${pkgs.lib.makeLibraryPath linuxRuntimeRpathLibraries}"
+              "-L${pkgs.libglvnd}/lib -rpath ${pkgs.lib.makeLibraryPath linuxRuntimeRpathLibraries}"
             );
             shellHook = ''
               if [ -n "''${HUNK_BUILD_TMPDIR:-}" ]; then
