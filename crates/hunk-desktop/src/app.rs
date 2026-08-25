@@ -162,7 +162,6 @@ const DESKTOP_NOTIFICATION_SETTINGS_STATUS_PENDING: &str =
 #[cfg(target_os = "macos")]
 const DESKTOP_NOTIFICATION_SETTINGS_STATUS_UNAVAILABLE: &str = "macOS notifications require launching the packaged Hunk.app. Direct target binaries do not register with Notification Center.";
 
-mod ai_attachment_images;
 mod ai_bookmarks;
 mod ai_composer_clipboard;
 mod ai_composer_commands;

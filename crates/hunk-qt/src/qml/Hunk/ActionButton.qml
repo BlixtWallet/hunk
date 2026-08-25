@@ -8,9 +8,11 @@ Item {
     property bool primary: false
     property bool danger: false
     property bool compact: false
+    property real maximumWidth: 1000000
+    property int labelElide: Text.ElideNone
     signal clicked
 
-    implicitWidth: labelText.implicitWidth + (compact ? 18 : 24)
+    implicitWidth: Math.min(labelText.implicitWidth + (compact ? 18 : 24), maximumWidth)
     implicitHeight: compact ? 26 : 30
     opacity: enabled ? 1 : 0.42
     activeFocusOnTab: enabled
@@ -18,7 +20,7 @@ Item {
     Accessible.name: accessibleName
     Accessible.onPressAction: {
         if (root.enabled)
-            root.clicked()
+            root.clicked();
     }
 
     Rectangle {
@@ -26,10 +28,10 @@ Item {
         radius: 5
         color: {
             if (root.danger)
-                return pointer.containsMouse ? Theme.negativeMuted : Theme.transparent
+                return pointer.containsMouse ? Theme.negativeMuted : Theme.transparent;
             if (root.primary)
-                return pointer.containsMouse ? Theme.accentStrong : Theme.accent
-            return pointer.containsMouse ? Theme.hover : Theme.raised
+                return pointer.containsMouse ? Theme.accentStrong : Theme.accent;
+            return pointer.containsMouse ? Theme.hover : Theme.raised;
         }
         border.width: root.primary ? 0 : 1
         border.color: root.danger ? Theme.negative : Theme.border
@@ -46,11 +48,17 @@ Item {
     Text {
         id: labelText
         anchors.centerIn: parent
+        width: Math.max(0, parent.width - (root.compact ? 18 : 24))
         text: root.label
+        textFormat: Text.PlainText
         color: root.danger ? Theme.negative : Theme.foreground
-        font.family: Theme.uiFont
-        font.pixelSize: root.compact ? 11 : 12
-        font.weight: Font.DemiBold
+        elide: root.labelElide
+        horizontalAlignment: Text.AlignHCenter
+        font {
+            family: Theme.uiFont
+            pixelSize: root.compact ? 11 : 12
+            weight: Font.DemiBold
+        }
     }
 
     MouseArea {
@@ -63,11 +71,11 @@ Item {
     }
 
     Keys.onReturnPressed: event => {
-        root.clicked()
-        event.accepted = true
+        root.clicked();
+        event.accepted = true;
     }
     Keys.onSpacePressed: event => {
-        root.clicked()
-        event.accepted = true
+        root.clicked();
+        event.accepted = true;
     }
 }

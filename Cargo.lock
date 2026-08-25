@@ -8802,6 +8802,7 @@ dependencies = [
  "hunk-git",
  "qtbridge",
  "serde_json",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
  "url",

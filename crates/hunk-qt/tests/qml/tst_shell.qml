@@ -1,16 +1,13 @@
 import QtQuick
 import QtTest
 import Hunk 1.0
-
 TestCase {
     name: "HunkShell"
     width: 1280
     height: 760
     when: windowShown
-
     property bool snapshotReady: false
     property bool snapshotSaved: false
-
     ListModel { id: gitFilesModel }
     ListModel { id: gitBranchesModel }
     ListModel { id: gitCommitsModel }
@@ -19,15 +16,16 @@ TestCase {
     ListModel { id: diffCommentsModel }
     ListModel { id: aiThreadsModel }
     ListModel { id: aiTimelineModel }
-
+    ListModel { id: aiAttachmentsModel }
+    ListModel { id: aiModelsModel; ListElement { value: ""; label: "Server default" } ListElement { value: "gpt-5.5"; label: "GPT-5.5" } }
+    ListModel { id: aiEffortsModel; ListElement { value: ""; label: "Model default" } ListElement { value: "high"; label: "High" } }
+    ListModel { id: aiServiceTiersModel; ListElement { value: "standard"; label: "Standard" } ListElement { value: "fast"; label: "Fast" } ListElement { value: "flex"; label: "Flex" } }
     QtObject {
         id: fakeBackend
-
         property string activeWorkspace: "diff"
         property bool ready: true
         property string statusMessage: "Test backend ready"
         property string lastRequestedWorkspace: ""
-
         property var diffFiles: diffFilesModel
         property var diffRows: diffRowsModel
         property string diffSelectedPath: "crates/hunk-qt/src/backend.rs"
@@ -78,6 +76,12 @@ TestCase {
         property string gitActionLabel: ""
         property var aiThreads: aiThreadsModel
         property var aiTimeline: aiTimelineModel
+        property var aiAttachments: aiAttachmentsModel; readonly property int aiAttachmentCount: aiAttachmentsModel.count; property bool aiAttachmentPending: false; property bool aiModelSupportsImageInputs: true
+        property QtObject aiModels: aiModelsModel; property QtObject aiEfforts: aiEffortsModel; property QtObject aiServiceTiers: aiServiceTiersModel
+        property int aiSelectedModelIndex: 1; property int aiSelectedEffortIndex: 1; property int aiSelectedServiceTierIndex: 0; property int aiEffortOptionCount: 2
+        property string aiSelectedModelLabel: "GPT-5.5"; property string aiSelectedEffortLabel: "High"; property string aiSelectedCollaborationMode: "code"; property string aiSelectedCollaborationLabel: "Code"; property string aiSelectedServiceTierLabel: "Standard"; property string aiApprovalPolicyLabel: "Full access"
+        property bool aiMadMaxMode: true; readonly property bool aiSessionControlsLocked: aiTurnRunning; property bool aiContextAvailable: true; property int aiContextPercentUsed: 27; property int aiContextPercentLeft: 73
+        property string aiContextTokenSummary: "73k / 258k tokens"; property string aiContextInputTokens: "3,600"; property string aiContextCachedInputTokens: "900"; property string aiContextOutputTokens: "700"; property string aiContextReasoningTokens: "300"; property string aiContextBillableTokens: "4,300"
         property bool aiReady: true
         property bool aiLoading: false
         property bool aiRequiresAuthentication: false
@@ -150,21 +154,19 @@ TestCase {
         property bool failNextAiRequest: false
         property var pendingAiRequestIds: []
         property var recoveredAiPrompts: ({})
-
+        property var recoveredAiAttachmentPaths: ({})
         signal diffCommentsStateChanged
         signal aiStateChanged
-
+        signal aiSessionStateChanged
         function record(command, argument) {
             commandCount += 1
             lastCommand = command
             lastArgument = argument || ""
         }
-
         function select_workspace(workspace) {
             lastRequestedWorkspace = workspace
             activeWorkspace = workspace
         }
-
         function refresh_git_workspace() { record("refresh") }
         function select_diff_file(path) {
             record("select_diff_file", path)
@@ -468,11 +470,35 @@ TestCase {
             }
             return false
         }
+        function select_ai_model(index) { record("select_ai_model", String(index)); return true }
+        function select_ai_effort(index) { record("select_ai_effort", String(index)); return true }
+        function select_ai_collaboration_mode(mode) { record("select_ai_collaboration_mode", mode); return true }
+        function select_ai_service_tier(index) { record("select_ai_service_tier", String(index)); return true }
+        function set_ai_mad_max_mode(enabled) { record("set_ai_mad_max_mode", String(enabled)); return true }
+        function add_ai_attachments(pathsJson) {
+            const paths = JSON.parse(pathsJson)
+            for (const path of paths) {
+                const parts = path.split("/")
+                aiAttachmentsModel.append({ path: path, display_name: parts[parts.length - 1] })
+            }
+            record("add_ai_attachments", pathsJson)
+            aiStateChanged()
+            return paths.length > 0
+        }
+        function remove_ai_attachment(index) {
+            if (index < 0 || index >= aiAttachmentsModel.count)
+                return false
+            aiAttachmentsModel.remove(index)
+            aiStateChanged()
+            return true
+        }
         function send_ai_prompt(prompt) {
             if (!aiReady || aiLoading || aiRequiresAuthentication
                     || aiActiveThreadId.length === 0 || aiPromptPending
                     || aiInterruptPending || aiRequestId.length > 0
-                    || aiRequestResolving || prompt.trim().length === 0)
+                    || aiRequestResolving
+                    || (prompt.trim().length === 0 && aiAttachmentCount === 0)
+                    || (aiAttachmentCount > 0 && !aiModelSupportsImageInputs))
                 return false
             record(aiTurnRunning ? "steer_ai_prompt" : "send_ai_prompt", prompt)
             aiPromptPending = true
@@ -484,7 +510,9 @@ TestCase {
             if (!aiReady || aiLoading || aiRequiresAuthentication
                     || !aiTurnRunning || aiPromptPending || aiInterruptPending
                     || aiRequestId.length > 0 || aiRequestResolving
-                    || text.length === 0 || aiQueuedMessageCount >= 64)
+                    || (text.length === 0 && aiAttachmentCount === 0)
+                    || (aiAttachmentCount > 0 && !aiModelSupportsImageInputs)
+                    || aiQueuedMessageCount >= 64)
                 return false
             record("queue_ai_follow_up", text)
             nextAiQueuedMessageId += 1
@@ -503,6 +531,7 @@ TestCase {
             })
             aiQueuedMessageCount += 1
             aiActiveQueuedMessageCount += 1
+            aiAttachmentsModel.clear()
             aiStateChanged()
             return true
         }
@@ -530,7 +559,11 @@ TestCase {
         }
         function take_ai_recovered_prompt(threadId) {
             const prompt = recoveredAiPrompts[threadId] || ""
+            const paths = recoveredAiAttachmentPaths[threadId] || []
             delete recoveredAiPrompts[threadId]
+            delete recoveredAiAttachmentPaths[threadId]
+            for (const path of paths)
+                aiAttachmentsModel.append({ path: path, display_name: path })
             return prompt
         }
         function finish_ai_turn() {
@@ -558,6 +591,7 @@ TestCase {
         function accept_ai_prompt() {
             aiPromptPending = false
             aiPromptAcceptedRevision += 1
+            aiAttachmentsModel.clear()
             aiStateChanged()
         }
         function fail_ai_prompt() {
@@ -895,24 +929,20 @@ TestCase {
             last_sequence: 4
         })
     }
-
     function openGitWorkspace() {
         shell.activateWorkspace("git")
         tryVerify(() => shell.workspaceItem !== null && shell.workspaceItem.objectName === "gitWorkspace")
     }
-
     function openDiffWorkspace() {
         shell.activateWorkspace("diff")
         tryVerify(() => shell.workspaceItem !== null && shell.workspaceItem.objectName === "diffWorkspace")
         shell.workspaceItem.commentsInspectorOpen = false
         shell.workspaceItem.closeCommentComposer()
     }
-
     function openAiWorkspace() {
         shell.activateWorkspace("ai")
         tryVerify(() => shell.workspaceItem !== null && shell.workspaceItem.objectName === "aiWorkspace")
     }
-
     function captureSnapshot(path) {
         snapshotReady = false
         snapshotSaved = false
@@ -923,8 +953,8 @@ TestCase {
         tryVerify(() => snapshotReady)
         verify(snapshotSaved)
     }
-
     function init() {
+        shell.width = 1280
         fakeBackend.activeWorkspace = "diff"
         wait(0)
         fakeBackend.lastRequestedWorkspace = ""
@@ -975,6 +1005,7 @@ TestCase {
         fakeBackend.aiTurnRunning = true
         fakeBackend.aiThreadActionPending = false
         fakeBackend.aiPromptPending = false
+        fakeBackend.aiAttachmentPending = false
         fakeBackend.aiPromptAcceptedRevision = 0
         fakeBackend.aiQueuedMessageCount = 0
         fakeBackend.aiActiveQueuedMessageCount = 0
@@ -1000,10 +1031,13 @@ TestCase {
         fakeBackend.aiTimelineHiddenRowCount = 0
         fakeBackend.aiError = ""
         fakeBackend.aiStatusMessage = "Codex thread catalog refreshed"
+        fakeBackend.aiModelSupportsImageInputs = true
+        aiAttachmentsModel.clear()
         fakeBackend.lastAnswersJson = ""
         fakeBackend.failNextAiRequest = false
         fakeBackend.pendingAiRequestIds = []
         fakeBackend.recoveredAiPrompts = ({})
+        fakeBackend.recoveredAiAttachmentPaths = ({})
         shell.aiDraftWorkspaceRoot = fakeBackend.aiWorkspaceRoot
         shell.aiDraftStore = ({})
         shell.aiRequestAnswerStore = ({})
@@ -1064,43 +1098,34 @@ TestCase {
         fakeBackend.lastCommand = ""
         fakeBackend.lastArgument = ""
     }
-
     function test_retainedWorkspaceContract() {
         compare(shell.workspaceCount, 3)
         compare(shell.workspaceIds, ["diff", "git", "ai"])
     }
-
     function test_aiWorkspaceUsesVirtualizedRustModelsAndPlainText() {
         openAiWorkspace()
         shell.sidebarItem.threadListView.forceLayout()
         shell.workspaceItem.timelineListView.forceLayout()
-
         compare(shell.sidebarItem.threadListView.count, 2)
         verify(shell.sidebarItem.threadListView.reuseItems)
         compare(shell.workspaceItem.timelineListView.count, 4)
         verify(shell.workspaceItem.timelineListView.reuseItems)
-
         const userRow = shell.workspaceItem.timelineListView.itemAtIndex(0)
         verify(userRow !== null)
         compare(userRow.text, "<b>Keep this text literal and do not parse it as HTML.</b>")
         compare(userRow.bodyTextItem.textFormat, TextEdit.PlainText)
     }
-
     function test_aiCatalogRoutesRefreshCreateAndSelectionCommands() {
         openAiWorkspace()
-
         shell.sidebarItem.refreshThreads()
         compare(fakeBackend.lastCommand, "refresh_ai_threads")
-
         shell.sidebarItem.createThread()
         compare(fakeBackend.lastCommand, "create_ai_thread")
-
         shell.sidebarItem.selectThread("thread-review")
         compare(fakeBackend.lastCommand, "select_ai_thread")
         compare(fakeBackend.lastArgument, "thread-review")
         compare(fakeBackend.aiActiveThreadId, "thread-review")
     }
-
     function test_aiBookmarksReorderAndRemainActionable() {
         openAiWorkspace()
         const threadList = shell.sidebarItem.threadListView
@@ -1109,7 +1134,6 @@ TestCase {
         verify(reviewRow !== null)
         verify(reviewRow.bookmarkButton.enabled)
         reviewRow.bookmarkButton.clicked()
-
         tryCompare(fakeBackend, "lastCommand", "toggle_ai_thread_bookmark")
         tryCompare(aiThreadsModel.get(0), "thread_id", "thread-review")
         tryCompare(aiThreadsModel.get(0), "bookmarked", true)
@@ -1124,28 +1148,23 @@ TestCase {
         tryCompare(aiThreadsModel.get(0), "thread_id", "thread-qt-migration")
         tryCompare(aiThreadsModel.get(1), "bookmarked", false)
     }
-
     function test_aiArchiveRequiresConfirmationBeforeRustCommand() {
         openAiWorkspace()
-
         shell.sidebarItem.requestArchive(
             "thread-qt-migration",
             "Replace the GPUI AI workspace"
         )
         verify(shell.sidebarItem.archiveConfirmationVisible)
         compare(fakeBackend.lastCommand, "")
-
         shell.sidebarItem.confirmArchive()
         verify(!shell.sidebarItem.archiveConfirmationVisible)
         compare(fakeBackend.lastCommand, "archive_ai_thread")
         compare(fakeBackend.lastArgument, "thread-qt-migration")
         compare(fakeBackend.aiThreadCount, 1)
     }
-
     function test_aiForkRequiresAnIdleThreadAndDeduplicatesUntilCompletion() {
         openAiWorkspace()
         const workspace = shell.workspaceItem
-
         verify(!workspace.forkButton.enabled)
         verify(workspace.composer.stopButton.enabled)
         fakeBackend.aiThreadActionPending = true
@@ -1153,56 +1172,46 @@ TestCase {
         verify(!workspace.composer.stopButton.enabled)
         fakeBackend.aiThreadActionPending = false
         fakeBackend.aiStateChanged()
-
         fakeBackend.aiTurnRunning = false
         fakeBackend.aiActiveTurnId = ""
         fakeBackend.aiStateChanged()
         fakeBackend.aiReady = false
         fakeBackend.aiStateChanged()
         verify(!workspace.forkButton.enabled)
-
         fakeBackend.aiReady = true
         fakeBackend.aiStateChanged()
         tryVerify(() => workspace.forkButton.enabled)
-
         verify(workspace.forkThread())
         compare(fakeBackend.lastCommand, "fork_ai_thread")
         compare(fakeBackend.lastArgument, "thread-qt-migration")
         verify(fakeBackend.aiThreadActionPending)
         verify(!workspace.forkButton.enabled)
         verify(!workspace.composer.editor.enabled)
-
         fakeBackend.show_ai_approval("approval-during-fork")
         tryCompare(workspace.requestPanel, "loadedRequestId", "approval-during-fork")
         verify(shell.sidebarItem.commandPending)
         verify(!workspace.requestPanel.acceptButton.enabled)
         compare(workspace.requestPanel.acceptButton.label, "Accept")
-
         const commandCount = fakeBackend.commandCount
         verify(!workspace.forkThread())
         compare(fakeBackend.commandCount, commandCount)
-
         fakeBackend.aiThreadActionPending = false
         fakeBackend.aiStateChanged()
         tryVerify(() => workspace.requestPanel.acceptButton.enabled
             && workspace.requestPanel.acceptButton.activeFocus)
-
         fakeBackend.complete_ai_request()
         tryVerify(() => workspace.composer.editor.enabled
             && workspace.composer.editor.activeFocus
             && workspace.forkButton.enabled
             && !shell.sidebarItem.commandPending)
     }
-
     function test_aiArchiveConfirmationClosesWhenARequestArrives() {
         openAiWorkspace()
         shell.sidebarItem.requestArchive("thread-review", "Review thread")
         verify(shell.sidebarItem.archiveConfirmationVisible)
-
         fakeBackend.show_ai_approval("approval-cancels-archive")
         tryVerify(() => !shell.sidebarItem.archiveConfirmationVisible)
     }
-
     function test_aiTimelineRemainsVirtualizedAtItsRustBound() {
         aiTimelineModel.clear()
         for (let index = 0; index < 1000; ++index) {
@@ -1221,7 +1230,6 @@ TestCase {
             })
         }
         fakeBackend.aiTimelineTotalRowCount = 1000
-
         openAiWorkspace()
         shell.workspaceItem.timelineListView.positionViewAtBeginning()
         shell.workspaceItem.timelineListView.forceLayout()
@@ -1229,85 +1237,107 @@ TestCase {
         verify(shell.workspaceItem.timelineListView.itemAtIndex(0) !== null)
         verify(shell.workspaceItem.timelineListView.itemAtIndex(500) === null)
     }
-
     function test_aiWorkspaceStatesCoverEmptyLoadingAuthenticationAndError() {
         aiTimelineModel.clear()
         fakeBackend.aiTimelineTotalRowCount = 0
         openAiWorkspace()
         verify(shell.workspaceItem.emptyStateVisible)
-
         fakeBackend.aiReady = false
         fakeBackend.aiLoading = true
         verify(shell.workspaceItem.loadingStateVisible)
-
         fakeBackend.aiLoading = false
         fakeBackend.aiReady = true
         fakeBackend.aiRequiresAuthentication = true
         verify(shell.workspaceItem.authenticationStateVisible)
-
         fakeBackend.aiRequiresAuthentication = false
         fakeBackend.aiReady = false
         fakeBackend.aiError = "Codex worker disconnected"
         verify(shell.workspaceItem.errorStateVisible)
     }
-
     function test_aiWorkspaceRendersAtDesktopSize() {
         openAiWorkspace()
         captureSnapshot("target/hunk-qt-ai.png")
     }
-
+    function test_aiComposerFooterStaysInsideItsNarrowWidth() {
+        shell.width = 520
+        openAiWorkspace()
+        const composer = shell.workspaceItem.composer
+        const footer = findChild(composer, "aiComposerFooter")
+        const status = findChild(composer, "aiComposerFooterStatus")
+        const hint = findChild(composer, "aiComposerFooterHint")
+        verify(!!footer && !!status && !!hint, "Footer objects exist")
+        tryVerify(() => status.x + status.width <= footer.width + 0.5)
+        if (hint.visible)
+            verify(hint.x + hint.width <= footer.width + 0.5)
+    }
     function test_aiComposerKeepsDraftUntilAuthoritativeAcceptance() {
         openAiWorkspace()
         const composer = shell.workspaceItem.composer
         composer.editor.text = "Finish the Qt composer migration"
-
         composer.submit()
-
         compare(fakeBackend.lastCommand, "steer_ai_prompt")
         compare(fakeBackend.lastArgument, "Finish the Qt composer migration")
         verify(fakeBackend.aiPromptPending)
         verify(composer.submitting)
         compare(composer.editor.text, "Finish the Qt composer migration")
         verify(!composer.editor.enabled)
-
         fakeBackend.accept_ai_prompt()
-
         verify(!composer.submitting)
         compare(composer.editor.text, "")
         verify(composer.editor.enabled)
     }
-
+    function test_aiComposerSendsAnImageOnlyPromptAndClearsAfterAcceptance() {
+        fakeBackend.aiTurnRunning = false
+        fakeBackend.aiActiveTurnId = ""
+        openAiWorkspace()
+        const composer = shell.workspaceItem.composer
+        fakeBackend.add_ai_attachments(JSON.stringify(["state.png"]))
+        compare(fakeBackend.aiAttachmentCount, 1)
+        tryVerify(() => composer.canSubmit)
+        composer.submit()
+        compare(fakeBackend.lastCommand, "send_ai_prompt")
+        compare(fakeBackend.lastArgument, "")
+        verify(fakeBackend.aiPromptPending)
+        compare(fakeBackend.aiAttachmentCount, 1)
+        fakeBackend.accept_ai_prompt()
+        compare(fakeBackend.aiAttachmentCount, 0)
+        verify(!composer.submitting)
+    }
     function test_aiComposerRestoresRejectedDraftForEditing() {
         openAiWorkspace()
         const composer = shell.workspaceItem.composer
         composer.editor.text = "Keep this draft if sending fails"
         composer.submit()
-
         fakeBackend.fail_ai_prompt()
-
         verify(!composer.submitting)
         compare(composer.editor.text, "Keep this draft if sending fails")
         verify(composer.editor.enabled)
     }
-
+    function test_aiComposerRestoresFocusAfterAttachmentValidation() {
+        openAiWorkspace()
+        const composer = shell.workspaceItem.composer
+        fakeBackend.aiAttachmentPending = true
+        fakeBackend.aiStateChanged()
+        verify(!composer.editor.enabled)
+        fakeBackend.aiAttachmentPending = false
+        fakeBackend.aiStateChanged()
+        tryVerify(() => composer.editor.activeFocus)
+    }
     function test_aiComposerRoutesSendSteerAndKeyboardControls() {
         fakeBackend.aiTurnRunning = false
         fakeBackend.aiActiveTurnId = ""
         openAiWorkspace()
         const composer = shell.workspaceItem.composer
         compare(composer.sendButton.label, "Send")
-
         composer.editor.forceActiveFocus()
         composer.editor.text = "First line"
         composer.editor.cursorPosition = composer.editor.text.length
         keyClick(Qt.Key_Return, Qt.ShiftModifier)
         compare(composer.editor.text, "First line\n")
-
         composer.editor.text = "Start a new turn"
         keyClick(Qt.Key_Return)
         compare(fakeBackend.lastCommand, "send_ai_prompt")
         fakeBackend.accept_ai_prompt()
-
         fakeBackend.aiTurnRunning = true
         fakeBackend.aiActiveTurnId = "turn-next"
         fakeBackend.aiStateChanged()
@@ -1316,79 +1346,63 @@ TestCase {
         composer.submit()
         compare(fakeBackend.lastCommand, "steer_ai_prompt")
     }
-
     function test_aiComposerQueuesAndEditsFollowUpsWithKeyboardControls() {
         openAiWorkspace()
         const workspace = shell.workspaceItem
         const composer = workspace.composer
         composer.editor.forceActiveFocus()
         composer.editor.text = "Run the focused tests after this turn"
-
         keyClick(Qt.Key_Tab)
-
         compare(fakeBackend.lastCommand, "queue_ai_follow_up")
         compare(fakeBackend.lastArgument, "Run the focused tests after this turn")
         compare(composer.editor.text, "")
         compare(fakeBackend.aiActiveQueuedMessageCount, 1)
         tryCompare(workspace.timelineListView, "count", 5)
-
         composer.editor.text = "Then review the queue lifecycle"
         keyClick(Qt.Key_Tab)
         compare(fakeBackend.aiActiveQueuedMessageCount, 2)
-
         composer.editor.text = "Preserve this draft"
         const commandCount = fakeBackend.commandCount
         keyClick(Qt.Key_Up, Qt.ControlModifier | Qt.ShiftModifier)
         compare(fakeBackend.commandCount, commandCount)
         compare(composer.editor.text, "Preserve this draft")
         compare(fakeBackend.aiActiveQueuedMessageCount, 2)
-
         composer.editor.text = ""
         keyClick(Qt.Key_Up, Qt.ControlModifier | Qt.ShiftModifier)
-
         compare(fakeBackend.lastCommand, "edit_last_ai_queued_prompt")
         compare(composer.editor.text, "Then review the queue lifecycle")
         compare(fakeBackend.aiActiveQueuedMessageCount, 1)
     }
-
     function test_aiQueuedFollowUpWaitsForAcceptanceBeforeLeavingTimeline() {
         openAiWorkspace()
         const workspace = shell.workspaceItem
         const composer = workspace.composer
         composer.editor.text = "Continue after the current turn"
         composer.queueFollowUp()
-
         fakeBackend.finish_ai_turn()
-
         compare(fakeBackend.lastCommand, "send_queued_ai_prompt")
         verify(fakeBackend.aiActiveQueueSending)
         verify(!composer.editor.enabled)
         const queuedIndex = fakeBackend.first_queued_ai_message_index()
         compare(aiTimelineModel.get(queuedIndex).status, "sending")
-
         fakeBackend.accept_queued_ai_prompt()
-
         compare(fakeBackend.aiActiveQueuedMessageCount, 0)
         verify(!fakeBackend.aiActiveQueueSending)
         verify(composer.editor.enabled)
         tryVerify(() => composer.editor.activeFocus)
     }
-
     function test_aiInterruptRestoresQueuedFollowUpsToTheThreadDraft() {
         openAiWorkspace()
         const composer = shell.workspaceItem.composer
         composer.editor.text = "Do not lose this queued follow-up"
         composer.queueFollowUp()
-
         composer.interrupt()
         fakeBackend.complete_ai_interrupt()
-
         compare(fakeBackend.aiActiveQueuedMessageCount, 0)
         compare(composer.editor.text, "Do not lose this queued follow-up")
         verify(composer.editor.enabled)
         tryVerify(() => composer.editor.activeFocus)
     }
-
     function test_aiRecoveryPreservesDistinctSubstringDrafts() {
         openAiWorkspace()
         const composer = shell.workspaceItem.composer
@@ -1399,7 +1413,15 @@ TestCase {
 
         compare(composer.editor.text, "don't run tests\n\nrun tests")
     }
+    function test_aiRecoveryRestoresAnImageOnlyDraft() {
+        openAiWorkspace()
+        const composer = shell.workspaceItem.composer
+        fakeBackend.recoveredAiAttachmentPaths[fakeBackend.aiActiveThreadId] = ["restored.png"]
+        fakeBackend.aiStateChanged()
 
+        tryCompare(aiAttachmentsModel, "count", 1)
+        tryVerify(() => composer.canSubmit)
+    }
     function test_aiIdleTabDoesNotSendTheDraft() {
         fakeBackend.aiTurnRunning = false
         fakeBackend.aiActiveTurnId = ""
@@ -1414,7 +1436,6 @@ TestCase {
         compare(fakeBackend.commandCount, commandCount)
         verify(!fakeBackend.aiPromptPending)
     }
-
     function test_aiComposerDraftsSurviveThreadAndWorkspaceSwitches() {
         openAiWorkspace()
         shell.workspaceItem.composer.editor.text = "Migration thread draft"
@@ -1429,7 +1450,6 @@ TestCase {
         openAiWorkspace()
         compare(shell.workspaceItem.composer.editor.text, "Migration thread draft")
     }
-
     function test_aiComposerDisablesUnavailableAndDuplicateActions() {
         openAiWorkspace()
         const composer = shell.workspaceItem.composer
@@ -1454,7 +1474,6 @@ TestCase {
         composer.submit()
         compare(fakeBackend.commandCount, commandCount)
     }
-
     function test_aiComposerInterruptsOnlyTheExactActiveTurnOnce() {
         openAiWorkspace()
         const composer = shell.workspaceItem.composer
@@ -1474,7 +1493,6 @@ TestCase {
         fakeBackend.complete_ai_interrupt()
         verify(!fakeBackend.aiTurnRunning)
     }
-
     function test_aiApprovalUsesExactIdsAndRestoresComposerFocus() {
         openAiWorkspace()
         const workspace = shell.workspaceItem
@@ -1513,7 +1531,6 @@ TestCase {
         compare(fakeBackend.lastCommand, "decline_ai_approval")
         compare(fakeBackend.lastArgument, "approval-decline")
     }
-
     function test_aiUserInputRetainsAnswersOnFailureAndMasksSecrets() {
         openAiWorkspace()
         let panel = shell.workspaceItem.requestPanel
@@ -1584,7 +1601,6 @@ TestCase {
         fakeBackend.complete_ai_request()
         tryVerify(() => shell.aiRequestAnswerStore["input-1"] === undefined)
     }
-
     function test_aiRequestKeyboardFocusScrollsOverflow() {
         openAiWorkspace()
         const panel = shell.workspaceItem.requestPanel
@@ -1611,7 +1627,6 @@ TestCase {
         verify(lastInput.activeFocus)
         tryVerify(() => panel.requestViewport.contentY > 0)
     }
-
     function test_aiOversizedInputCannotBeSubmitted() {
         openAiWorkspace()
         const panel = shell.workspaceItem.requestPanel
@@ -1624,7 +1639,6 @@ TestCase {
         verify(!panel.submitInput())
         compare(fakeBackend.lastCommand, "")
     }
-
     function test_diffWorkspaceUsesVirtualizedRustModels() {
         openDiffWorkspace()
         shell.workspaceItem.diffListView.forceLayout()
@@ -1633,7 +1647,6 @@ TestCase {
         compare(shell.sidebarItem.fileListView.count, 2)
         verify(shell.sidebarItem.fileListView.reuseItems)
     }
-
     function test_diffFileSelectionUsesBackendCommand() {
         openDiffWorkspace()
         shell.sidebarItem.fileListView.forceLayout()
@@ -1643,7 +1656,6 @@ TestCase {
         compare(fakeBackend.lastCommand, "select_diff_file")
         compare(fakeBackend.lastArgument, "crates/hunk-qt/src/qml/Hunk/DiffWorkspace.qml")
     }
-
     function test_diffRowsRemainVirtualizedForLargePatches() {
         diffRowsModel.clear()
         for (let index = 0; index < 5000; ++index) {
@@ -1668,7 +1680,6 @@ TestCase {
         verify(shell.workspaceItem.diffListView.itemAtIndex(0) !== null)
         verify(shell.workspaceItem.diffListView.itemAtIndex(1000) === null)
     }
-
     function test_diffSelectionSupportsKeyboardRangeCopyAndHunkNavigation() {
         openDiffWorkspace()
         shell.workspaceItem.resetSelection()
@@ -1703,7 +1714,6 @@ TestCase {
         keyClick(Qt.Key_F7, Qt.ShiftModifier)
         compare(shell.workspaceItem.selectionHeadRow, 0)
     }
-
     function test_diffSelectionSupportsPointerRangeSemantics() {
         openDiffWorkspace()
         shell.workspaceItem.diffListView.forceLayout()
@@ -1717,7 +1727,6 @@ TestCase {
         compare(shell.workspaceItem.selectionStart, 1)
         compare(shell.workspaceItem.selectionEnd, 2)
     }
-
     function test_diffViewSwitchesBetweenSplitAndUnifiedRows() {
         openDiffWorkspace()
         shell.workspaceItem.diffListView.forceLayout()
@@ -1736,7 +1745,6 @@ TestCase {
         shell.workspaceItem.setDiffMode("split")
         verify(!shell.workspaceItem.unifiedMode)
     }
-
     function test_diffSearchFindsAndNavigatesMatchingRows() {
         openDiffWorkspace()
         shell.workspaceItem.searchInput.text = "qproperty"
@@ -1759,7 +1767,6 @@ TestCase {
         compare(fakeBackend.diffSearchMatchCount, 0)
         compare(fakeBackend.diffSearchTargetRow, -1)
     }
-
     function test_diffCommentComposerRetainsFailedDraftThenCreatesComment() {
         openDiffWorkspace()
         shell.workspaceItem.openCommentComposer(2)
@@ -1782,7 +1789,6 @@ TestCase {
         verify(shell.workspaceItem.commentsInspectorOpen)
         compare(fakeBackend.diffCommentsStatusMessage, "Comment added.")
     }
-
     function test_diffCommentInspectorFiltersCopiesJumpsResolvesAndDeletes() {
         openDiffWorkspace()
         shell.workspaceItem.toggleCommentsInspector()
@@ -1813,7 +1819,6 @@ TestCase {
         compare(fakeBackend.lastCommand, "delete_diff_comment")
         compare(shell.workspaceItem.commentsInspector.listView.count, 1)
     }
-
     function test_diffCommentBadgesAndInspectorStayVirtualized() {
         const records = []
         for (let index = 0; index < 200; ++index) {
@@ -1848,7 +1853,6 @@ TestCase {
         verify(shell.workspaceItem.commentsInspector.listView.itemAtIndex(0) !== null)
         verify(shell.workspaceItem.commentsInspector.listView.itemAtIndex(50) === null)
     }
-
     function test_diffCommentsRenderAtDesktopSize() {
         openDiffWorkspace()
         shell.workspaceItem.toggleCommentsInspector()

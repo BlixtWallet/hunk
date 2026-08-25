@@ -112,7 +112,10 @@ fn queue_schedules_one_fifo_message_per_idle_thread() {
     );
     assert_eq!(queue.mark_next_pending("a", 5).unwrap().prompt, "a-1");
     assert_eq!(queue.ready_thread_ids(&projection, &BTreeSet::new()), ["b"]);
-    assert_eq!(queue.edit_latest("a").as_deref(), Some("a-2"));
+    assert_eq!(
+        queue.edit_latest_with_attachments("a").unwrap().prompt,
+        "a-2"
+    );
     assert_eq!(queue.thread_count("a"), 1);
 }
 
@@ -165,11 +168,11 @@ fn interrupt_and_unavailable_threads_recover_messages_into_their_drafts() {
     assert!(queue.reconcile(&projection(&state, &["interrupted", "closed"])));
     assert_eq!(queue.total_count(), 0);
     assert_eq!(
-        queue.take_recovered_prompt("interrupted"),
+        queue.take_recovered_draft("interrupted").prompt,
         "first\n\nsecond"
     );
-    assert_eq!(queue.take_recovered_prompt("closed"), "closed draft");
-    assert!(queue.take_recovered_prompt("closed").is_empty());
+    assert_eq!(queue.take_recovered_draft("closed").prompt, "closed draft");
+    assert!(queue.take_recovered_draft("closed").prompt.is_empty());
 }
 
 #[test]
@@ -181,7 +184,7 @@ fn queue_preserves_a_thread_that_is_only_outside_the_visible_catalog() {
 
     assert!(!queue.reconcile(&AiQueueProjection::default()));
     assert_eq!(queue.total_count(), 1);
-    assert!(queue.take_recovered_prompt("older-thread").is_empty());
+    assert!(queue.take_recovered_draft("older-thread").prompt.is_empty());
 }
 
 #[test]
@@ -205,7 +208,7 @@ fn recovered_drafts_still_count_toward_the_queue_bound() {
             .enqueue("other".to_owned(), "overflow".to_owned())
             .is_err()
     );
-    assert!(!queue.take_recovered_prompt("closed").is_empty());
+    assert!(!queue.take_recovered_draft("closed").prompt.is_empty());
     assert!(
         queue
             .enqueue("other".to_owned(), "available again".to_owned())
@@ -228,7 +231,7 @@ fn queue_and_visible_projection_are_bounded() {
     );
 
     let long_prompt = "界".repeat(8_000);
-    queue.edit_latest("thread");
+    queue.edit_latest_with_attachments("thread");
     queue.enqueue("other".to_owned(), long_prompt).unwrap();
     let items = queue.timeline_items("other");
     assert_eq!(items.len(), 1);
@@ -262,4 +265,82 @@ fn queue_bounds_each_prompt_and_total_retained_bytes() {
             .enqueue("overflow".to_owned(), "one more byte".to_owned())
             .is_err()
     );
+}
+
+#[test]
+fn queued_image_follow_up_preserves_paths_and_matches_authoritative_content() {
+    let mut state = AiState::default();
+    state.threads.insert(
+        "thread".to_owned(),
+        thread("thread", ThreadLifecycleStatus::Idle, 5),
+    );
+    let image = std::path::PathBuf::from("/repo/screenshots/capture.png");
+    let mut queue = AiMessageQueue::default();
+    queue
+        .enqueue_with_attachments(
+            "thread".to_owned(),
+            "Review this state".to_owned(),
+            vec![image.clone()],
+        )
+        .unwrap();
+
+    assert_eq!(
+        queue.timeline_items("thread")[0].text,
+        "Review this state\n[image] capture.png"
+    );
+    let command = queue.mark_next_pending("thread", 5).unwrap();
+    assert_eq!(command.local_image_paths, [image]);
+
+    state.items.insert(
+        "accepted".to_owned(),
+        user_message("thread", "Review this state\n[image] capture.png", 6),
+    );
+    assert!(queue.reconcile(&projection(&state, &["thread"])));
+    assert_eq!(queue.total_count(), 0);
+}
+
+#[test]
+fn recovered_image_only_follow_up_returns_its_attachments() {
+    let mut state = AiState::default();
+    state.threads.insert(
+        "closed".to_owned(),
+        thread("closed", ThreadLifecycleStatus::Closed, 1),
+    );
+    let image = std::path::PathBuf::from("/repo/screenshot.webp");
+    let mut queue = AiMessageQueue::default();
+    queue
+        .enqueue_with_attachments("closed".to_owned(), String::new(), vec![image.clone()])
+        .unwrap();
+
+    assert!(queue.reconcile(&projection(&state, &["closed"])));
+    let draft = queue.take_recovered_draft("closed");
+    assert!(draft.prompt.is_empty());
+    assert_eq!(draft.local_image_paths, [image]);
+}
+
+#[test]
+fn queued_image_capability_check_tracks_only_the_next_sendable_message() {
+    let image = std::path::PathBuf::from("/repo/screenshot.webp");
+    let mut queue = AiMessageQueue::default();
+    queue
+        .enqueue_with_attachments("thread".to_owned(), String::new(), vec![image])
+        .unwrap();
+
+    assert!(queue.next_queued_has_attachments("thread"));
+    queue.mark_next_pending("thread", 0).unwrap();
+    assert!(!queue.next_queued_has_attachments("thread"));
+}
+
+#[test]
+fn queued_image_capability_check_does_not_skip_a_text_only_head_message() {
+    let image = std::path::PathBuf::from("/repo/screenshot.webp");
+    let mut queue = AiMessageQueue::default();
+    queue
+        .enqueue("thread".to_owned(), "First".to_owned())
+        .unwrap();
+    queue
+        .enqueue_with_attachments("thread".to_owned(), String::new(), vec![image])
+        .unwrap();
+
+    assert!(!queue.next_queued_has_attachments("thread"));
 }

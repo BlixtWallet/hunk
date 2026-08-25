@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use gpui::{ClipboardEntry, ClipboardItem, Image, ImageFormat};
 
-use super::ai_attachment_images::is_supported_ai_image_path;
+use hunk_app::ai::is_supported_ai_image_path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AiComposerClipboardAttachments {

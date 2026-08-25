@@ -1,16 +1,21 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use hunk_app::ai::{
-    AiApprovalDecision, AiTurnSessionOverrides, AiWorkerCommand, AiWorkerEventPayload,
-};
+use hunk_app::ai::{AiApprovalDecision, AiWorkerCommand, AiWorkerEventPayload};
 use qtbridge::{QObjectHolder, invoke_method};
 
 use crate::AiPromptReceipt;
+use crate::ai_attachments::{
+    clear_ai_attachment_drafts, clear_ai_attachments_for_thread, current_ai_attachment_paths,
+    restore_ai_attachment_paths, sync_ai_attachments,
+};
 use crate::ai_requests::AiPendingRequestProjection;
 use crate::ai_runtime::{
     AiProjectedSnapshot, AiRuntimeEvent, prepare_ai_worker_config, reject_browser_call,
     start_ai_runtime,
+};
+use crate::ai_session::{
+    ai_turn_session_overrides, apply_ai_session_projection, reset_ai_session_projection,
 };
 use crate::ai_thread_actions::AiThreadActionReceipt;
 use crate::backend_state::Backend;
@@ -19,6 +24,7 @@ pub(super) fn reset_ai_runtime_state(backend: &mut Backend) {
     stop_ai_runtime(backend);
     backend.ai_threads.borrow_mut().replace(Vec::new());
     backend.ai_timeline.borrow_mut().replace(Vec::new());
+    clear_ai_attachment_drafts(backend);
     backend
         .ai_message_queue
         .reset_pending_after_runtime_failure();
@@ -32,6 +38,8 @@ pub(super) fn reset_ai_runtime_state(backend: &mut Backend) {
     backend.ai_active_thread_cwd.clear();
     backend.ai_active_turn_id.clear();
     backend.ai_turn_running = false;
+    reset_ai_session_projection(backend);
+    backend.ai_session_state_changed();
     backend.ai_prompt_receipt = None;
     backend.ai_thread_action = None;
     backend.ai_interrupt_thread_id.clear();
@@ -105,9 +113,11 @@ pub(super) fn apply_ai_runtime_events(backend: &mut Backend, events: Vec<AiRunti
                             accept_pending_prompt(backend);
                         }
                         let queued_prompt_accepted = !direct_prompt_accepted
-                            && backend
-                                .ai_message_queue
-                                .accept_steer(pending.thread_id.as_str(), pending.prompt.as_str());
+                            && backend.ai_message_queue.accept_steer(
+                                pending.thread_id.as_str(),
+                                pending.prompt.as_str(),
+                                pending.local_images.as_slice(),
+                            );
                         if queued_prompt_accepted {
                             sync_ai_timeline_queue(backend);
                         }
@@ -168,8 +178,10 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
         timeline,
         queue,
         requests,
+        session,
         ..
     } = projected;
+    let active_thread_changed = backend.ai_active_thread_id != projection.active_thread_id;
     projection.apply_bookmarks(&backend.ai_bookmarked_thread_ids);
     let completed_thread_action = backend
         .ai_thread_action
@@ -201,12 +213,21 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     {
         backend.ai_request_resolving_id.clear();
     }
+    backend.ai_attachment_drafts.retain_threads(
+        projection
+            .items
+            .iter()
+            .map(|thread| thread.thread_id.as_str()),
+    );
     backend
         .ai_threads
         .borrow_mut()
         .replace_if_changed(projection.items);
     let timeline_items = timeline.items;
     backend.ai_active_thread_id = projection.active_thread_id;
+    if active_thread_changed {
+        sync_ai_attachments(backend);
+    }
     backend.ai_active_thread_title = projection.active_thread_title;
     backend.ai_active_thread_cwd = projection.active_thread_cwd;
     backend.ai_active_turn_id = timeline.active_turn_id;
@@ -219,6 +240,36 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     backend.ai_timeline_total_row_count = timeline.total_row_count;
     backend.ai_timeline_hidden_row_count = timeline.hidden_row_count;
     backend.ai_requests = requests;
+    let session_changed = backend.ai_session_catalog != session;
+    let previous_session_selection = active_thread_changed.then(|| {
+        (
+            backend.ai_selected_model.clone(),
+            backend.ai_selected_effort.clone(),
+            backend.ai_selected_collaboration_mode.clone(),
+            backend.ai_selected_service_tier.clone(),
+            backend.ai_mad_max_mode,
+        )
+    });
+    apply_ai_session_projection(backend, session);
+    if session_changed
+        || previous_session_selection.is_some_and(|previous| {
+            (
+                backend.ai_selected_model.as_str(),
+                backend.ai_selected_effort.as_str(),
+                backend.ai_selected_collaboration_mode.as_str(),
+                backend.ai_selected_service_tier.as_str(),
+                backend.ai_mad_max_mode,
+            ) != (
+                previous.0.as_str(),
+                previous.1.as_str(),
+                previous.2.as_str(),
+                previous.3.as_str(),
+                previous.4,
+            )
+        })
+    {
+        backend.ai_session_state_changed();
+    }
     backend.ai_requires_authentication = requires_openai_auth;
     backend.ai_ready = true;
     backend.ai_loading = false;
@@ -226,7 +277,9 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     backend.ai_error.clear();
     if let Some(receipt) = completed_thread_action {
         backend.ai_status_message = receipt.completion_message().to_owned();
-    } else if backend.ai_thread_action.is_none() {
+    } else if backend.ai_thread_action.is_none()
+        && !crate::ai_attachments::ai_attachment_pending(backend)
+    {
         backend.ai_status_message.clear();
     }
     maybe_submit_ready_ai_queued_messages(backend, &queue);
@@ -244,35 +297,47 @@ fn fail_ai_runtime(backend: &mut Backend, message: String) {
 
 pub(super) fn queue_ai_prompt(backend: &mut Backend, prompt: String) -> bool {
     let prompt = prompt.trim();
-    if prompt.is_empty()
+    let local_image_paths = current_ai_attachment_paths(backend);
+    if (prompt.is_empty() && local_image_paths.is_empty())
         || !backend.ai_ready
         || backend.ai_loading
         || backend.ai_requires_authentication
         || backend.ai_active_thread_id.is_empty()
         || backend.ai_thread_action.is_some()
         || backend.ai_prompt_receipt.is_some()
-        || (backend
+        || crate::ai_attachments::ai_attachment_pending(backend)
+        || backend
             .ai_message_queue
             .thread_is_sending(backend.ai_active_thread_id.as_str())
-            && !backend.ai_turn_running)
         || !backend.ai_interrupt_turn_id.is_empty()
         || backend.ai_requests.current.is_some()
         || !backend.ai_request_resolving_id.is_empty()
     {
         return false;
     }
+    if !local_image_paths.is_empty()
+        && !backend
+            .ai_session_catalog
+            .model_supports_image_inputs(Some(backend.ai_selected_model.as_str()))
+    {
+        return reject_ai_prompt_input(
+            backend,
+            "Selected model does not support image attachments. Remove attachments or switch models.",
+        );
+    }
     let receipt = AiPromptReceipt::new(
         backend.ai_active_thread_id.clone(),
         backend.ai_active_turn_id.clone(),
         backend.ai_timeline_total_turn_count,
     );
+    let thread_id = backend.ai_active_thread_id.clone();
     let command = AiWorkerCommand::SendPrompt {
-        thread_id: backend.ai_active_thread_id.clone(),
-        prompt: Some(prompt.to_owned()),
-        local_image_paths: Vec::new(),
+        thread_id: thread_id.clone(),
+        prompt: (!prompt.is_empty()).then(|| prompt.to_owned()),
+        local_image_paths,
         selected_skills: Vec::new(),
         skill_bindings: Vec::new(),
-        session_overrides: AiTurnSessionOverrides::default(),
+        session_overrides: ai_turn_session_overrides(backend, Some(thread_id.as_str())),
     };
     if !send_ai_command(backend, command, "Sending message to Codex…") {
         return false;
@@ -282,6 +347,8 @@ pub(super) fn queue_ai_prompt(backend: &mut Backend, prompt: String) -> bool {
 }
 
 pub(super) fn queue_ai_follow_up(backend: &mut Backend, prompt: String) -> bool {
+    let prompt = prompt.trim();
+    let local_image_paths = current_ai_attachment_paths(backend);
     if !backend.ai_ready
         || backend.ai_loading
         || backend.ai_requires_authentication
@@ -290,17 +357,32 @@ pub(super) fn queue_ai_follow_up(backend: &mut Backend, prompt: String) -> bool 
         || !backend.ai_turn_running
         || backend.ai_thread_action.is_some()
         || backend.ai_prompt_receipt.is_some()
+        || crate::ai_attachments::ai_attachment_pending(backend)
         || !backend.ai_interrupt_thread_id.is_empty()
         || backend.ai_requests.current.is_some()
         || !backend.ai_request_resolving_id.is_empty()
+        || (prompt.is_empty() && local_image_paths.is_empty())
     {
         return false;
     }
-    match backend
-        .ai_message_queue
-        .enqueue(backend.ai_active_thread_id.clone(), prompt)
+    if !local_image_paths.is_empty()
+        && !backend
+            .ai_session_catalog
+            .model_supports_image_inputs(Some(backend.ai_selected_model.as_str()))
     {
+        return reject_ai_prompt_input(
+            backend,
+            "Selected model does not support image attachments. Remove attachments or switch models.",
+        );
+    }
+    match backend.ai_message_queue.enqueue_with_attachments(
+        backend.ai_active_thread_id.clone(),
+        prompt.to_owned(),
+        local_image_paths,
+    ) {
         Ok(()) => {
+            let thread_id = backend.ai_active_thread_id.clone();
+            clear_ai_attachments_for_thread(backend, thread_id.as_str());
             backend.ai_error.clear();
             backend.ai_status_message = "Queued a follow-up for this thread.".to_owned();
             sync_ai_timeline_queue(backend);
@@ -314,21 +396,29 @@ pub(super) fn queue_ai_follow_up(backend: &mut Backend, prompt: String) -> bool 
 }
 
 pub(super) fn edit_last_ai_queued_prompt(backend: &mut Backend) -> String {
-    let prompt = backend
+    let Some(message) = backend
         .ai_message_queue
-        .edit_latest(backend.ai_active_thread_id.as_str())
-        .unwrap_or_default();
-    if !prompt.is_empty() {
-        backend.ai_status_message = "Moved the newest queued message back to the draft.".to_owned();
-        sync_ai_timeline_queue(backend);
-    }
+        .edit_latest_with_attachments(backend.ai_active_thread_id.as_str())
+    else {
+        return String::new();
+    };
+    let prompt = message.prompt;
+    restore_ai_attachment_paths(
+        backend,
+        message.thread_id.as_str(),
+        message.local_image_paths,
+    );
+    backend.ai_status_message = "Moved the newest queued message back to the draft.".to_owned();
+    sync_ai_timeline_queue(backend);
     prompt
 }
 
 pub(super) fn take_ai_recovered_prompt(backend: &mut Backend, thread_id: String) -> String {
-    backend
+    let draft = backend
         .ai_message_queue
-        .take_recovered_prompt(thread_id.as_str())
+        .take_recovered_draft(thread_id.as_str());
+    restore_ai_attachment_paths(backend, thread_id.as_str(), draft.local_image_paths);
+    draft.prompt
 }
 
 pub(super) fn queue_ai_interrupt(backend: &mut Backend) -> bool {
@@ -454,6 +544,7 @@ pub(super) fn queue_ai_create_thread(backend: &mut Backend) -> bool {
     if thread_action_blocked(backend) {
         return false;
     }
+    let session_overrides = ai_turn_session_overrides(backend, None);
     queue_ai_thread_action(
         backend,
         AiThreadActionReceipt::create(),
@@ -462,7 +553,7 @@ pub(super) fn queue_ai_create_thread(backend: &mut Backend) -> bool {
             local_image_paths: Vec::new(),
             selected_skills: Vec::new(),
             skill_bindings: Vec::new(),
-            session_overrides: AiTurnSessionOverrides::default(),
+            session_overrides,
         },
         "Creating a Codex thread…",
     )
@@ -550,7 +641,17 @@ pub(super) fn ensure_ai_runtime_started(backend: &mut Backend) -> bool {
 
     reset_ai_runtime_state(backend);
     backend.ai_workspace_root = workspace_key.clone();
-    let config = match prepare_ai_worker_config(Path::new(workspace_key.as_str())) {
+    let mad_max_mode = backend
+        .ai_session_preferences
+        .workspace_mad_max(workspace_key.as_str());
+    let include_hidden_models = backend
+        .ai_session_preferences
+        .workspace_include_hidden_models(workspace_key.as_str());
+    let config = match prepare_ai_worker_config(
+        Path::new(workspace_key.as_str()),
+        mad_max_mode,
+        include_hidden_models,
+    ) {
         Ok(config) => config,
         Err(error) => {
             backend.ai_connection_state = "failed".to_owned();
@@ -586,8 +687,8 @@ pub(super) fn send_ai_worker_command(
     backend: &mut Backend,
     command: AiWorkerCommand,
     status_message: &str,
-) {
-    let _ = send_ai_command(backend, command, status_message);
+) -> bool {
+    send_ai_command(backend, command, status_message)
 }
 
 fn send_ai_command(backend: &mut Backend, command: AiWorkerCommand, status: &str) -> bool {
@@ -612,7 +713,14 @@ fn send_ai_command(backend: &mut Backend, command: AiWorkerCommand, status: &str
 }
 
 fn accept_pending_prompt(backend: &mut Backend) {
+    let thread_id = backend
+        .ai_prompt_receipt
+        .as_ref()
+        .map(|receipt| receipt.thread_id().to_owned());
     backend.ai_prompt_receipt = None;
+    if let Some(thread_id) = thread_id {
+        clear_ai_attachments_for_thread(backend, thread_id.as_str());
+    }
     backend.ai_prompt_accepted_revision =
         backend.ai_prompt_accepted_revision.wrapping_add(1).max(1);
 }
@@ -655,6 +763,20 @@ fn maybe_submit_ready_ai_queued_messages(
         let Some(thread) = projection.threads.get(thread_id.as_str()) else {
             continue;
         };
+        let session_overrides = ai_turn_session_overrides(backend, Some(thread_id.as_str()));
+        if backend
+            .ai_message_queue
+            .next_queued_has_attachments(thread_id.as_str())
+            && !backend
+                .ai_session_catalog
+                .model_supports_image_inputs(session_overrides.model.as_deref())
+        {
+            if backend.ai_active_thread_id == thread_id {
+                backend.ai_status_message =
+                    "Queued image attachments need an image-capable model.".to_owned();
+            }
+            continue;
+        }
         let Some(queued) = backend
             .ai_message_queue
             .mark_next_pending(thread_id.as_str(), thread.latest_sequence)
@@ -664,12 +786,12 @@ fn maybe_submit_ready_ai_queued_messages(
         let sent = send_ai_command(
             backend,
             AiWorkerCommand::SendPrompt {
+                session_overrides,
                 thread_id: queued.thread_id,
-                prompt: Some(queued.prompt),
-                local_image_paths: Vec::new(),
+                prompt: (!queued.prompt.trim().is_empty()).then_some(queued.prompt),
+                local_image_paths: queued.local_image_paths,
                 selected_skills: Vec::new(),
                 skill_bindings: Vec::new(),
-                session_overrides: AiTurnSessionOverrides::default(),
             },
             "Sending the next queued message to Codex…",
         );
@@ -708,6 +830,11 @@ fn sync_ai_timeline_queue(backend: &mut Backend) {
 
 fn reject_ai_request(backend: &mut Backend, message: &str) -> bool {
     backend.ai_error = message.to_owned();
+    backend.ai_status_message = message.to_owned();
+    false
+}
+
+fn reject_ai_prompt_input(backend: &mut Backend, message: &str) -> bool {
     backend.ai_status_message = message.to_owned();
     false
 }

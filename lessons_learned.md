@@ -562,3 +562,57 @@ append a correction when later evidence changes one.
   through `itemAtIndex()` under the offscreen runner. Assert authoritative model
   ordering and action signal wiring separately instead of sending synthetic
   pointer input to a pooled object.
+
+## 2026-08-25 — Qt Codex session and context controls
+
+- QtBridge derives a property's meta-type from getter signatures inside the
+  annotated `#[qobject]` implementation. Keep thin property getters in that
+  implementation and move only their calculations into sibling modules; a
+  getter defined solely in another inherent `impl` is invisible to the macro.
+- A shared QObject notify signal turns every dependent QML binding into work.
+  Granular session notifications plus a `Loader` that unloads closed popup
+  content prevent model scans and token-string allocations during unrelated
+  streamed AI events.
+- Runtime catalog strings need two bounds: a UTF-8-safe byte cap at the Rust
+  projection boundary and a maximum/elided width in QML. Either bound alone can
+  still allow service data to dictate header geometry or shaping cost.
+- ComboBox activation is optimistic UI state. If Rust rejects a raced selection,
+  restore the authoritative index with `Qt.binding` so the immediate value and
+  its future backend updates both remain correct.
+- Persisting one feature into a shared state file must load the latest state
+  under the common writer lock and mutate only owned fields. Capturing and
+  rewriting an earlier full state can silently undo bookmarks or repository
+  selection even when every individual save is atomic.
+- Qt Quick Test keyboard helpers target the currently focused item;
+  `keyClick(Qt.Key_Down)` does not take a control argument. Force and verify
+  active focus first, then send the key, or the test can spend its timeout
+  waiting for a command that never ran.
+
+## 2026-08-25 — Qt Codex prompt attachments
+
+- A native file picker does not make filesystem work UI-safe. Bound and decode
+  its URLs on the Qt side, but canonicalize paths and inspect files on retained
+  Rust workers; removable and network-backed volumes can make even ordinary
+  metadata calls exceed an 8 ms frame budget.
+- Async locks must be scoped to the resource they protect. A backend-global
+  attachment-pending bit makes one slow image freeze every thread; key pending
+  epochs by thread and derive the exposed property for only the active thread.
+- Model contents and separately notified count properties can drift. When a
+  recovery slot resets a `QAbstractListModel` from inside an existing state
+  callback, bind visibility and submission state to the view's notified count
+  instead of recursively emitting a broad backend signal.
+- An async interaction needs a completion focus path. Picker acceptance can
+  schedule validation and immediately make the editor non-editable, so track
+  the pending transition and restore focus on `true` to `false`, not only when
+  the picker closes.
+- Drag/drop should consume attachments as copies and only after the bounded
+  bridge request is accepted. Never honor a source-proposed move operation for
+  prompt images.
+- Attachment lifecycle follows message acknowledgement, not button clicks.
+  Preserve paths through direct-send receipts, queued delivery, edit recovery,
+  interrupts, and reconnects; clear only on an authoritative acceptance or an
+  explicit successful move into the Rust-owned queue.
+- Cargo integration-test working directories are crate roots, so a relative
+  `target/` temp fixture can silently target a nonexistent per-crate folder.
+  Resolve the workspace target from `CARGO_MANIFEST_DIR` when tests must keep
+  temporary data on the external-volume build cache.

@@ -14,52 +14,44 @@ Item {
     readonly property alias composer: composer
     readonly property alias requestPanel: requestPanel
     readonly property alias forkButton: forkAction
-    readonly property bool commandPending: backend.aiThreadActionPending
-        || backend.aiPromptPending || backend.aiInterruptPending
-        || backend.aiRequestResolving || backend.aiRequestId.length > 0
+    readonly property bool commandPending: backend.aiThreadActionPending || backend.aiPromptPending || backend.aiInterruptPending || backend.aiRequestResolving || backend.aiRequestId.length > 0
     readonly property bool errorStateVisible: backend.aiError.length > 0 && !backend.aiReady
-    readonly property bool loadingStateVisible: backend.aiLoading && !backend.aiReady
-        && !errorStateVisible
-    readonly property bool timelineStateVisible: backend.aiActiveThreadId.length > 0
-        && timeline.count > 0 && !errorStateVisible
-    readonly property bool authenticationStateVisible: backend.aiRequiresAuthentication
-        && !timelineStateVisible && !errorStateVisible && !loadingStateVisible
-    readonly property bool emptyStateVisible: !timelineStateVisible && !errorStateVisible
-        && !loadingStateVisible && !authenticationStateVisible
+    readonly property bool loadingStateVisible: backend.aiLoading && !backend.aiReady && !errorStateVisible
+    readonly property bool timelineStateVisible: backend.aiActiveThreadId.length > 0 && timeline.count > 0 && !errorStateVisible
+    readonly property bool authenticationStateVisible: backend.aiRequiresAuthentication && !timelineStateVisible && !errorStateVisible && !loadingStateVisible
+    readonly property bool emptyStateVisible: !timelineStateVisible && !errorStateVisible && !loadingStateVisible && !authenticationStateVisible
 
     function stateTitle() {
         if (root.errorStateVisible)
-            return "Codex is unavailable"
+            return "Codex is unavailable";
         if (root.loadingStateVisible)
-            return "Connecting to Codex…"
+            return "Connecting to Codex…";
         if (root.authenticationStateVisible)
-            return "OpenAI sign-in required"
+            return "OpenAI sign-in required";
         if (root.backend.aiActiveThreadId.length === 0)
-            return root.backend.aiThreadCount > 0 ? "Select a thread" : "No Codex threads"
-        return "No messages yet"
+            return root.backend.aiThreadCount > 0 ? "Select a thread" : "No Codex threads";
+        return "No messages yet";
     }
 
     function stateDescription() {
         if (root.errorStateVisible)
-            return root.backend.aiError
+            return root.backend.aiError;
         if (root.loadingStateVisible)
-            return "Starting the repository-scoped Codex worker and loading threads."
+            return "Starting the repository-scoped Codex worker and loading threads.";
         if (root.authenticationStateVisible)
-            return "Complete authentication through the Codex runtime before starting a turn."
+            return "Complete authentication through the Codex runtime before starting a turn.";
         if (root.backend.aiActiveThreadId.length === 0)
-            return root.backend.aiThreadCount > 0
-                ? "Choose a thread from the catalog to load its conversation."
-                : "Create a thread from the sidebar to begin."
-        return "This thread does not contain a visible turn yet."
+            return root.backend.aiThreadCount > 0 ? "Choose a thread from the catalog to load its conversation." : "Create a thread from the sidebar to begin.";
+        return "This thread does not contain a visible turn yet.";
     }
 
     function forkThread() {
-        return root.backend.fork_ai_thread()
+        return root.backend.fork_ai_thread();
     }
 
     onVisibleThreadIdChanged: {
-        followTail = true
-        Qt.callLater(() => timeline.positionViewAtEnd())
+        followTail = true;
+        Qt.callLater(() => timeline.positionViewAtEnd());
     }
 
     Rectangle {
@@ -111,16 +103,15 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
 
+            AiSessionControls {
+                backend: root.backend
+            }
+
             ActionButton {
                 id: forkAction
                 label: "Fork"
                 compact: true
-                enabled: root.backend.aiReady
-                    && root.backend.aiActiveThreadId.length > 0
-                    && !root.backend.aiTurnRunning
-                    && !root.backend.aiLoading
-                    && !root.backend.aiRequiresAuthentication
-                    && !root.commandPending
+                enabled: root.backend.aiReady && root.backend.aiActiveThreadId.length > 0 && !root.backend.aiTurnRunning && !root.backend.aiLoading && !root.backend.aiRequiresAuthentication && !root.commandPending
                 onClicked: root.forkThread()
             }
 
@@ -129,8 +120,7 @@ Item {
                 width: 7
                 height: 7
                 radius: 4
-                color: root.backend.aiConnectionState === "ready" ? Theme.positive
-                    : (root.backend.aiConnectionState === "failed" ? Theme.negative : Theme.warning)
+                color: root.backend.aiConnectionState === "ready" ? Theme.positive : (root.backend.aiConnectionState === "failed" ? Theme.negative : Theme.warning)
             }
 
             Text {
@@ -158,12 +148,8 @@ Item {
         anchors.right: parent.right
         anchors.top: workspaceHeader.bottom
         height: visible ? 34 : 0
-        visible: root.backend.aiError.length > 0
-            || root.backend.aiRequiresAuthentication
-            || root.backend.aiLoading
-            || root.backend.aiStatusMessage.length > 0
-        color: root.backend.aiError.length > 0 ? Theme.negativeMuted
-            : (root.backend.aiRequiresAuthentication ? Theme.accentMuted : Theme.raised)
+        visible: root.backend.aiError.length > 0 || root.backend.aiRequiresAuthentication || root.backend.aiLoading || root.backend.aiStatusMessage.length > 0
+        color: root.backend.aiError.length > 0 ? Theme.negativeMuted : (root.backend.aiRequiresAuthentication ? Theme.accentMuted : Theme.raised)
 
         Text {
             anchors.left: parent.left
@@ -171,10 +157,7 @@ Item {
             anchors.leftMargin: 20
             anchors.rightMargin: 12
             anchors.verticalCenter: parent.verticalCenter
-            text: root.backend.aiError.length > 0 ? root.backend.aiError
-                : (root.backend.aiRequiresAuthentication ? "OpenAI authentication is required."
-                    : (root.backend.aiLoading ? "Loading Codex threads…"
-                        : root.backend.aiStatusMessage))
+            text: root.backend.aiError.length > 0 ? root.backend.aiError : (root.backend.aiRequiresAuthentication ? "OpenAI authentication is required." : (root.backend.aiLoading ? "Loading Codex threads…" : root.backend.aiStatusMessage))
             textFormat: Text.PlainText
             color: root.backend.aiError.length > 0 ? Theme.negative : Theme.muted
             elide: Text.ElideRight
@@ -187,9 +170,7 @@ Item {
             anchors.right: parent.right
             anchors.rightMargin: 20
             anchors.verticalCenter: parent.verticalCenter
-            text: root.backend.aiError.length > 0 ? "ERROR"
-                : (root.backend.aiRequiresAuthentication ? "SIGN IN"
-                    : (root.backend.aiLoading ? "LOADING" : "STATUS"))
+            text: root.backend.aiError.length > 0 ? "ERROR" : (root.backend.aiRequiresAuthentication ? "SIGN IN" : (root.backend.aiLoading ? "LOADING" : "STATUS"))
             color: Theme.faint
             font.family: Theme.monoFont
             font.pixelSize: 9
@@ -210,18 +191,15 @@ Item {
             anchors.right: parent.right
             anchors.top: parent.top
             height: visible ? 28 : 0
-            visible: root.timelineStateVisible
-                && (root.backend.aiTimelineHiddenTurnCount > 0
-                    || root.backend.aiTimelineHiddenRowCount > 0)
+            visible: root.timelineStateVisible && (root.backend.aiTimelineHiddenTurnCount > 0 || root.backend.aiTimelineHiddenRowCount > 0)
             color: Theme.chrome
 
             Text {
                 anchors.centerIn: parent
                 text: {
                     if (root.backend.aiTimelineHiddenTurnCount > 0)
-                        return "Showing the latest " + root.backend.aiTimelineVisibleTurnCount
-                            + " of " + root.backend.aiTimelineTotalTurnCount + " turns"
-                    return root.backend.aiTimelineHiddenRowCount + " earlier timeline rows hidden"
+                        return "Showing the latest " + root.backend.aiTimelineVisibleTurnCount + " of " + root.backend.aiTimelineTotalTurnCount + " turns";
+                    return root.backend.aiTimelineHiddenRowCount + " earlier timeline rows hidden";
                 }
                 color: Theme.faint
                 font.family: Theme.monoFont
@@ -259,11 +237,11 @@ Item {
 
             onCountChanged: {
                 if (root.followTail)
-                    Qt.callLater(() => timeline.positionViewAtEnd())
+                    Qt.callLater(() => timeline.positionViewAtEnd());
             }
             onContentHeightChanged: {
                 if (root.followTail)
-                    Qt.callLater(() => timeline.positionViewAtEnd())
+                    Qt.callLater(() => timeline.positionViewAtEnd());
             }
             onMovementStarted: root.followTail = false
             onMovementEnded: root.followTail = timeline.atYEnd
@@ -273,8 +251,7 @@ Item {
             anchors.centerIn: parent
             width: Math.min(460, parent.width - 48)
             spacing: 8
-            visible: root.errorStateVisible || root.loadingStateVisible
-                || root.authenticationStateVisible || root.emptyStateVisible
+            visible: root.errorStateVisible || root.loadingStateVisible || root.authenticationStateVisible || root.emptyStateVisible
 
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter

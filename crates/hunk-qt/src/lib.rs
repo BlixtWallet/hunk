@@ -1,13 +1,16 @@
+mod ai_attachments;
 mod ai_bookmarks;
 mod ai_composer;
 mod ai_models;
 mod ai_queue;
 mod ai_requests;
 mod ai_runtime;
+mod ai_session;
 mod ai_thread_actions;
 mod ai_timeline_models;
 mod backend;
 mod backend_ai;
+mod backend_ai_accessors;
 mod backend_diff;
 mod backend_forge;
 mod backend_git;
@@ -33,12 +36,16 @@ pub use ai_models::{AiThreadCatalogProjection, AiThreadItem, AiThreadListModel};
 pub use ai_queue::{
     AI_MESSAGE_QUEUE_MAX_ITEMS, AI_MESSAGE_QUEUE_MAX_PROMPT_BYTES,
     AI_MESSAGE_QUEUE_MAX_RETAINED_BYTES, AiMessageQueue, AiQueueProjection,
-    AiQueueThreadProjection, AiQueuedMessageCommand,
+    AiQueueThreadProjection, AiQueuedMessageCommand, AiRecoveredDraft,
 };
 pub use ai_requests::{
     AiPendingOption, AiPendingQuestion, AiPendingRequest, AiPendingRequestProjection,
 };
 pub use ai_runtime::{AiEventMailbox, AiProjectedSnapshot, AiRuntimeEvent};
+pub use ai_session::{
+    AiContextUsageProjection, AiSessionCatalogProjection, AiSessionChoiceItem,
+    AiSessionChoiceListModel, AiSessionPreferences,
+};
 pub use ai_thread_actions::{AiThreadActionKind, AiThreadActionReceipt};
 pub use ai_timeline_models::{
     AI_TIMELINE_MAX_VISIBLE_ROWS, AiTimelineItem, AiTimelineListModel, AiTimelineProjection,
@@ -47,7 +54,7 @@ pub use backend::{Backend, Workspace};
 pub use comment_models::{DiffCommentItem, DiffCommentListModel, DiffCommentProjection};
 pub use diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
 pub use git_models::{GitBranchListModel, GitCommitListModel, GitFileListModel};
-pub use path::local_path_from_qml_folder_url;
+pub use path::{local_path_from_qml_file_url, local_path_from_qml_folder_url};
 
 #[cfg(debug_assertions)]
 const QML_MODULE_DIRECTORY: &str = "Hunk";
@@ -62,6 +69,8 @@ pub fn run() -> Result<()> {
     app.application_name("Hunk")
         .register::<AiThreadListModel>()
         .register::<AiTimelineListModel>()
+        .register::<AiAttachmentListModel>()
+        .register::<AiSessionChoiceListModel>()
         .register::<DiffRowListModel>()
         .register::<DiffCommentListModel>()
         .register::<GitFileListModel>()
@@ -142,3 +151,7 @@ fn file_url(path: &Path) -> String {
         format!("file:///{normalized}")
     }
 }
+pub use ai_attachments::{
+    AI_PROMPT_MAX_ATTACHMENTS, AiAttachmentAddOutcome, AiAttachmentDrafts, AiAttachmentItem,
+    AiAttachmentListModel, attachment_paths_from_qml_json,
+};

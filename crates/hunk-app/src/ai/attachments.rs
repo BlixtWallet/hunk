@@ -1,6 +1,6 @@
 use std::path::Path;
 
-pub(crate) fn is_supported_ai_image_path(path: &Path) -> bool {
+pub fn is_supported_ai_image_path(path: &Path) -> bool {
     let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
         return false;
     };

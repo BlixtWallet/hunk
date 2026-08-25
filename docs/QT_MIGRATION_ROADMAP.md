@@ -598,11 +598,43 @@ external caches:
 - [x] Implement text steering, interruption, and plan-state presentation.
 - [x] Implement queued message recovery.
 - [x] Implement persistent bookmark ordering and interaction.
-- [ ] Implement attachments, context usage, model/settings, and service-tier controls still in product scope.
+- [x] Implement context usage, model/settings, collaboration-mode, approval-policy, and service-tier controls still in product scope.
+- [x] Implement prompt attachments still in product scope.
 - [ ] Port required terminal surfaces with correct input, focus, cursor, selection, and resize behavior.
-- [ ] Decide retained embedded-browser requirements from product use; remove CEF if unneeded rather than automatically replacing it with Qt WebEngine.
+- [ ] Port the required embedded CEF browser surface, controls, input routing, and AI tool bridge to Qt.
 - [ ] Validate key flows without triggering unattended keychain prompts.
 - [ ] Complete the mandatory working loop and stacked PR.
+
+Product decision recorded on 2026-08-25: both the terminal and embedded browser
+remain required parts of Hunk and must work in the Qt application before the
+atomic cutover. Reuse the existing `hunk-terminal` and `hunk-browser`/CEF domain
+and runtime layers. Replace their GPUI presentation and input adapters with
+narrow Qt adapters; do not introduce Qt WebEngine or a second browser engine.
+
+Prompt attachment decisions:
+
+- Keep image validation in the shared headless application boundary so GPUI and
+  Qt accept the same formats during the migration.
+- Keep per-thread attachment drafts in Rust. QML owns only the native picker,
+  drag/drop interaction, bounded chip list, and focus behavior.
+- Bound candidate count and serialized input before crossing QtBridge, then run
+  canonicalization and filesystem checks on retained Rust workers rather than
+  the Qt thread. Pending validation is keyed by thread so one slow volume cannot
+  block composing and sending in an unrelated Codex thread.
+- Retain attachments through direct-send acknowledgement, queued follow-up
+  delivery, interrupt recovery, and edit-last recovery. Clear them only after
+  authoritative acceptance or an explicit successful queue transition.
+- Derive QML attachment presence from the list model's own notified row count;
+  do not export a separately notified count property that can drift from model
+  resets during recovery.
+
+Prompt attachment validation on macOS through Nix:
+
+- `cargo build --workspace --all-targets`
+- `cargo test --workspace -- --test-threads=1`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `qmllint` for the production Hunk QML module
+- Qt Quick Test: 69 passed, 0 failed, 0 skipped on Qt 6.11.2
 
 Phase 7 runtime-path prerequisite decisions:
 
@@ -946,6 +978,56 @@ external Cargo cache, and Qt 6.11.2 SDK:
 - Workspace Clippy passed for all targets with warnings denied in 1 minute 3
   seconds. Validation used Rust/QML fixtures only and did not launch Hunk or
   Codex or access any credential/keychain path.
+
+Phase 7 Qt session-control decisions:
+
+- Session selection remains Rust-owned and preserves the retained precedence:
+  exact thread override, then repository workspace override, then product
+  defaults. Qt projects only bounded model/effort/service-tier choices and
+  sends the resolved override with new threads, direct prompts, and recovered
+  queued prompts.
+- Approval policy and hidden-model behavior are loaded before the repository
+  worker starts. Approval-policy changes update the live worker and the same
+  persisted workspace setting; failed persistence restores both the projected
+  selection and worker mode.
+- Model descriptions, display labels, catalogs, and per-model effort lists are
+  byte/item bounded before crossing QtBridge. The compact header additionally
+  caps and elides the selected model summary so service-provided names cannot
+  consume the workspace title area.
+- Context usage mirrors the retained baseline-adjusted Codex window math and
+  keeps raw token arithmetic in Rust. QML receives only percentages and compact
+  display values, and the detailed settings subtree is unloaded while its
+  popup is closed.
+- Session properties use a granular change signal rather than the streamed AI
+  event signal. Catalog labels and formatted token strings therefore do not
+  cross the Rust/QML boundary for unrelated streaming updates, preserving the
+  8 ms frame budget.
+- Session writes share the serialized atomic application-state boundary and
+  retain their background tasks through shutdown. Each write reloads current
+  state before changing only session-owned fields, so bookmarks and repository
+  selection cannot be overwritten by a stale full-state snapshot.
+- Settings lock while the active turn, prompt receipt, interrupt, thread
+  lifecycle action, authentication, or startup state makes a change unsafe.
+  Rust validates every selection again, and QML restores the authoritative
+  index if a raced command is rejected.
+- Attachments remain the next independent AI layer; this change does not add
+  file picking, image payloads, or skill selection to the composer.
+
+Phase 7 Qt session-control validation through Nix, reusing the repository
+target, external Cargo cache, and Qt 6.11.2 SDK:
+
+- The full workspace all-target build passed in 1 minute 59 seconds, and the
+  complete workspace all-target test suite passed, including six focused
+  session-projection, selection, context-window, and persistence tests.
+- System `qmllint` produced no warnings for the changed controls and shell
+  fixtures. All 58 QML interaction, accessibility, virtualization, recovery,
+  and rendered-state tests passed in 1.371 seconds.
+- Six focused read-only QML review passes drove the final popup-lifecycle,
+  bounded-layout, authoritative-selection, delegate-width, and text-rendering
+  corrections. Workspace Clippy then passed for all targets with warnings
+  denied in 6.21 seconds on the warm cache.
+- Validation used only Rust/QML fixtures. It did not launch Hunk or Codex and
+  did not access any credential or keychain path.
 
 ### 8. Atomic Qt Cutover and CI Replacement
 

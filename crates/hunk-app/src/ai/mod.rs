@@ -1,3 +1,4 @@
+mod attachments;
 mod dynamic_tools;
 mod paths;
 mod rollout_fallback;
@@ -5,6 +6,7 @@ mod runtime;
 pub mod runtime_path;
 mod types;
 
+pub use attachments::is_supported_ai_image_path;
 pub use dynamic_tools::{
     AiDynamicToolExecutor, BrowserToolConfirmation, BrowserToolSafetyMode,
     browser_confirmation_declined_response, browser_dynamic_tool_confirmation,
