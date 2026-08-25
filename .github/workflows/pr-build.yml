@@ -80,7 +80,7 @@ jobs:
       - name: Cache cargo registry and Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: pr-build-${{ runner.os }}-qt-v1
+          shared-key: pr-build-${{ runner.os }}-qt-native-cpu-v2
           key: cpu-${{ steps.linux-build-cpu.outputs.signature }}
           workspaces: |
             . -> target

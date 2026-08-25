@@ -220,4 +220,6 @@ append a correction when later evidence changes one.
 - Do not share native Zig dependency artifacts across heterogeneous runners
   without a CPU-aware cache key. `libghostty-vt-sys` intentionally lets Zig
   detect the native CPU; restoring that static library on a different Linux
-  runner caused the test binary to exit with `SIGILL` before running tests.
+  runner caused the test binary to exit with `SIGILL` before running tests. Use
+  a fresh cache namespace too, so fallback lookup cannot select an older unsafe
+  artifact before the first CPU-partitioned cache is saved.

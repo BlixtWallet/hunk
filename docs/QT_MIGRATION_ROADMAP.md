@@ -350,8 +350,9 @@ external-volume `target/` and Cargo cache:
   `hunk-terminal` unit tests started. `libghostty-vt-sys` lets Zig auto-detect
   native CPU features, while the dependency target cache can move its static
   library between heterogeneous GitHub runners. The Linux cache key therefore
-  includes the runner CPU model and feature flags; compatible runners still
-  share artifacts without executing native code built for a different CPU.
+  uses a fresh namespace plus the runner CPU model and feature flags;
+  compatible runners still share artifacts without falling back to native code
+  built for a different CPU.
 - The QML suite exercises 1,500 file rows and verifies distant rows are not
   instantiated. The final 8 ms/120 Hz hardware audit remains a cutover gate,
   especially for the substantially heavier Diff and streaming AI surfaces.
