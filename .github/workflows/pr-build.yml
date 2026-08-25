@@ -64,10 +64,24 @@ jobs:
           cache-key-prefix: hunk-qt-${{ env.HUNK_QT_VERSION }}-linux
           aqtversion: ==3.3.0
 
+      # libghostty-vt lets Zig detect native CPU features. Do not restore its
+      # cached static library onto a runner with a different feature set.
+      - name: Identify Linux build CPU
+        id: linux-build-cpu
+        run: |
+          signature="$(awk -F: '
+            /^model name/ && model == "" { model = $2 }
+            /^flags/ && flags == "" { flags = $2 }
+            model != "" && flags != "" { print model "|" flags; exit }
+          ' /proc/cpuinfo | sha256sum | cut -d " " -f 1)"
+          echo "signature=$signature" >> "$GITHUB_OUTPUT"
+        shell: bash
+
       - name: Cache cargo registry and Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: pr-build-${{ runner.os }}-qt-v1
+          key: cpu-${{ steps.linux-build-cpu.outputs.signature }}
           workspaces: |
             . -> target
           cache-on-failure: "true"

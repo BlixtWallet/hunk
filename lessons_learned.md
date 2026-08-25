@@ -217,3 +217,7 @@ append a correction when later evidence changes one.
   follow-up run rose to 9 minutes 52 seconds on Windows and 29 minutes 23
   seconds on Linux, despite GPUI already being absent from the gate. Toolkit
   choice cannot compensate for a cold retained Rust dependency graph.
+- Do not share native Zig dependency artifacts across heterogeneous runners
+  without a CPU-aware cache key. `libghostty-vt-sys` intentionally lets Zig
+  detect the native CPU; restoring that static library on a different Linux
+  runner caused the test binary to exit with `SIGILL` before running tests.
