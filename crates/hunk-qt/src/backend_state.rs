@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use hunk_app::diff::DiffCommentAnchor;
-use hunk_domain::state::AppStateStore;
+use hunk_domain::state::{AiCollaborationModeSelection, AiServiceTierSelection, AppStateStore};
 use hunk_forge::{ForgeReviewOutcome, ForgeReviewWorkspace, GitHubDeviceAuthorization};
 use qtbridge::QObjectHolder;
 
@@ -14,6 +14,10 @@ use crate::ai_bookmarks::{AiBookmarkPersistResult, AiBookmarkTasks};
 use crate::ai_models::AiThreadListModel;
 use crate::ai_requests::AiPendingRequestProjection;
 use crate::ai_runtime::AiRuntimeSlot;
+use crate::ai_session::{
+    AiSessionCatalogProjection, AiSessionChoiceListModel, AiSessionPersistResult,
+    AiSessionPreferences, AiSessionTasks, initial_choice_models,
+};
 use crate::ai_thread_actions::AiThreadActionReceipt;
 use crate::ai_timeline_models::AiTimelineListModel;
 use crate::comment_models::{DiffCommentListModel, DiffCommentProjection};
@@ -145,6 +149,20 @@ pub struct Backend {
     pub(super) git_unstaged_paths: Vec<String>,
     pub(super) ai_threads: Rc<RefCell<AiThreadListModel>>,
     pub(super) ai_timeline: Rc<RefCell<AiTimelineListModel>>,
+    pub(super) ai_models: Rc<RefCell<AiSessionChoiceListModel>>,
+    pub(super) ai_efforts: Rc<RefCell<AiSessionChoiceListModel>>,
+    pub(super) ai_service_tiers: Rc<RefCell<AiSessionChoiceListModel>>,
+    pub(super) ai_session_catalog: AiSessionCatalogProjection,
+    pub(super) ai_session_preferences: AiSessionPreferences,
+    pub(super) ai_selected_model: String,
+    pub(super) ai_selected_effort: String,
+    pub(super) ai_selected_collaboration_mode: String,
+    pub(super) ai_selected_service_tier: String,
+    pub(super) ai_mad_max_mode: bool,
+    pub(super) ai_session_epoch: i32,
+    pub(super) ai_session_current_epoch: Arc<AtomicI32>,
+    pub(super) ai_session_results: Arc<Mutex<HashMap<i32, AiSessionPersistResult>>>,
+    pub(super) ai_session_tasks: AiSessionTasks,
     pub(super) ai_message_queue: AiMessageQueue,
     pub(super) ai_bookmarked_thread_ids: BTreeSet<String>,
     pub(super) ai_bookmark_epoch: i32,
@@ -213,7 +231,25 @@ pub struct Backend {
 
 impl Default for Backend {
     fn default() -> Self {
-        let (git_root, ai_bookmarked_thread_ids) = initial_qt_state();
+        let initial = initial_qt_state();
+        let git_root = initial.git_root;
+        let ai_bookmarked_thread_ids = initial.ai_bookmarked_thread_ids;
+        let ai_session_preferences = initial.ai_session_preferences;
+        let workspace_key = git_root.to_string_lossy().to_string();
+        let initial_session = ai_session_preferences.resolved_session(None, Some(&workspace_key));
+        let ai_selected_collaboration_mode = match initial_session.collaboration_mode {
+            AiCollaborationModeSelection::Default => "code",
+            AiCollaborationModeSelection::Plan => "plan",
+        }
+        .to_owned();
+        let ai_selected_service_tier = match initial_session.service_tier.unwrap_or_default() {
+            AiServiceTierSelection::Standard => "standard",
+            AiServiceTierSelection::Fast => "fast",
+            AiServiceTierSelection::Flex => "flex",
+        }
+        .to_owned();
+        let ai_mad_max_mode = ai_session_preferences.workspace_mad_max(&workspace_key);
+        let (ai_models, ai_efforts, ai_service_tiers) = initial_choice_models();
         let ai_runtime = AiRuntimeSlot::default();
         ai_runtime
             .mailbox
@@ -287,6 +323,20 @@ impl Default for Backend {
             git_unstaged_paths: Vec::new(),
             ai_threads: AiThreadListModel::default_with_attached_qobject(),
             ai_timeline: AiTimelineListModel::default_with_attached_qobject(),
+            ai_models,
+            ai_efforts,
+            ai_service_tiers,
+            ai_session_catalog: AiSessionCatalogProjection::default(),
+            ai_session_preferences,
+            ai_selected_model: initial_session.model.unwrap_or_default(),
+            ai_selected_effort: initial_session.effort.unwrap_or_default(),
+            ai_selected_collaboration_mode,
+            ai_selected_service_tier,
+            ai_mad_max_mode,
+            ai_session_epoch: 0,
+            ai_session_current_epoch: Arc::new(AtomicI32::new(0)),
+            ai_session_results: Arc::new(Mutex::new(HashMap::new())),
+            ai_session_tasks: AiSessionTasks::default(),
             ai_message_queue: AiMessageQueue::default(),
             ai_bookmarked_thread_ids,
             ai_bookmark_epoch: 0,
@@ -355,7 +405,13 @@ impl Default for Backend {
     }
 }
 
-fn initial_qt_state() -> (PathBuf, BTreeSet<String>) {
+struct InitialQtState {
+    git_root: PathBuf,
+    ai_bookmarked_thread_ids: BTreeSet<String>,
+    ai_session_preferences: AiSessionPreferences,
+}
+
+fn initial_qt_state() -> InitialQtState {
     let state = AppStateStore::new()
         .and_then(|store| store.load_or_default())
         .unwrap_or_default();
@@ -365,7 +421,11 @@ fn initial_qt_state() -> (PathBuf, BTreeSet<String>) {
         .filter(|path| path.is_dir())
         .or_else(|| std::env::current_dir().ok())
         .unwrap_or_else(|| PathBuf::from("."));
-    (git_root, state.ai_bookmarked_thread_ids)
+    InitialQtState {
+        git_root,
+        ai_bookmarked_thread_ids: state.ai_bookmarked_thread_ids.clone(),
+        ai_session_preferences: AiSessionPreferences::from_state(&state),
+    }
 }
 
 pub(super) fn persist_active_project(root: PathBuf) -> anyhow::Result<()> {

@@ -1,6 +1,4 @@
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::Arc;
 
 use hunk_app::ai::AiWorkerCommand;
@@ -11,33 +9,26 @@ use hunk_git::workspace::{GitWorkspaceCommand, load_git_workspace};
 use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString};
 
 use crate::ai_bookmarks::{complete_ai_bookmark_persist, queue_ai_toggle_thread_bookmark};
-use crate::ai_models::AiThreadListModel;
-use crate::ai_timeline_models::AiTimelineListModel;
+use crate::ai_session::{
+    complete_ai_session_persist, queue_ai_select_collaboration_mode, queue_ai_select_effort,
+    queue_ai_select_model, queue_ai_select_service_tier, queue_ai_set_mad_max_mode,
+};
 use crate::backend_ai::{
-    ai_active_queue_sending, ai_active_queued_message_count, ai_active_request_count,
-    ai_interrupt_pending, ai_pending_request_count, ai_prompt_pending, ai_queued_message_count,
-    ai_request_answerable, ai_request_description, ai_request_id, ai_request_kind,
-    ai_request_questions_json, ai_request_reason, ai_request_resolving, ai_request_title,
-    ai_thread_action_pending, apply_ai_runtime_events, clear_ai_message_queue,
-    edit_last_ai_queued_prompt, ensure_ai_runtime_started, queue_ai_approval,
-    queue_ai_archive_thread, queue_ai_create_thread, queue_ai_follow_up, queue_ai_fork_thread,
-    queue_ai_interrupt, queue_ai_prompt, queue_ai_select_thread, queue_ai_user_input,
-    reset_ai_runtime_state, send_ai_worker_command, stop_ai_runtime, take_ai_recovered_prompt,
+    apply_ai_runtime_events, clear_ai_message_queue, edit_last_ai_queued_prompt,
+    ensure_ai_runtime_started, queue_ai_approval, queue_ai_archive_thread, queue_ai_create_thread,
+    queue_ai_follow_up, queue_ai_fork_thread, queue_ai_interrupt, queue_ai_prompt,
+    queue_ai_select_thread, queue_ai_user_input, reset_ai_runtime_state, send_ai_worker_command,
+    stop_ai_runtime, take_ai_recovered_prompt,
 };
 pub use crate::backend_state::{Backend, Workspace};
-use crate::backend_state::{
-    DiffCommentRequestKind, ForgeAsyncPayload, next_forge_epoch, persist_active_project,
-};
-use crate::comment_models::DiffCommentListModel;
+use crate::backend_state::{DiffCommentRequestKind, ForgeAsyncPayload, next_forge_epoch};
 use crate::comments::DiffCommentStartOutcome;
-use crate::diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
+use crate::diff_models::DiffSnapshotPayload;
 use crate::forge::{
-    ForgeSnapshotPayload, create_or_find_review, load_forge_snapshot, provider_label,
-    review_kind_label, review_short_label, run_github_device_flow, save_forge_token,
+    create_or_find_review, load_forge_snapshot, review_short_label, run_github_device_flow,
+    save_forge_token,
 };
-use crate::git_models::{
-    GitBranchListModel, GitCommitListModel, GitFileListModel, GitSnapshotPayload,
-};
+use crate::git_models::GitSnapshotPayload;
 use crate::local_path_from_qml_folder_url;
 
 #[qobject]
@@ -47,8 +38,8 @@ impl Backend {
         Member = active_workspace,
         Notify = active_workspace_changed
     );
-    qproperty!("diffFiles", Read = diff_files, Constant);
-    qproperty!("diffRows", Read = diff_rows, Constant);
+    qproperty!("diffFiles", Member = diff_files, Constant);
+    qproperty!("diffRows", Member = diff_rows, Constant);
     qproperty!(
         "diffSelectedPath",
         Member = diff_selected_path,
@@ -104,7 +95,7 @@ impl Backend {
         Member = diff_search_target_row,
         Notify = diff_state_changed
     );
-    qproperty!("diffComments", Read = diff_comments, Constant);
+    qproperty!("diffComments", Member = diff_comments, Constant);
     qproperty!(
         "diffCommentsReady",
         Member = diff_comments_ready,
@@ -165,9 +156,9 @@ impl Backend {
         Member = diff_comment_target_revision,
         Notify = diff_comments_state_changed
     );
-    qproperty!("gitFiles", Read = git_files, Constant);
-    qproperty!("gitBranches", Read = git_branches, Constant);
-    qproperty!("gitCommits", Read = git_commits, Constant);
+    qproperty!("gitFiles", Member = git_files, Constant);
+    qproperty!("gitBranches", Member = git_branches, Constant);
+    qproperty!("gitCommits", Member = git_commits, Constant);
     qproperty!("gitRoot", Member = git_root, Notify = git_state_changed);
     qproperty!(
         "gitRepositoryName",
@@ -232,8 +223,116 @@ impl Backend {
         Member = git_action_label,
         Notify = git_state_changed
     );
-    qproperty!("aiThreads", Read = ai_threads, Constant);
-    qproperty!("aiTimeline", Read = ai_timeline, Constant);
+    qproperty!("aiThreads", Member = ai_threads, Constant);
+    qproperty!("aiTimeline", Member = ai_timeline, Constant);
+    qproperty!("aiModels", Member = ai_models, Constant);
+    qproperty!("aiEfforts", Member = ai_efforts, Constant);
+    qproperty!("aiServiceTiers", Member = ai_service_tiers, Constant);
+    qproperty!(
+        "aiSelectedModelIndex",
+        Read = ai_selected_model_index,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiSelectedEffortIndex",
+        Read = ai_selected_effort_index,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiSelectedServiceTierIndex",
+        Read = ai_selected_service_tier_index,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiSelectedModelLabel",
+        Read = ai_selected_model_label,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiSelectedEffortLabel",
+        Read = ai_selected_effort_label,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiSelectedCollaborationMode",
+        Member = ai_selected_collaboration_mode,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiSelectedCollaborationLabel",
+        Read = ai_selected_collaboration_label,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiSelectedServiceTierLabel",
+        Read = ai_selected_service_tier_label,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiMadMaxMode",
+        Member = ai_mad_max_mode,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiApprovalPolicyLabel",
+        Read = ai_approval_policy_label,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiEffortOptionCount",
+        Read = ai_effort_option_count,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiSessionControlsLocked",
+        Read = ai_session_controls_locked,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiContextAvailable",
+        Read = ai_context_available,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiContextPercentUsed",
+        Read = ai_context_percent_used,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiContextPercentLeft",
+        Read = ai_context_percent_left,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiContextTokenSummary",
+        Read = ai_context_token_summary,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiContextInputTokens",
+        Read = ai_context_input_tokens,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiContextCachedInputTokens",
+        Read = ai_context_cached_input_tokens,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiContextOutputTokens",
+        Read = ai_context_output_tokens,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiContextReasoningTokens",
+        Read = ai_context_reasoning_tokens,
+        Notify = ai_session_state_changed
+    );
+    qproperty!(
+        "aiContextBillableTokens",
+        Read = ai_context_billable_tokens,
+        Notify = ai_session_state_changed
+    );
     qproperty!("aiReady", Member = ai_ready, Notify = ai_state_changed);
     qproperty!("aiLoading", Member = ai_loading, Notify = ai_state_changed);
     qproperty!(
@@ -539,19 +638,162 @@ impl Backend {
     fn status_message_changed(&mut self);
 
     #[qsignal]
-    fn diff_state_changed(&mut self);
+    pub(super) fn diff_state_changed(&mut self);
 
     #[qsignal]
-    fn diff_comments_state_changed(&mut self);
+    pub(super) fn diff_comments_state_changed(&mut self);
 
     #[qsignal]
-    fn git_state_changed(&mut self);
+    pub(super) fn git_state_changed(&mut self);
 
     #[qsignal]
-    fn ai_state_changed(&mut self);
+    pub(super) fn ai_state_changed(&mut self);
 
     #[qsignal]
-    fn forge_state_changed(&mut self);
+    pub(super) fn ai_session_state_changed(&mut self);
+
+    #[qsignal]
+    pub(super) fn forge_state_changed(&mut self);
+
+    fn ai_selected_model_index(&self) -> i32 {
+        self.ai_selected_model_index_value()
+    }
+
+    fn ai_selected_effort_index(&self) -> i32 {
+        self.ai_selected_effort_index_value()
+    }
+
+    fn ai_selected_service_tier_index(&self) -> i32 {
+        self.ai_selected_service_tier_index_value()
+    }
+
+    fn ai_selected_model_label(&self) -> String {
+        self.ai_selected_model_label_value()
+    }
+
+    fn ai_selected_effort_label(&self) -> String {
+        self.ai_selected_effort_label_value()
+    }
+
+    fn ai_selected_collaboration_label(&self) -> String {
+        self.ai_selected_collaboration_label_value()
+    }
+
+    fn ai_selected_service_tier_label(&self) -> String {
+        self.ai_selected_service_tier_label_value()
+    }
+
+    fn ai_approval_policy_label(&self) -> String {
+        self.ai_approval_policy_label_value()
+    }
+
+    fn ai_effort_option_count(&self) -> i32 {
+        self.ai_effort_option_count_value()
+    }
+
+    fn ai_session_controls_locked(&self) -> bool {
+        self.ai_session_controls_locked_value()
+    }
+
+    fn ai_context_available(&self) -> bool {
+        self.ai_context_available_value()
+    }
+
+    fn ai_context_percent_used(&self) -> i32 {
+        self.ai_context_percent_used_value()
+    }
+
+    fn ai_context_percent_left(&self) -> i32 {
+        self.ai_context_percent_left_value()
+    }
+
+    fn ai_context_token_summary(&self) -> String {
+        self.ai_context_token_summary_value()
+    }
+
+    fn ai_context_input_tokens(&self) -> String {
+        self.ai_context_input_tokens_value()
+    }
+
+    fn ai_context_cached_input_tokens(&self) -> String {
+        self.ai_context_cached_input_tokens_value()
+    }
+
+    fn ai_context_output_tokens(&self) -> String {
+        self.ai_context_output_tokens_value()
+    }
+
+    fn ai_context_reasoning_tokens(&self) -> String {
+        self.ai_context_reasoning_tokens_value()
+    }
+
+    fn ai_context_billable_tokens(&self) -> String {
+        self.ai_context_billable_tokens_value()
+    }
+
+    fn ai_thread_action_pending(&self) -> bool {
+        self.ai_thread_action_pending_value()
+    }
+
+    fn ai_prompt_pending(&self) -> bool {
+        self.ai_prompt_pending_value()
+    }
+
+    fn ai_queued_message_count(&self) -> i32 {
+        self.ai_queued_message_count_value()
+    }
+
+    fn ai_active_queued_message_count(&self) -> i32 {
+        self.ai_active_queued_message_count_value()
+    }
+
+    fn ai_active_queue_sending(&self) -> bool {
+        self.ai_active_queue_sending_value()
+    }
+
+    fn ai_interrupt_pending(&self) -> bool {
+        self.ai_interrupt_pending_value()
+    }
+
+    fn ai_pending_request_count(&self) -> i32 {
+        self.ai_pending_request_count_value()
+    }
+
+    fn ai_active_request_count(&self) -> i32 {
+        self.ai_active_request_count_value()
+    }
+
+    fn ai_request_id(&self) -> String {
+        self.ai_request_id_value()
+    }
+
+    fn ai_request_kind(&self) -> String {
+        self.ai_request_kind_value()
+    }
+
+    fn ai_request_title(&self) -> String {
+        self.ai_request_title_value()
+    }
+
+    fn ai_request_description(&self) -> String {
+        self.ai_request_description_value()
+    }
+
+    fn ai_request_reason(&self) -> String {
+        self.ai_request_reason_value()
+    }
+
+    fn ai_request_questions_json(&self) -> String {
+        self.ai_request_questions_json_value()
+    }
+
+    fn ai_request_answerable(&self) -> bool {
+        self.ai_request_answerable_value()
+    }
+
+    fn ai_request_resolving(&self) -> bool {
+        self.ai_request_resolving_value()
+    }
 
     #[qslot]
     fn select_workspace(&mut self, workspace: String) {
@@ -628,7 +870,7 @@ impl Backend {
     }
 
     #[qslot]
-    fn refresh_diff(&mut self) {
+    pub(super) fn refresh_diff(&mut self) {
         if self.diff_loading || self.diff_selected_path.is_empty() {
             return;
         }
@@ -767,7 +1009,7 @@ impl Backend {
     }
 
     #[qslot]
-    fn refresh_diff_comments(&mut self) {
+    pub(super) fn refresh_diff_comments(&mut self) {
         let command = self.initial_diff_comment_load_command();
         match self.start_diff_comment_command(DiffCommentRequestKind::Load, command) {
             Ok(DiffCommentStartOutcome::Started) => self.diff_comments_state_changed(),
@@ -1054,6 +1296,53 @@ impl Backend {
     #[qslot]
     fn complete_ai_bookmark_persist(&mut self, epoch: i32) {
         complete_ai_bookmark_persist(self, epoch);
+        self.ai_state_changed();
+    }
+
+    #[qslot]
+    fn select_ai_model(&mut self, index: i32) -> bool {
+        let changed = queue_ai_select_model(self, index);
+        self.ai_session_state_changed();
+        self.ai_state_changed();
+        changed
+    }
+
+    #[qslot]
+    fn select_ai_effort(&mut self, index: i32) -> bool {
+        let changed = queue_ai_select_effort(self, index);
+        self.ai_session_state_changed();
+        self.ai_state_changed();
+        changed
+    }
+
+    #[qslot]
+    fn select_ai_collaboration_mode(&mut self, mode: String) -> bool {
+        let changed = queue_ai_select_collaboration_mode(self, mode);
+        self.ai_session_state_changed();
+        self.ai_state_changed();
+        changed
+    }
+
+    #[qslot]
+    fn select_ai_service_tier(&mut self, index: i32) -> bool {
+        let changed = queue_ai_select_service_tier(self, index);
+        self.ai_session_state_changed();
+        self.ai_state_changed();
+        changed
+    }
+
+    #[qslot]
+    fn set_ai_mad_max_mode(&mut self, enabled: bool) -> bool {
+        let changed = queue_ai_set_mad_max_mode(self, enabled);
+        self.ai_session_state_changed();
+        self.ai_state_changed();
+        changed
+    }
+
+    #[qslot]
+    fn complete_ai_session_persist(&mut self, epoch: i32) {
+        complete_ai_session_persist(self, epoch);
+        self.ai_session_state_changed();
         self.ai_state_changed();
     }
 
@@ -1346,7 +1635,7 @@ impl Backend {
     }
 
     #[qslot]
-    fn refresh_forge_review(&mut self) {
+    pub(super) fn refresh_forge_review(&mut self) {
         if !self.git_ready || self.forge_loading || self.forge_busy {
             return;
         }
@@ -1604,7 +1893,7 @@ impl Backend {
         }
     }
 
-    fn ensure_ai_runtime_started(&mut self) {
+    pub(super) fn ensure_ai_runtime_started(&mut self) {
         if ensure_ai_runtime_started(self) {
             self.ai_state_changed();
         }
@@ -1615,280 +1904,12 @@ impl Backend {
         self.ai_state_changed();
     }
 
-    fn ai_prompt_pending(&self) -> bool {
-        ai_prompt_pending(self)
-    }
-
-    fn ai_queued_message_count(&self) -> i32 {
-        ai_queued_message_count(self)
-    }
-
-    fn ai_active_queued_message_count(&self) -> i32 {
-        ai_active_queued_message_count(self)
-    }
-
-    fn ai_active_queue_sending(&self) -> bool {
-        ai_active_queue_sending(self)
-    }
-
-    fn ai_interrupt_pending(&self) -> bool {
-        ai_interrupt_pending(self)
-    }
-
-    fn ai_thread_action_pending(&self) -> bool {
-        ai_thread_action_pending(self)
-    }
-
-    fn ai_pending_request_count(&self) -> i32 {
-        ai_pending_request_count(self)
-    }
-
-    fn ai_active_request_count(&self) -> i32 {
-        ai_active_request_count(self)
-    }
-
-    fn ai_request_id(&self) -> String {
-        ai_request_id(self)
-    }
-
-    fn ai_request_kind(&self) -> String {
-        ai_request_kind(self)
-    }
-
-    fn ai_request_title(&self) -> String {
-        ai_request_title(self)
-    }
-
-    fn ai_request_description(&self) -> String {
-        ai_request_description(self)
-    }
-
-    fn ai_request_reason(&self) -> String {
-        ai_request_reason(self)
-    }
-
-    fn ai_request_questions_json(&self) -> String {
-        ai_request_questions_json(self)
-    }
-
-    fn ai_request_answerable(&self) -> bool {
-        ai_request_answerable(self)
-    }
-
-    fn ai_request_resolving(&self) -> bool {
-        ai_request_resolving(self)
-    }
-
     fn set_status_message(&mut self, status_message: String) {
         if self.status_message == status_message {
             return;
         }
         self.status_message = status_message;
         self.status_message_changed();
-    }
-
-    pub(super) fn notify_git_state_changed(&mut self) {
-        self.git_state_changed();
-    }
-
-    fn diff_files(&self) -> Rc<RefCell<GitFileListModel>> {
-        self.diff_files.clone()
-    }
-
-    fn diff_rows(&self) -> Rc<RefCell<DiffRowListModel>> {
-        self.diff_rows.clone()
-    }
-
-    fn diff_comments(&self) -> Rc<RefCell<DiffCommentListModel>> {
-        self.diff_comments.clone()
-    }
-
-    fn git_files(&self) -> Rc<RefCell<GitFileListModel>> {
-        self.git_files.clone()
-    }
-
-    fn git_branches(&self) -> Rc<RefCell<GitBranchListModel>> {
-        self.git_branches.clone()
-    }
-
-    fn git_commits(&self) -> Rc<RefCell<GitCommitListModel>> {
-        self.git_commits.clone()
-    }
-
-    fn ai_threads(&self) -> Rc<RefCell<AiThreadListModel>> {
-        self.ai_threads.clone()
-    }
-
-    fn ai_timeline(&self) -> Rc<RefCell<AiTimelineListModel>> {
-        self.ai_timeline.clone()
-    }
-
-    fn apply_git_payload(&mut self, payload: GitSnapshotPayload) {
-        let diff_files = payload.diff_files;
-        let diff_file_summaries = payload.diff_file_summaries;
-        let comment_scope_changed =
-            self.git_root != payload.root || self.git_branch_name != payload.branch_name;
-        let forge_context_changed = self.git_root != payload.root
-            || self.git_branch_name != payload.branch_name
-            || !self.forge_ready;
-        self.git_staged_paths = payload
-            .files
-            .iter()
-            .filter(|file| file.staged)
-            .map(|file| file.path.clone())
-            .collect();
-        self.git_unstaged_paths = payload
-            .files
-            .iter()
-            .filter(|file| !file.staged)
-            .map(|file| file.path.clone())
-            .collect();
-        self.git_files.borrow_mut().replace(payload.files);
-        self.git_branches.borrow_mut().replace(payload.branches);
-        self.git_commits.borrow_mut().replace(payload.commits);
-        self.git_root = payload.root;
-        self.git_repository_name = payload.repository_name;
-        self.git_branch_name = payload.branch_name;
-        self.git_branch_has_upstream = payload.branch_has_upstream;
-        self.git_branch_ahead_count = payload.branch_ahead_count;
-        self.git_branch_behind_count = payload.branch_behind_count;
-        self.git_changed_file_count = payload.changed_file_count;
-        self.git_staged_file_count = payload.staged_file_count;
-        self.git_unstaged_file_count = payload.unstaged_file_count;
-        self.git_last_commit_subject = payload.last_commit_subject;
-        self.git_ready = true;
-        self.git_error.clear();
-        if comment_scope_changed {
-            self.reset_diff_comment_state();
-            self.diff_comments_state_changed();
-        }
-        self.replace_diff_files(diff_files, diff_file_summaries);
-        if self.git_root_pending_persist {
-            self.git_root_pending_persist = false;
-            if let Err(error) = persist_active_project(PathBuf::from(self.git_root.as_str())) {
-                self.git_status_message =
-                    format!("Repository loaded; failed to save selection: {error:#}");
-            }
-        }
-        self.git_state_changed();
-        self.refresh_diff();
-        self.refresh_diff_comments();
-        if forge_context_changed {
-            self.reset_forge_state();
-            self.forge_state_changed();
-            self.refresh_forge_review();
-        }
-        if self.active_workspace == Workspace::Ai.as_str() {
-            self.ensure_ai_runtime_started();
-        }
-    }
-
-    fn replace_diff_files(
-        &mut self,
-        files: Vec<crate::git_models::GitFileItem>,
-        summaries: Vec<DiffFileSummary>,
-    ) {
-        self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
-        let previous_path = self.diff_selected_path.clone();
-        self.diff_loading = false;
-        self.diff_ready = false;
-        self.diff_error.clear();
-        self.diff_rows.borrow_mut().replace(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Arc::new(Vec::new()),
-        );
-        self.clear_diff_comment_row_state();
-        self.clear_diff_search_results();
-        self.diff_files.borrow_mut().replace(files);
-        self.diff_file_summaries = summaries
-            .into_iter()
-            .map(|summary| (summary.path.clone(), summary))
-            .collect();
-
-        let selected = self
-            .diff_file_summaries
-            .get(previous_path.as_str())
-            .cloned()
-            .or_else(|| {
-                self.diff_file_summaries
-                    .values()
-                    .min_by(|left, right| left.path.cmp(&right.path))
-                    .cloned()
-            });
-        if let Some(summary) = selected {
-            self.apply_diff_selection(&summary);
-        } else {
-            self.diff_selected_path.clear();
-            self.diff_status_tag.clear();
-            self.diff_additions = 0;
-            self.diff_removals = 0;
-            self.diff_ready = true;
-            self.diff_state_changed();
-        }
-        self.diff_comments_state_changed();
-    }
-
-    fn apply_diff_selection(&mut self, summary: &DiffFileSummary) {
-        self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
-        self.diff_loading = false;
-        self.diff_rows.borrow_mut().replace(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Arc::new(Vec::new()),
-        );
-        self.clear_diff_comment_row_state();
-        self.clear_diff_search_results();
-        self.diff_selected_path = summary.path.clone();
-        self.diff_status_tag = summary.status.tag().to_owned();
-        self.diff_additions = i32::try_from(summary.line_stats.added).unwrap_or(i32::MAX);
-        self.diff_removals = i32::try_from(summary.line_stats.removed).unwrap_or(i32::MAX);
-        self.diff_ready = false;
-        self.diff_error.clear();
-        self.diff_state_changed();
-        self.diff_comments_state_changed();
-    }
-
-    fn reset_diff_state(&mut self) {
-        self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
-        self.diff_files.borrow_mut().replace(Vec::new());
-        self.diff_rows.borrow_mut().replace(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Arc::new(Vec::new()),
-        );
-        self.clear_diff_comment_row_state();
-        self.diff_selected_path.clear();
-        self.diff_status_tag.clear();
-        self.diff_additions = 0;
-        self.diff_removals = 0;
-        self.diff_ready = false;
-        self.diff_loading = false;
-        self.diff_error.clear();
-        self.diff_file_summaries.clear();
-        self.diff_search_query.clear();
-        self.clear_diff_search_results();
-        self.diff_state_changed();
-        self.diff_comments_state_changed();
-    }
-
-    fn rebuild_diff_search_results(&mut self) {
-        self.diff_search_matches = self
-            .diff_rows
-            .borrow()
-            .matching_rows(self.diff_search_query.as_str());
-        self.diff_search_match_count =
-            i32::try_from(self.diff_search_matches.len()).unwrap_or(i32::MAX);
-        if let Some(target) = self.diff_search_matches.first().copied() {
-            self.diff_search_match_index = 0;
-            self.diff_search_target_row = i32::try_from(target).unwrap_or(i32::MAX);
-        } else {
-            self.diff_search_match_index = -1;
-            self.diff_search_target_row = -1;
-        }
     }
 
     fn begin_forge_action(&mut self, label: String) -> i32 {
@@ -1937,55 +1958,5 @@ impl Backend {
         self.forge_action_label.clear();
         self.forge_error = format!("Failed to start {operation}: {error}");
         self.forge_state_changed();
-    }
-
-    fn apply_forge_payload(&mut self, payload: ForgeSnapshotPayload) {
-        let provider = payload.workspace.base_repo.provider;
-        let authenticated = payload.authenticated();
-        let auth_mode = payload.auth_mode().to_owned();
-        self.forge_available = true;
-        self.forge_provider_label = provider_label(provider).to_owned();
-        self.forge_review_kind_label = review_kind_label(provider).to_owned();
-        self.forge_host = payload.workspace.base_repo.host.clone();
-        self.forge_repository_path = payload.workspace.base_repo.path.clone();
-        self.forge_authenticated = authenticated;
-        self.forge_account_label = payload.account_label;
-        self.forge_auth_mode = auth_mode;
-        self.forge_default_target_branch = payload.workspace.target_branch.clone();
-        self.forge_context = Some(payload.workspace);
-        self.forge_token = payload.token;
-        self.forge_ready = true;
-        self.forge_error.clear();
-        if self.forge_authenticated {
-            self.forge_status_message = format!("{} connected", self.forge_provider_label);
-        } else {
-            self.forge_status_message.clear();
-        }
-        self.apply_review_summary(payload.review);
-    }
-
-    fn reset_forge_state(&mut self) {
-        next_forge_epoch(self);
-        self.forge_available = false;
-        self.forge_provider_label.clear();
-        self.forge_review_kind_label.clear();
-        self.forge_host.clear();
-        self.forge_repository_path.clear();
-        self.forge_authenticated = false;
-        self.forge_account_label.clear();
-        self.forge_auth_mode.clear();
-        self.forge_ready = false;
-        self.forge_loading = false;
-        self.forge_busy = false;
-        self.forge_error.clear();
-        self.forge_status_message.clear();
-        self.forge_action_label.clear();
-        self.forge_default_target_branch.clear();
-        self.apply_review_summary(None);
-        self.forge_device_flow_active = false;
-        self.forge_device_user_code.clear();
-        self.forge_device_verification_url.clear();
-        self.forge_context = None;
-        self.forge_token = None;
     }
 }

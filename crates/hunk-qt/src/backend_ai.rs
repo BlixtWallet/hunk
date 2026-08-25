@@ -1,9 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use hunk_app::ai::{
-    AiApprovalDecision, AiTurnSessionOverrides, AiWorkerCommand, AiWorkerEventPayload,
-};
+use hunk_app::ai::{AiApprovalDecision, AiWorkerCommand, AiWorkerEventPayload};
 use qtbridge::{QObjectHolder, invoke_method};
 
 use crate::AiPromptReceipt;
@@ -11,6 +9,9 @@ use crate::ai_requests::AiPendingRequestProjection;
 use crate::ai_runtime::{
     AiProjectedSnapshot, AiRuntimeEvent, prepare_ai_worker_config, reject_browser_call,
     start_ai_runtime,
+};
+use crate::ai_session::{
+    ai_turn_session_overrides, apply_ai_session_projection, reset_ai_session_projection,
 };
 use crate::ai_thread_actions::AiThreadActionReceipt;
 use crate::backend_state::Backend;
@@ -32,6 +33,8 @@ pub(super) fn reset_ai_runtime_state(backend: &mut Backend) {
     backend.ai_active_thread_cwd.clear();
     backend.ai_active_turn_id.clear();
     backend.ai_turn_running = false;
+    reset_ai_session_projection(backend);
+    backend.ai_session_state_changed();
     backend.ai_prompt_receipt = None;
     backend.ai_thread_action = None;
     backend.ai_interrupt_thread_id.clear();
@@ -168,6 +171,7 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
         timeline,
         queue,
         requests,
+        session,
         ..
     } = projected;
     projection.apply_bookmarks(&backend.ai_bookmarked_thread_ids);
@@ -219,6 +223,11 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     backend.ai_timeline_total_row_count = timeline.total_row_count;
     backend.ai_timeline_hidden_row_count = timeline.hidden_row_count;
     backend.ai_requests = requests;
+    let session_changed = backend.ai_session_catalog != session;
+    apply_ai_session_projection(backend, session);
+    if session_changed {
+        backend.ai_session_state_changed();
+    }
     backend.ai_requires_authentication = requires_openai_auth;
     backend.ai_ready = true;
     backend.ai_loading = false;
@@ -266,13 +275,14 @@ pub(super) fn queue_ai_prompt(backend: &mut Backend, prompt: String) -> bool {
         backend.ai_active_turn_id.clone(),
         backend.ai_timeline_total_turn_count,
     );
+    let thread_id = backend.ai_active_thread_id.clone();
     let command = AiWorkerCommand::SendPrompt {
-        thread_id: backend.ai_active_thread_id.clone(),
+        thread_id: thread_id.clone(),
         prompt: Some(prompt.to_owned()),
         local_image_paths: Vec::new(),
         selected_skills: Vec::new(),
         skill_bindings: Vec::new(),
-        session_overrides: AiTurnSessionOverrides::default(),
+        session_overrides: ai_turn_session_overrides(backend, Some(thread_id.as_str())),
     };
     if !send_ai_command(backend, command, "Sending message to Codex…") {
         return false;
@@ -454,6 +464,7 @@ pub(super) fn queue_ai_create_thread(backend: &mut Backend) -> bool {
     if thread_action_blocked(backend) {
         return false;
     }
+    let session_overrides = ai_turn_session_overrides(backend, None);
     queue_ai_thread_action(
         backend,
         AiThreadActionReceipt::create(),
@@ -462,7 +473,7 @@ pub(super) fn queue_ai_create_thread(backend: &mut Backend) -> bool {
             local_image_paths: Vec::new(),
             selected_skills: Vec::new(),
             skill_bindings: Vec::new(),
-            session_overrides: AiTurnSessionOverrides::default(),
+            session_overrides,
         },
         "Creating a Codex thread…",
     )
@@ -550,7 +561,17 @@ pub(super) fn ensure_ai_runtime_started(backend: &mut Backend) -> bool {
 
     reset_ai_runtime_state(backend);
     backend.ai_workspace_root = workspace_key.clone();
-    let config = match prepare_ai_worker_config(Path::new(workspace_key.as_str())) {
+    let mad_max_mode = backend
+        .ai_session_preferences
+        .workspace_mad_max(workspace_key.as_str());
+    let include_hidden_models = backend
+        .ai_session_preferences
+        .workspace_include_hidden_models(workspace_key.as_str());
+    let config = match prepare_ai_worker_config(
+        Path::new(workspace_key.as_str()),
+        mad_max_mode,
+        include_hidden_models,
+    ) {
         Ok(config) => config,
         Err(error) => {
             backend.ai_connection_state = "failed".to_owned();
@@ -586,8 +607,8 @@ pub(super) fn send_ai_worker_command(
     backend: &mut Backend,
     command: AiWorkerCommand,
     status_message: &str,
-) {
-    let _ = send_ai_command(backend, command, status_message);
+) -> bool {
+    send_ai_command(backend, command, status_message)
 }
 
 fn send_ai_command(backend: &mut Backend, command: AiWorkerCommand, status: &str) -> bool {
@@ -664,12 +685,15 @@ fn maybe_submit_ready_ai_queued_messages(
         let sent = send_ai_command(
             backend,
             AiWorkerCommand::SendPrompt {
+                session_overrides: ai_turn_session_overrides(
+                    backend,
+                    Some(queued.thread_id.as_str()),
+                ),
                 thread_id: queued.thread_id,
                 prompt: Some(queued.prompt),
                 local_image_paths: Vec::new(),
                 selected_skills: Vec::new(),
                 skill_bindings: Vec::new(),
-                session_overrides: AiTurnSessionOverrides::default(),
             },
             "Sending the next queued message to Codex…",
         );

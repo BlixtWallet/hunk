@@ -1,16 +1,13 @@
 import QtQuick
 import QtTest
 import Hunk 1.0
-
 TestCase {
     name: "HunkShell"
     width: 1280
     height: 760
     when: windowShown
-
     property bool snapshotReady: false
     property bool snapshotSaved: false
-
     ListModel { id: gitFilesModel }
     ListModel { id: gitBranchesModel }
     ListModel { id: gitCommitsModel }
@@ -19,15 +16,28 @@ TestCase {
     ListModel { id: diffCommentsModel }
     ListModel { id: aiThreadsModel }
     ListModel { id: aiTimelineModel }
-
+    ListModel {
+        id: aiModelsModel
+        ListElement { value: ""; label: "Server default" }
+        ListElement { value: "gpt-5.5"; label: "GPT-5.5" }
+    }
+    ListModel {
+        id: aiEffortsModel
+        ListElement { value: ""; label: "Model default" }
+        ListElement { value: "high"; label: "High" }
+    }
+    ListModel {
+        id: aiServiceTiersModel
+        ListElement { value: "standard"; label: "Standard" }
+        ListElement { value: "fast"; label: "Fast" }
+        ListElement { value: "flex"; label: "Flex" }
+    }
     QtObject {
         id: fakeBackend
-
         property string activeWorkspace: "diff"
         property bool ready: true
         property string statusMessage: "Test backend ready"
         property string lastRequestedWorkspace: ""
-
         property var diffFiles: diffFilesModel
         property var diffRows: diffRowsModel
         property string diffSelectedPath: "crates/hunk-qt/src/backend.rs"
@@ -78,6 +88,11 @@ TestCase {
         property string gitActionLabel: ""
         property var aiThreads: aiThreadsModel
         property var aiTimeline: aiTimelineModel
+        property QtObject aiModels: aiModelsModel; property QtObject aiEfforts: aiEffortsModel; property QtObject aiServiceTiers: aiServiceTiersModel
+        property int aiSelectedModelIndex: 1; property int aiSelectedEffortIndex: 1; property int aiSelectedServiceTierIndex: 0; property int aiEffortOptionCount: 2
+        property string aiSelectedModelLabel: "GPT-5.5"; property string aiSelectedEffortLabel: "High"; property string aiSelectedCollaborationMode: "code"; property string aiSelectedCollaborationLabel: "Code"; property string aiSelectedServiceTierLabel: "Standard"; property string aiApprovalPolicyLabel: "Full access"
+        property bool aiMadMaxMode: true; readonly property bool aiSessionControlsLocked: aiTurnRunning; property bool aiContextAvailable: true; property int aiContextPercentUsed: 27; property int aiContextPercentLeft: 73
+        property string aiContextTokenSummary: "73k / 258k tokens"; property string aiContextInputTokens: "3,600"; property string aiContextCachedInputTokens: "900"; property string aiContextOutputTokens: "700"; property string aiContextReasoningTokens: "300"; property string aiContextBillableTokens: "4,300"
         property bool aiReady: true
         property bool aiLoading: false
         property bool aiRequiresAuthentication: false
@@ -150,21 +165,17 @@ TestCase {
         property bool failNextAiRequest: false
         property var pendingAiRequestIds: []
         property var recoveredAiPrompts: ({})
-
         signal diffCommentsStateChanged
         signal aiStateChanged
-
         function record(command, argument) {
             commandCount += 1
             lastCommand = command
             lastArgument = argument || ""
         }
-
         function select_workspace(workspace) {
             lastRequestedWorkspace = workspace
             activeWorkspace = workspace
         }
-
         function refresh_git_workspace() { record("refresh") }
         function select_diff_file(path) {
             record("select_diff_file", path)
@@ -468,6 +479,11 @@ TestCase {
             }
             return false
         }
+        function select_ai_model(index) { record("select_ai_model", String(index)); return true }
+        function select_ai_effort(index) { record("select_ai_effort", String(index)); return true }
+        function select_ai_collaboration_mode(mode) { record("select_ai_collaboration_mode", mode); return true }
+        function select_ai_service_tier(index) { record("select_ai_service_tier", String(index)); return true }
+        function set_ai_mad_max_mode(enabled) { record("set_ai_mad_max_mode", String(enabled)); return true }
         function send_ai_prompt(prompt) {
             if (!aiReady || aiLoading || aiRequiresAuthentication
                     || aiActiveThreadId.length === 0 || aiPromptPending
@@ -1074,12 +1090,10 @@ TestCase {
         openAiWorkspace()
         shell.sidebarItem.threadListView.forceLayout()
         shell.workspaceItem.timelineListView.forceLayout()
-
         compare(shell.sidebarItem.threadListView.count, 2)
         verify(shell.sidebarItem.threadListView.reuseItems)
         compare(shell.workspaceItem.timelineListView.count, 4)
         verify(shell.workspaceItem.timelineListView.reuseItems)
-
         const userRow = shell.workspaceItem.timelineListView.itemAtIndex(0)
         verify(userRow !== null)
         compare(userRow.text, "<b>Keep this text literal and do not parse it as HTML.</b>")
@@ -1088,13 +1102,10 @@ TestCase {
 
     function test_aiCatalogRoutesRefreshCreateAndSelectionCommands() {
         openAiWorkspace()
-
         shell.sidebarItem.refreshThreads()
         compare(fakeBackend.lastCommand, "refresh_ai_threads")
-
         shell.sidebarItem.createThread()
         compare(fakeBackend.lastCommand, "create_ai_thread")
-
         shell.sidebarItem.selectThread("thread-review")
         compare(fakeBackend.lastCommand, "select_ai_thread")
         compare(fakeBackend.lastArgument, "thread-review")
@@ -1127,14 +1138,12 @@ TestCase {
 
     function test_aiArchiveRequiresConfirmationBeforeRustCommand() {
         openAiWorkspace()
-
         shell.sidebarItem.requestArchive(
             "thread-qt-migration",
             "Replace the GPUI AI workspace"
         )
         verify(shell.sidebarItem.archiveConfirmationVisible)
         compare(fakeBackend.lastCommand, "")
-
         shell.sidebarItem.confirmArchive()
         verify(!shell.sidebarItem.archiveConfirmationVisible)
         compare(fakeBackend.lastCommand, "archive_ai_thread")
@@ -1145,7 +1154,6 @@ TestCase {
     function test_aiForkRequiresAnIdleThreadAndDeduplicatesUntilCompletion() {
         openAiWorkspace()
         const workspace = shell.workspaceItem
-
         verify(!workspace.forkButton.enabled)
         verify(workspace.composer.stopButton.enabled)
         fakeBackend.aiThreadActionPending = true
@@ -1153,14 +1161,12 @@ TestCase {
         verify(!workspace.composer.stopButton.enabled)
         fakeBackend.aiThreadActionPending = false
         fakeBackend.aiStateChanged()
-
         fakeBackend.aiTurnRunning = false
         fakeBackend.aiActiveTurnId = ""
         fakeBackend.aiStateChanged()
         fakeBackend.aiReady = false
         fakeBackend.aiStateChanged()
         verify(!workspace.forkButton.enabled)
-
         fakeBackend.aiReady = true
         fakeBackend.aiStateChanged()
         tryVerify(() => workspace.forkButton.enabled)
@@ -1186,7 +1192,6 @@ TestCase {
         fakeBackend.aiStateChanged()
         tryVerify(() => workspace.requestPanel.acceptButton.enabled
             && workspace.requestPanel.acceptButton.activeFocus)
-
         fakeBackend.complete_ai_request()
         tryVerify(() => workspace.composer.editor.enabled
             && workspace.composer.editor.activeFocus
@@ -1198,7 +1203,6 @@ TestCase {
         openAiWorkspace()
         shell.sidebarItem.requestArchive("thread-review", "Review thread")
         verify(shell.sidebarItem.archiveConfirmationVisible)
-
         fakeBackend.show_ai_approval("approval-cancels-archive")
         tryVerify(() => !shell.sidebarItem.archiveConfirmationVisible)
     }

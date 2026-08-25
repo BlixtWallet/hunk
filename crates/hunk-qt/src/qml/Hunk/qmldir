@@ -4,6 +4,7 @@ ActionButton 1.0 ActionButton.qml
 AiComposer 1.0 AiComposer.qml
 AiRequestPanel 1.0 AiRequestPanel.qml
 AiSidebar 1.0 AiSidebar.qml
+AiSessionControls 1.0 AiSessionControls.qml
 AiTimelineRow 1.0 AiTimelineRow.qml
 AiWorkspace 1.0 AiWorkspace.qml
 ConfirmationDialog 1.0 ConfirmationDialog.qml
@@ -17,4 +18,5 @@ ForgeTokenDialog 1.0 ForgeTokenDialog.qml
 GitSidebar 1.0 GitSidebar.qml
 GitWorkspace 1.0 GitWorkspace.qml
 NavigationButton 1.0 NavigationButton.qml
+SessionComboBox 1.0 SessionComboBox.qml
 Shell 1.0 Shell.qml

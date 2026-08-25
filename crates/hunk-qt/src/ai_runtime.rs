@@ -13,6 +13,7 @@ use hunk_app::ai::{
 use crate::ai_models::AiThreadCatalogProjection;
 use crate::ai_queue::AiQueueProjection;
 use crate::ai_requests::AiPendingRequestProjection;
+use crate::ai_session::AiSessionCatalogProjection;
 use crate::ai_timeline_models::AiTimelineProjection;
 
 pub struct AiProjectedSnapshot {
@@ -22,6 +23,7 @@ pub struct AiProjectedSnapshot {
     pub timeline: AiTimelineProjection,
     pub queue: AiQueueProjection,
     pub requests: AiPendingRequestProjection,
+    pub session: AiSessionCatalogProjection,
 }
 
 pub enum AiRuntimeEvent {
@@ -100,16 +102,19 @@ impl Drop for AiRuntimeSession {
     }
 }
 
-pub fn prepare_ai_worker_config(root: &Path) -> Result<AiWorkerStartConfig, String> {
+pub fn prepare_ai_worker_config(
+    root: &Path,
+    mad_max_mode: bool,
+    include_hidden_models: bool,
+) -> Result<AiWorkerStartConfig, String> {
     let codex_home = resolve_codex_home_path()
         .ok_or_else(|| "Unable to resolve the Codex home directory.".to_owned())?;
     let codex_executable = resolve_codex_executable_path();
     validate_codex_executable_path(codex_executable.as_path())?;
-    Ok(AiWorkerStartConfig::new(
-        root.to_path_buf(),
-        codex_executable,
-        codex_home,
-    ))
+    let mut config = AiWorkerStartConfig::new(root.to_path_buf(), codex_executable, codex_home);
+    config.mad_max_mode = mad_max_mode;
+    config.include_hidden_models = include_hidden_models;
+    Ok(config)
 }
 
 pub fn start_ai_runtime<F>(
@@ -272,6 +277,13 @@ fn project_worker_event(
     match payload {
         AiWorkerEventPayload::Snapshot(snapshot) => {
             let requires_openai_auth = snapshot.requires_openai_auth;
+            let session = AiSessionCatalogProjection::from_snapshot(
+                &snapshot.state,
+                snapshot.active_thread_id.as_deref(),
+                snapshot.models.as_slice(),
+                snapshot.mad_max_mode,
+                snapshot.include_hidden_models,
+            );
             let mut threads = AiThreadCatalogProjection::from_state_with_bookmarks(
                 &snapshot.state,
                 snapshot.active_thread_id.as_deref(),
@@ -302,6 +314,7 @@ fn project_worker_event(
                 timeline,
                 queue,
                 requests,
+                session,
             }))
         }
         payload => AiRuntimeEvent::Worker(Box::new(AiWorkerEvent {

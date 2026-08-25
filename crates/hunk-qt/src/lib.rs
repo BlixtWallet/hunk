@@ -4,10 +4,12 @@ mod ai_models;
 mod ai_queue;
 mod ai_requests;
 mod ai_runtime;
+mod ai_session;
 mod ai_thread_actions;
 mod ai_timeline_models;
 mod backend;
 mod backend_ai;
+mod backend_ai_accessors;
 mod backend_diff;
 mod backend_forge;
 mod backend_git;
@@ -39,6 +41,10 @@ pub use ai_requests::{
     AiPendingOption, AiPendingQuestion, AiPendingRequest, AiPendingRequestProjection,
 };
 pub use ai_runtime::{AiEventMailbox, AiProjectedSnapshot, AiRuntimeEvent};
+pub use ai_session::{
+    AiContextUsageProjection, AiSessionCatalogProjection, AiSessionChoiceItem,
+    AiSessionChoiceListModel, AiSessionPreferences,
+};
 pub use ai_thread_actions::{AiThreadActionKind, AiThreadActionReceipt};
 pub use ai_timeline_models::{
     AI_TIMELINE_MAX_VISIBLE_ROWS, AiTimelineItem, AiTimelineListModel, AiTimelineProjection,
@@ -62,6 +68,7 @@ pub fn run() -> Result<()> {
     app.application_name("Hunk")
         .register::<AiThreadListModel>()
         .register::<AiTimelineListModel>()
+        .register::<AiSessionChoiceListModel>()
         .register::<DiffRowListModel>()
         .register::<DiffCommentListModel>()
         .register::<GitFileListModel>()
