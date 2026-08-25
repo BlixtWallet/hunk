@@ -727,3 +727,8 @@ append a correction when later evidence changes one.
 - Nix-wrapped Darwin toolchains and prebuilt universal Qt frameworks are a poor
   match for deployment-time stripping. Pass `-no-strip` to `macdeployqt`, then
   perform dependency validation and code signing explicitly.
+- A self-hosted runner's OS can be newer than GitHub's Python toolcache.
+  `install-qt-action` delegated to `actions/setup-python` and failed before Qt
+  installation on Ubuntu 25.10. Run Hunk's exact aqt installer inside Nix on
+  Linux instead, with Nix owning Python/virtualenv and the runner cache owning
+  the downloaded Qt SDK.

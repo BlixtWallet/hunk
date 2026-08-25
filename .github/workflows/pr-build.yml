@@ -46,14 +46,9 @@ jobs:
         with:
           clean: false
 
-      - name: Install pinned Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: ${{ env.HUNK_QT_VERSION }}
-          arch: linux_gcc_64
-          cache: true
-          cache-key-prefix: hunk-desktop-qt-${{ env.HUNK_QT_VERSION }}-linux
-          aqtversion: ==3.3.0
+      - name: Install pinned Qt through Nix
+        run: nix develop --accept-flake-config -c ./scripts/qt/install_qt.sh
+        shell: bash
 
       # libghostty-vt lets Zig detect native CPU features. Do not restore its
       # cached static library onto a runner with a different feature set.
@@ -97,7 +92,7 @@ jobs:
         run: |
           nix develop --accept-flake-config -c bash -c '
             unset CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER
-            export LD_LIBRARY_PATH="$QT_ROOT_DIR/lib:$HUNK_LINUX_PACKAGING_LIBRARY_PATH"
+            export LD_LIBRARY_PATH="$HUNK_QT_ROOT/lib:$HUNK_LINUX_PACKAGING_LIBRARY_PATH"
             cargo test --workspace --exclude hunk-desktop
           '
         shell: bash

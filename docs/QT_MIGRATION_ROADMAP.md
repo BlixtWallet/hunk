@@ -1184,8 +1184,11 @@ model documented by Qt:
 - Linux stages an application-private Qt library, plugin, and QML tree, writes
   `qt.conf`, bundles recursive ELF dependencies, applies relative RPATHs, and
   requires both X11/XCB and native Wayland platform plugins.
-- Linux PR builds use the project's `ubuntu-self-hosted` runner again. Release
-  jobs remain independently provisioned and do not resolve or compile GPUI.
+- Linux PR builds use the project's `ubuntu-self-hosted` runner again. They
+  provision the official Qt SDK through the Nix-owned pinned installer and the
+  runner's persistent cache, avoiding GitHub's unavailable Ubuntu 25.10 Python
+  toolcache. Linux release jobs use the same path with native Wayland enabled;
+  none of these jobs resolve or compile GPUI.
 - A local production macOS packaging run reused `target/`, the external Cargo,
   Qt, and CEF caches, produced `Hunk-0.0.11-macos-arm64.dmg`, passed recursive
   dependency validation, and passed deep code-sign verification. Windows and

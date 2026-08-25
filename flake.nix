@@ -109,6 +109,10 @@
                 ninja
                 openssl
                 pkgconf
+                (python3.withPackages (pythonPackages: [
+                  pythonPackages.pip
+                  pythonPackages.virtualenv
+                ]))
               ]
               ++ lib.optionals stdenv.isLinux [
                 gcc

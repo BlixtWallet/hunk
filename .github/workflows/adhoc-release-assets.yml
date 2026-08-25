@@ -136,15 +136,11 @@ jobs:
         with:
           clean: false
 
-      - name: Install pinned Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: ${{ env.HUNK_QT_VERSION }}
-          arch: linux_gcc_64
-          modules: qtwaylandcompositor
-          cache: true
-          cache-key-prefix: hunk-desktop-qt-${{ env.HUNK_QT_VERSION }}-linux-wayland
-          aqtversion: ==3.3.0
+      - name: Install pinned Qt through Nix
+        run: nix develop --accept-flake-config -c ./scripts/qt/install_qt.sh
+        shell: bash
+        env:
+          HUNK_QT_INSTALL_WAYLAND: "1"
 
       # - name: Cache cargo registry and Rust dependencies
       #   uses: Swatinem/rust-cache@v2

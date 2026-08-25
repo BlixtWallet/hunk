@@ -24,12 +24,16 @@ fn every_release_entry_point_installs_the_exact_qt_sdk() {
             workflow
                 .matches("uses: jurplel/install-qt-action@v4")
                 .count(),
-            3,
-            "{name} must provision Qt for macOS, Linux, and Windows"
+            2,
+            "{name} must use the hosted Qt action only for macOS and Windows"
         );
         assert!(
-            workflow.contains("modules: qtwaylandcompositor"),
-            "{name} must install native Wayland support"
+            workflow.contains("nix develop --accept-flake-config -c ./scripts/qt/install_qt.sh"),
+            "{name} must provision Linux Qt through Nix"
+        );
+        assert!(
+            workflow.contains("HUNK_QT_INSTALL_WAYLAND: \"1\""),
+            "{name} must install native Wayland support through the pinned installer"
         );
         assert!(
             workflow.contains("aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b"),
@@ -45,7 +49,15 @@ fn linux_pr_checks_use_the_self_hosted_qt_runner() {
     let workflow = include_str!("../../../.github/workflows/pr-build.yml");
     assert!(workflow.contains("runs-on: ubuntu-self-hosted"));
     assert!(!workflow.contains("runs-on: ubuntu-24.04"));
-    assert!(workflow.contains("version: ${{ env.HUNK_QT_VERSION }}"));
+    assert!(workflow.contains("nix develop --accept-flake-config -c ./scripts/qt/install_qt.sh"));
+    assert_eq!(
+        workflow
+            .matches("uses: jurplel/install-qt-action@v4")
+            .count(),
+        1,
+        "only the Windows PR job should use install-qt-action"
+    );
+    assert!(workflow.contains("$HUNK_QT_ROOT/lib:$HUNK_LINUX_PACKAGING_LIBRARY_PATH"));
     assert!(workflow.contains("cargo build -p hunk-desktop --locked --profile ci"));
     assert!(!workflow.contains("cargo build -p hunk-qt"));
     assert!(
@@ -53,6 +65,21 @@ fn linux_pr_checks_use_the_self_hosted_qt_runner() {
             .to_ascii_lowercase()
             .contains("cargo build -p gpui")
     );
+}
+
+#[test]
+fn self_hosted_qt_installer_is_nix_owned_and_wayland_aware() {
+    let installer = include_str!("../../../scripts/qt/install_qt.sh");
+    assert!(installer.contains("qt_version=\"6.11.2\""));
+    assert!(installer.contains("aqt_version=\"3.3.0\""));
+    assert!(installer.contains("python3 -m virtualenv"));
+    assert!(installer.contains("--modules qtwaylandcompositor"));
+    assert!(installer.contains("libqwayland-egl.so"));
+    assert!(installer.contains("libqwayland-generic.so"));
+
+    let flake = include_str!("../../../flake.nix");
+    assert!(flake.contains("pythonPackages.pip"));
+    assert!(flake.contains("pythonPackages.virtualenv"));
 }
 
 #[test]
