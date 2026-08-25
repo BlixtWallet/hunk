@@ -593,6 +593,34 @@ external caches:
 - [ ] Validate key flows without triggering unattended keychain prompts.
 - [ ] Complete the mandatory working loop and stacked PR.
 
+Phase 7 runtime-path prerequisite decisions:
+
+- Codex executable discovery and validation belong to `hunk-app::ai`, not the
+  GPUI controller or Qt backend. During migration both frontends must resolve
+  `HUNK_CODEX_EXECUTABLE`, development workspace assets, packaged resources,
+  and platform fallbacks through the same toolkit-neutral implementation.
+- Moving the resolver across crates must not let `env!("CARGO_PKG_NAME")`
+  silently change Linux package lookup from `hunk-desktop` to `hunk-app`.
+  Preserve both legacy desktop package spellings and add the Qt package
+  spellings explicitly while retaining the current executable name as the
+  highest-priority Linux package directory.
+- Resolver tests live under `crates/hunk-app/tests` and create inert fake
+  launchers only. This prerequisite neither starts Codex nor reads keychain
+  credentials; the following Qt worker layer can therefore reuse it without
+  introducing an authentication side effect during ordinary validation.
+
+Phase 7 runtime-path prerequisite macOS validation through Nix, reusing the
+same external-volume target and Cargo cache:
+
+- The full workspace build passed in 38.26 seconds, and the complete workspace
+  test suite passed in about 63 seconds.
+- All seven new `hunk-app` runtime-path tests passed alongside the retained
+  GPUI compatibility cases, covering workspace assets, adjacent and macOS
+  bundled resources, packaged-layout isolation, and Unix validation.
+- Workspace Clippy passed for all targets with warnings denied in 9.41 seconds.
+  Validation used inert temporary launchers and did not start Codex or access
+  the keychain.
+
 ### 8. Atomic Qt Cutover and CI Replacement
 
 - [ ] Make the Qt binary the workspace default desktop application.

@@ -2,6 +2,7 @@ mod dynamic_tools;
 mod paths;
 mod rollout_fallback;
 mod runtime;
+pub mod runtime_path;
 mod types;
 
 pub use dynamic_tools::{
@@ -23,5 +24,9 @@ pub use runtime::{
     AiSnapshot, AiTurnSessionOverrides, AiWorkerCommand, AiWorkerEvent, AiWorkerEventPayload,
     AiWorkerStartConfig, AiWorkspaceThreadCatalog, archive_ai_thread_for_workspace,
     load_ai_workspace_thread_catalog, spawn_ai_worker,
+};
+pub use runtime_path::{
+    resolve_codex_executable_from_exe, resolve_codex_executable_path,
+    validate_codex_executable_path,
 };
 pub use types::{AiComposerSkillBinding, AiPendingSteer, AiPromptSkillReference};
