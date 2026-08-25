@@ -300,3 +300,26 @@ append a correction when later evidence changes one.
   replacement tuple. Besides satisfying type-complexity linting, the alias
   makes it explicit that rows, search text, copy text, and anchors form one
   atomic snapshot.
+
+## 2026-08-25 — Qt Diff comment persistence boundary
+
+- Repository and branch epochs are not sufficient for a selected-file UI. A
+  background comment projection can remain in the same scope while its Diff
+  anchors become stale, so every result must also carry the selected Diff epoch
+  and be reprojected when that epoch changes.
+- A selected-file renderer cannot safely resolve every unmatched old-path
+  comment while a rename exists elsewhere in the working tree. Preserve the
+  comment until the renamed Diff is loaded and fuzzy matching can run; delayed
+  cleanup is safer than silently resolving a still-relevant review note.
+- Keep SQLite, fuzzy matching, and reconciliation off the Qt thread, but also
+  bound the final model reset. Reusing the legacy 64-item preview limit keeps
+  UI-thread string cloning predictable while aggregate counts and background
+  reconciliation continue to cover the full store.
+- Sharing immutable comment anchors with `Arc` lets the Qt row model and worker
+  projection consume one aligned snapshot. Per-visible-row queries should read
+  only an index/count and must not clone the anchor's path, hunk, and context
+  strings inside the frame budget.
+- A QtBridge `#[qobject]` list-model module is a real nested Rust module and does
+  not inherit outer imports. When an aligned model field changes from `Vec` to
+  `Arc<Vec<_>>`, import `Arc` inside that generated module as well; otherwise the
+  outer payload compiles far enough to obscure the missing model-local type.

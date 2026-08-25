@@ -1,5 +1,7 @@
 mod backend;
 mod backend_state;
+mod comment_models;
+mod comments;
 mod diff_models;
 mod forge;
 mod git_models;
@@ -15,6 +17,7 @@ use qtbridge::include_bytes_qml;
 use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 
 pub use backend::{Backend, Workspace};
+pub use comment_models::{DiffCommentItem, DiffCommentListModel, DiffCommentProjection};
 pub use diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
 pub use git_models::{GitBranchListModel, GitCommitListModel, GitFileListModel};
 pub use path::local_path_from_qml_folder_url;
@@ -31,6 +34,7 @@ pub fn run() -> Result<()> {
     let mut app = QApp::new();
     app.application_name("Hunk")
         .register::<DiffRowListModel>()
+        .register::<DiffCommentListModel>()
         .register::<GitFileListModel>()
         .register::<GitBranchListModel>()
         .register::<GitCommitListModel>()

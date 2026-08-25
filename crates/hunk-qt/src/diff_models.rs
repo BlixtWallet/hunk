@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
+use std::sync::Arc;
 
 use hunk_app::diff::{
     CachedStyledSegment, DIFF_COMMENT_CONTEXT_RADIUS_ROWS, DiffCommentAnchor, DiffSegmentQuality,
@@ -41,7 +42,7 @@ pub struct DiffSnapshotPayload {
     pub rows: Vec<DiffRowItem>,
     pub(crate) search_texts: Vec<String>,
     pub(crate) copy_texts: Vec<String>,
-    pub(crate) comment_anchors: Vec<Option<DiffCommentAnchor>>,
+    pub(crate) comment_anchors: Arc<Vec<Option<DiffCommentAnchor>>>,
 }
 
 impl DiffSnapshotPayload {
@@ -116,7 +117,7 @@ impl DiffSnapshotPayload {
             rows,
             search_texts,
             copy_texts,
-            comment_anchors,
+            comment_anchors: Arc::new(comment_anchors),
         }
     }
 
@@ -339,7 +340,7 @@ fn saturating_u64_to_i32(value: u64) -> i32 {
 #[qobject(Base = QListModel)]
 mod row_model {
     use super::{
-        DiffCommentAnchor, DiffRowItem, QListModel, QListModelBase, matching_text_indices,
+        Arc, DiffCommentAnchor, DiffRowItem, QListModel, QListModelBase, matching_text_indices,
         selection_text, wrapped_hunk_target,
     };
 
@@ -347,7 +348,7 @@ mod row_model {
         Vec<DiffRowItem>,
         Vec<String>,
         Vec<String>,
-        Vec<Option<DiffCommentAnchor>>,
+        Arc<Vec<Option<DiffCommentAnchor>>>,
     );
 
     #[derive(Default)]
@@ -355,7 +356,7 @@ mod row_model {
         items: Vec<DiffRowItem>,
         search_texts: Vec<String>,
         copy_texts: Vec<String>,
-        comment_anchors: Vec<Option<DiffCommentAnchor>>,
+        comment_anchors: Arc<Vec<Option<DiffCommentAnchor>>>,
         replacement: Option<DiffRowReplacement>,
     }
 
@@ -365,7 +366,7 @@ mod row_model {
             items: Vec<DiffRowItem>,
             search_texts: Vec<String>,
             copy_texts: Vec<String>,
-            comment_anchors: Vec<Option<DiffCommentAnchor>>,
+            comment_anchors: Arc<Vec<Option<DiffCommentAnchor>>>,
         ) {
             debug_assert_eq!(items.len(), search_texts.len());
             debug_assert_eq!(items.len(), copy_texts.len());
