@@ -238,10 +238,11 @@ Phase 4 toolchain decisions:
   6.11.2. QtBridge is pinned to official commit
   `cad0d6cd81d1af294ec87c67f21d39133196dbc1`.
 - Linux CI installs and caches `linux_gcc_64` with
-  `jurplel/install-qt-action@v4`. Windows uses the same action with aqt pinned
-  to upstream merge commit `8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b`,
-  which adds the Qt 6.11 Windows repository layout missing from aqt 3.3.0.
-  Both jobs cache the exact official prebuilt Qt packages without Qt Account
+  `jurplel/install-qt-action@v4` on an ephemeral Ubuntu 24.04 runner with pinned
+  Nix and Cargo caches. Windows uses the same Qt action with aqt pinned to
+  upstream merge commit `8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b`,
+  which adds the Qt 6.11 Windows repository layout missing from aqt 3.3.0. Both
+  jobs cache the exact official prebuilt Qt packages without Qt Account
   credentials.
 - The current self-hosted macOS runner cannot mount `/Volumes/hulk`. The Qt
   migration PR workflow therefore omits its macOS job instead of downloading

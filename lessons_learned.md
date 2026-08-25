@@ -158,3 +158,7 @@ append a correction when later evidence changes one.
   command. Upstream aqt merge commit `8c3695d4` contains the unreleased Qt 6.11
   Windows repository-layout fix, so pin that revision and keep CI account-free
   instead of introducing personal credentials.
+- A warm self-hosted Linux machine is not faster when no matching runner accepts
+  the job: the Qt foundation check remained unassigned for more than 13 minutes.
+  Use an ephemeral Ubuntu runner with pinned Nix, Qt, and Rust caches for PR
+  feedback; keep release-runner changes separate until Qt packaging is ready.
