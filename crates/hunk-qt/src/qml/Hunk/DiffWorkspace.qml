@@ -9,6 +9,8 @@ Item {
     focus: true
     readonly property alias diffListView: diffList
     readonly property alias searchInput: searchInput
+    readonly property alias commentsInspector: commentsInspector
+    readonly property var commentComposer: commentComposerLoader.item
     readonly property bool loadingStateVisible: loadingState.visible
     readonly property bool errorStateVisible: errorState.visible
     readonly property bool emptyStateVisible: emptyState.visible
@@ -17,11 +19,17 @@ Item {
     readonly property int selectionEnd: selectionAnchorRow < 0 || selectionHeadRow < 0
         ? -1 : Math.max(selectionAnchorRow, selectionHeadRow)
     property bool unifiedMode: false
+    property bool commentsInspectorOpen: false
+    property int activeCommentRow: -1
+    property int lastCommentTargetRevision: 0
     property int selectionAnchorRow: -1
     property int selectionHeadRow: -1
     readonly property string selectionPath: backend.diffSelectedPath
 
-    onSelectionPathChanged: resetSelection()
+    onSelectionPathChanged: {
+        resetSelection()
+        closeCommentComposer()
+    }
 
     function resetSelection() {
         selectionAnchorRow = -1
@@ -82,14 +90,55 @@ Item {
 
     function copySelection() {
         const selectedText = backend.diff_selection_text(selectionAnchorRow, selectionHeadRow)
-        if (selectedText.length === 0)
+        copyText(selectedText)
+    }
+
+    function copyText(text) {
+        if (text.length === 0)
             return
-        clipboardProxy.text = selectedText
+        clipboardProxy.text = text
         clipboardProxy.forceActiveFocus()
         clipboardProxy.selectAll()
         clipboardProxy.copy()
         clipboardProxy.deselect()
         forceActiveFocus()
+    }
+
+    function openCommentComposer(row) {
+        if (row < 0 || !backend.diff_row_supports_comments(row))
+            return
+        selectRow(row, false)
+        activeCommentRow = row
+    }
+
+    function closeCommentComposer() {
+        activeCommentRow = -1
+        forceActiveFocus()
+    }
+
+    function toggleCommentsInspector() {
+        commentsInspectorOpen = !commentsInspectorOpen
+        if (commentsInspectorOpen)
+            backend.refresh_diff_comments()
+    }
+
+    function commentComposerY(scrollPosition) {
+        const viewportTop = columnHeader.y + columnHeader.height + 8
+        const viewportBottom = height - commentComposerLoader.height - 8
+        const rowItem = diffList.itemAtIndex(activeCommentRow)
+        if (rowItem === null)
+            return viewportTop
+        const rowBottom = horizontalViewport.y + rowItem.y
+            - scrollPosition + rowItem.height
+        return Math.max(viewportTop, Math.min(rowBottom + 5, viewportBottom))
+    }
+
+    function applyCommentTarget() {
+        if (backend.diffCommentTargetRevision === lastCommentTargetRevision)
+            return
+        lastCommentTargetRevision = backend.diffCommentTargetRevision
+        if (backend.diffCommentTargetRow >= 0)
+            selectRow(backend.diffCommentTargetRow, false)
     }
 
     function setDiffMode(mode) {
@@ -163,7 +212,8 @@ Item {
 
     Keys.priority: Keys.BeforeItem
     Keys.onPressed: event => {
-        if (searchInput.activeFocus)
+        if (searchInput.activeFocus
+                || (commentComposer !== null && commentComposer.editor.activeFocus))
             return
         const extendSelection = (event.modifiers & Qt.ShiftModifier) !== 0
         const commandModifier = (event.modifiers
@@ -237,7 +287,7 @@ Item {
     Item {
         id: toolbar
         anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.right: commentsInspector.left
         anchors.top: parent.top
         height: 52
 
@@ -398,6 +448,24 @@ Item {
             }
 
             ActionButton {
+                label: "Comment"
+                compact: true
+                enabled: root.selectionHeadRow >= 0
+                    && root.backend.diff_row_supports_comments(root.selectionHeadRow)
+                    && !root.backend.diffCommentsLoading
+                    && !root.backend.diffCommentsBusy
+                onClicked: root.openCommentComposer(root.selectionHeadRow)
+            }
+
+            ActionButton {
+                label: root.backend.diffCommentsOpenCount > 0
+                    ? "Comments " + root.backend.diffCommentsOpenCount : "Comments"
+                compact: true
+                primary: root.commentsInspectorOpen
+                onClicked: root.toggleCommentsInspector()
+            }
+
+            ActionButton {
                 label: "Refresh"
                 compact: true
                 enabled: root.backend.diffSelectedPath.length > 0 && !root.backend.diffLoading
@@ -416,7 +484,7 @@ Item {
     Item {
         id: columnHeader
         anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.right: commentsInspector.left
         anchors.top: toolbar.bottom
         height: 28
         visible: root.backend.diffSelectedPath.length > 0
@@ -484,7 +552,7 @@ Item {
     Flickable {
         id: horizontalViewport
         anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.right: commentsInspector.left
         anchors.top: columnHeader.bottom
         anchors.bottom: parent.bottom
         contentWidth: Math.max(width, 1440)
@@ -531,6 +599,11 @@ Item {
                     ? left_text : (right_kind !== "none" ? right_text : left_text)
                 readonly property string unifiedPrimaryMarkup: left_kind === "removed"
                     ? left_markup : (right_kind !== "none" ? right_markup : left_markup)
+                readonly property int commentCount: {
+                    const version = root.backend.diffCommentsVersion
+                    return version >= 0
+                        ? root.backend.diff_comment_count_for_row(diffRow.index) : 0
+                }
 
                 width: diffList.width
                 height: diffRow.row_kind === "code"
@@ -710,6 +783,40 @@ Item {
                     border.color: Theme.accentStrong
                 }
 
+                Rectangle {
+                    objectName: "diffCommentBadge"
+                    x: horizontalViewport.contentX + horizontalViewport.width - width - 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    z: 8
+                    width: diffRow.commentCount > 99 ? 28 : 22
+                    height: 17
+                    radius: 8
+                    visible: diffRow.commentCount > 0
+                    color: badgePointer.containsMouse ? Theme.accent : Theme.accentMuted
+                    border.width: 1
+                    border.color: Theme.accentStrong
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: diffRow.commentCount > 99 ? "99+" : diffRow.commentCount
+                        color: Theme.foreground
+                        font.family: Theme.monoFont
+                        font.pixelSize: 8
+                        font.weight: Font.Bold
+                    }
+
+                    MouseArea {
+                        id: badgePointer
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.selectRow(diffRow.index, false)
+                            root.commentsInspectorOpen = true
+                        }
+                    }
+                }
+
                 TapHandler {
                     objectName: "diffRowTapHandler"
                     acceptedButtons: Qt.LeftButton
@@ -719,6 +826,73 @@ Item {
                     )
                 }
             }
+        }
+    }
+
+    DiffCommentInspector {
+        id: commentsInspector
+        objectName: "diffCommentsInspector"
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        z: 40
+        width: root.commentsInspectorOpen
+            ? Math.min(360, Math.max(300, root.width * 0.36)) : 0
+        opacity: root.commentsInspectorOpen ? 1 : 0
+        visible: root.commentsInspectorOpen || width > 0
+        clip: true
+        backend: root.backend
+        onCloseRequested: root.commentsInspectorOpen = false
+        onCopyRequested: text => root.copyText(text)
+
+        Behavior on width {
+            NumberAnimation {
+                duration: Theme.transitionDuration
+                easing.type: Easing.OutCubic
+            }
+        }
+
+        Behavior on opacity {
+            NumberAnimation { duration: Theme.transitionDuration }
+        }
+    }
+
+    Loader {
+        id: commentComposerLoader
+        objectName: "diffCommentComposerLoader"
+        anchors.right: commentsInspector.left
+        anchors.rightMargin: 12
+        z: 30
+        width: Math.max(280, Math.min(380, horizontalViewport.width - 24))
+        height: active ? 126 : 0
+        active: root.activeCommentRow >= 0
+        y: {
+            const scrollPosition = diffList.contentY
+            return root.commentComposerY(scrollPosition)
+        }
+        sourceComponent: commentComposerComponent
+    }
+
+    Component {
+        id: commentComposerComponent
+
+        DiffCommentComposer {
+            backend: root.backend
+            row: root.activeCommentRow
+            lineHint: root.backend.diff_comment_line_hint(root.activeCommentRow)
+            onCancelled: root.closeCommentComposer()
+            onSaved: {
+                root.commentsInspectorOpen = true
+                root.closeCommentComposer()
+            }
+        }
+    }
+
+    Connections {
+        target: root.backend
+
+        function onDiffCommentsStateChanged() {
+            root.applyCommentTarget()
         }
     }
 
@@ -767,5 +941,9 @@ Item {
         color: Theme.muted
         font.family: Theme.uiFont
         font.pixelSize: 12
+    }
+
+    Component.onCompleted: {
+        lastCommentTargetRevision = backend.diffCommentTargetRevision
     }
 }

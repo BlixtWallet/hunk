@@ -381,7 +381,8 @@ Phase 5 local validation through Nix:
 - [x] Implement virtualized unified diff presentation.
 - [x] Restore syntax highlighting and current-file search/navigation.
 - [x] Restore row selection, copied diff text, and keyboard/hunk review navigation.
-- [ ] Restore comments, folding, and remaining review affordances required by the narrowed product.
+- [x] Restore comment creation, row counts, branch-scoped history, status changes, deletion, copy, and jump behavior.
+- [ ] Restore folding and remaining review affordances required by the narrowed product.
 - [x] Avoid one QObject per token or other high-churn bridge designs.
 - [ ] Instrument frame time, model update time, object count, and allocation hot paths.
 - [ ] Verify ordinary QML delegates against representative large repositories.
@@ -391,7 +392,8 @@ Phase 5 local validation through Nix:
   Diff layers: [#185](https://github.com/smolcars/hunk/pull/185),
   [#186](https://github.com/smolcars/hunk/pull/186),
   [#187](https://github.com/smolcars/hunk/pull/187), and
-  [#188](https://github.com/smolcars/hunk/pull/188).
+  [#188](https://github.com/smolcars/hunk/pull/188). Comment persistence:
+  [#189](https://github.com/smolcars/hunk/pull/189).
 
 Phase 6 initial Qt slice decisions:
 
@@ -489,6 +491,30 @@ Phase 6 comment-store decisions:
   contextual composer, row badges, and virtualized inspector are the next stack
   layer so persistence/concurrency can be reviewed independently from QML.
 
+Phase 6 comment-UI decisions:
+
+- QML owns only transient presentation state: whether the inspector is open,
+  which row has the single active composer, its draft text, and local focus.
+  Comment records, counts, matching, mutations, and jump targets remain Rust
+  model/property/command state.
+- The code canvas remains primary. A single 380-pixel composer is loaded only
+  for the selected commentable row and follows its visible scroll position; a
+  360-pixel right inspector narrows the canvas only while explicitly open.
+  Entries use separators rather than nested cards and the only motion is the
+  110-millisecond inspector width/opacity transition.
+- Row badges call the Rust count seam only for instantiated Diff delegates and
+  recompute when `diffCommentsVersion` changes. The inspector uses a recycling
+  `ListView` over the already bounded 64-item model, preserving virtualization
+  without one QObject or QML model object per source row.
+- The composer waits for the asynchronous Rust result. Database errors leave
+  the draft and focus intact; `Comment added.` closes the composer and reveals
+  the inspector. The workspace-level BeforeItem key handler yields while the
+  editor owns focus so arrow, selection, copy, and submit keys remain native.
+- Copy uses the existing hidden native `TextEdit` clipboard proxy for one
+  comment, all open comments, and selected diff text. Jump notifications carry
+  a monotonically changing revision so repeated jumps to the same row still
+  reposition the virtualized Diff list.
+
 Phase 6 initial-slice macOS validation through Nix, using the existing
 external-volume Cargo target and caches:
 
@@ -542,6 +568,18 @@ external caches:
 - `qmllint` and all 20 existing QML interaction/virtualization/visual tests
   passed in 486 milliseconds. The store seam intentionally adds no QML surface;
   the composer, badges, and inspector remain the next layer.
+
+Phase 6 comment-UI macOS validation through Nix, reusing the same target and
+external caches:
+
+- The full workspace build passed in 10.21 seconds, and the complete workspace
+  test suite passed in about 30 seconds, including five Qt comment-model tests.
+- Workspace Clippy passed for all targets with warnings denied in 3.35 seconds.
+- `qmllint` and all 24 QML interaction/virtualization/visual tests passed in
+  987 milliseconds. The inspected 1280-by-760 render showed the contextual
+  composer, narrowed Diff canvas, and populated right inspector together; that
+  visual pass also caught and fixed the inspector's initial animated-visibility
+  lifecycle before submission.
 
 ### 7. AI Tab
 

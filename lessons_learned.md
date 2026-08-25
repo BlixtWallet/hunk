@@ -323,3 +323,29 @@ append a correction when later evidence changes one.
   not inherit outer imports. When an aligned model field changes from `Vec` to
   `Arc<Vec<_>>`, import `Arc` inside that generated module as well; otherwise the
   outer payload compiles far enough to obscure the missing model-local type.
+
+## 2026-08-25 — Qt Diff comment interaction layer
+
+- A root `Keys.BeforeItem` handler can silently steal arrow and clipboard input
+  from a nested comment editor. Explicitly yield whenever that editor owns
+  focus; keeping workspace navigation correct is not enough if native text
+  editing becomes unusable.
+- A contextual editor does not need to expand every recycling Diff delegate.
+  One `Loader` can map the active instantiated row through the ListView scroll
+  position and clamp a single overlay into the viewport, avoiding a text editor
+  object in every visible row and avoiding delegate-height churn.
+- A row badge can remain fixed at the visible edge of a horizontally scrolling
+  Diff by offsetting it with the outer Flickable's `contentX`. Recompute its
+  O(1) Rust count only when a coarse comment-version property changes so normal
+  scrolling does not cross the bridge.
+- Do not close an asynchronous comment composer immediately after invoking a
+  void QtBridge command. Keep the draft until the shared state signal reports a
+  successful status; on failure, restore editability and focus so a transient
+  SQLite error does not erase review text.
+- Model role names must also be valid required QML property names. Exposing
+  `comment_id` instead of a generic `id` avoids colliding with QML's reserved
+  object-identity syntax and keeps strongly required delegate roles available.
+- Do not make an animated panel visible only when its animated width is already
+  positive. On its first zero-to-open transition that can reserve layout space
+  while its contents remain transparent. Include the requested open state in
+  the visibility binding and keep the width check only to finish closing.

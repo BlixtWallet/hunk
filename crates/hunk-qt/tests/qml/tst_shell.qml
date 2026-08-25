@@ -13,6 +13,7 @@ TestCase {
     ListModel { id: gitCommitsModel }
     ListModel { id: diffFilesModel }
     ListModel { id: diffRowsModel }
+    ListModel { id: diffCommentsModel }
 
     QtObject {
         id: fakeBackend
@@ -36,6 +37,21 @@ TestCase {
         property int diffSearchMatchIndex: -1
         property int diffSearchTargetRow: -1
         property var diffSearchMatches: []
+        property var diffComments: diffCommentsModel
+        property bool diffCommentsReady: true
+        property bool diffCommentsLoading: false
+        property bool diffCommentsBusy: false
+        property string diffCommentsError: ""
+        property string diffCommentsStatusMessage: ""
+        property bool diffCommentsShowNonOpen: false
+        property int diffCommentsOpenCount: 0
+        property int diffCommentsStaleCount: 0
+        property int diffCommentsResolvedCount: 0
+        property int diffCommentsVersion: 0
+        property int diffCommentTargetRow: -1
+        property int diffCommentTargetRevision: 0
+        property var diffCommentRecords: []
+        property bool failNextDiffComment: false
         property var gitFiles: gitFilesModel
         property var gitBranches: gitBranchesModel
         property var gitCommits: gitCommitsModel
@@ -85,6 +101,8 @@ TestCase {
         property string lastReviewTitle: ""
         property string lastReviewBody: ""
         property bool lastReviewDraft: false
+
+        signal diffCommentsStateChanged
 
         function record(command, argument) {
             lastCommand = command
@@ -176,6 +194,135 @@ TestCase {
             }
             return hunks[hunks.length - 1]
         }
+        function rebuildDiffComments() {
+            diffCommentsModel.clear()
+            let openCount = 0
+            let staleCount = 0
+            let resolvedCount = 0
+            let visibleCount = 0
+            for (const comment of diffCommentRecords) {
+                if (comment.status === "open")
+                    ++openCount
+                else if (comment.status === "stale")
+                    ++staleCount
+                else
+                    ++resolvedCount
+                if ((diffCommentsShowNonOpen || comment.status === "open")
+                        && visibleCount < 64) {
+                    diffCommentsModel.append(comment)
+                    ++visibleCount
+                }
+            }
+            diffCommentsOpenCount = openCount
+            diffCommentsStaleCount = staleCount
+            diffCommentsResolvedCount = resolvedCount
+            diffCommentsVersion += 1
+            diffCommentsStateChanged()
+        }
+        function refresh_diff_comments() {
+            record("refresh_diff_comments")
+            diffCommentsReady = true
+            rebuildDiffComments()
+        }
+        function create_diff_comment(row, text) {
+            record("create_diff_comment", String(row) + "|" + text)
+            diffCommentsBusy = true
+            diffCommentsError = ""
+            diffCommentsStateChanged()
+            if (failNextDiffComment) {
+                failNextDiffComment = false
+                diffCommentsBusy = false
+                diffCommentsError = "Failed to save comment"
+                diffCommentsStatusMessage = ""
+                diffCommentsStateChanged()
+                return
+            }
+            const commentId = "comment-created-" + (diffCommentRecords.length + 1)
+            diffCommentRecords = diffCommentRecords.concat([{
+                comment_id: commentId,
+                status: "open",
+                file_path: diffSelectedPath,
+                line_hint: diff_comment_line_hint(row),
+                comment_text: text.trim(),
+                clipboard_text: "[Hunk Comment]\nComment:\n" + text.trim(),
+                row: row,
+                can_jump: true
+            }])
+            diffCommentsStatusMessage = "Comment added."
+            diffCommentsBusy = false
+            rebuildDiffComments()
+        }
+        function set_diff_comment_status(commentId, status) {
+            record("set_diff_comment_status", commentId + "|" + status)
+            diffCommentRecords = diffCommentRecords.map(comment => {
+                if (comment.comment_id === commentId)
+                    comment.status = status
+                return comment
+            })
+            diffCommentsStatusMessage = status === "open"
+                ? "Comment reopened." : "Comment resolved."
+            rebuildDiffComments()
+        }
+        function delete_diff_comment(commentId) {
+            record("delete_diff_comment", commentId)
+            diffCommentRecords = diffCommentRecords.filter(
+                comment => comment.comment_id !== commentId
+            )
+            diffCommentsStatusMessage = "Comment deleted."
+            rebuildDiffComments()
+        }
+        function set_diff_comments_show_non_open(show) {
+            record("set_diff_comments_show_non_open", String(show))
+            diffCommentsShowNonOpen = show
+            rebuildDiffComments()
+        }
+        function jump_to_diff_comment(commentId) {
+            record("jump_to_diff_comment", commentId)
+            for (const comment of diffCommentRecords) {
+                if (comment.comment_id === commentId && comment.row >= 0) {
+                    diffCommentTargetRow = comment.row
+                    diffCommentTargetRevision += 1
+                    diffCommentsStatusMessage = "Jumped to comment location."
+                    diffCommentsStateChanged()
+                    return
+                }
+            }
+        }
+        function diff_comment_count_for_row(row) {
+            let count = 0
+            for (const comment of diffCommentRecords) {
+                if (comment.status === "open" && comment.row === row)
+                    ++count
+            }
+            return count
+        }
+        function diff_row_supports_comments(row) {
+            if (row < 0 || row >= diffRowsModel.count)
+                return false
+            const kind = diffRowsModel.get(row).row_kind
+            return kind === "code" || kind === "meta" || kind === "empty"
+        }
+        function diff_comment_line_hint(row) {
+            if (row < 0 || row >= diffRowsModel.count)
+                return ""
+            const item = diffRowsModel.get(row)
+            const oldLine = item.left_line > 0 ? item.left_line : "-"
+            const newLine = item.right_line > 0 ? item.right_line : "-"
+            return "old " + oldLine + " | new " + newLine
+        }
+        function diff_comment_bundle(commentId) {
+            for (const comment of diffCommentRecords) {
+                if (comment.comment_id === commentId)
+                    return comment.clipboard_text
+            }
+            return ""
+        }
+        function diff_all_open_comment_bundles() {
+            return diffCommentRecords
+                .filter(comment => comment.status === "open")
+                .map(comment => comment.clipboard_text)
+                .join("\n\n---\n\n")
+        }
         function select_git_root(root) { record("select_root", root) }
         function stage_path(path) { record("stage", path) }
         function unstage_path(path) { record("unstage", path) }
@@ -230,6 +377,7 @@ TestCase {
         gitCommitsModel.clear()
         diffFilesModel.clear()
         diffRowsModel.clear()
+        diffCommentsModel.clear()
 
         appendFile("crates/hunk-git/src/workspace.rs", false, 84, 4)
         appendFile("crates/hunk-qt/src/backend.rs", false, 132, 8)
@@ -335,6 +483,8 @@ TestCase {
     function openDiffWorkspace() {
         shell.activateWorkspace("diff")
         tryVerify(() => shell.workspaceItem !== null && shell.workspaceItem.objectName === "diffWorkspace")
+        shell.workspaceItem.commentsInspectorOpen = false
+        shell.workspaceItem.closeCommentComposer()
     }
 
     function captureSnapshot(path) {
@@ -366,6 +516,17 @@ TestCase {
         fakeBackend.diffSearchMatchIndex = -1
         fakeBackend.diffSearchTargetRow = -1
         fakeBackend.diffSearchMatches = []
+        fakeBackend.diffCommentsReady = true
+        fakeBackend.diffCommentsLoading = false
+        fakeBackend.diffCommentsBusy = false
+        fakeBackend.diffCommentsError = ""
+        fakeBackend.diffCommentsStatusMessage = ""
+        fakeBackend.diffCommentsShowNonOpen = false
+        fakeBackend.diffCommentsVersion = 0
+        fakeBackend.diffCommentTargetRow = -1
+        fakeBackend.diffCommentTargetRevision = 0
+        fakeBackend.diffCommentRecords = []
+        fakeBackend.failNextDiffComment = false
         fakeBackend.gitChangedFileCount = 3
         fakeBackend.gitStagedFileCount = 1
         fakeBackend.gitUnstagedFileCount = 2
@@ -406,6 +567,31 @@ TestCase {
         snapshotReady = false
         snapshotSaved = false
         populateModels()
+        fakeBackend.diffCommentRecords = [
+            {
+                comment_id: "comment-open",
+                status: "open",
+                file_path: "crates/hunk-qt/src/backend.rs",
+                line_hint: "old 23 | new 23",
+                comment_text: "Keep the Qt thread free of database and matching work.",
+                clipboard_text: "[Hunk Comment]\nComment:\nKeep the Qt thread free.",
+                row: 2,
+                can_jump: true
+            },
+            {
+                comment_id: "comment-resolved",
+                status: "resolved",
+                file_path: "crates/hunk-qt/src/backend.rs",
+                line_hint: "old 22 | new 22",
+                comment_text: "This model reset is now batched.",
+                clipboard_text: "[Hunk Comment]\nComment:\nThis model reset is now batched.",
+                row: 1,
+                can_jump: true
+            }
+        ]
+        fakeBackend.rebuildDiffComments()
+        fakeBackend.lastCommand = ""
+        fakeBackend.lastArgument = ""
     }
 
     function test_retainedWorkspaceContract() {
@@ -546,6 +732,105 @@ TestCase {
         shell.workspaceItem.applySearch(shell.workspaceItem.searchInput.text)
         compare(fakeBackend.diffSearchMatchCount, 0)
         compare(fakeBackend.diffSearchTargetRow, -1)
+    }
+
+    function test_diffCommentComposerRetainsFailedDraftThenCreatesComment() {
+        openDiffWorkspace()
+        shell.workspaceItem.openCommentComposer(2)
+        tryVerify(() => shell.workspaceItem.commentComposer !== null)
+        shell.workspaceItem.commentComposer.text = "Explain why this stays off the Qt thread."
+
+        fakeBackend.failNextDiffComment = true
+        shell.workspaceItem.commentComposer.submit()
+        compare(fakeBackend.lastCommand, "create_diff_comment")
+        compare(shell.workspaceItem.activeCommentRow, 2)
+        compare(
+            shell.workspaceItem.commentComposer.text,
+            "Explain why this stays off the Qt thread."
+        )
+        compare(fakeBackend.diffCommentsError, "Failed to save comment")
+
+        shell.workspaceItem.commentComposer.submit()
+        tryCompare(shell.workspaceItem, "activeCommentRow", -1)
+        compare(fakeBackend.diffCommentsOpenCount, 2)
+        verify(shell.workspaceItem.commentsInspectorOpen)
+        compare(fakeBackend.diffCommentsStatusMessage, "Comment added.")
+    }
+
+    function test_diffCommentInspectorFiltersCopiesJumpsResolvesAndDeletes() {
+        openDiffWorkspace()
+        shell.workspaceItem.toggleCommentsInspector()
+        wait(Theme.transitionDuration + 20)
+        verify(shell.workspaceItem.commentsInspectorOpen)
+        compare(shell.workspaceItem.commentsInspector.listView.count, 1)
+        verify(shell.workspaceItem.commentsInspector.listView.reuseItems)
+
+        const openComment = diffCommentsModel.get(0)
+        shell.workspaceItem.commentsInspector.copyComment(openComment.clipboard_text)
+        const clipboardProxy = findChild(shell.workspaceItem, "diffClipboardProxy")
+        compare(clipboardProxy.text, openComment.clipboard_text)
+
+        shell.workspaceItem.commentsInspector.jumpToComment("comment-open")
+        compare(fakeBackend.lastCommand, "jump_to_diff_comment")
+        compare(shell.workspaceItem.selectionHeadRow, 2)
+
+        shell.workspaceItem.commentsInspector.toggleNonOpen()
+        compare(fakeBackend.diffCommentsShowNonOpen, true)
+        compare(shell.workspaceItem.commentsInspector.listView.count, 2)
+
+        shell.workspaceItem.commentsInspector.setCommentStatus("comment-open", "resolved")
+        compare(fakeBackend.lastCommand, "set_diff_comment_status")
+        compare(fakeBackend.diffCommentsOpenCount, 0)
+        compare(fakeBackend.diffCommentsResolvedCount, 2)
+
+        shell.workspaceItem.commentsInspector.deleteComment("comment-open")
+        compare(fakeBackend.lastCommand, "delete_diff_comment")
+        compare(shell.workspaceItem.commentsInspector.listView.count, 1)
+    }
+
+    function test_diffCommentBadgesAndInspectorStayVirtualized() {
+        const records = []
+        for (let index = 0; index < 200; ++index) {
+            records.push({
+                comment_id: "comment-" + index,
+                status: "open",
+                file_path: "crates/hunk-qt/src/backend.rs",
+                line_hint: "old 23 | new 23",
+                comment_text: "Review note " + index,
+                clipboard_text: "[Hunk Comment] " + index,
+                row: 2,
+                can_jump: true
+            })
+        }
+        fakeBackend.diffCommentRecords = records
+        fakeBackend.rebuildDiffComments()
+
+        openDiffWorkspace()
+        shell.workspaceItem.diffListView.positionViewAtIndex(2, ListView.Contain)
+        shell.workspaceItem.diffListView.forceLayout()
+        const changedRow = shell.workspaceItem.diffListView.itemAtIndex(2)
+        verify(changedRow !== null)
+        compare(changedRow.commentCount, 200)
+        const badge = findChild(changedRow, "diffCommentBadge")
+        verify(badge !== null)
+        compare(badge.width, 28)
+
+        shell.workspaceItem.toggleCommentsInspector()
+        wait(Theme.transitionDuration + 20)
+        shell.workspaceItem.commentsInspector.listView.forceLayout()
+        compare(shell.workspaceItem.commentsInspector.listView.count, 64)
+        verify(shell.workspaceItem.commentsInspector.listView.itemAtIndex(0) !== null)
+        verify(shell.workspaceItem.commentsInspector.listView.itemAtIndex(50) === null)
+    }
+
+    function test_diffCommentsRenderAtDesktopSize() {
+        openDiffWorkspace()
+        shell.workspaceItem.toggleCommentsInspector()
+        shell.workspaceItem.openCommentComposer(2)
+        tryVerify(() => shell.workspaceItem.commentComposer !== null)
+        shell.workspaceItem.commentComposer.text = "Clarify the epoch boundary before merging."
+        wait(Theme.transitionDuration + 20)
+        captureSnapshot("target/hunk-qt-diff-comments.png")
     }
 
     function test_diffWorkspaceRendersAtDesktopSize() {

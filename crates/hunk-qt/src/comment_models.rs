@@ -14,7 +14,7 @@ const COMMENT_PREVIEW_MAX_ITEMS: usize = 64;
 
 #[derive(Clone, Debug, Default, QModelItem)]
 pub struct DiffCommentItem {
-    pub id: String,
+    pub comment_id: String,
     pub status: String,
     pub file_path: String,
     pub line_hint: String,
@@ -88,7 +88,7 @@ impl DiffCommentProjection {
             .filter(|comment| include_non_open || comment.status == CommentStatus::Open)
             .take(COMMENT_PREVIEW_MAX_ITEMS)
             .map(|comment| DiffCommentItem {
-                id: comment.id.clone(),
+                comment_id: comment.id.clone(),
                 status: comment_status_label(comment.status).to_owned(),
                 file_path: comment.file_path.clone(),
                 line_hint: comment_line_hint(comment),
