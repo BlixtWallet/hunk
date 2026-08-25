@@ -1,7 +1,10 @@
 use std::collections::{BTreeSet, HashMap};
 
+use hunk_git::git::{ChangedFile, LineStats};
 use hunk_git::workspace::GitWorkspaceSnapshot;
 use qtbridge::{QListModel, QListModelBase, QModelItem, qobject};
+
+use crate::diff_models::DiffFileSummary;
 
 #[derive(Clone, Debug, Default, QModelItem)]
 pub struct GitFileItem {
@@ -45,6 +48,8 @@ pub struct GitSnapshotPayload {
     pub unstaged_file_count: i32,
     pub last_commit_subject: String,
     pub files: Vec<GitFileItem>,
+    pub diff_files: Vec<GitFileItem>,
+    pub diff_file_summaries: Vec<DiffFileSummary>,
     pub branches: Vec<GitBranchItem>,
     pub commits: Vec<GitCommitItem>,
 }
@@ -66,13 +71,27 @@ impl From<GitWorkspaceSnapshot> for GitSnapshotPayload {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| snapshot.root.display().to_string());
+        let mut diff_files = snapshot
+            .files
+            .iter()
+            .map(|file| {
+                let stats = file_line_stats(&snapshot, file);
+                file_item(file, stats.added, stats.removed, false)
+            })
+            .collect::<Vec<_>>();
+        diff_files.sort_by(|left, right| left.path.cmp(&right.path));
+        let diff_file_summaries = snapshot
+            .files
+            .iter()
+            .map(|file| DiffFileSummary {
+                path: file.path.clone(),
+                status: file.status,
+                line_stats: file_line_stats(&snapshot, file),
+            })
+            .collect();
         let mut files = Vec::with_capacity(snapshot.files.len());
         for file in &snapshot.files {
-            let stats = snapshot
-                .file_line_stats
-                .get(file.path.as_str())
-                .copied()
-                .unwrap_or_default();
+            let stats = file_line_stats(&snapshot, file);
             if file.staged {
                 files.push(file_item(file, stats.added, stats.removed, true));
             }
@@ -122,10 +141,20 @@ impl From<GitWorkspaceSnapshot> for GitSnapshotPayload {
             unstaged_file_count,
             last_commit_subject: snapshot.last_commit_subject.unwrap_or_default(),
             files,
+            diff_files,
+            diff_file_summaries,
             branches,
             commits,
         }
     }
+}
+
+fn file_line_stats(snapshot: &GitWorkspaceSnapshot, file: &ChangedFile) -> LineStats {
+    snapshot
+        .file_line_stats
+        .get(file.path.as_str())
+        .copied()
+        .unwrap_or_default()
 }
 
 fn file_item(

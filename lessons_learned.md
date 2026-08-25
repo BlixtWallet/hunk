@@ -223,3 +223,21 @@ append a correction when later evidence changes one.
   runner caused the test binary to exit with `SIGILL` before running tests. Use
   a fresh cache namespace too, so fallback lookup cannot select an older unsafe
   artifact before the first CPU-partitioned cache is saved.
+
+## 2026-08-25 — Qt Diff projection and selective application features
+
+- Reusing a headless module through a monolithic application crate can still
+  defeat frontend build-time goals. Feature-gating `hunk-app` lets Qt consume
+  the existing stable-row, binary-state, and patch-projection implementation
+  without compiling unrelated Codex, browser, mobile, image, or AWS code.
+- A selected-file diff model bounds background work and Qt model replacement
+  for large repositories. Repository and file selection must both advance the
+  adapter epoch; otherwise choosing a second file while the first patch loads
+  can leave the new selection waiting on work that is no longer relevant.
+- Keep the changed-file navigator distinct from the removed File Explorer. A
+  list derived only from Git comparison state preserves review navigation
+  without reintroducing arbitrary filesystem traversal or editing behavior.
+- QML `ListView` recycling applies to diff rows as well as file lists. A
+  5,000-row smoke case kept distant delegates uninstantiated, but that proves
+  object-count behavior only; real 8 ms frame measurements still belong at the
+  cutover performance gate.

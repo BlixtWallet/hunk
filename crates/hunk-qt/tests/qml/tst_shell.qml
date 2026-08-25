@@ -11,6 +11,8 @@ TestCase {
     ListModel { id: gitFilesModel }
     ListModel { id: gitBranchesModel }
     ListModel { id: gitCommitsModel }
+    ListModel { id: diffFilesModel }
+    ListModel { id: diffRowsModel }
 
     QtObject {
         id: fakeBackend
@@ -20,6 +22,15 @@ TestCase {
         property string statusMessage: "Test backend ready"
         property string lastRequestedWorkspace: ""
 
+        property var diffFiles: diffFilesModel
+        property var diffRows: diffRowsModel
+        property string diffSelectedPath: "crates/hunk-qt/src/backend.rs"
+        property string diffStatusTag: "M"
+        property int diffAdditions: 132
+        property int diffRemovals: 8
+        property bool diffReady: true
+        property bool diffLoading: false
+        property string diffError: ""
         property var gitFiles: gitFilesModel
         property var gitBranches: gitBranchesModel
         property var gitCommits: gitCommitsModel
@@ -81,6 +92,11 @@ TestCase {
         }
 
         function refresh_git_workspace() { record("refresh") }
+        function select_diff_file(path) {
+            record("select_diff_file", path)
+            diffSelectedPath = path
+        }
+        function refresh_diff() { record("refresh_diff") }
         function select_git_root(root) { record("select_root", root) }
         function stage_path(path) { record("stage", path) }
         function unstage_path(path) { record("unstage", path) }
@@ -133,10 +149,67 @@ TestCase {
         gitFilesModel.clear()
         gitBranchesModel.clear()
         gitCommitsModel.clear()
+        diffFilesModel.clear()
+        diffRowsModel.clear()
 
         appendFile("crates/hunk-git/src/workspace.rs", false, 84, 4)
         appendFile("crates/hunk-qt/src/backend.rs", false, 132, 8)
         appendFile("crates/hunk-qt/src/qml/Hunk/GitWorkspace.qml", true, 635, 0)
+        diffFilesModel.append({
+            path: "crates/hunk-qt/src/backend.rs",
+            file_name: "backend.rs",
+            directory: "crates/hunk-qt/src",
+            status_tag: "M",
+            status_label: "Modified",
+            section: "",
+            staged: false,
+            additions: 132,
+            removals: 8
+        })
+        diffFilesModel.append({
+            path: "crates/hunk-qt/src/qml/Hunk/DiffWorkspace.qml",
+            file_name: "DiffWorkspace.qml",
+            directory: "crates/hunk-qt/src/qml/Hunk",
+            status_tag: "A",
+            status_label: "Added",
+            section: "",
+            staged: false,
+            additions: 318,
+            removals: 0
+        })
+        diffRowsModel.append({
+            stable_id: "backend.rs:0:hunk",
+            row_kind: "hunk",
+            left_line: 0,
+            left_text: "",
+            left_kind: "none",
+            right_line: 0,
+            right_text: "",
+            right_kind: "none",
+            text: "@@ -22,7 +22,8 @@ impl Backend"
+        })
+        diffRowsModel.append({
+            stable_id: "backend.rs:1:code",
+            row_kind: "code",
+            left_line: 22,
+            left_text: "    qproperty!(\"gitFiles\", Read = git_files, Constant);",
+            left_kind: "context",
+            right_line: 22,
+            right_text: "    qproperty!(\"gitFiles\", Read = git_files, Constant);",
+            right_kind: "context",
+            text: ""
+        })
+        diffRowsModel.append({
+            stable_id: "backend.rs:2:code",
+            row_kind: "code",
+            left_line: 23,
+            left_text: "    qproperty!(\"gitBranches\", Read = git_branches, Constant);",
+            left_kind: "removed",
+            right_line: 23,
+            right_text: "    qproperty!(\"diffRows\", Read = diff_rows, Constant);",
+            right_kind: "added",
+            text: ""
+        })
         gitBranchesModel.append({
             name: "migration/05-qt-git",
             current: true,
@@ -174,6 +247,11 @@ TestCase {
         tryVerify(() => shell.workspaceItem !== null && shell.workspaceItem.objectName === "gitWorkspace")
     }
 
+    function openDiffWorkspace() {
+        shell.activateWorkspace("diff")
+        tryVerify(() => shell.workspaceItem !== null && shell.workspaceItem.objectName === "diffWorkspace")
+    }
+
     function captureSnapshot(path) {
         snapshotReady = false
         snapshotSaved = false
@@ -191,6 +269,13 @@ TestCase {
         fakeBackend.lastRequestedWorkspace = ""
         fakeBackend.lastCommand = ""
         fakeBackend.lastArgument = ""
+        fakeBackend.diffSelectedPath = "crates/hunk-qt/src/backend.rs"
+        fakeBackend.diffStatusTag = "M"
+        fakeBackend.diffAdditions = 132
+        fakeBackend.diffRemovals = 8
+        fakeBackend.diffReady = true
+        fakeBackend.diffLoading = false
+        fakeBackend.diffError = ""
         fakeBackend.gitChangedFileCount = 3
         fakeBackend.gitStagedFileCount = 1
         fakeBackend.gitUnstagedFileCount = 2
@@ -236,6 +321,53 @@ TestCase {
     function test_retainedWorkspaceContract() {
         compare(shell.workspaceCount, 3)
         compare(shell.workspaceIds, ["diff", "git", "ai"])
+    }
+
+    function test_diffWorkspaceUsesVirtualizedRustModels() {
+        openDiffWorkspace()
+        shell.workspaceItem.diffListView.forceLayout()
+        compare(shell.workspaceItem.diffListView.count, 3)
+        verify(shell.workspaceItem.diffListView.reuseItems)
+        compare(shell.sidebarItem.fileListView.count, 2)
+        verify(shell.sidebarItem.fileListView.reuseItems)
+    }
+
+    function test_diffFileSelectionUsesBackendCommand() {
+        openDiffWorkspace()
+        shell.sidebarItem.fileListView.forceLayout()
+        const secondFile = shell.sidebarItem.fileListView.itemAtIndex(1)
+        verify(secondFile !== null)
+        shell.sidebarItem.activateFile("crates/hunk-qt/src/qml/Hunk/DiffWorkspace.qml")
+        compare(fakeBackend.lastCommand, "select_diff_file")
+        compare(fakeBackend.lastArgument, "crates/hunk-qt/src/qml/Hunk/DiffWorkspace.qml")
+    }
+
+    function test_diffRowsRemainVirtualizedForLargePatches() {
+        diffRowsModel.clear()
+        for (let index = 0; index < 5000; ++index) {
+            diffRowsModel.append({
+                stable_id: "generated:" + index + ":code",
+                row_kind: "code",
+                left_line: index + 1,
+                left_text: "let before_" + index + " = value;",
+                left_kind: "removed",
+                right_line: index + 1,
+                right_text: "let after_" + index + " = value;",
+                right_kind: "added",
+                text: ""
+            })
+        }
+
+        openDiffWorkspace()
+        shell.workspaceItem.diffListView.forceLayout()
+        compare(shell.workspaceItem.diffListView.count, 5000)
+        verify(shell.workspaceItem.diffListView.itemAtIndex(0) !== null)
+        verify(shell.workspaceItem.diffListView.itemAtIndex(1000) === null)
+    }
+
+    function test_diffWorkspaceRendersAtDesktopSize() {
+        openDiffWorkspace()
+        captureSnapshot("target/hunk-qt-diff.png")
     }
 
     function test_workspaceActivationUsesBackendCommand() {

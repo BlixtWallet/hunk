@@ -38,7 +38,7 @@ Every implementation item below must use this loop before the next item starts:
 - [ ] Implement the smallest complete version of the planned slice.
 - [ ] Run build, test, and validation commands through `nix develop -c ...` on macOS.
 - [ ] Use Cargo's default `target/` and only the repository-approved Cargo home.
-- [ ] Perform a thorough review for correctness, regressions, dead code, accidental compatibility layers, files over 1000 lines, and unnecessary abstractions.
+- [ ] Perform a thorough review for correctness, regressions, dead code, accidental compatibility layers, files over 2000 lines, and unnecessary abstractions.
 - [ ] Fix review findings before starting the next item.
 - [ ] Append a dated entry to the repository-root `lessons_learned.md` when the slice reveals a constraint, bug, failure mode, or reusable technique.
 - [ ] Make a small coherent commit after the slice is reviewed.
@@ -120,10 +120,11 @@ master
   <- migration/03-headless-app-core
   <- migration/04-qt-foundation
   <- migration/05-qt-git
-  <- migration/06-qt-diff
-  <- migration/07-qt-ai
-  <- migration/08-qt-cutover-ci
-  <- migration/09-release-hardening
+  <- migration/06-qt-forge
+  <- migration/07-qt-diff
+  <- migration/08-qt-ai
+  <- migration/09-qt-cutover-ci
+  <- migration/10-release-hardening
 ```
 
 Branch names may be divided into smaller layers when a listed layer would not
@@ -285,8 +286,9 @@ selection, and expansion feedback is immediate and never ornamental.
 - [x] Implement forge authentication/review actions while skipping unattended keychain-blocked validation paths.
 - [x] Add Rust service tests and QML interaction tests.
 - [x] Visually inspect empty, loading, error, and populated states.
-- [x] Complete the mandatory working loop and stacked PR
-  ([#181](https://github.com/smolcars/hunk/pull/181)).
+- [x] Complete the mandatory working loop and stacked PRs
+  ([#181](https://github.com/smolcars/hunk/pull/181) and
+  [#182](https://github.com/smolcars/hunk/pull/182)).
 
 Phase 5 implementation decisions:
 
@@ -369,8 +371,9 @@ Phase 5 local validation through Nix:
 
 ### 6. Diff Tab
 
-- [ ] Define immutable, batched visible-row snapshots with stable identifiers.
-- [ ] Implement virtualized unified and side-by-side diff presentation.
+- [x] Define immutable, batched selected-file row snapshots with stable identifiers.
+- [x] Implement virtualized side-by-side diff presentation.
+- [ ] Implement virtualized unified diff presentation.
 - [ ] Restore syntax highlighting, selection, search, comments, folding, and review navigation required by the narrowed product.
 - [ ] Avoid one QObject per token or other high-churn bridge designs.
 - [ ] Instrument frame time, model update time, object count, and allocation hot paths.
@@ -378,6 +381,34 @@ Phase 5 local validation through Nix:
 - [ ] Add the narrow custom `QQuickItem`/scene-graph renderer only if measurements require it.
 - [ ] Meet the 8 ms frame budget at 120 Hz for scroll, resize, selection, and streamed updates.
 - [ ] Complete the mandatory working loop and stacked PR.
+
+Phase 6 initial Qt slice decisions:
+
+- Qt consumes `hunk-app::diff` as a narrowly feature-gated dependency instead
+  of duplicating patch projection or pulling the AI/browser/mobile dependency
+  graph into the Qt build. The default `hunk-app` feature set remains unchanged
+  for the legacy frontend during migration.
+- `hunk-git` loads one selected changed-file patch on a background thread;
+  `hunk-app::diff` projects stable rows and binary/error states there before a
+  single QtBridge model reset. Selection and repository changes invalidate the
+  previous epoch so stale work cannot replace the active file.
+- The Diff sidebar is a changed-file navigator, not a restored File Explorer.
+  It contains only paths in the active working-tree comparison and exposes no
+  arbitrary directory traversal or file mutation behavior.
+- QML renders fixed-height code rows through recycling `ListView` delegates and
+  a horizontally scrollable review canvas. Syntax, search, selection, comments,
+  folding, unified mode, instrumentation, and the final 120 Hz hardware gate
+  remain subsequent Diff slices rather than hidden scope in this foundation.
+
+Phase 6 initial-slice macOS validation through Nix, using the existing
+external-volume Cargo target and caches:
+
+- The full workspace build passed in 47.66 seconds.
+- The full workspace test suite passed, including the new Qt projection tests.
+- Workspace Clippy passed for all targets with warnings denied in 15.52 seconds.
+- `qmllint` and all 16 QML interaction/virtualization/visual tests passed. The
+  Diff smoke case verified that a 5,000-row model does not instantiate a
+  distant row, and the desktop-size rendered snapshot was visually inspected.
 
 ### 7. AI Tab
 

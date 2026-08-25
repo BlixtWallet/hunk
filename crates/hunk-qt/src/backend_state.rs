@@ -9,12 +9,14 @@ use hunk_domain::state::AppStateStore;
 use hunk_forge::{ForgeReviewOutcome, ForgeReviewWorkspace, GitHubDeviceAuthorization};
 use qtbridge::QObjectHolder;
 
+use crate::diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
 use crate::forge::ForgeSnapshotPayload;
 use crate::git_models::{
     GitBranchListModel, GitCommitListModel, GitFileListModel, GitSnapshotPayload,
 };
 
 pub(super) type GitRefreshResult = Result<GitSnapshotPayload, String>;
+pub(super) type DiffRefreshResult = Result<DiffSnapshotPayload, String>;
 pub(super) type ForgeAsyncResult = Result<ForgeAsyncPayload, String>;
 type GitHubDeviceStartResult = Result<GitHubDeviceAuthorization, String>;
 
@@ -56,6 +58,18 @@ pub struct Backend {
     pub(super) ready: bool,
     pub(super) status_message: String,
     pub(super) bootstrap_started: bool,
+    pub(super) diff_files: Rc<RefCell<GitFileListModel>>,
+    pub(super) diff_rows: Rc<RefCell<DiffRowListModel>>,
+    pub(super) diff_selected_path: String,
+    pub(super) diff_status_tag: String,
+    pub(super) diff_additions: i32,
+    pub(super) diff_removals: i32,
+    pub(super) diff_ready: bool,
+    pub(super) diff_loading: bool,
+    pub(super) diff_error: String,
+    pub(super) diff_epoch: i32,
+    pub(super) diff_file_summaries: HashMap<String, DiffFileSummary>,
+    pub(super) diff_refresh_results: Arc<Mutex<HashMap<i32, DiffRefreshResult>>>,
     pub(super) git_files: Rc<RefCell<GitFileListModel>>,
     pub(super) git_branches: Rc<RefCell<GitBranchListModel>>,
     pub(super) git_commits: Rc<RefCell<GitCommitListModel>>,
@@ -120,6 +134,18 @@ impl Default for Backend {
             ready: false,
             status_message: "Connecting Rust application services…".to_owned(),
             bootstrap_started: false,
+            diff_files: GitFileListModel::default_with_attached_qobject(),
+            diff_rows: DiffRowListModel::default_with_attached_qobject(),
+            diff_selected_path: String::new(),
+            diff_status_tag: String::new(),
+            diff_additions: 0,
+            diff_removals: 0,
+            diff_ready: false,
+            diff_loading: false,
+            diff_error: String::new(),
+            diff_epoch: 0,
+            diff_file_summaries: HashMap::new(),
+            diff_refresh_results: Arc::new(Mutex::new(HashMap::new())),
             git_files: GitFileListModel::default_with_attached_qobject(),
             git_branches: GitBranchListModel::default_with_attached_qobject(),
             git_commits: GitCommitListModel::default_with_attached_qobject(),
