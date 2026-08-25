@@ -603,7 +603,7 @@ external caches:
 - [x] Port required terminal surfaces with correct input, focus, cursor, selection, and resize behavior.
 - [x] Port the required embedded CEF browser surface, controls, input routing, and AI tool bridge to Qt.
 - [ ] Validate key flows without triggering unattended keychain prompts.
-- [ ] Complete the mandatory working loop and stacked PR.
+- [x] Complete the mandatory working loop and stacked PR.
 
 Product decision recorded on 2026-08-25: both the terminal and embedded browser
 remain required parts of Hunk and must work in the Qt application before the
@@ -1167,6 +1167,9 @@ approved external Cargo cache, and the exact Qt 6.11.2 and CEF 151 runtimes:
   CEF backend was reduced to 1,973 lines by extracting a 55-line macOS
   sidecar-staging helper.
 - Validation did not launch Hunk, Codex, CEF, or a keychain-facing runtime.
+- The reviewed cutover is open as stacked PR #204 above browser PR #203; the
+  verified remote base is `migration/24-qt-browser` and the head is
+  `migration/25-qt-cutover`.
 
 ### 9. Release Hardening and Completion Audit
 
