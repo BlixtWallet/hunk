@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use hunk_codex::state::{AiState, ThreadLifecycleStatus, ThreadSummary, TurnStatus, TurnSummary};
 use hunk_qt::{AiThreadCatalogProjection, AiThreadItem, AiThreadListModel};
 use qtbridge::{QListModel, QObjectHolder};
@@ -162,4 +164,18 @@ fn thread_model_skips_identical_streaming_resets() {
     assert_eq!(model.len(), 1);
     assert!(!model.replace_if_changed(vec![item]));
     assert_eq!(model.len(), 1);
+}
+
+#[test]
+fn projection_marks_threads_that_need_user_attention() {
+    let mut state = AiState::default();
+    state.threads.insert(
+        "thread".to_owned(),
+        thread("thread", Some("Thread"), ThreadLifecycleStatus::Active, 1),
+    );
+    let mut projection = AiThreadCatalogProjection::from_state(&state, Some("thread"));
+
+    projection.mark_attention(&BTreeSet::from(["thread".to_owned()]));
+
+    assert!(projection.items[0].attention);
 }

@@ -15,7 +15,7 @@ Item {
     readonly property bool emptyStateVisible: threadList.count === 0
         && backend.aiReady && !backend.aiLoading
     readonly property bool commandPending: backend.aiPromptPending
-        || backend.aiInterruptPending
+        || backend.aiInterruptPending || backend.aiRequestResolving
 
     function selectThread(threadId) {
         if (threadId.length > 0 && threadId !== backend.aiActiveThreadId)
@@ -137,6 +137,16 @@ Item {
                 font.pixelSize: 9
                 font.letterSpacing: 0.6
             }
+
+            Text {
+                visible: root.backend.aiPendingRequestCount > 0
+                text: root.backend.aiPendingRequestCount + " ACTION"
+                    + (root.backend.aiPendingRequestCount === 1 ? "" : "S")
+                color: Theme.warning
+                font.family: Theme.monoFont
+                font.pixelSize: 9
+                font.letterSpacing: 0.6
+            }
         }
 
         Rectangle {
@@ -170,8 +180,10 @@ Item {
             required property string status
             required property bool active
             required property bool running
+            required property bool attention
             required property double created_at
             required property double updated_at
+            readonly property alias archiveButton: archiveAction
 
             width: threadList.width
             height: Theme.aiThreadRowHeight
@@ -211,10 +223,13 @@ Item {
 
                 Text {
                     width: parent.width
-                    text: threadRow.running ? "RUNNING"
-                        : threadRow.workspace_label + "  ·  " + threadRow.status.toUpperCase()
+                    text: threadRow.attention ? "ACTION REQUIRED"
+                        : (threadRow.running ? "RUNNING"
+                            : threadRow.workspace_label + "  ·  "
+                                + threadRow.status.toUpperCase())
                     textFormat: Text.PlainText
-                    color: threadRow.running ? Theme.positive : Theme.faint
+                    color: threadRow.attention ? Theme.warning
+                        : (threadRow.running ? Theme.positive : Theme.faint)
                     elide: Text.ElideRight
                     font.family: Theme.monoFont
                     font.pixelSize: 9
@@ -230,7 +245,8 @@ Item {
                 label: "Archive"
                 compact: true
                 visible: threadRow.active || rowHover.hovered
-                enabled: !root.backend.aiLoading && !root.commandPending
+                enabled: !threadRow.attention && !root.backend.aiLoading
+                    && !root.commandPending
                 z: 2
                 onClicked: root.requestArchive(threadRow.thread_id, threadRow.title)
             }

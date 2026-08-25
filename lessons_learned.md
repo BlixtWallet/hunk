@@ -444,3 +444,46 @@ append a correction when later evidence changes one.
 - Keep acceptance revisions monotonic for the backend lifetime. Resetting the
   revision during a reconnect can make a still-retained QML receipt look newly
   accepted even though no prompt acknowledgement occurred.
+
+## 2026-08-25 — Qt Codex approvals and request-user-input
+
+- A bounded question projection must fail closed when it cannot preserve the
+  complete response contract. Truncating the ninth question or an option label
+  and then submitting the visible subset can answer a different request than
+  the user saw; expose the bounded preview but disable response instead.
+- Presentation strings may be trimmed or ellipsized, but values that return to
+  the protocol are semantic data. Preserve option labels exactly for supported
+  requests and revalidate exact request/question IDs and answer membership in
+  Rust immediately before enqueueing the worker command.
+- Do not mark attention by retaining every pending thread ID. Intersect pending
+  requests with the already bounded visible thread catalog on the listener
+  thread, while explicitly preserving the selected thread, so the UI contract
+  is complete for visible rows and remains bounded under pathological input.
+- A failed request response is not an acknowledgement. Keep the in-memory QML
+  answers while the authoritative request ID remains, clear only on request
+  replacement/removal, and restore composer focus after that blocking request
+  actually disappears.
+- Secret input masking is separate from secret lifecycle. Password echo protects
+  the visible surface; keeping answers out of Rust properties, models, logs,
+  drafts, and persistence limits how long the plaintext survives elsewhere.
+- A request panel owned by a workspace `Loader` cannot own the only copy of
+  partial answers. Keep the memory-only answer map above that loader, key it by
+  exact request ID, and prune it against only the bounded current requests that
+  Qt can actually display so tab/thread navigation neither erases answers nor
+  turns the UI projection into an unbounded pending-request clone.
+- An attention marker is also a mutation guard. Disable Archive on attention
+  rows and reject it again in Rust; otherwise archiving a thread can leave its
+  still-pending approval or input request counted but unreachable.
+- `Item.visible` reflects ancestor visibility, so it is not a stable source for
+  a component's intrinsic size. Derive `implicitHeight` from the authoritative
+  request state, and give a repeated `Column` explicit `childrenRect` geometry;
+  otherwise an offscreen/loaded panel can report zero content height and never
+  become scrollable.
+- Custom keyboard controls need the whole interaction contract: accessible
+  roles and names, a visible focus state, bounded/wrapped labels, and
+  focus-driven scrolling. Pointer support plus `activeFocusOnTab` alone can move
+  users into clipped controls with no visible or assistive indication.
+- An exact Rust baseline has more owners than `rust-toolchain.toml`. Cargo MSRV
+  metadata, inherited crate manifests, Nix's rust-overlay selection and lock,
+  non-Nix CI setup actions, and patched vendor manifests must move together or
+  different platforms silently compile with different toolchains.

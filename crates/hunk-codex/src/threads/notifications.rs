@@ -329,17 +329,17 @@ impl ThreadService {
                     });
                 }
             }
-            ServerNotification::Error(notification) => {
-                if self.is_known_thread(&notification.thread_id) && !notification.will_retry {
-                    self.apply_event(ReducerEvent::TurnStarted {
-                        thread_id: notification.thread_id.clone(),
-                        turn_id: notification.turn_id.clone(),
-                    });
-                    self.apply_event(ReducerEvent::TurnCompleted {
-                        thread_id: notification.thread_id,
-                        turn_id: notification.turn_id,
-                    });
-                }
+            ServerNotification::Error(notification)
+                if self.is_known_thread(&notification.thread_id) && !notification.will_retry =>
+            {
+                self.apply_event(ReducerEvent::TurnStarted {
+                    thread_id: notification.thread_id.clone(),
+                    turn_id: notification.turn_id.clone(),
+                });
+                self.apply_event(ReducerEvent::TurnCompleted {
+                    thread_id: notification.thread_id,
+                    turn_id: notification.turn_id,
+                });
             }
             _ => {}
         }

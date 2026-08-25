@@ -328,10 +328,7 @@ fn resolve_candidate_rename_source(
     let mut current = path;
     let mut rename_from = None;
 
-    loop {
-        let Some(candidate) = files.get(current) else {
-            break;
-        };
+    while let Some(candidate) = files.get(current) {
         let Some(next) = candidate
             .staged_rename_from
             .as_deref()

@@ -22,6 +22,7 @@ resolver = "2"
 
 [workspace.package]
 license = "GPL-3.0-or-later"
+rust-version = "1.98"
 
 [workspace.dependencies]
 # Keep the Codex fork pin explicit and narrow. This is easier to audit than

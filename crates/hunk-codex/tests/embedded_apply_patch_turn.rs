@@ -341,13 +341,12 @@ fn embedded_turn_apply_patch_updates_workspace_file() -> Result<()> {
                         saw_turn_completed = true;
                     }
                 }
-                ServerNotification::Error(notification) => {
+                ServerNotification::Error(notification)
                     if notification.thread_id == thread_start.thread.id
-                        && notification.turn_id == turn_start.turn.id
-                    {
-                        let details = notification.error.additional_details.unwrap_or_default();
-                        turn_error = Some(format!("{} | {}", notification.error.message, details));
-                    }
+                        && notification.turn_id == turn_start.turn.id =>
+                {
+                    let details = notification.error.additional_details.unwrap_or_default();
+                    turn_error = Some(format!("{} | {}", notification.error.message, details));
                 }
                 _ => {}
             },

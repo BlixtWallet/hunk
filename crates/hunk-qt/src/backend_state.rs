@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::atomic::AtomicI32;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use hunk_app::diff::DiffCommentAnchor;
@@ -12,6 +12,7 @@ use qtbridge::QObjectHolder;
 
 use crate::AiPromptReceipt;
 use crate::ai_models::AiThreadListModel;
+use crate::ai_requests::AiPendingRequestProjection;
 use crate::ai_runtime::AiRuntimeSlot;
 use crate::ai_timeline_models::AiTimelineListModel;
 use crate::comment_models::{DiffCommentListModel, DiffCommentProjection};
@@ -158,6 +159,8 @@ pub struct Backend {
     pub(super) ai_prompt_accepted_revision: i32,
     pub(super) ai_interrupt_thread_id: String,
     pub(super) ai_interrupt_turn_id: String,
+    pub(super) ai_requests: AiPendingRequestProjection,
+    pub(super) ai_request_resolving_id: String,
     pub(super) ai_thread_count: i32,
     pub(super) ai_running_thread_count: i32,
     pub(super) ai_timeline_total_turn_count: i32,
@@ -287,6 +290,8 @@ impl Default for Backend {
             ai_prompt_accepted_revision: 0,
             ai_interrupt_thread_id: String::new(),
             ai_interrupt_turn_id: String::new(),
+            ai_requests: AiPendingRequestProjection::default(),
+            ai_request_resolving_id: String::new(),
             ai_thread_count: 0,
             ai_running_thread_count: 0,
             ai_timeline_total_turn_count: 0,
@@ -338,4 +343,19 @@ fn initial_git_root() -> PathBuf {
         .filter(|path| path.is_dir())
         .or_else(|| std::env::current_dir().ok())
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+pub(super) fn persist_active_project(root: PathBuf) -> anyhow::Result<()> {
+    let store = AppStateStore::new()?;
+    let mut state = store.load_or_default()?;
+    state.activate_workspace_project(root);
+    store.save(&state)
+}
+
+pub(super) fn next_forge_epoch(backend: &mut Backend) -> i32 {
+    backend.forge_epoch = backend.forge_epoch.wrapping_add(1).max(1);
+    backend
+        .forge_current_epoch
+        .store(backend.forge_epoch, Ordering::Release);
+    backend.forge_epoch
 }

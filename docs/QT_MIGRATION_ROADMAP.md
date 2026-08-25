@@ -131,6 +131,7 @@ master
   <- migration/14-qt-ai-runtime
   <- migration/15-qt-ai-catalog
   <- migration/16-qt-ai-composer
+  <- migration/17-qt-ai-requests
   <- additional independently reviewable Qt AI layers
   <- atomic Qt cutover and CI replacement
   <- release hardening
@@ -593,7 +594,9 @@ external caches:
 - [x] Expose the text composer and its send/steer/interrupt state through QtBridge.
 - [ ] Implement thread load/start/resume/fork/archive and cwd scoping.
 - [x] Implement streaming messages and tool output without per-token QObject churn or structural model resets.
-- [ ] Implement approvals, request-user-input, queued messages, steering, interruption, and plan state.
+- [x] Implement approvals and request-user-input with exact pending-command state.
+- [x] Implement text steering, interruption, and plan-state presentation.
+- [ ] Implement queued message recovery.
 - [ ] Implement attachments, bookmarks, context usage, model/settings, and service-tier controls still in product scope.
 - [ ] Port required terminal surfaces with correct input, focus, cursor, selection, and resize behavior.
 - [ ] Decide retained embedded-browser requirements from product use; remove CEF if unneeded rather than automatically replacing it with Qt WebEngine.
@@ -755,6 +758,67 @@ Cargo target, Cargo cache, and Qt 6.11.2 SDK:
   controls. The conversation hierarchy and dense catalog remain unchanged.
 - Workspace Clippy passed for all targets with warnings denied in 7.30 seconds.
   Validation used Rust/QML fixtures only and did not launch Hunk, Codex, or any
+  credential/keychain path.
+
+Phase 7 Qt approval/request-input decisions:
+
+- Pending approvals and request-user-input records are projected on the Codex
+  listener thread. Qt receives aggregate counts, a bounded set of visible
+  attention-thread IDs, and only the selected thread's oldest actionable
+  request; it never retains or drops the full reducer snapshot on the UI thread.
+- Command/file approvals retain their exact request IDs through Accept or
+  Decline. User-input responses are validated again in Rust against the current
+  exact request, exact question IDs, one answer per question, offered options,
+  and bounded answer sizes before reaching `AiWorkerCommand`.
+- The panel shows approvals before user input to preserve retained worker
+  ordering. A resolving request disables duplicate responses and catalog
+  mutations until an authoritative snapshot removes or replaces that exact ID;
+  navigation remains available so users can reach another attention thread.
+- Questions and options are capped before crossing QtBridge. An oversized,
+  duplicate-ID, or semantically truncated request is displayed as unsupported
+  and cannot be partially submitted. Every affected thread still visible in
+  the 200-row catalog receives an attention role.
+- Answers live only in a memory-only QML store above the workspace loader,
+  keyed by exact request ID. They survive failures plus Diff/Git and attention-
+  thread round trips, are pruned against the bounded current requests Qt can
+  display, and never enter persistence, production logs, or Rust properties.
+  Secret fields additionally use password echo.
+- Attention threads cannot be archived from QML and are rejected again at the
+  Rust command boundary. Request arrival hands keyboard focus from the composer
+  to the first response control, completion restores it, and focus-driven
+  scrolling keeps all eight bounded questions reachable inside the capped
+  panel.
+- Long semantic option labels remain exact for submission but wrap inside the
+  viewport. Custom options, text fields, and shared action buttons expose
+  accessible roles/names and visible focus treatment; unsupported requests use
+  a generic fail-closed explanation rather than mislabeling every validation
+  failure as a size problem.
+- This layer also raises the repository baseline to Rust 1.98. Cargo workspace
+  metadata, all member manifests, `rust-toolchain.toml`, Nix, Windows/Linux CI
+  actions, and the patched vendor manifest agree on the version. The
+  rust-overlay lock is refreshed so `nix develop` resolves the exact toolchain
+  instead of a moving latest-stable alias.
+
+Phase 7 Qt approval/request-input validation through Nix, reusing the external
+Cargo target, Cargo cache, and Qt 6.11.2 SDK:
+
+- The exact compiler was `rustc 1.98.0 (88d9e12ae 2026-08-18)`. The full
+  workspace all-target build passed in 32.39 seconds, and the complete workspace
+  test suite passed in about 2 minutes 57 seconds, including six new Rust
+  request-projection and validation tests.
+- Rust 1.98 introduced stricter lints and error-size checks in existing code.
+  The compatibility updates box one large JSON-RPC error variant, use guarded
+  notification matches, use the fixed-size RGBA chunk API, and express a rename
+  traversal as `while let`; workspace Clippy then passed for all targets with
+  warnings denied on the warm cache.
+- `qmllint` passed for the complete module, and all 40 QML interaction, failure,
+  retry, focus, overflow, virtualization, and rendered-state tests passed in
+  1.261 seconds. The inspected 1280-by-760 render remained structurally intact.
+- The repository's seven Qt agent skills and their lock metadata are included
+  in this layer. Their deterministic QML lint plus six focused review passes
+  drove the final accessibility, focus, bounded-state, archive, and geometry
+  corrections; system `qmllint` remained clean afterward.
+- Validation used Rust/QML fixtures only and did not launch Hunk, Codex, or any
   credential/keychain path.
 
 ### 8. Atomic Qt Cutover and CI Replacement

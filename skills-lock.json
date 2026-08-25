@@ -10,6 +10,48 @@
       "source": "AprilNEA/gpui-skills",
       "sourceType": "github",
       "computedHash": "acf6afcdf0b2147b414cf53f2ccca53e345839a37923c595aeae045a943102c0"
+    },
+    "qt-qml": {
+      "source": "TheQtCompanyRnD/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/qt-qml/SKILL.md",
+      "computedHash": "b4f483457bf2deb250053ffe8cffe5727724792bcdca06180d4737184bee9dcb"
+    },
+    "qt-qml-docs": {
+      "source": "TheQtCompanyRnD/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/qt-qml-docs/SKILL.md",
+      "computedHash": "870800eba1e6686b75a8eb5b4be4aa1b3704f79b9a0f6ae0efd2264258bbf33d"
+    },
+    "qt-qml-profiler": {
+      "source": "TheQtCompanyRnD/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/qt-qml-profiler/SKILL.md",
+      "computedHash": "94cb50b53a82cc3098489b8cb863a3626ea4fdccf96a8c8b6b8e242509f6980c"
+    },
+    "qt-qml-review": {
+      "source": "TheQtCompanyRnD/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/qt-qml-review/SKILL.md",
+      "computedHash": "b720653c07cb7f0391f7b89937e69f196389f66a2c17ab20d6313cde0dd07a9e"
+    },
+    "qt-qml-test": {
+      "source": "TheQtCompanyRnD/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/qt-qml-test/SKILL.md",
+      "computedHash": "7335f9486c35406dbffb511aaa11299493948942edad3f5a407beb58f0072eab"
+    },
+    "qt-qml-test-run": {
+      "source": "TheQtCompanyRnD/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/qt-qml-test-run/SKILL.md",
+      "computedHash": "a4b2d9b3e01d0bb6332cfda664cc233a98ac33da0345da640c83e22d6103ceb0"
+    },
+    "qt-ui-design": {
+      "source": "TheQtCompanyRnD/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/qt-ui-design/SKILL.md",
+      "computedHash": "152a8aa244cc4a49654dc509cb693672d07ad43eed91e4078ccae5ad99049f78"
     }
   }
 }

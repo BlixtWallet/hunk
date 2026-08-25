@@ -7,10 +7,12 @@ Item {
 
     required property var backend
     required property var draftStore
+    required property var requestAnswerStore
     property bool followTail: true
     property string visibleThreadId: backend.aiActiveThreadId
     readonly property alias timelineListView: timeline
     readonly property alias composer: composer
+    readonly property alias requestPanel: requestPanel
     readonly property bool errorStateVisible: backend.aiError.length > 0 && !backend.aiReady
     readonly property bool loadingStateVisible: backend.aiLoading && !backend.aiReady
         && !errorStateVisible
@@ -179,7 +181,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: statusBanner.bottom
-        anchors.bottom: composer.top
+        anchors.bottom: requestPanel.top
 
         Rectangle {
             id: historyNotice
@@ -276,6 +278,16 @@ Item {
         }
     }
 
+    AiRequestPanel {
+        id: requestPanel
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: composer.top
+        height: implicitHeight
+        backend: root.backend
+        answerStore: root.requestAnswerStore
+    }
+
     AiComposer {
         id: composer
         anchors.left: parent.left
@@ -283,5 +295,6 @@ Item {
         anchors.bottom: parent.bottom
         backend: root.backend
         draftStore: root.draftStore
+        onRequestFocusRequested: requestPanel.focusFirstControl()
     }
 }

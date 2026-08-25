@@ -13,6 +13,12 @@ Item {
     implicitHeight: compact ? 26 : 30
     opacity: enabled ? 1 : 0.42
     activeFocusOnTab: enabled
+    Accessible.role: Accessible.Button
+    Accessible.name: label
+    Accessible.onPressAction: {
+        if (root.enabled)
+            root.clicked()
+    }
 
     Rectangle {
         anchors.fill: parent

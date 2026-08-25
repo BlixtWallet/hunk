@@ -2,25 +2,28 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use hunk_app::ai::{AiTurnSessionOverrides, AiWorkerCommand};
 use hunk_app::diff::DiffCommentStoreCommand;
 use hunk_domain::db::CommentStatus;
-use hunk_domain::state::AppStateStore;
 use hunk_forge::{ForgeCredentialKind, ForgeProvider, ForgeReviewWorkspace};
 use hunk_git::workspace::{GitWorkspaceCommand, execute_git_workspace_command, load_git_workspace};
 use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString};
 
 use crate::ai_models::AiThreadListModel;
-use crate::ai_runtime::{prepare_ai_worker_config, start_ai_runtime};
 use crate::ai_timeline_models::AiTimelineListModel;
 use crate::backend_ai::{
-    apply_ai_runtime_events, queue_ai_interrupt, queue_ai_prompt, reset_ai_runtime_state,
+    ai_active_request_count, ai_interrupt_pending, ai_pending_request_count, ai_prompt_pending,
+    ai_request_answerable, ai_request_description, ai_request_id, ai_request_kind,
+    ai_request_questions_json, ai_request_reason, ai_request_resolving, ai_request_title,
+    apply_ai_runtime_events, ensure_ai_runtime_started, queue_ai_approval, queue_ai_interrupt,
+    queue_ai_prompt, queue_ai_user_input, reset_ai_runtime_state, send_ai_worker_command,
     stop_ai_runtime,
 };
 pub use crate::backend_state::{Backend, Workspace};
-use crate::backend_state::{DiffCommentRequestKind, ForgeAsyncPayload};
+use crate::backend_state::{
+    DiffCommentRequestKind, ForgeAsyncPayload, next_forge_epoch, persist_active_project,
+};
 use crate::comment_models::DiffCommentListModel;
 use crate::comments::DiffCommentStartOutcome;
 use crate::diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
@@ -283,6 +286,56 @@ impl Backend {
     qproperty!(
         "aiInterruptPending",
         Read = ai_interrupt_pending,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiPendingRequestCount",
+        Read = ai_pending_request_count,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiActiveRequestCount",
+        Read = ai_active_request_count,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiRequestId",
+        Read = ai_request_id,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiRequestKind",
+        Read = ai_request_kind,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiRequestTitle",
+        Read = ai_request_title,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiRequestDescription",
+        Read = ai_request_description,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiRequestReason",
+        Read = ai_request_reason,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiRequestQuestionsJson",
+        Read = ai_request_questions_json,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiRequestAnswerable",
+        Read = ai_request_answerable,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiRequestResolving",
+        Read = ai_request_resolving,
         Notify = ai_state_changed
     );
     qproperty!(
@@ -943,6 +996,7 @@ impl Backend {
     fn select_ai_thread(&mut self, thread_id: String) {
         if self.ai_prompt_pending()
             || self.ai_interrupt_pending()
+            || self.ai_request_resolving()
             || thread_id.trim().is_empty()
             || thread_id == self.ai_active_thread_id
         {
@@ -957,7 +1011,7 @@ impl Backend {
 
     #[qslot]
     fn create_ai_thread(&mut self) {
-        if self.ai_prompt_pending() || self.ai_interrupt_pending() {
+        if self.ai_prompt_pending() || self.ai_interrupt_pending() || self.ai_request_resolving() {
             return;
         }
         self.ensure_ai_runtime_started();
@@ -975,7 +1029,12 @@ impl Backend {
 
     #[qslot]
     fn archive_ai_thread(&mut self, thread_id: String) {
-        if self.ai_prompt_pending() || self.ai_interrupt_pending() || thread_id.trim().is_empty() {
+        if self.ai_prompt_pending()
+            || self.ai_interrupt_pending()
+            || self.ai_request_resolving()
+            || self.ai_requests.thread_needs_attention(thread_id.trim())
+            || thread_id.trim().is_empty()
+        {
             return;
         }
         self.ensure_ai_runtime_started();
@@ -998,6 +1057,25 @@ impl Backend {
         let queued = queue_ai_interrupt(self);
         self.ai_state_changed();
         queued
+    }
+
+    #[qslot]
+    fn resolve_ai_approval(&mut self, request_id: String, accept: bool) -> bool {
+        let queued = queue_ai_approval(self, request_id, accept);
+        self.ai_state_changed();
+        queued
+    }
+
+    #[qslot]
+    fn submit_ai_user_input(&mut self, request_id: String, answers_json: String) -> bool {
+        let queued = queue_ai_user_input(self, request_id, answers_json);
+        self.ai_state_changed();
+        queued
+    }
+
+    #[qslot]
+    fn ai_request_pending(&self, request_id: String) -> bool {
+        self.ai_requests.request_is_pending(request_id.as_str())
     }
 
     #[qslot]
@@ -1240,7 +1318,7 @@ impl Backend {
             return;
         }
 
-        let epoch = self.next_forge_epoch();
+        let epoch = next_forge_epoch(self);
         self.forge_loading = true;
         self.forge_error.clear();
         self.forge_status_message.clear();
@@ -1393,7 +1471,7 @@ impl Backend {
         if !self.forge_device_flow_active && !self.forge_busy {
             return;
         }
-        self.next_forge_epoch();
+        next_forge_epoch(self);
         self.forge_busy = false;
         self.forge_action_label.clear();
         self.forge_device_flow_active = false;
@@ -1494,87 +1572,62 @@ impl Backend {
     }
 
     fn ensure_ai_runtime_started(&mut self) {
-        let workspace_key = self.git_root.clone();
-        if self
-            .ai_runtime
-            .session
-            .as_ref()
-            .is_some_and(|runtime| runtime.workspace_key() == workspace_key.as_str())
-        {
-            return;
-        }
-        if !self.git_ready {
-            self.ai_loading = true;
-            self.ai_connection_state = "waiting".to_owned();
-            self.ai_status_message = "Waiting for the repository to load…".to_owned();
+        if ensure_ai_runtime_started(self) {
             self.ai_state_changed();
-            return;
         }
-
-        reset_ai_runtime_state(self);
-        self.ai_workspace_root = workspace_key.clone();
-        let config = match prepare_ai_worker_config(Path::new(workspace_key.as_str())) {
-            Ok(config) => config,
-            Err(error) => {
-                self.ai_connection_state = "failed".to_owned();
-                self.ai_error = error.clone();
-                self.ai_status_message = error;
-                self.ai_state_changed();
-                return;
-            }
-        };
-        let starting_status_message = config.starting_status_message();
-        let epoch = self.ai_epoch;
-        let mailbox = Arc::clone(&self.ai_runtime.mailbox);
-        let invoker = self.get_qml_method_invoker();
-        let start_result = start_ai_runtime(config, epoch, mailbox, move |event_epoch| {
-            invoke_method!(invoker, "apply_ai_events", event_epoch);
-        });
-
-        match start_result {
-            Ok(runtime) => {
-                self.ai_runtime.session = Some(runtime);
-                self.ai_loading = true;
-                self.ai_connection_state = "connecting".to_owned();
-                self.ai_status_message = starting_status_message;
-            }
-            Err(error) => {
-                self.ai_connection_state = "failed".to_owned();
-                self.ai_error = error.clone();
-                self.ai_status_message = error;
-            }
-        }
-        self.ai_state_changed();
     }
 
     fn send_ai_worker_command(&mut self, command: AiWorkerCommand, status_message: &str) {
-        let Some(runtime) = self.ai_runtime.session.as_ref() else {
-            return;
-        };
-        let result = runtime.send(command);
-        match result {
-            Ok(()) => {
-                self.ai_error.clear();
-                self.ai_status_message = status_message.to_owned();
-            }
-            Err(error) => {
-                stop_ai_runtime(self);
-                self.ai_ready = false;
-                self.ai_loading = false;
-                self.ai_connection_state = "failed".to_owned();
-                self.ai_error = error.clone();
-                self.ai_status_message = error;
-            }
-        }
+        send_ai_worker_command(self, command, status_message);
         self.ai_state_changed();
     }
 
     fn ai_prompt_pending(&self) -> bool {
-        self.ai_prompt_receipt.is_some()
+        ai_prompt_pending(self)
     }
 
     fn ai_interrupt_pending(&self) -> bool {
-        !self.ai_interrupt_turn_id.is_empty()
+        ai_interrupt_pending(self)
+    }
+
+    fn ai_pending_request_count(&self) -> i32 {
+        ai_pending_request_count(self)
+    }
+
+    fn ai_active_request_count(&self) -> i32 {
+        ai_active_request_count(self)
+    }
+
+    fn ai_request_id(&self) -> String {
+        ai_request_id(self)
+    }
+
+    fn ai_request_kind(&self) -> String {
+        ai_request_kind(self)
+    }
+
+    fn ai_request_title(&self) -> String {
+        ai_request_title(self)
+    }
+
+    fn ai_request_description(&self) -> String {
+        ai_request_description(self)
+    }
+
+    fn ai_request_reason(&self) -> String {
+        ai_request_reason(self)
+    }
+
+    fn ai_request_questions_json(&self) -> String {
+        ai_request_questions_json(self)
+    }
+
+    fn ai_request_answerable(&self) -> bool {
+        ai_request_answerable(self)
+    }
+
+    fn ai_request_resolving(&self) -> bool {
+        ai_request_resolving(self)
     }
 
     fn set_status_message(&mut self, status_message: String) {
@@ -1792,15 +1845,8 @@ impl Backend {
         self.diff_search_target_row = -1;
     }
 
-    fn next_forge_epoch(&mut self) -> i32 {
-        self.forge_epoch = self.forge_epoch.wrapping_add(1).max(1);
-        self.forge_current_epoch
-            .store(self.forge_epoch, Ordering::Release);
-        self.forge_epoch
-    }
-
     fn begin_forge_action(&mut self, label: String) -> i32 {
-        let epoch = self.next_forge_epoch();
+        let epoch = next_forge_epoch(self);
         self.forge_busy = true;
         self.forge_error.clear();
         self.forge_status_message.clear();
@@ -1892,7 +1938,7 @@ impl Backend {
     }
 
     fn reset_forge_state(&mut self) {
-        self.next_forge_epoch();
+        next_forge_epoch(self);
         self.forge_available = false;
         self.forge_provider_label.clear();
         self.forge_review_kind_label.clear();
@@ -1950,11 +1996,4 @@ impl Backend {
             self.git_state_changed();
         }
     }
-}
-
-fn persist_active_project(root: PathBuf) -> anyhow::Result<()> {
-    let store = AppStateStore::new()?;
-    let mut state = store.load_or_default()?;
-    state.activate_workspace_project(root);
-    store.save(&state)
 }

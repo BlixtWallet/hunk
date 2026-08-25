@@ -1,7 +1,17 @@
-use hunk_app::ai::{AiTurnSessionOverrides, AiWorkerCommand, AiWorkerEventPayload};
+use std::path::Path;
+use std::sync::Arc;
+
+use hunk_app::ai::{
+    AiApprovalDecision, AiTurnSessionOverrides, AiWorkerCommand, AiWorkerEventPayload,
+};
+use qtbridge::{QObjectHolder, invoke_method};
 
 use crate::AiPromptReceipt;
-use crate::ai_runtime::{AiProjectedSnapshot, AiRuntimeEvent, reject_browser_call};
+use crate::ai_requests::AiPendingRequestProjection;
+use crate::ai_runtime::{
+    AiProjectedSnapshot, AiRuntimeEvent, prepare_ai_worker_config, reject_browser_call,
+    start_ai_runtime,
+};
 use crate::backend_state::Backend;
 
 pub(super) fn reset_ai_runtime_state(backend: &mut Backend) {
@@ -21,6 +31,8 @@ pub(super) fn reset_ai_runtime_state(backend: &mut Backend) {
     backend.ai_prompt_receipt = None;
     backend.ai_interrupt_thread_id.clear();
     backend.ai_interrupt_turn_id.clear();
+    backend.ai_requests = AiPendingRequestProjection::default();
+    backend.ai_request_resolving_id.clear();
     backend.ai_thread_count = 0;
     backend.ai_running_thread_count = 0;
     backend.ai_timeline_total_turn_count = 0;
@@ -132,6 +144,7 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
         requires_openai_auth,
         threads: projection,
         timeline,
+        requests,
         ..
     } = projected;
     if backend.ai_prompt_receipt.as_ref().is_some_and(|receipt| {
@@ -145,6 +158,15 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     {
         backend.ai_interrupt_thread_id.clear();
         backend.ai_interrupt_turn_id.clear();
+    }
+    if !backend.ai_request_resolving_id.is_empty()
+        && requests
+            .current
+            .as_ref()
+            .map(|request| request.request_id.as_str())
+            != Some(backend.ai_request_resolving_id.as_str())
+    {
+        backend.ai_request_resolving_id.clear();
     }
     backend
         .ai_threads
@@ -163,6 +185,7 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     backend.ai_timeline_hidden_turn_count = timeline.hidden_turn_count;
     backend.ai_timeline_total_row_count = timeline.total_row_count;
     backend.ai_timeline_hidden_row_count = timeline.hidden_row_count;
+    backend.ai_requests = requests;
     backend.ai_requires_authentication = requires_openai_auth;
     backend.ai_ready = true;
     backend.ai_loading = false;
@@ -189,6 +212,8 @@ pub(super) fn queue_ai_prompt(backend: &mut Backend, prompt: String) -> bool {
         || backend.ai_active_thread_id.is_empty()
         || backend.ai_prompt_receipt.is_some()
         || !backend.ai_interrupt_turn_id.is_empty()
+        || backend.ai_requests.current.is_some()
+        || !backend.ai_request_resolving_id.is_empty()
     {
         return false;
     }
@@ -239,6 +264,133 @@ pub(super) fn queue_ai_interrupt(backend: &mut Backend) -> bool {
     true
 }
 
+pub(super) fn queue_ai_approval(backend: &mut Backend, request_id: String, accept: bool) -> bool {
+    let valid =
+        backend.ai_request_resolving_id.is_empty()
+            && backend.ai_ready
+            && !backend.ai_loading
+            && !backend.ai_requires_authentication
+            && backend.ai_requests.current.as_ref().is_some_and(|request| {
+                request.kind == "approval" && request.request_id == request_id
+            });
+    if !valid {
+        return reject_ai_request(backend, "The pending Codex approval changed.");
+    }
+    let decision = if accept {
+        AiApprovalDecision::Accept
+    } else {
+        AiApprovalDecision::Decline
+    };
+    if !send_ai_command(
+        backend,
+        AiWorkerCommand::ResolveApproval {
+            request_id: request_id.clone(),
+            decision,
+        },
+        if accept {
+            "Accepting Codex approval…"
+        } else {
+            "Declining Codex approval…"
+        },
+    ) {
+        return false;
+    }
+    backend.ai_request_resolving_id = request_id;
+    true
+}
+
+pub(super) fn queue_ai_user_input(
+    backend: &mut Backend,
+    request_id: String,
+    answers_json: String,
+) -> bool {
+    if !backend.ai_ready
+        || backend.ai_loading
+        || backend.ai_requires_authentication
+        || !backend.ai_request_resolving_id.is_empty()
+    {
+        return false;
+    }
+    let answers = match backend
+        .ai_requests
+        .validated_answers(request_id.as_str(), answers_json.as_str())
+    {
+        Ok(answers) => answers,
+        Err(error) => return reject_ai_request(backend, error.as_str()),
+    };
+    if !send_ai_command(
+        backend,
+        AiWorkerCommand::SubmitUserInput {
+            request_id: request_id.clone(),
+            answers,
+        },
+        "Submitting input to Codex…",
+    ) {
+        return false;
+    }
+    backend.ai_request_resolving_id = request_id;
+    true
+}
+
+pub(super) fn ensure_ai_runtime_started(backend: &mut Backend) -> bool {
+    let workspace_key = backend.git_root.clone();
+    if backend
+        .ai_runtime
+        .session
+        .as_ref()
+        .is_some_and(|runtime| runtime.workspace_key() == workspace_key.as_str())
+    {
+        return false;
+    }
+    if !backend.git_ready {
+        backend.ai_loading = true;
+        backend.ai_connection_state = "waiting".to_owned();
+        backend.ai_status_message = "Waiting for the repository to load…".to_owned();
+        return true;
+    }
+
+    reset_ai_runtime_state(backend);
+    backend.ai_workspace_root = workspace_key.clone();
+    let config = match prepare_ai_worker_config(Path::new(workspace_key.as_str())) {
+        Ok(config) => config,
+        Err(error) => {
+            backend.ai_connection_state = "failed".to_owned();
+            backend.ai_error = error.clone();
+            backend.ai_status_message = error;
+            return true;
+        }
+    };
+    let starting_status_message = config.starting_status_message();
+    let epoch = backend.ai_epoch;
+    let mailbox = Arc::clone(&backend.ai_runtime.mailbox);
+    let invoker = backend.get_qml_method_invoker();
+    let start_result = start_ai_runtime(config, epoch, mailbox, move |event_epoch| {
+        invoke_method!(invoker, "apply_ai_events", event_epoch);
+    });
+    match start_result {
+        Ok(runtime) => {
+            backend.ai_runtime.session = Some(runtime);
+            backend.ai_loading = true;
+            backend.ai_connection_state = "connecting".to_owned();
+            backend.ai_status_message = starting_status_message;
+        }
+        Err(error) => {
+            backend.ai_connection_state = "failed".to_owned();
+            backend.ai_error = error.clone();
+            backend.ai_status_message = error;
+        }
+    }
+    true
+}
+
+pub(super) fn send_ai_worker_command(
+    backend: &mut Backend,
+    command: AiWorkerCommand,
+    status_message: &str,
+) {
+    let _ = send_ai_command(backend, command, status_message);
+}
+
 fn send_ai_command(backend: &mut Backend, command: AiWorkerCommand, status: &str) -> bool {
     let result = backend
         .ai_runtime
@@ -270,4 +422,88 @@ fn clear_pending_ai_commands(backend: &mut Backend) {
     backend.ai_prompt_receipt = None;
     backend.ai_interrupt_thread_id.clear();
     backend.ai_interrupt_turn_id.clear();
+    backend.ai_request_resolving_id.clear();
+}
+
+fn reject_ai_request(backend: &mut Backend, message: &str) -> bool {
+    backend.ai_error = message.to_owned();
+    backend.ai_status_message = message.to_owned();
+    false
+}
+
+pub(super) fn ai_prompt_pending(backend: &Backend) -> bool {
+    backend.ai_prompt_receipt.is_some()
+}
+
+pub(super) fn ai_interrupt_pending(backend: &Backend) -> bool {
+    !backend.ai_interrupt_turn_id.is_empty()
+}
+
+pub(super) fn ai_pending_request_count(backend: &Backend) -> i32 {
+    backend.ai_requests.total_count
+}
+
+pub(super) fn ai_active_request_count(backend: &Backend) -> i32 {
+    backend.ai_requests.active_count
+}
+
+pub(super) fn ai_request_id(backend: &Backend) -> String {
+    backend
+        .ai_requests
+        .current
+        .as_ref()
+        .map(|request| request.request_id.clone())
+        .unwrap_or_default()
+}
+
+pub(super) fn ai_request_kind(backend: &Backend) -> String {
+    backend
+        .ai_requests
+        .current
+        .as_ref()
+        .map(|request| request.kind.clone())
+        .unwrap_or_default()
+}
+
+pub(super) fn ai_request_title(backend: &Backend) -> String {
+    backend
+        .ai_requests
+        .current
+        .as_ref()
+        .map(|request| request.title.clone())
+        .unwrap_or_default()
+}
+
+pub(super) fn ai_request_description(backend: &Backend) -> String {
+    backend
+        .ai_requests
+        .current
+        .as_ref()
+        .map(|request| request.description.clone())
+        .unwrap_or_default()
+}
+
+pub(super) fn ai_request_reason(backend: &Backend) -> String {
+    backend
+        .ai_requests
+        .current
+        .as_ref()
+        .map(|request| request.reason.clone())
+        .unwrap_or_default()
+}
+
+pub(super) fn ai_request_questions_json(backend: &Backend) -> String {
+    backend.ai_requests.questions_json()
+}
+
+pub(super) fn ai_request_answerable(backend: &Backend) -> bool {
+    backend
+        .ai_requests
+        .current
+        .as_ref()
+        .is_some_and(|request| request.answerable)
+}
+
+pub(super) fn ai_request_resolving(backend: &Backend) -> bool {
+    !backend.ai_request_resolving_id.is_empty()
 }

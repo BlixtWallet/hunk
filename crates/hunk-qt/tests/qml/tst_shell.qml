@@ -4,6 +4,9 @@ import Hunk 1.0
 
 TestCase {
     name: "HunkShell"
+    width: 1280
+    height: 760
+    when: windowShown
 
     property bool snapshotReady: false
     property bool snapshotSaved: false
@@ -88,6 +91,16 @@ TestCase {
         property bool aiPromptPending: false
         property int aiPromptAcceptedRevision: 0
         property bool aiInterruptPending: false
+        property int aiPendingRequestCount: 0
+        property int aiActiveRequestCount: 0
+        property string aiRequestId: ""
+        property string aiRequestKind: ""
+        property string aiRequestTitle: ""
+        property string aiRequestDescription: ""
+        property string aiRequestReason: ""
+        property string aiRequestQuestionsJson: "[]"
+        property bool aiRequestAnswerable: false
+        property bool aiRequestResolving: false
         property int aiThreadCount: 2
         property int aiRunningThreadCount: 1
         property int aiTimelineTotalTurnCount: 2
@@ -128,6 +141,9 @@ TestCase {
         property string lastReviewTitle: ""
         property string lastReviewBody: ""
         property bool lastReviewDraft: false
+        property string lastAnswersJson: ""
+        property bool failNextAiRequest: false
+        property var pendingAiRequestIds: []
 
         signal diffCommentsStateChanged
         signal aiStateChanged
@@ -383,6 +399,11 @@ TestCase {
         }
         function create_ai_thread() { record("create_ai_thread") }
         function archive_ai_thread(threadId) {
+            for (let index = 0; index < aiThreadsModel.count; ++index) {
+                const thread = aiThreadsModel.get(index)
+                if (thread.thread_id === threadId && thread.attention)
+                    return
+            }
             record("archive_ai_thread", threadId)
             for (let index = 0; index < aiThreadsModel.count; ++index) {
                 if (aiThreadsModel.get(index).thread_id === threadId) {
@@ -405,7 +426,8 @@ TestCase {
         function send_ai_prompt(prompt) {
             if (!aiReady || aiLoading || aiRequiresAuthentication
                     || aiActiveThreadId.length === 0 || aiPromptPending
-                    || aiInterruptPending || prompt.trim().length === 0)
+                    || aiInterruptPending || aiRequestId.length > 0
+                    || aiRequestResolving || prompt.trim().length === 0)
                 return false
             record(aiTurnRunning ? "steer_ai_prompt" : "send_ai_prompt", prompt)
             aiPromptPending = true
@@ -434,6 +456,89 @@ TestCase {
             aiInterruptPending = false
             aiTurnRunning = false
             aiActiveTurnId = ""
+            aiStateChanged()
+        }
+        function set_ai_attention(threadId, attention) {
+            for (let index = 0; index < aiThreadsModel.count; ++index) {
+                if (aiThreadsModel.get(index).thread_id === threadId)
+                    aiThreadsModel.setProperty(index, "attention", attention)
+            }
+        }
+        function show_ai_approval(requestId) {
+            if (!pendingAiRequestIds.includes(requestId))
+                pendingAiRequestIds = pendingAiRequestIds.concat([requestId])
+            aiPendingRequestCount = pendingAiRequestIds.length
+            aiActiveRequestCount = 1
+            aiRequestId = requestId
+            aiRequestKind = "approval"
+            aiRequestTitle = "Command execution approval"
+            aiRequestDescription = "Command: cargo test -p hunk-qt"
+            aiRequestReason = "Codex needs permission to run the focused tests."
+            aiRequestQuestionsJson = "[]"
+            aiRequestAnswerable = true
+            aiRequestResolving = false
+            set_ai_attention(aiActiveThreadId, true)
+            aiStateChanged()
+        }
+        function show_ai_user_input(requestId, questionsJson) {
+            if (!pendingAiRequestIds.includes(requestId))
+                pendingAiRequestIds = pendingAiRequestIds.concat([requestId])
+            aiPendingRequestCount = pendingAiRequestIds.length
+            aiActiveRequestCount = 1
+            aiRequestId = requestId
+            aiRequestKind = "userInput"
+            aiRequestTitle = "Codex needs your input"
+            aiRequestDescription = "Answer the questions below so the active turn can continue."
+            aiRequestReason = ""
+            aiRequestQuestionsJson = questionsJson
+            aiRequestAnswerable = true
+            aiRequestResolving = false
+            set_ai_attention(aiActiveThreadId, true)
+            aiStateChanged()
+        }
+        function resolve_ai_approval(requestId, accept) {
+            if (requestId !== aiRequestId || aiRequestKind !== "approval"
+                    || aiRequestResolving)
+                return false
+            record(accept ? "accept_ai_approval" : "decline_ai_approval", requestId)
+            aiRequestResolving = true
+            aiStateChanged()
+            return true
+        }
+        function submit_ai_user_input(requestId, answersJson) {
+            if (requestId !== aiRequestId || aiRequestKind !== "userInput"
+                    || aiRequestResolving)
+                return false
+            lastAnswersJson = answersJson
+            if (failNextAiRequest) {
+                failNextAiRequest = false
+                aiError = "Codex input response failed"
+                aiStateChanged()
+                return false
+            }
+            record("submit_ai_user_input", requestId)
+            aiRequestResolving = true
+            aiStateChanged()
+            return true
+        }
+        function ai_request_pending(requestId) {
+            return pendingAiRequestIds.includes(requestId)
+        }
+        function complete_ai_request() {
+            const threadId = aiActiveThreadId
+            pendingAiRequestIds = pendingAiRequestIds.filter(
+                requestId => requestId !== aiRequestId)
+            aiPendingRequestCount = pendingAiRequestIds.length
+            aiActiveRequestCount = 0
+            aiRequestId = ""
+            aiRequestKind = ""
+            aiRequestTitle = ""
+            aiRequestDescription = ""
+            aiRequestReason = ""
+            aiRequestQuestionsJson = "[]"
+            aiRequestAnswerable = false
+            aiRequestResolving = false
+            set_ai_attention(threadId, false)
             aiStateChanged()
         }
         function refresh_forge_review() { record("refresh_forge") }
@@ -583,6 +688,7 @@ TestCase {
             status: "active",
             active: true,
             running: true,
+            attention: false,
             created_at: 1787677200,
             updated_at: 1787677600
         })
@@ -594,6 +700,7 @@ TestCase {
             status: "idle",
             active: false,
             running: false,
+            attention: false,
             created_at: 1787673600,
             updated_at: 1787673900
         })
@@ -731,6 +838,16 @@ TestCase {
         fakeBackend.aiPromptPending = false
         fakeBackend.aiPromptAcceptedRevision = 0
         fakeBackend.aiInterruptPending = false
+        fakeBackend.aiPendingRequestCount = 0
+        fakeBackend.aiActiveRequestCount = 0
+        fakeBackend.aiRequestId = ""
+        fakeBackend.aiRequestKind = ""
+        fakeBackend.aiRequestTitle = ""
+        fakeBackend.aiRequestDescription = ""
+        fakeBackend.aiRequestReason = ""
+        fakeBackend.aiRequestQuestionsJson = "[]"
+        fakeBackend.aiRequestAnswerable = false
+        fakeBackend.aiRequestResolving = false
         fakeBackend.aiThreadCount = 2
         fakeBackend.aiRunningThreadCount = 1
         fakeBackend.aiTimelineTotalTurnCount = 2
@@ -740,8 +857,12 @@ TestCase {
         fakeBackend.aiTimelineHiddenRowCount = 0
         fakeBackend.aiError = ""
         fakeBackend.aiStatusMessage = "Codex thread catalog refreshed"
+        fakeBackend.lastAnswersJson = ""
+        fakeBackend.failNextAiRequest = false
+        fakeBackend.pendingAiRequestIds = []
         shell.aiDraftWorkspaceRoot = fakeBackend.aiWorkspaceRoot
         shell.aiDraftStore = ({})
+        shell.aiRequestAnswerStore = ({})
         fakeBackend.forgeAvailable = true
         fakeBackend.forgeProviderLabel = "GitHub"
         fakeBackend.forgeReviewKindLabel = "Pull Request"
@@ -1025,6 +1146,156 @@ TestCase {
 
         fakeBackend.complete_ai_interrupt()
         verify(!fakeBackend.aiTurnRunning)
+    }
+
+    function test_aiApprovalUsesExactIdsAndRestoresComposerFocus() {
+        openAiWorkspace()
+        const workspace = shell.workspaceItem
+        const panel = workspace.requestPanel
+        const composer = workspace.composer
+
+        composer.editor.forceActiveFocus()
+        verify(composer.editor.activeFocus)
+        fakeBackend.show_ai_approval("approval-accept")
+
+        tryVerify(() => panel.loadedRequestId === "approval-accept"
+            && panel.acceptButton.enabled)
+        tryVerify(() => panel.acceptButton.activeFocus)
+        verify(!composer.editor.enabled)
+        shell.sidebarItem.threadListView.forceLayout()
+        const threadRow = shell.sidebarItem.threadListView.itemAtIndex(0)
+        verify(threadRow.attention)
+        verify(!threadRow.archiveButton.enabled)
+        const archiveCommandCount = fakeBackend.commandCount
+        fakeBackend.archive_ai_thread("thread-qt-migration")
+        compare(fakeBackend.commandCount, archiveCommandCount)
+        verify(panel.resolveApproval(true))
+        compare(fakeBackend.lastCommand, "accept_ai_approval")
+        compare(fakeBackend.lastArgument, "approval-accept")
+        verify(fakeBackend.aiRequestResolving)
+        const commandCount = fakeBackend.commandCount
+        verify(!panel.resolveApproval(true))
+        compare(fakeBackend.commandCount, commandCount)
+
+        fakeBackend.complete_ai_request()
+        tryVerify(() => composer.editor.enabled && composer.editor.activeFocus)
+
+        fakeBackend.show_ai_approval("approval-decline")
+        verify(!fakeBackend.resolve_ai_approval("stale-approval", false))
+        verify(panel.resolveApproval(false))
+        compare(fakeBackend.lastCommand, "decline_ai_approval")
+        compare(fakeBackend.lastArgument, "approval-decline")
+    }
+
+    function test_aiUserInputRetainsAnswersOnFailureAndMasksSecrets() {
+        openAiWorkspace()
+        let panel = shell.workspaceItem.requestPanel
+        const questions = JSON.stringify([
+            {
+                id: "approach",
+                header: "Approach",
+                question: "Which approach should Codex use?",
+                isOther: true,
+                isSecret: false,
+                options: [
+                    { label: "Simple", description: "Keep it narrow." },
+                    { label: "Broad", description: "Include adjacent work." }
+                ]
+            },
+            {
+                id: "token",
+                header: "Token",
+                question: "Provide the temporary token.",
+                isOther: true,
+                isSecret: true,
+                options: []
+            }
+        ])
+        fakeBackend.show_ai_user_input("input-1", questions)
+
+        compare(panel.questions.length, 2)
+        compare(panel.answerFor("approach"), "Simple")
+        const answerInput = findChild(panel, "aiAnswerInput-approach")
+        verify(answerInput !== null)
+        answerInput.forceActiveFocus()
+        answerInput.text = "Custom"
+        answerInput.textEdited()
+        compare(panel.answerFor("approach"), "Custom")
+        panel.setAnswer("approach", "Broad")
+        compare(answerInput.text, "Broad")
+        panel.setAnswer("token", "do-not-log-this")
+        const secretInput = findChild(panel, "aiSecretAnswerInput")
+        verify(secretInput !== null)
+        compare(secretInput.echoMode, TextInput.Password)
+
+        fakeBackend.show_ai_approval("approval-other-thread")
+        fakeBackend.show_ai_user_input("input-1", questions)
+        compare(panel.answerFor("approach"), "Broad")
+        compare(panel.answerFor("token"), "do-not-log-this")
+
+        shell.activateWorkspace("git")
+        tryVerify(() => shell.workspaceItem.objectName === "gitWorkspace")
+        shell.activateWorkspace("ai")
+        tryVerify(() => shell.workspaceItem.objectName === "aiWorkspace")
+        panel = shell.workspaceItem.requestPanel
+        tryCompare(panel, "loadedRequestId", "input-1")
+        compare(panel.answerFor("approach"), "Broad")
+        compare(panel.answerFor("token"), "do-not-log-this")
+
+        fakeBackend.failNextAiRequest = true
+        verify(!panel.submitInput())
+        compare(panel.answerFor("approach"), "Broad")
+        compare(panel.answerFor("token"), "do-not-log-this")
+        verify(panel.submitInput())
+        compare(fakeBackend.lastCommand, "submit_ai_user_input")
+        compare(fakeBackend.lastArgument, "input-1")
+        const payload = JSON.parse(fakeBackend.lastAnswersJson)
+        compare(payload.approach[0], "Broad")
+        compare(payload.token[0], "do-not-log-this")
+        verify(!panel.submitButton.enabled)
+
+        fakeBackend.complete_ai_request()
+        tryVerify(() => shell.aiRequestAnswerStore["input-1"] === undefined)
+    }
+
+    function test_aiRequestKeyboardFocusScrollsOverflow() {
+        openAiWorkspace()
+        const panel = shell.workspaceItem.requestPanel
+        const questions = []
+        for (let index = 0; index < 8; ++index) {
+            questions.push({
+                id: "question-" + index,
+                header: "Question " + (index + 1),
+                question: "Provide answer " + (index + 1) + ".",
+                isOther: false,
+                isSecret: false,
+                options: []
+            })
+        }
+        fakeBackend.show_ai_user_input("input-scroll", JSON.stringify(questions))
+
+        tryCompare(panel, "loadedRequestId", "input-scroll")
+        const lastInput = findChild(panel, "aiAnswerInput-question-7")
+        verify(lastInput !== null)
+        verify(lastInput.activeFocusOnTab)
+        tryVerify(() => panel.requestViewport.contentHeight
+            > panel.requestViewport.height)
+        lastInput.forceActiveFocus()
+        verify(lastInput.activeFocus)
+        tryVerify(() => panel.requestViewport.contentY > 0)
+    }
+
+    function test_aiOversizedInputCannotBeSubmitted() {
+        openAiWorkspace()
+        const panel = shell.workspaceItem.requestPanel
+        fakeBackend.show_ai_user_input("too-large", "[]")
+        fakeBackend.aiRequestAnswerable = false
+        fakeBackend.aiStateChanged()
+
+        tryVerify(() => panel.loadedRequestId === "too-large"
+            && !panel.submitButton.enabled)
+        verify(!panel.submitInput())
+        compare(fakeBackend.lastCommand, "")
     }
 
     function test_diffWorkspaceUsesVirtualizedRustModels() {
