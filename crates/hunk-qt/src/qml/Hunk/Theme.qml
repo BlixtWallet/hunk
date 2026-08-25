@@ -40,6 +40,7 @@ QtObject {
     readonly property int spacing: 12
     readonly property int compactRowHeight: 38
     readonly property int fileRowHeight: 50
+    readonly property int aiThreadRowHeight: 58
     readonly property int diffRowHeight: 23
     readonly property int transitionDuration: 110
     readonly property string uiFont: Qt.platform.os === "osx" ? ".AppleSystemUIFont" : "Inter"

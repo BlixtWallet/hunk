@@ -42,6 +42,7 @@ FocusScope {
             Text {
                 width: parent.width
                 text: root.title
+                textFormat: Text.PlainText
                 color: Theme.foreground
                 font.family: Theme.uiFont
                 font.pixelSize: 15
@@ -51,6 +52,7 @@ FocusScope {
             Text {
                 width: parent.width
                 text: root.message
+                textFormat: Text.PlainText
                 color: Theme.muted
                 font.family: Theme.uiFont
                 font.pixelSize: 12

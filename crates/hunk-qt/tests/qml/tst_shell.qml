@@ -14,6 +14,8 @@ TestCase {
     ListModel { id: diffFilesModel }
     ListModel { id: diffRowsModel }
     ListModel { id: diffCommentsModel }
+    ListModel { id: aiThreadsModel }
+    ListModel { id: aiTimelineModel }
 
     QtObject {
         id: fakeBackend
@@ -71,6 +73,25 @@ TestCase {
         property string gitError: ""
         property string gitStatusMessage: "Repository refreshed"
         property string gitActionLabel: ""
+        property var aiThreads: aiThreadsModel
+        property var aiTimeline: aiTimelineModel
+        property bool aiReady: true
+        property bool aiLoading: false
+        property bool aiRequiresAuthentication: false
+        property string aiConnectionState: "ready"
+        property string aiWorkspaceRoot: "/Volumes/hulk/dev/projects/hunk"
+        property string aiActiveThreadId: "thread-qt-migration"
+        property string aiActiveThreadTitle: "Replace the GPUI AI workspace"
+        property string aiActiveThreadCwd: "/Volumes/hulk/dev/projects/hunk"
+        property int aiThreadCount: 2
+        property int aiRunningThreadCount: 1
+        property int aiTimelineTotalTurnCount: 2
+        property int aiTimelineVisibleTurnCount: 2
+        property int aiTimelineHiddenTurnCount: 0
+        property int aiTimelineTotalRowCount: 4
+        property int aiTimelineHiddenRowCount: 0
+        property string aiError: ""
+        property string aiStatusMessage: "Codex thread catalog refreshed"
         property bool forgeAvailable: true
         property string forgeProviderLabel: "GitHub"
         property string forgeReviewKindLabel: "Pull Request"
@@ -336,6 +357,37 @@ TestCase {
         function push_branch() { record("push") }
         function sync_branch() { record("sync") }
         function pull_branch_with_rebase() { record("pull_rebase") }
+        function refresh_ai_threads() { record("refresh_ai_threads") }
+        function select_ai_thread(threadId) {
+            record("select_ai_thread", threadId)
+            for (let index = 0; index < aiThreadsModel.count; ++index) {
+                const active = aiThreadsModel.get(index).thread_id === threadId
+                aiThreadsModel.setProperty(index, "active", active)
+                if (active) {
+                    aiActiveThreadId = threadId
+                    aiActiveThreadTitle = aiThreadsModel.get(index).title
+                    aiActiveThreadCwd = aiThreadsModel.get(index).cwd
+                }
+            }
+        }
+        function create_ai_thread() { record("create_ai_thread") }
+        function archive_ai_thread(threadId) {
+            record("archive_ai_thread", threadId)
+            for (let index = 0; index < aiThreadsModel.count; ++index) {
+                if (aiThreadsModel.get(index).thread_id === threadId) {
+                    aiThreadsModel.remove(index)
+                    aiThreadCount -= 1
+                    break
+                }
+            }
+            if (aiActiveThreadId === threadId) {
+                aiActiveThreadId = ""
+                aiActiveThreadTitle = ""
+                aiActiveThreadCwd = ""
+                aiTimelineModel.clear()
+                aiTimelineTotalRowCount = 0
+            }
+        }
         function refresh_forge_review() { record("refresh_forge") }
         function save_forge_personal_access_token(token) { record("save_forge_token", token) }
         function start_github_device_flow() { record("start_github_device_flow") }
@@ -378,6 +430,8 @@ TestCase {
         diffFilesModel.clear()
         diffRowsModel.clear()
         diffCommentsModel.clear()
+        aiThreadsModel.clear()
+        aiTimelineModel.clear()
 
         appendFile("crates/hunk-git/src/workspace.rs", false, 84, 4)
         appendFile("crates/hunk-qt/src/backend.rs", false, 132, 8)
@@ -473,6 +527,80 @@ TestCase {
             subject: "Pin unreleased aqt Windows layout fix for Qt 6.11.2",
             committed_unix_time: 1787673600
         })
+        aiThreadsModel.append({
+            thread_id: "thread-qt-migration",
+            title: "Replace the GPUI AI workspace",
+            cwd: "/Volumes/hulk/dev/projects/hunk",
+            workspace_label: "hunk",
+            status: "active",
+            active: true,
+            running: true,
+            created_at: 1787677200,
+            updated_at: 1787677600
+        })
+        aiThreadsModel.append({
+            thread_id: "thread-review",
+            title: "Review the QtBridge state boundary",
+            cwd: "/Volumes/hulk/dev/projects/hunk",
+            workspace_label: "hunk",
+            status: "idle",
+            active: false,
+            running: false,
+            created_at: 1787673600,
+            updated_at: 1787673900
+        })
+        aiTimelineModel.append({
+            row_id: "item:user",
+            turn_id: "turn-1",
+            kind: "userMessage",
+            role: "user",
+            title: "You",
+            text: "<b>Keep this text literal and do not parse it as HTML.</b>",
+            status: "",
+            streaming: false,
+            mono: false,
+            truncated: false,
+            last_sequence: 1
+        })
+        aiTimelineModel.append({
+            row_id: "item:assistant",
+            turn_id: "turn-1",
+            kind: "agentMessage",
+            role: "assistant",
+            title: "Assistant",
+            text: "The selected thread now comes from the retained Rust reducer and renders through a bounded Qt model.",
+            status: "",
+            streaming: false,
+            mono: false,
+            truncated: false,
+            last_sequence: 2
+        })
+        aiTimelineModel.append({
+            row_id: "item:command",
+            turn_id: "turn-2",
+            kind: "commandExecution",
+            role: "tool",
+            title: "Running focused Qt tests",
+            text: "nix develop -c cargo test -p hunk-qt",
+            status: "streaming",
+            streaming: true,
+            mono: true,
+            truncated: false,
+            last_sequence: 3
+        })
+        aiTimelineModel.append({
+            row_id: "turn-plan:turn-2",
+            turn_id: "turn-2",
+            kind: "turnPlan",
+            role: "assistant",
+            title: "Plan",
+            text: "[x] Retain the Rust reducer\n[~] Replace the GPUI timeline",
+            status: "in progress",
+            streaming: true,
+            mono: false,
+            truncated: false,
+            last_sequence: 4
+        })
     }
 
     function openGitWorkspace() {
@@ -485,6 +613,11 @@ TestCase {
         tryVerify(() => shell.workspaceItem !== null && shell.workspaceItem.objectName === "diffWorkspace")
         shell.workspaceItem.commentsInspectorOpen = false
         shell.workspaceItem.closeCommentComposer()
+    }
+
+    function openAiWorkspace() {
+        shell.activateWorkspace("ai")
+        tryVerify(() => shell.workspaceItem !== null && shell.workspaceItem.objectName === "aiWorkspace")
     }
 
     function captureSnapshot(path) {
@@ -536,6 +669,23 @@ TestCase {
         fakeBackend.gitError = ""
         fakeBackend.gitStatusMessage = "Repository refreshed"
         fakeBackend.gitActionLabel = ""
+        fakeBackend.aiReady = true
+        fakeBackend.aiLoading = false
+        fakeBackend.aiRequiresAuthentication = false
+        fakeBackend.aiConnectionState = "ready"
+        fakeBackend.aiWorkspaceRoot = "/Volumes/hulk/dev/projects/hunk"
+        fakeBackend.aiActiveThreadId = "thread-qt-migration"
+        fakeBackend.aiActiveThreadTitle = "Replace the GPUI AI workspace"
+        fakeBackend.aiActiveThreadCwd = "/Volumes/hulk/dev/projects/hunk"
+        fakeBackend.aiThreadCount = 2
+        fakeBackend.aiRunningThreadCount = 1
+        fakeBackend.aiTimelineTotalTurnCount = 2
+        fakeBackend.aiTimelineVisibleTurnCount = 2
+        fakeBackend.aiTimelineHiddenTurnCount = 0
+        fakeBackend.aiTimelineTotalRowCount = 4
+        fakeBackend.aiTimelineHiddenRowCount = 0
+        fakeBackend.aiError = ""
+        fakeBackend.aiStatusMessage = "Codex thread catalog refreshed"
         fakeBackend.forgeAvailable = true
         fakeBackend.forgeProviderLabel = "GitHub"
         fakeBackend.forgeReviewKindLabel = "Pull Request"
@@ -597,6 +747,107 @@ TestCase {
     function test_retainedWorkspaceContract() {
         compare(shell.workspaceCount, 3)
         compare(shell.workspaceIds, ["diff", "git", "ai"])
+    }
+
+    function test_aiWorkspaceUsesVirtualizedRustModelsAndPlainText() {
+        openAiWorkspace()
+        shell.sidebarItem.threadListView.forceLayout()
+        shell.workspaceItem.timelineListView.forceLayout()
+
+        compare(shell.sidebarItem.threadListView.count, 2)
+        verify(shell.sidebarItem.threadListView.reuseItems)
+        compare(shell.workspaceItem.timelineListView.count, 4)
+        verify(shell.workspaceItem.timelineListView.reuseItems)
+
+        const userRow = shell.workspaceItem.timelineListView.itemAtIndex(0)
+        verify(userRow !== null)
+        compare(userRow.text, "<b>Keep this text literal and do not parse it as HTML.</b>")
+        compare(userRow.bodyTextItem.textFormat, TextEdit.PlainText)
+    }
+
+    function test_aiCatalogRoutesRefreshCreateAndSelectionCommands() {
+        openAiWorkspace()
+
+        shell.sidebarItem.refreshThreads()
+        compare(fakeBackend.lastCommand, "refresh_ai_threads")
+
+        shell.sidebarItem.createThread()
+        compare(fakeBackend.lastCommand, "create_ai_thread")
+
+        shell.sidebarItem.selectThread("thread-review")
+        compare(fakeBackend.lastCommand, "select_ai_thread")
+        compare(fakeBackend.lastArgument, "thread-review")
+        compare(fakeBackend.aiActiveThreadId, "thread-review")
+    }
+
+    function test_aiArchiveRequiresConfirmationBeforeRustCommand() {
+        openAiWorkspace()
+
+        shell.sidebarItem.requestArchive(
+            "thread-qt-migration",
+            "Replace the GPUI AI workspace"
+        )
+        verify(shell.sidebarItem.archiveConfirmationVisible)
+        compare(fakeBackend.lastCommand, "")
+
+        shell.sidebarItem.confirmArchive()
+        verify(!shell.sidebarItem.archiveConfirmationVisible)
+        compare(fakeBackend.lastCommand, "archive_ai_thread")
+        compare(fakeBackend.lastArgument, "thread-qt-migration")
+        compare(fakeBackend.aiThreadCount, 1)
+    }
+
+    function test_aiTimelineRemainsVirtualizedAtItsRustBound() {
+        aiTimelineModel.clear()
+        for (let index = 0; index < 1000; ++index) {
+            aiTimelineModel.append({
+                row_id: "item:generated-" + index,
+                turn_id: "turn-generated",
+                kind: "agentMessage",
+                role: "assistant",
+                title: "Assistant",
+                text: "Bounded timeline row " + index,
+                status: "",
+                streaming: false,
+                mono: false,
+                truncated: false,
+                last_sequence: index
+            })
+        }
+        fakeBackend.aiTimelineTotalRowCount = 1000
+
+        openAiWorkspace()
+        shell.workspaceItem.timelineListView.positionViewAtBeginning()
+        shell.workspaceItem.timelineListView.forceLayout()
+        compare(shell.workspaceItem.timelineListView.count, 1000)
+        verify(shell.workspaceItem.timelineListView.itemAtIndex(0) !== null)
+        verify(shell.workspaceItem.timelineListView.itemAtIndex(500) === null)
+    }
+
+    function test_aiWorkspaceStatesCoverEmptyLoadingAuthenticationAndError() {
+        aiTimelineModel.clear()
+        fakeBackend.aiTimelineTotalRowCount = 0
+        openAiWorkspace()
+        verify(shell.workspaceItem.emptyStateVisible)
+
+        fakeBackend.aiReady = false
+        fakeBackend.aiLoading = true
+        verify(shell.workspaceItem.loadingStateVisible)
+
+        fakeBackend.aiLoading = false
+        fakeBackend.aiReady = true
+        fakeBackend.aiRequiresAuthentication = true
+        verify(shell.workspaceItem.authenticationStateVisible)
+
+        fakeBackend.aiRequiresAuthentication = false
+        fakeBackend.aiReady = false
+        fakeBackend.aiError = "Codex worker disconnected"
+        verify(shell.workspaceItem.errorStateVisible)
+    }
+
+    function test_aiWorkspaceRendersAtDesktopSize() {
+        openAiWorkspace()
+        captureSnapshot("target/hunk-qt-ai.png")
     }
 
     function test_diffWorkspaceUsesVirtualizedRustModels() {
