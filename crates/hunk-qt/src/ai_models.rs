@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};
 
 use hunk_codex::state::{AiState, ThreadLifecycleStatus, TurnStatus};
@@ -15,6 +16,7 @@ pub struct AiThreadItem {
     pub active: bool,
     pub running: bool,
     pub attention: bool,
+    pub bookmarked: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -31,15 +33,24 @@ pub struct AiThreadCatalogProjection {
 
 impl AiThreadCatalogProjection {
     pub fn from_state(state: &AiState, active_thread_id: Option<&str>) -> Self {
+        Self::from_state_with_bookmarks(state, active_thread_id, &BTreeSet::new())
+    }
+
+    pub fn from_state_with_bookmarks(
+        state: &AiState,
+        active_thread_id: Option<&str>,
+        bookmarked_thread_ids: &BTreeSet<String>,
+    ) -> Self {
         let mut threads = state
             .threads
             .values()
             .filter(|thread| thread.status != ThreadLifecycleStatus::Archived)
             .collect::<Vec<_>>();
         threads.sort_by(|left, right| {
-            right
-                .created_at
-                .cmp(&left.created_at)
+            bookmarked_thread_ids
+                .contains(right.id.as_str())
+                .cmp(&bookmarked_thread_ids.contains(left.id.as_str()))
+                .then_with(|| right.created_at.cmp(&left.created_at))
                 .then_with(|| right.id.cmp(&left.id))
         });
 
@@ -98,6 +109,7 @@ impl AiThreadCatalogProjection {
                     active: active_thread_id == Some(thread.id.as_str()),
                     running,
                     attention: false,
+                    bookmarked: bookmarked_thread_ids.contains(thread.id.as_str()),
                     created_at: thread.created_at,
                     updated_at: thread.updated_at,
                 }
@@ -131,6 +143,25 @@ impl AiThreadCatalogProjection {
             item.attention = thread_ids.contains(item.thread_id.as_str());
         }
     }
+
+    pub fn apply_bookmarks(&mut self, bookmarked_thread_ids: &BTreeSet<String>) {
+        apply_bookmarks_to_items(&mut self.items, bookmarked_thread_ids);
+    }
+}
+
+fn apply_bookmarks_to_items(items: &mut [AiThreadItem], bookmarked_thread_ids: &BTreeSet<String>) {
+    for item in items.iter_mut() {
+        item.bookmarked = bookmarked_thread_ids.contains(item.thread_id.as_str());
+    }
+    items.sort_by(compare_thread_items);
+}
+
+fn compare_thread_items(left: &AiThreadItem, right: &AiThreadItem) -> Ordering {
+    right
+        .bookmarked
+        .cmp(&left.bookmarked)
+        .then_with(|| right.created_at.cmp(&left.created_at))
+        .then_with(|| right.thread_id.cmp(&left.thread_id))
 }
 
 fn workspace_label(cwd: &str) -> String {
@@ -157,7 +188,12 @@ fn saturating_usize_to_i32(value: usize) -> i32 {
 
 #[qobject(Base = QListModel)]
 mod thread_model {
-    use super::{AiThreadItem, QListModel, QListModelBase};
+    use std::collections::BTreeSet;
+
+    use qtbridge::QObjectHolder;
+    use qtbridge::qtbridge_type_lib::QModelIndex;
+
+    use super::{AiThreadItem, QListModel, QListModelBase, compare_thread_items};
 
     #[derive(Default)]
     pub struct AiThreadListModel {
@@ -184,6 +220,52 @@ mod thread_model {
                 .iter()
                 .any(|thread| thread.thread_id == thread_id)
         }
+
+        pub fn apply_bookmarks(&mut self, bookmarked_thread_ids: &BTreeSet<String>) -> bool {
+            let mut changed = false;
+            while let Some(source) = self.items.iter().position(|item| {
+                item.bookmarked != bookmarked_thread_ids.contains(item.thread_id.as_str())
+            }) {
+                let mut item = self.items[source].clone();
+                item.bookmarked = !item.bookmarked;
+                let destination = self
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| *index != source)
+                    .filter(|(_, candidate)| compare_thread_items(candidate, &item).is_lt())
+                    .count();
+                if !self.set(source, item) {
+                    break;
+                }
+                if source != destination {
+                    self.move_item(source, destination);
+                }
+                changed = true;
+            }
+            changed
+        }
+
+        fn move_item(&mut self, source: usize, destination: usize) {
+            let proxy = self.try_get_rust_proxy_ptr().expect("No proxy");
+            let parent = QModelIndex::default();
+            let destination_child = if destination > source {
+                destination + 1
+            } else {
+                destination
+            };
+            unsafe { &mut *proxy }.base_begin_move_rows(
+                &mut *self,
+                &parent,
+                source as i32,
+                source as i32,
+                &parent,
+                destination_child as i32,
+            );
+            let item = self.items.remove(source);
+            self.items.insert(destination, item);
+            unsafe { &mut *proxy }.base_end_move_rows(&mut *self);
+        }
     }
 
     impl QListModel for AiThreadListModel {
@@ -195,6 +277,14 @@ mod thread_model {
 
         fn get(&self, index: usize) -> Option<&Self::Item> {
             self.items.get(index)
+        }
+
+        fn set_unnotified(&mut self, index: usize, value: Self::Item) -> bool {
+            let Some(item) = self.items.get_mut(index) else {
+                return false;
+            };
+            *item = value;
+            true
         }
 
         fn reset_unnotified(&mut self) {

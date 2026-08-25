@@ -442,6 +442,32 @@ TestCase {
             }
             aiStateChanged()
         }
+        function toggle_ai_thread_bookmark(threadId) {
+            for (let index = 0; index < aiThreadsModel.count; ++index) {
+                const thread = aiThreadsModel.get(index)
+                if (thread.thread_id !== threadId)
+                    continue
+                const bookmarked = !thread.bookmarked
+                aiThreadsModel.setProperty(index, "bookmarked", bookmarked)
+                record("toggle_ai_thread_bookmark", threadId)
+                if (bookmarked) {
+                    aiThreadsModel.move(index, 0, 1)
+                } else {
+                    let destination = 0
+                    while (destination + 1 < aiThreadsModel.count
+                            && aiThreadsModel.get(destination + 1).bookmarked)
+                        destination += 1
+                    while (destination + 1 < aiThreadsModel.count
+                            && aiThreadsModel.get(destination + 1).created_at
+                                > thread.created_at)
+                        destination += 1
+                    aiThreadsModel.move(index, destination, 1)
+                }
+                aiStateChanged()
+                return true
+            }
+            return false
+        }
         function send_ai_prompt(prompt) {
             if (!aiReady || aiLoading || aiRequiresAuthentication
                     || aiActiveThreadId.length === 0 || aiPromptPending
@@ -799,6 +825,7 @@ TestCase {
             active: true,
             running: true,
             attention: false,
+            bookmarked: false,
             created_at: 1787677200,
             updated_at: 1787677600
         })
@@ -811,6 +838,7 @@ TestCase {
             active: false,
             running: false,
             attention: false,
+            bookmarked: false,
             created_at: 1787673600,
             updated_at: 1787673900
         })
@@ -1071,6 +1099,30 @@ TestCase {
         compare(fakeBackend.lastCommand, "select_ai_thread")
         compare(fakeBackend.lastArgument, "thread-review")
         compare(fakeBackend.aiActiveThreadId, "thread-review")
+    }
+
+    function test_aiBookmarksReorderAndRemainActionable() {
+        openAiWorkspace()
+        const threadList = shell.sidebarItem.threadListView
+        threadList.forceLayout()
+        const reviewRow = threadList.itemAtIndex(1)
+        verify(reviewRow !== null)
+        verify(reviewRow.bookmarkButton.enabled)
+        reviewRow.bookmarkButton.clicked()
+
+        tryCompare(fakeBackend, "lastCommand", "toggle_ai_thread_bookmark")
+        tryCompare(aiThreadsModel.get(0), "thread_id", "thread-review")
+        tryCompare(aiThreadsModel.get(0), "bookmarked", true)
+        threadList.forceLayout()
+        const bookmarkedRow = threadList.itemAtIndex(0)
+        verify(bookmarkedRow !== null)
+        tryCompare(bookmarkedRow.bookmarkButton, "label", "★")
+        tryCompare(bookmarkedRow.bookmarkButton, "accessibleName", "Remove bookmark")
+        const commandCount = fakeBackend.commandCount
+        bookmarkedRow.bookmarkButton.clicked()
+        tryCompare(fakeBackend, "commandCount", commandCount + 1)
+        tryCompare(aiThreadsModel.get(0), "thread_id", "thread-qt-migration")
+        tryCompare(aiThreadsModel.get(1), "bookmarked", false)
     }
 
     function test_aiArchiveRequiresConfirmationBeforeRustCommand() {

@@ -37,6 +37,11 @@ Item {
         backend.create_ai_thread()
     }
 
+    function toggleBookmark(threadId) {
+        if (threadId.length > 0)
+            backend.toggle_ai_thread_bookmark(threadId)
+    }
+
     function requestArchive(threadId, title) {
         pendingArchiveId = threadId
         pendingArchiveTitle = title
@@ -188,8 +193,10 @@ Item {
             required property bool active
             required property bool running
             required property bool attention
+            required property bool bookmarked
             required property double created_at
             required property double updated_at
+            readonly property alias bookmarkButton: bookmarkAction
             readonly property alias archiveButton: archiveAction
 
             width: threadList.width
@@ -211,7 +218,7 @@ Item {
 
             Column {
                 anchors.left: parent.left
-                anchors.right: archiveAction.left
+                anchors.right: threadActions.left
                 anchors.leftMargin: 16
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
@@ -244,26 +251,48 @@ Item {
                 }
             }
 
-            ActionButton {
-                id: archiveAction
+            Row {
+                id: threadActions
                 anchors.right: parent.right
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
-                label: "Archive"
-                compact: true
-                visible: threadRow.active || rowHover.hovered
-                enabled: !threadRow.attention && !root.backend.aiLoading
-                    && !root.commandPending
+                spacing: 4
+                visible: threadRow.bookmarked || threadRow.active || rowHover.hovered
                 z: 2
-                onClicked: root.requestArchive(threadRow.thread_id, threadRow.title)
+
+                ActionButton {
+                    id: bookmarkAction
+                    label: threadRow.bookmarked ? "★" : "☆"
+                    accessibleName: threadRow.bookmarked
+                        ? "Remove bookmark" : "Bookmark thread"
+                    compact: true
+                    enabled: !root.backend.aiLoading
+                    onClicked: root.toggleBookmark(threadRow.thread_id)
+                }
+
+                ActionButton {
+                    id: archiveAction
+                    label: "Archive"
+                    compact: true
+                    visible: threadRow.active || rowHover.hovered
+                    enabled: !threadRow.attention && !root.backend.aiLoading
+                        && !root.commandPending
+                    onClicked: root.requestArchive(threadRow.thread_id, threadRow.title)
+                }
             }
 
             MouseArea {
                 id: threadPointer
-                anchors.fill: parent
                 enabled: !threadRow.active && !root.backend.aiLoading && !root.commandPending
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: root.selectThread(threadRow.thread_id)
+
+                anchors {
+                    left: parent.left
+                    right: threadActions.left
+                    top: parent.top
+                    bottom: parent.bottom
+                }
             }
         }
     }

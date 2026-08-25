@@ -1,3 +1,4 @@
+mod ai_bookmarks;
 mod ai_composer;
 mod ai_models;
 mod ai_queue;

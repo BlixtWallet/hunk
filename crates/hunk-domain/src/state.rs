@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result, anyhow};
@@ -241,6 +242,10 @@ impl AppStateStore {
         })
     }
 
+    pub fn from_path(path: PathBuf) -> Self {
+        Self { path }
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -267,8 +272,22 @@ impl AppStateStore {
 
         let contents =
             toml::to_string_pretty(state).context("failed to serialize app state to TOML")?;
-        fs::write(&self.path, contents)
+        let mut temporary = tempfile::NamedTempFile::new_in(parent).with_context(|| {
+            format!(
+                "failed to create temporary state file in {}",
+                parent.display()
+            )
+        })?;
+        temporary
+            .write_all(contents.as_bytes())
             .with_context(|| format!("failed to write state file at {}", self.path.display()))?;
+        temporary
+            .as_file()
+            .sync_all()
+            .with_context(|| format!("failed to flush state file at {}", self.path.display()))?;
+        temporary
+            .persist(&self.path)
+            .with_context(|| format!("failed to replace state file at {}", self.path.display()))?;
         Ok(())
     }
 }

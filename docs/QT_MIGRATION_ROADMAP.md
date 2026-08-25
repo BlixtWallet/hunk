@@ -597,7 +597,8 @@ external caches:
 - [x] Implement approvals and request-user-input with exact pending-command state.
 - [x] Implement text steering, interruption, and plan-state presentation.
 - [x] Implement queued message recovery.
-- [ ] Implement attachments, bookmarks, context usage, model/settings, and service-tier controls still in product scope.
+- [x] Implement persistent bookmark ordering and interaction.
+- [ ] Implement attachments, context usage, model/settings, and service-tier controls still in product scope.
 - [ ] Port required terminal surfaces with correct input, focus, cursor, selection, and resize behavior.
 - [ ] Decide retained embedded-browser requirements from product use; remove CEF if unneeded rather than automatically replacing it with Qt WebEngine.
 - [ ] Validate key flows without triggering unattended keychain prompts.
@@ -900,6 +901,51 @@ external Cargo cache, and Qt 6.11.2 SDK:
   warnings denied in 7.01 seconds on the warm cache.
 - Validation used only Rust/QML fixtures. It did not launch Hunk or Codex and
   did not access any credential or keychain path.
+
+Phase 7 Qt bookmark decisions:
+
+- Bookmarks remain global application state, matching the retained
+  `AppState.ai_bookmarked_thread_ids` contract. Qt loads them before the first
+  AI projection and persists changes without moving thread ownership into QML.
+- The listener sorts bookmarks before applying the 200-thread catalog bound, so
+  an older bookmark stays reachable. The Qt thread reapplies its current
+  bookmark set when accepting a projected snapshot so an already-queued stale
+  snapshot cannot undo an optimistic interaction.
+- Bookmark writes run away from the Qt thread and share one serialized
+  load-modify-save boundary with repository selection. Superseded writes are
+  skipped, and a failed latest write restores the complete prior set in memory
+  and on disk rather than guessing from one row.
+- The backend retains outstanding bookmark-save tasks and joins them during
+  shutdown. `AppStateStore` writes through a flushed same-directory temporary
+  file and atomically replaces the previous TOML, so closing during a save
+  cannot truncate the shared state file.
+- An optimistic toggle emits one role update and, when needed, one notified row
+  move. It never resets the 200-row model or invalidates every recycled
+  delegate for a single bookmark click.
+- The dense thread rail adds one persistent star for bookmarked rows and reveals
+  the unbookmarked action with the existing hover/active controls. The action
+  has a semantic accessible name while preserving the restrained unboxed
+  conversation layout. The row-selection hit area stops at the action strip so
+  selection cannot intercept bookmark or archive input.
+
+Phase 7 Qt bookmark validation through Nix, reusing the repository target,
+external Cargo cache, and Qt 6.11.2 SDK:
+
+- The full workspace all-target build passed in 2 minutes 10 seconds, and the
+  complete workspace all-target test suite passed in about 2 minutes 43
+  seconds, including atomic state replacement and incremental bookmark-model
+  coverage.
+- System `qmllint` and all 48 QML interaction, accessibility, virtualization,
+  and rendered-state tests passed; the final QML run completed in 1.256
+  seconds. The inspected 1280-by-760 AI render preserved the dense thread rail
+  and dominant conversation plane with the compact star beside Archive.
+- The deterministic QML lint and six focused read-only review passes found and
+  drove fixes for detached persistence tasks, non-atomic state writes, and
+  full catalog resets on one bookmark click. The interaction suite additionally
+  separated row-selection and action hit regions.
+- Workspace Clippy passed for all targets with warnings denied in 1 minute 3
+  seconds. Validation used Rust/QML fixtures only and did not launch Hunk or
+  Codex or access any credential/keychain path.
 
 ### 8. Atomic Qt Cutover and CI Replacement
 

@@ -1,15 +1,16 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use hunk_app::diff::DiffCommentAnchor;
 use hunk_domain::state::AppStateStore;
 use hunk_forge::{ForgeReviewOutcome, ForgeReviewWorkspace, GitHubDeviceAuthorization};
 use qtbridge::QObjectHolder;
 
+use crate::ai_bookmarks::{AiBookmarkPersistResult, AiBookmarkTasks};
 use crate::ai_models::AiThreadListModel;
 use crate::ai_requests::AiPendingRequestProjection;
 use crate::ai_runtime::AiRuntimeSlot;
@@ -145,6 +146,11 @@ pub struct Backend {
     pub(super) ai_threads: Rc<RefCell<AiThreadListModel>>,
     pub(super) ai_timeline: Rc<RefCell<AiTimelineListModel>>,
     pub(super) ai_message_queue: AiMessageQueue,
+    pub(super) ai_bookmarked_thread_ids: BTreeSet<String>,
+    pub(super) ai_bookmark_epoch: i32,
+    pub(super) ai_bookmark_current_epoch: Arc<AtomicI32>,
+    pub(super) ai_bookmark_results: Arc<Mutex<HashMap<i32, AiBookmarkPersistResult>>>,
+    pub(super) ai_bookmark_tasks: AiBookmarkTasks,
     pub(super) ai_runtime: AiRuntimeSlot,
     pub(super) ai_epoch: i32,
     pub(super) ai_ready: bool,
@@ -207,7 +213,11 @@ pub struct Backend {
 
 impl Default for Backend {
     fn default() -> Self {
-        let git_root = initial_git_root();
+        let (git_root, ai_bookmarked_thread_ids) = initial_qt_state();
+        let ai_runtime = AiRuntimeSlot::default();
+        ai_runtime
+            .mailbox
+            .set_bookmarked_thread_ids(ai_bookmarked_thread_ids.clone());
         Self {
             active_workspace: Workspace::Diff.as_str().to_owned(),
             ready: false,
@@ -278,7 +288,12 @@ impl Default for Backend {
             ai_threads: AiThreadListModel::default_with_attached_qobject(),
             ai_timeline: AiTimelineListModel::default_with_attached_qobject(),
             ai_message_queue: AiMessageQueue::default(),
-            ai_runtime: AiRuntimeSlot::default(),
+            ai_bookmarked_thread_ids,
+            ai_bookmark_epoch: 0,
+            ai_bookmark_current_epoch: Arc::new(AtomicI32::new(0)),
+            ai_bookmark_results: Arc::new(Mutex::new(HashMap::new())),
+            ai_bookmark_tasks: AiBookmarkTasks::default(),
+            ai_runtime,
             ai_epoch: 0,
             ai_ready: false,
             ai_loading: false,
@@ -340,21 +355,32 @@ impl Default for Backend {
     }
 }
 
-fn initial_git_root() -> PathBuf {
-    AppStateStore::new()
+fn initial_qt_state() -> (PathBuf, BTreeSet<String>) {
+    let state = AppStateStore::new()
         .and_then(|store| store.load_or_default())
-        .ok()
-        .and_then(|state| state.active_project_path().cloned())
+        .unwrap_or_default();
+    let git_root = state
+        .active_project_path()
+        .cloned()
         .filter(|path| path.is_dir())
         .or_else(|| std::env::current_dir().ok())
-        .unwrap_or_else(|| PathBuf::from("."))
+        .unwrap_or_else(|| PathBuf::from("."));
+    (git_root, state.ai_bookmarked_thread_ids)
 }
 
 pub(super) fn persist_active_project(root: PathBuf) -> anyhow::Result<()> {
+    let _guard = app_state_write_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let store = AppStateStore::new()?;
     let mut state = store.load_or_default()?;
     state.activate_workspace_project(root);
     store.save(&state)
+}
+
+pub(super) fn app_state_write_lock() -> &'static Mutex<()> {
+    static APP_STATE_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    APP_STATE_WRITE_LOCK.get_or_init(|| Mutex::new(()))
 }
 
 pub(super) fn next_forge_epoch(backend: &mut Backend) -> i32 {

@@ -10,6 +10,7 @@ use hunk_forge::{ForgeCredentialKind, ForgeProvider, ForgeReviewWorkspace};
 use hunk_git::workspace::{GitWorkspaceCommand, load_git_workspace};
 use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString};
 
+use crate::ai_bookmarks::{complete_ai_bookmark_persist, queue_ai_toggle_thread_bookmark};
 use crate::ai_models::AiThreadListModel;
 use crate::ai_timeline_models::AiTimelineListModel;
 use crate::backend_ai::{
@@ -1040,6 +1041,19 @@ impl Backend {
     fn archive_ai_thread(&mut self, thread_id: String) {
         self.ensure_ai_runtime_started();
         let _ = queue_ai_archive_thread(self, thread_id);
+        self.ai_state_changed();
+    }
+
+    #[qslot]
+    fn toggle_ai_thread_bookmark(&mut self, thread_id: String) -> bool {
+        let changed = queue_ai_toggle_thread_bookmark(self, thread_id);
+        self.ai_state_changed();
+        changed
+    }
+
+    #[qslot]
+    fn complete_ai_bookmark_persist(&mut self, epoch: i32) {
+        complete_ai_bookmark_persist(self, epoch);
         self.ai_state_changed();
     }
 

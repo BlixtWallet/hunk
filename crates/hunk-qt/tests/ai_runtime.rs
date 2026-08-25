@@ -2,6 +2,7 @@ use hunk_app::ai::{AiSnapshot, AiWorkerEvent, AiWorkerEventPayload};
 use hunk_codex::protocol::DynamicToolCallParams;
 use hunk_codex::state::{AiState, ThreadLifecycleStatus, ThreadSummary};
 use hunk_qt::{AiEventMailbox, AiRuntimeEvent};
+use std::collections::BTreeSet;
 
 fn event(payload: AiWorkerEventPayload) -> AiWorkerEvent {
     AiWorkerEvent {
@@ -104,6 +105,24 @@ fn mailbox_coalesces_only_consecutive_snapshots() {
         panic!("expected the coalesced snapshot first");
     };
     assert_eq!(event.threads.active_thread_id, "new");
+}
+
+#[test]
+fn mailbox_projects_bookmarks_before_bounding_the_thread_catalog() {
+    let mailbox = AiEventMailbox::default();
+    mailbox.reset(9);
+    mailbox.set_bookmarked_thread_ids(BTreeSet::from(["thread".to_owned()]));
+
+    assert!(mailbox.enqueue_worker(
+        9,
+        event(AiWorkerEventPayload::Snapshot(Box::new(snapshot("thread"))))
+    ));
+    let events = mailbox.take(9);
+    let AiRuntimeEvent::Snapshot(snapshot) = &events[0] else {
+        panic!("expected a projected snapshot");
+    };
+
+    assert!(snapshot.threads.items[0].bookmarked);
 }
 
 #[test]

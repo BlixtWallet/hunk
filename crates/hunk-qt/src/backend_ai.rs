@@ -164,12 +164,13 @@ pub(super) fn apply_ai_runtime_events(backend: &mut Backend, events: Vec<AiRunti
 fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     let AiProjectedSnapshot {
         requires_openai_auth,
-        threads: projection,
+        threads: mut projection,
         timeline,
         queue,
         requests,
         ..
     } = projected;
+    projection.apply_bookmarks(&backend.ai_bookmarked_thread_ids);
     let completed_thread_action = backend
         .ai_thread_action
         .as_ref()
