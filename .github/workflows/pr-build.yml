@@ -114,32 +114,9 @@ jobs:
       #     if-no-files-found: error
 
   build:
-    name: ${{ matrix.name }} Build
-    runs-on: ${{ matrix.os }}
+    name: Windows Build
+    runs-on: blacksmith-4vcpu-windows-2025
     timeout-minutes: 90
-    env:
-      APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_NOTARY_API_KEY_BASE64: ${{ secrets.APPLE_NOTARY_API_KEY_BASE64 }}
-      APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-      APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macOS
-            os: macOS
-            install_packager: cargo install cargo-packager --locked --version 0.11.8
-            resolve_version: |
-              version="$(./scripts/resolve_hunk_version.sh)"
-              echo "HUNK_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
-          - name: Windows
-            os: blacksmith-4vcpu-windows-2025
-            install_packager: cargo install cargo-packager --locked --version 0.11.8
-            resolve_version: |
-              $version = (bash ./scripts/resolve_hunk_version.sh).Trim()
-              "HUNK_RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     steps:
       - name: Checkout
@@ -147,53 +124,22 @@ jobs:
         with:
           clean: false
 
-      - name: Disable stale local Nix cache configuration
-        if: runner.os == 'macOS'
-        run: |
-          {
-            echo "NIX_CONFIG<<EOF"
-            echo "post-build-hook ="
-            echo "extra-substituters ="
-            echo "substituters = https://cache.nixos.org/"
-            echo "EOF"
-          } >> "$GITHUB_ENV"
-        shell: bash
-
       - name: Install stable Rust
-        if: runner.os != 'macOS'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Zig
-        if: runner.os != 'macOS'
         uses: mlugg/setup-zig@v2
         with:
           use-cache: false
           version: 0.15.2
 
-      - name: Expose pinned external Qt
-        if: runner.os == 'macOS'
-        env:
-          HUNK_QT_CACHE_ROOT: /Volumes/hulk/dev/cache/qt
-          HUNK_QT_TMPDIR: /Volumes/hulk/dev/cache/hunk-tmp
-        run: |
-          ./scripts/qt/install_qt.sh
-          source ./scripts/qt/qt_env.sh
-          echo "HUNK_BUILD_TMPDIR=/Volumes/hulk/dev/cache/hunk-tmp" >> "$GITHUB_ENV"
-          echo "HUNK_QT_ROOT=$HUNK_QT_ROOT" >> "$GITHUB_ENV"
-          echo "QT_ROOT_DIR=$HUNK_QT_ROOT" >> "$GITHUB_ENV"
-          echo "QMAKE=$HUNK_QT_ROOT/bin/qmake" >> "$GITHUB_ENV"
-          echo "$HUNK_QT_ROOT/bin" >> "$GITHUB_PATH"
-        shell: bash
-
       - name: Cache pinned Qt
-        if: runner.os == 'Windows'
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}\hunk-qt
           key: hunk-qt-${{ env.HUNK_QT_VERSION }}-windows-msvc2022-x64-v1
 
       - name: Install pinned Qt
-        if: runner.os == 'Windows'
         run: ./scripts/qt/install_qt_windows.ps1 -InstallRoot "${{ runner.temp }}\hunk-qt"
         shell: pwsh
 
@@ -208,7 +154,6 @@ jobs:
       #     cmd-format: nix develop --accept-flake-config -c {0}
 
       - name: Cache cargo registry and Rust dependencies
-        if: runner.os != 'macOS'
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: pr-build-${{ runner.os }}-desktop-v2
@@ -238,22 +183,10 @@ jobs:
       #   shell: pwsh
 
       - name: Run hunk-terminal tests
-        if: runner.os == 'macOS'
-        run: nix develop --accept-flake-config -c cargo test -p hunk-terminal --tests
-        shell: bash
-
-      - name: Run hunk-terminal tests
-        if: runner.os == 'Windows'
         run: cargo test -p hunk-terminal --tests
         shell: pwsh
 
       - name: Build hunk-qt
-        if: runner.os == 'macOS'
-        run: nix develop --accept-flake-config -c cargo build -p hunk-qt --locked --profile ci
-        shell: bash
-
-      - name: Build hunk-qt
-        if: runner.os == 'Windows'
         run: cargo build -p hunk-qt --locked --profile ci
         shell: pwsh
 

@@ -238,13 +238,18 @@ Phase 4 toolchain decisions:
   6.11.2. QtBridge is pinned to official commit
   `cad0d6cd81d1af294ec87c67f21d39133196dbc1`.
 - Linux CI installs and caches `linux_gcc_64` with
-  `jurplel/install-qt-action@v4`; macOS CI reuses the exact external `clang_64`
-  SDK; and Windows CI caches Qt Online Installer's official
-  `qt.qt6.6112.win64_msvc2022_64` package because aqt 3.3.0 does not understand
-  the Qt 6.11 Windows repository layout.
+  `jurplel/install-qt-action@v4`, and Windows CI caches Qt Online Installer's
+  official `qt.qt6.6112.win64_msvc2022_64` package because aqt 3.3.0 does not
+  understand the Qt 6.11 Windows repository layout.
+- The current self-hosted macOS runner cannot mount `/Volumes/hulk`. The Qt
+  migration PR workflow therefore omits its macOS job instead of downloading
+  an SDK and rebuilding onto constrained internal storage. macOS is validated
+  locally through Nix against the exact cached external SDK; restore the CI job
+  only after its runner can use the external volume.
 - Qt migration branches no longer compile GPUI in CI. PR #179 is the validated
   legacy-frontend baseline; subsequent layers test the headless workspace with
-  `hunk-desktop` excluded and build `hunk-qt` on all three target platforms.
+  `hunk-desktop` excluded, build `hunk-qt` on Linux and Windows in CI, and run
+  the same Qt build and smoke gates locally on macOS.
 - The debug executable loads QML directly for fast iteration, the release build
   compiles the same module into `qrc:/qml`, and the offscreen smoke suite captures
   the rendered desktop-size shell under Cargo's ignored `target/` for visual

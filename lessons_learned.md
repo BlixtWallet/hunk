@@ -148,3 +148,8 @@ append a correction when later evidence changes one.
   cache under an unavailable `/Users/runner` path. Reusing the already verified
   external Qt SDK is faster, avoids another internal-disk copy, and removes that
   hosted-runner assumption.
+- The macOS Actions runner also cannot mount `/Volumes/hulk`; a path available
+  to the interactive Mac session is not automatically available to its runner
+  service. Do not silently fall back to internal storage for a multi-gigabyte
+  Qt SDK and Rust target. Keep the exact macOS gates local until the runner is
+  explicitly provisioned with external-volume access.

@@ -29,7 +29,7 @@ if (Test-Path $qmake) {
     $installedVersion = (& $qmake -query QT_VERSION).Trim()
     if ($installedVersion -eq $qtVersion) {
         Export-QtEnvironment -Root $qtRoot -QmakePath $qmake
-        Write-Host "Qt $installedVersion: $qtRoot"
+        Write-Host "Qt ${installedVersion}: $qtRoot"
         exit 0
     }
 }
@@ -64,4 +64,4 @@ if ($installedVersion -ne $qtVersion) {
 }
 
 Export-QtEnvironment -Root $qtRoot -QmakePath $qmake
-Write-Host "Qt $installedVersion: $qtRoot"
+Write-Host "Qt ${installedVersion}: $qtRoot"
