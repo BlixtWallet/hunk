@@ -181,14 +181,36 @@ must not reproduce that redundant matrix.
 
 ### 3. Establish a Headless Application Boundary
 
-- [ ] Inventory GPUI `Entity`, `Context`, `App`, `Window`, focus, subscription, and task ownership in retained workflows.
-- [ ] Define UI-independent command and snapshot types for Diff, Git, and AI.
-- [ ] Move retained behavior out of `hunk-desktop` controllers where it is currently coupled to GPUI.
-- [ ] Keep production Git operations in `hunk-git` with `gix` first and narrow `git2` fallbacks.
-- [ ] Keep Codex protocol/reducer/lifecycle behavior in `hunk-codex`.
-- [ ] Keep Qt types out of all domain crates.
-- [ ] Add crate-level tests for the extracted behavior.
-- [ ] Complete the mandatory working loop and stacked PR.
+- [x] Inventory GPUI `Entity`, `Context`, `App`, `Window`, focus, subscription, and task ownership in retained workflows.
+- [x] Define UI-independent command and snapshot types for Diff, Git, and AI.
+- [x] Move retained behavior out of `hunk-desktop` controllers where it is currently coupled to GPUI.
+- [x] Keep production Git operations in `hunk-git` with `gix` first and narrow `git2` fallbacks.
+- [x] Keep Codex protocol/reducer/lifecycle behavior in `hunk-codex`.
+- [x] Keep Qt types out of all domain crates.
+- [x] Add crate-level tests for the extracted behavior.
+- [x] Complete the mandatory working loop and stacked PR: <https://github.com/smolcars/hunk/pull/179>.
+
+Phase 3 ownership inventory:
+
+| Workflow | Headless Rust ownership | Temporary GPUI ownership | Qt adapter implication |
+| --- | --- | --- | --- |
+| Git | `hunk-app::git` owns refresh policy, repository loading, workflow fingerprints, line statistics, and owned snapshots; production operations remain in `hunk-git`. | The root `Entity` stores the last snapshot. `Context` schedules work, merges refresh requests, rejects stale epochs, and notifies paint. | Invoke the same synchronous service off the Qt thread and apply one snapshot on the UI thread. |
+| Diff | `hunk-app::diff` owns compare/historical commands, patch parsing, stable row projection, syntax/intra-line segments, and binary/error/collapsed states. | The root `Entity` owns active selection, viewport, search, comments, expansion, focus, and renderer caches. `Window` and `Context` own input and repaint. | Bridge immutable batched projections; keep selection, viewport, and scene-graph state in Qt. |
+| AI | `hunk-app::ai` owns the single worker thread, command/event channels, bootstrap/reconnect policy, workspace paths, rollout fallback, and dynamic-tool execution. `hunk-codex` still owns app-server protocol, reducer state, thread lifecycle semantics, and the embedded client. | The root `Entity` polls and applies worker events. `Window`, focus handles, dialogs, notifications, browser frames, and confirmation presentation remain frontend concerns. | Keep one Rust worker. The Qt layer sends commands, batches event application, and presents renderer/platform interactions. |
+| Terminal/browser support | Existing headless runtime crates retain session/browser state. | GPUI still owns terminal elements, browser frame presentation, focus routing, subscriptions, and input translation. | These adapters are explicitly deferred to the AI Qt phase; no domain state should move into QObjects. |
+
+Across retained workflows, `Entity`, `Context`, `App`, `Window`, focus handles,
+subscriptions, and GPUI tasks now represent presentation, scheduling, or event
+application rather than authoritative Git, Diff, or Codex domain behavior.
+
+Phase 3 macOS validation through Nix:
+
+- `cargo build --workspace --all-targets`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+
+All three gates passed using Cargo's default external-volume `target/` and the
+shared Cargo cache under `/Volumes/hulk/dev/cache`.
 
 ### 4. Qt Foundation
 

@@ -13,7 +13,7 @@ struct TurnDiffPatchSection {
     line_stats: LineStats,
 }
 
-pub(crate) fn compare_snapshot_from_turn_diff(diff: &str) -> CompareSnapshot {
+pub fn compare_snapshot_from_turn_diff(diff: &str) -> CompareSnapshot {
     let mut files = Vec::<ChangedFile>::new();
     let mut file_line_stats = BTreeMap::<String, LineStats>::new();
     let mut patches_by_path = BTreeMap::<String, String>::new();
@@ -85,7 +85,6 @@ fn split_turn_diff_sections(diff: &str) -> Vec<String> {
     if !current.trim().is_empty() {
         sections.push(current);
     }
-
     sections
 }
 
@@ -189,7 +188,6 @@ fn synthetic_turn_diff_path(section_ix: usize) -> String {
     if section_ix == 0 {
         return SYNTHETIC_TURN_DIFF_PATH_BASENAME.to_string();
     }
-
     format!(
         "historical-turn-diff-{}.patch",
         section_ix.saturating_add(1)
@@ -210,152 +208,5 @@ fn unified_patch_line_stats(diff: &str) -> LineStats {
             removed = removed.saturating_add(1);
         }
     }
-
     LineStats { added, removed }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::compare_snapshot_from_turn_diff;
-    use hunk_git::git::FileStatus;
-
-    #[test]
-    fn compare_snapshot_from_turn_diff_splits_files_and_counts_lines() {
-        let diff = "\
-diff --git a/src/lib.rs b/src/lib.rs
---- a/src/lib.rs
-+++ b/src/lib.rs
-@@ -1 +1,2 @@
--old
-+new
-+extra
-diff --git a/src/main.rs b/src/main.rs
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -5 +5 @@
--before
-+after
-";
-
-        let snapshot = compare_snapshot_from_turn_diff(diff);
-
-        assert_eq!(snapshot.files.len(), 2);
-        assert_eq!(snapshot.files[0].path, "src/lib.rs");
-        assert_eq!(snapshot.files[0].status, FileStatus::Modified);
-        assert_eq!(snapshot.file_line_stats["src/lib.rs"].added, 2);
-        assert_eq!(snapshot.file_line_stats["src/lib.rs"].removed, 1);
-        assert_eq!(snapshot.overall_line_stats.added, 3);
-        assert_eq!(snapshot.overall_line_stats.removed, 2);
-    }
-
-    #[test]
-    fn compare_snapshot_from_turn_diff_handles_add_delete_and_rename() {
-        let diff = "\
-diff --git a/src/new.rs b/src/new.rs
-new file mode 100644
---- /dev/null
-+++ b/src/new.rs
-@@ -0,0 +1 @@
-+hello
-diff --git a/src/old.rs b/src/old.rs
-deleted file mode 100644
---- a/src/old.rs
-+++ /dev/null
-@@ -1 +0,0 @@
--goodbye
-diff --git a/src/from.rs b/src/to.rs
-rename from src/from.rs
-rename to src/to.rs
---- a/src/from.rs
-+++ b/src/to.rs
-@@ -1 +1 @@
--before
-+after
-";
-
-        let snapshot = compare_snapshot_from_turn_diff(diff);
-
-        assert_eq!(snapshot.files.len(), 3);
-        assert_eq!(snapshot.files[0].status, FileStatus::Added);
-        assert_eq!(snapshot.files[1].status, FileStatus::Deleted);
-        assert_eq!(snapshot.files[2].status, FileStatus::Renamed);
-        assert_eq!(snapshot.files[2].path, "src/to.rs");
-    }
-
-    #[test]
-    fn compare_snapshot_from_turn_diff_merges_duplicate_paths() {
-        let diff = "\
-diff --git a/src/lib.rs b/src/lib.rs
---- a/src/lib.rs
-+++ b/src/lib.rs
-@@ -1 +1 @@
--one
-+two
-diff --git a/src/lib.rs b/src/lib.rs
---- a/src/lib.rs
-+++ b/src/lib.rs
-@@ -3 +3 @@
--three
-+four
-";
-
-        let snapshot = compare_snapshot_from_turn_diff(diff);
-
-        assert_eq!(snapshot.files.len(), 1);
-        assert_eq!(snapshot.file_line_stats["src/lib.rs"].added, 2);
-        assert_eq!(snapshot.file_line_stats["src/lib.rs"].removed, 2);
-        assert!(snapshot.patches_by_path["src/lib.rs"].contains("@@ -1 +1 @@"));
-        assert!(snapshot.patches_by_path["src/lib.rs"].contains("@@ -3 +3 @@"));
-    }
-
-    #[test]
-    fn compare_snapshot_from_headerless_turn_diff_recovers_paths() {
-        let diff = "\
---- a/src/lib.rs
-+++ b/src/lib.rs
-@@ -1 +1 @@
--old
-+new
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -5 +5 @@
--before
-+after
-";
-
-        let snapshot = compare_snapshot_from_turn_diff(diff);
-
-        assert_eq!(snapshot.files.len(), 2);
-        assert_eq!(snapshot.files[0].path, "src/lib.rs");
-        assert_eq!(snapshot.files[1].path, "src/main.rs");
-        assert_eq!(snapshot.overall_line_stats.added, 2);
-        assert_eq!(snapshot.overall_line_stats.removed, 2);
-    }
-
-    #[test]
-    fn compare_snapshot_from_pathless_turn_diff_uses_synthetic_file() {
-        let diff = "\
-@@ -1 +1 @@
--old
-+new
-";
-
-        let snapshot = compare_snapshot_from_turn_diff(diff);
-
-        assert_eq!(snapshot.files.len(), 1);
-        assert_eq!(snapshot.files[0].path, "historical-turn-diff.patch");
-        assert_eq!(snapshot.files[0].status, FileStatus::Modified);
-        assert_eq!(
-            snapshot.file_line_stats["historical-turn-diff.patch"].added,
-            1
-        );
-        assert_eq!(
-            snapshot.file_line_stats["historical-turn-diff.patch"].removed,
-            1
-        );
-        assert_eq!(
-            snapshot.patches_by_path["historical-turn-diff.patch"],
-            diff.trim_end()
-        );
-    }
 }

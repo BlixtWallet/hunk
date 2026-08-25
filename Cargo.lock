@@ -8432,6 +8432,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
+name = "hunk-app"
+version = "0.0.11"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "dirs",
+ "git2",
+ "hunk-browser",
+ "hunk-codex",
+ "hunk-domain",
+ "hunk-git",
+ "hunk-language",
+ "hunk-mobile",
+ "image",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "webbrowser",
+]
+
+[[package]]
 name = "hunk-browser"
 version = "0.1.0"
 dependencies = [
@@ -8479,7 +8500,6 @@ name = "hunk-desktop"
 version = "0.0.11"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
  "block2",
  "codex-utils-rustls-provider",
  "ctrlc",
@@ -8489,6 +8509,7 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "gpui_platform",
+ "hunk-app",
  "hunk-browser",
  "hunk-browser-helper",
  "hunk-codex",
@@ -8497,7 +8518,6 @@ dependencies = [
  "hunk-forge",
  "hunk-git",
  "hunk-language",
- "hunk-mobile",
  "hunk-sleep-inhibitor",
  "hunk-terminal",
  "hunk-text",
@@ -8516,7 +8536,6 @@ dependencies = [
  "time",
  "tracing",
  "tracing-subscriber",
- "webbrowser",
  "windows-sys 0.59.0",
 ]
 

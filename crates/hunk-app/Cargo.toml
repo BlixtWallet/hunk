@@ -1,0 +1,25 @@
+[package]
+name = "hunk-app"
+version = "0.0.11"
+license.workspace = true
+edition = "2024"
+authors = ["Nitesh Balusu"]
+
+[dependencies]
+anyhow = "1.0"
+base64 = "0.22"
+dirs = "6.0"
+hunk-browser = { path = "../hunk-browser" }
+hunk-codex = { path = "../hunk-codex" }
+hunk-domain = { path = "../hunk-domain" }
+hunk-git = { path = "../hunk-git" }
+hunk-language = { path = "../hunk-language" }
+hunk-mobile = { path = "../hunk-mobile" }
+image = "0.25"
+serde_json = "1.0"
+tracing = "0.1"
+webbrowser = "1.2.1"
+
+[dev-dependencies]
+git2 = "0.20"
+tempfile = "3.27.0"

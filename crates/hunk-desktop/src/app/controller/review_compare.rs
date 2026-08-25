@@ -920,16 +920,18 @@ impl DiffViewer {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let snapshot =
-                        load_compare_snapshot(primary_repo_root.as_path(), &left_source, &right_source)?;
-                    let stream = build_diff_stream_from_patch_map(
-                        &snapshot.files,
-                        &collapsed_files,
-                        &previous_review_line_stats,
-                        &snapshot.patches_by_path,
-                        &BTreeSet::new(),
-                    );
-                    Ok::<_, anyhow::Error>((snapshot, stream))
+                    load_diff_snapshot(
+                        DiffCommand::Compare {
+                            primary_repo_root,
+                            left: left_source,
+                            right: right_source,
+                        },
+                        DiffProjectionOptions {
+                            collapsed_paths: collapsed_files,
+                            previous_file_line_stats: previous_review_line_stats,
+                            loading_paths: BTreeSet::new(),
+                        },
+                    )
                 })
                 .await;
 
@@ -941,7 +943,10 @@ impl DiffViewer {
 
                     this.review_compare_loading = false;
                     match result {
-                        Ok((snapshot, stream)) => {
+                        Ok(DiffSnapshot {
+                            comparison: snapshot,
+                            projection: stream,
+                        }) => {
                             debug!(
                                 left = left_source_id.as_deref().unwrap_or("unknown"),
                                 right = right_source_id.as_deref().unwrap_or("unknown"),

@@ -1,8 +1,6 @@
-#[path = "../src/app/highlight.rs"]
-mod highlight;
 mod app {
     pub(crate) mod highlight {
-        pub(crate) use crate::highlight::SyntaxTokenKind;
+        pub(crate) use hunk_app::diff::SyntaxTokenKind;
     }
 
     pub(crate) mod theme {
@@ -59,7 +57,7 @@ mod syntax_colors;
 
 use gpui::Hsla;
 use gpui_component::Theme;
-use highlight::SyntaxTokenKind;
+use hunk_app::diff::SyntaxTokenKind;
 use hunk_domain::markdown_preview::MarkdownCodeTokenKind;
 use syntax_colors::{diff_syntax_color, markdown_syntax_color};
 

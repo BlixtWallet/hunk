@@ -68,12 +68,10 @@ use hunk_codex::threads::RolloutFallbackItem;
 use hunk_codex::threads::RolloutFallbackTurn;
 use hunk_codex::threads::ThreadService;
 
-use crate::app::ai_dynamic_tools::AiDynamicToolExecutor;
-use crate::app::ai_paths::default_codex_home_path;
-use crate::app::ai_rollout_fallback::find_rollout_path_for_thread;
-use crate::app::ai_rollout_fallback::parse_rollout_fallback;
-use crate::app::AiComposerSkillBinding;
-use crate::app::AiPromptSkillReference;
+use crate::ai::dynamic_tools::AiDynamicToolExecutor;
+use crate::ai::paths::default_codex_home_path;
+use crate::ai::rollout_fallback::{find_rollout_path_for_thread, parse_rollout_fallback};
+use crate::ai::{AiComposerSkillBinding, AiPromptSkillReference};
 
 const COMMAND_POLL_INTERVAL: Duration = Duration::from_millis(20);
 const NOTIFICATION_POLL_TIMEOUT: Duration = Duration::from_millis(20);
@@ -898,7 +896,7 @@ impl AiWorkerRuntime {
     }
 
     fn is_chats_workspace(&self) -> bool {
-        crate::app::ai_paths::is_ai_chats_workspace_path(self.service.cwd())
+        crate::ai::paths::is_ai_chats_workspace_path(self.service.cwd())
     }
 
     fn default_model_id(&self) -> Option<String> {

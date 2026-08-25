@@ -1,7 +1,4 @@
-#[path = "../src/app/highlight.rs"]
-mod highlight;
-
-use highlight::{SyntaxTokenKind, build_plain_line_segments};
+use hunk_app::diff::{SyntaxTokenKind, build_plain_line_segments};
 
 #[test]
 fn plain_line_segments_detect_language_tokens() {

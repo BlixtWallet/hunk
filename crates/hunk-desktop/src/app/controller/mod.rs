@@ -23,10 +23,14 @@ use crate::app::workspace_view::WorkspaceSidebarKind;
 
 use super::data::{
     DiffSegmentQuality, DiffStream, DiffStreamRowKind, build_changed_file_rows,
-    build_diff_row_segment_cache_from_cells, build_diff_stream_from_patch_map,
-    line_number_column_width,
+    build_diff_row_segment_cache_from_cells, line_number_column_width,
 };
 use super::*;
+use hunk_app::diff::{DiffCommand, DiffProjectionOptions, DiffSnapshot, load_diff_snapshot};
+use hunk_app::git::{
+    GitWorkspaceRefreshSnapshot, SnapshotRefreshResult, load_git_workspace_refresh,
+    load_snapshot_refresh,
+};
 use hunk_forge::{
     CreateReviewInput, ForgeCredentialKind, ForgeCredentialMetadata, ForgeCredentialResolution,
     ForgeRepoCredentialBinding, ForgeRepoRef, ForgeReviewClient, GitHubReviewClient,
@@ -37,13 +41,11 @@ use hunk_git::branch::{
     review_remote_for_branch_with_provider_map, review_remote_for_named_remote_with_provider_map,
     review_url_for_branch_with_provider_map, sanitize_branch_name,
 };
-use hunk_git::compare::{CompareSource, load_compare_snapshot, resolve_default_base_branch_name};
+use hunk_git::compare::{CompareSource, resolve_default_base_branch_name};
 use hunk_git::git::{
     RepoSnapshotFingerprint, WorkflowSnapshot, invalidate_repo_metadata_caches,
-    load_remote_tracking_branches_without_refresh,
     load_repo_file_line_stats_for_paths_without_refresh, load_repo_file_line_stats_without_refresh,
-    load_snapshot_fingerprint, load_workflow_snapshot, load_workflow_snapshot_if_changed,
-    load_workflow_snapshot_if_changed_without_refresh, load_workflow_snapshot_with_fingerprint,
+    load_snapshot_fingerprint, load_workflow_snapshot,
     load_workflow_snapshot_with_fingerprint_without_refresh,
 };
 use hunk_git::history::{

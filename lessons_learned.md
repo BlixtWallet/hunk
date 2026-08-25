@@ -70,3 +70,46 @@ append a correction when later evidence changes one.
   the active comparison. A full checkout tree, ignored-file scan, filesystem
   mutation context menu, and directory expansion cache are File Explorer
   behavior and do not belong in the narrowed product.
+
+## 2026-08-25 — Headless Git application boundary
+
+- GPUI's background executor did not need to move into the headless service.
+  Keeping scheduling, refresh epochs, and repaint notifications in the UI
+  adapter while moving load policy and snapshot assembly into `hunk-app`
+  produces a synchronous service that Qt can also invoke off its UI thread.
+- A frontend should not independently coordinate workflow fingerprints, remote
+  branches, and per-file line statistics. Returning those values as one owned
+  application snapshot prevents the GPUI and Qt adapters from developing
+  different repository refresh semantics while all Git access remains in
+  `hunk-git`.
+
+## 2026-08-25 — Headless Diff command and projection
+
+- `gpui::SharedString` had leaked into the cached syntax-segment model even
+  though the data itself was not UI-specific. Using owned `String` values in
+  the headless snapshot keeps renderer-specific allocation and conversion at
+  the adapter edge and makes the same projection consumable by Qt.
+- Comparison loading and row projection must be one application operation.
+  Returning the `CompareSnapshot` together with stable row metadata, binary and
+  collapsed states, and optional segment caches prevents each frontend from
+  parsing patches or inventing its own row identifiers.
+
+## 2026-08-25 — Headless AI worker boundary
+
+- Move the existing worker rather than wrapping or cloning it. `hunk-app` now
+  owns the single command/event loop, reconnect policy, rollout fallback,
+  workspace paths, and dynamic-tool execution; the GPUI layer only applies
+  events and performs renderer-owned browser confirmation and frame work.
+- A thin compatibility re-export lets the current frontend keep compiling while
+  the application boundary becomes the future Qt contract. This keeps the
+  cutover incremental without allowing GPUI types into the headless crate.
+- White-box worker tests still matter after extracting a public service. Keeping
+  their source under `crates/hunk-app/tests/support` and including it only for
+  the library test build preserves private policy coverage without exposing
+  reconnect and protocol helpers as production API.
+- Moving an implementation also moves its direct dependencies. Removing the
+  now-orphaned `base64`, `hunk-mobile`, and `webbrowser` dependencies from the
+  GPUI crate prevents the temporary adapter from hiding ownership mistakes.
+- Compatibility re-exports used only by the legacy frontend's internal tests
+  must be gated with `cfg(test)`; test-target checks can otherwise conceal an
+  unused import that the normal binary and workspace clippy correctly reject.

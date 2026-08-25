@@ -419,7 +419,7 @@ mod tests {
     use hunk_git::compare::CompareSnapshot;
     use hunk_git::git::{ChangedFile, FileStatus, LineStats};
 
-    use crate::app::data::build_diff_stream_from_patch_map;
+    use hunk_app::diff::build_diff_stream_from_patch_map;
 
     use super::*;
 

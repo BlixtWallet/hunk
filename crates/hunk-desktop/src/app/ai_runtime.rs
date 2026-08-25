@@ -1,9 +1,10 @@
-include!("ai_runtime/transport.rs");
-include!("ai_runtime/core.rs");
-include!("ai_runtime/lifecycle.rs");
-include!("ai_runtime/pending_steer.rs");
-include!("ai_runtime/sync.rs");
-include!("ai_runtime/reconnect.rs");
-include!("ai_runtime/catalog.rs");
-include!("ai_runtime/helpers.rs");
-include!("ai_runtime/tests.rs");
+pub(crate) use hunk_app::ai::{
+    AiApprovalDecision, AiApprovalKind, AiConnectionState, AiPendingApproval,
+    AiPendingUserInputQuestion, AiPendingUserInputRequest, AiSnapshot, AiTurnSessionOverrides,
+    AiWorkerCommand, AiWorkerEvent, AiWorkerEventPayload, AiWorkerStartConfig,
+    AiWorkspaceThreadCatalog, archive_ai_thread_for_workspace, load_ai_workspace_thread_catalog,
+    spawn_ai_worker,
+};
+
+#[cfg(test)]
+pub(crate) use hunk_app::ai::AiPendingUserInputQuestionOption;

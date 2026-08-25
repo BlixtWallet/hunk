@@ -1,4 +1,4 @@
-use crate::app::AiPendingSteer;
+use crate::ai::AiPendingSteer;
 
 fn accepted_after_sequence_for_pending_steer(
     state: &AiState,
