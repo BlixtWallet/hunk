@@ -5,7 +5,6 @@ use std::rc::Rc;
 use std::sync::atomic::AtomicI32;
 use std::sync::{Arc, Mutex};
 
-use hunk_app::ai::AiSnapshot;
 use hunk_app::diff::DiffCommentAnchor;
 use hunk_domain::state::AppStateStore;
 use hunk_forge::{ForgeReviewOutcome, ForgeReviewWorkspace, GitHubDeviceAuthorization};
@@ -13,6 +12,7 @@ use qtbridge::QObjectHolder;
 
 use crate::ai_models::AiThreadListModel;
 use crate::ai_runtime::AiRuntimeSlot;
+use crate::ai_timeline_models::AiTimelineListModel;
 use crate::comment_models::{DiffCommentListModel, DiffCommentProjection};
 use crate::diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
 use crate::forge::ForgeSnapshotPayload;
@@ -140,7 +140,7 @@ pub struct Backend {
     pub(super) git_staged_paths: Vec<String>,
     pub(super) git_unstaged_paths: Vec<String>,
     pub(super) ai_threads: Rc<RefCell<AiThreadListModel>>,
-    pub(super) ai_snapshot: Option<AiSnapshot>,
+    pub(super) ai_timeline: Rc<RefCell<AiTimelineListModel>>,
     pub(super) ai_runtime: AiRuntimeSlot,
     pub(super) ai_epoch: i32,
     pub(super) ai_ready: bool,
@@ -149,8 +149,15 @@ pub struct Backend {
     pub(super) ai_connection_state: String,
     pub(super) ai_workspace_root: String,
     pub(super) ai_active_thread_id: String,
+    pub(super) ai_active_thread_title: String,
+    pub(super) ai_active_thread_cwd: String,
     pub(super) ai_thread_count: i32,
     pub(super) ai_running_thread_count: i32,
+    pub(super) ai_timeline_total_turn_count: i32,
+    pub(super) ai_timeline_visible_turn_count: i32,
+    pub(super) ai_timeline_hidden_turn_count: i32,
+    pub(super) ai_timeline_total_row_count: i32,
+    pub(super) ai_timeline_hidden_row_count: i32,
     pub(super) ai_error: String,
     pub(super) ai_status_message: String,
     pub(super) forge_available: bool,
@@ -256,7 +263,7 @@ impl Default for Backend {
             git_staged_paths: Vec::new(),
             git_unstaged_paths: Vec::new(),
             ai_threads: AiThreadListModel::default_with_attached_qobject(),
-            ai_snapshot: None,
+            ai_timeline: AiTimelineListModel::default_with_attached_qobject(),
             ai_runtime: AiRuntimeSlot::default(),
             ai_epoch: 0,
             ai_ready: false,
@@ -265,8 +272,15 @@ impl Default for Backend {
             ai_connection_state: "disconnected".to_owned(),
             ai_workspace_root: String::new(),
             ai_active_thread_id: String::new(),
+            ai_active_thread_title: String::new(),
+            ai_active_thread_cwd: String::new(),
             ai_thread_count: 0,
             ai_running_thread_count: 0,
+            ai_timeline_total_turn_count: 0,
+            ai_timeline_visible_turn_count: 0,
+            ai_timeline_hidden_turn_count: 0,
+            ai_timeline_total_row_count: 0,
+            ai_timeline_hidden_row_count: 0,
             ai_error: String::new(),
             ai_status_message: String::new(),
             forge_available: false,

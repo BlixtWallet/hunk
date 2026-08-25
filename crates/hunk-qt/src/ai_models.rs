@@ -22,6 +22,8 @@ pub struct AiThreadItem {
 pub struct AiThreadCatalogProjection {
     pub items: Vec<AiThreadItem>,
     pub active_thread_id: String,
+    pub active_thread_title: String,
+    pub active_thread_cwd: String,
     pub thread_count: i32,
     pub running_thread_count: i32,
 }
@@ -40,8 +42,24 @@ impl AiThreadCatalogProjection {
                 .then_with(|| right.id.cmp(&left.id))
         });
 
-        let active_thread_id = active_thread_id
-            .filter(|active_thread_id| threads.iter().any(|thread| thread.id == *active_thread_id));
+        let active_thread = active_thread_id
+            .and_then(|active_thread_id| {
+                threads.iter().find(|thread| thread.id == active_thread_id)
+            })
+            .copied();
+        let active_thread_id = active_thread.map(|thread| thread.id.as_str());
+        let active_thread_position = active_thread_id.and_then(|active_thread_id| {
+            threads
+                .iter()
+                .position(|thread| thread.id == active_thread_id)
+        });
+        let newest_thread_limit = if active_thread_position
+            .is_some_and(|position| position >= AI_THREAD_CATALOG_MAX_ITEMS)
+        {
+            AI_THREAD_CATALOG_MAX_ITEMS.saturating_sub(1)
+        } else {
+            AI_THREAD_CATALOG_MAX_ITEMS
+        };
         let thread_count = saturating_usize_to_i32(threads.len());
         let running_thread_ids = state
             .turns
@@ -57,8 +75,12 @@ impl AiThreadCatalogProjection {
         );
         let items = threads
             .into_iter()
+            .enumerate()
+            .filter(|(index, thread)| {
+                *index < newest_thread_limit || active_thread_id == Some(thread.id.as_str())
+            })
             .take(AI_THREAD_CATALOG_MAX_ITEMS)
-            .map(|thread| {
+            .map(|(_, thread)| {
                 let running = running_thread_ids.contains(thread.id.as_str());
                 AiThreadItem {
                     thread_id: thread.id.clone(),
@@ -83,6 +105,20 @@ impl AiThreadCatalogProjection {
         Self {
             items,
             active_thread_id: active_thread_id.unwrap_or_default().to_owned(),
+            active_thread_title: active_thread
+                .map(|thread| {
+                    thread
+                        .title
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|title| !title.is_empty())
+                        .unwrap_or("Untitled thread")
+                        .to_owned()
+                })
+                .unwrap_or_default(),
+            active_thread_cwd: active_thread
+                .map(|thread| thread.cwd.clone())
+                .unwrap_or_default(),
             thread_count,
             running_thread_count,
         }

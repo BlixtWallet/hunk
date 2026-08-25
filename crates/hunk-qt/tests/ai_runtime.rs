@@ -1,6 +1,6 @@
 use hunk_app::ai::{AiSnapshot, AiWorkerEvent, AiWorkerEventPayload};
 use hunk_codex::protocol::DynamicToolCallParams;
-use hunk_codex::state::AiState;
+use hunk_codex::state::{AiState, ThreadLifecycleStatus, ThreadSummary};
 use hunk_qt::{AiEventMailbox, AiRuntimeEvent};
 
 fn event(payload: AiWorkerEventPayload) -> AiWorkerEvent {
@@ -11,8 +11,21 @@ fn event(payload: AiWorkerEventPayload) -> AiWorkerEvent {
 }
 
 fn snapshot(active_thread_id: &str) -> AiSnapshot {
+    let mut state = AiState::default();
+    state.threads.insert(
+        active_thread_id.to_owned(),
+        ThreadSummary {
+            id: active_thread_id.to_owned(),
+            cwd: "/repo".to_owned(),
+            title: Some(active_thread_id.to_owned()),
+            status: ThreadLifecycleStatus::Active,
+            created_at: 1,
+            updated_at: 1,
+            last_sequence: 1,
+        },
+    );
     AiSnapshot {
-        state: AiState::default(),
+        state,
         active_thread_id: Some(active_thread_id.to_owned()),
         pending_approvals: Vec::new(),
         pending_user_inputs: Vec::new(),
@@ -87,13 +100,10 @@ fn mailbox_coalesces_only_consecutive_snapshots() {
 
     let events = mailbox.take(8);
     assert_eq!(events.len(), 3);
-    let AiRuntimeEvent::Worker(event) = &events[0] else {
+    let AiRuntimeEvent::Snapshot(event) = &events[0] else {
         panic!("expected the coalesced snapshot first");
     };
-    let AiWorkerEventPayload::Snapshot(snapshot) = &event.payload else {
-        panic!("expected the coalesced snapshot first");
-    };
-    assert_eq!(snapshot.active_thread_id.as_deref(), Some("new"));
+    assert_eq!(event.threads.active_thread_id, "new");
 }
 
 #[test]

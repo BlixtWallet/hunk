@@ -60,6 +60,8 @@ fn projection_sorts_filters_and_marks_active_running_threads() {
     assert_eq!(projection.thread_count, 2);
     assert_eq!(projection.running_thread_count, 1);
     assert_eq!(projection.active_thread_id, "newer");
+    assert_eq!(projection.active_thread_title, "Newer");
+    assert_eq!(projection.active_thread_cwd, "/repo/newer");
     assert_eq!(projection.items.len(), 2);
     assert_eq!(projection.items[0].thread_id, "newer");
     assert_eq!(projection.items[0].title, "Newer");
@@ -99,6 +101,33 @@ fn projection_bounds_visible_items_but_preserves_total_count() {
 }
 
 #[test]
+fn projection_keeps_an_old_active_thread_inside_the_bounded_catalog() {
+    let mut state = AiState::default();
+    for index in 0..240 {
+        let id = format!("thread-{index:03}");
+        state.threads.insert(
+            id.clone(),
+            thread(
+                id.as_str(),
+                Some("Thread"),
+                ThreadLifecycleStatus::Idle,
+                index,
+            ),
+        );
+    }
+
+    let projection = AiThreadCatalogProjection::from_state(&state, Some("thread-000"));
+
+    assert_eq!(projection.items.len(), 200);
+    assert!(
+        projection
+            .items
+            .iter()
+            .any(|thread| thread.thread_id == "thread-000" && thread.active)
+    );
+}
+
+#[test]
 fn projection_does_not_publish_an_archived_active_thread() {
     let mut state = AiState::default();
     state.threads.insert(
@@ -114,6 +143,8 @@ fn projection_does_not_publish_an_archived_active_thread() {
     let projection = AiThreadCatalogProjection::from_state(&state, Some("archived"));
 
     assert!(projection.active_thread_id.is_empty());
+    assert!(projection.active_thread_title.is_empty());
+    assert!(projection.active_thread_cwd.is_empty());
     assert!(projection.items.is_empty());
 }
 

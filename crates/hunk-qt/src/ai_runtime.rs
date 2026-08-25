@@ -9,8 +9,19 @@ use hunk_app::ai::{
     spawn_ai_worker, validate_codex_executable_path,
 };
 
+use crate::ai_models::AiThreadCatalogProjection;
+use crate::ai_timeline_models::AiTimelineProjection;
+
+pub struct AiProjectedSnapshot {
+    pub workspace_key: String,
+    pub requires_openai_auth: bool,
+    pub threads: AiThreadCatalogProjection,
+    pub timeline: AiTimelineProjection,
+}
+
 pub enum AiRuntimeEvent {
     Worker(Box<AiWorkerEvent>),
+    Snapshot(Box<AiProjectedSnapshot>),
     Disconnected,
 }
 
@@ -147,33 +158,49 @@ impl AiEventMailbox {
     }
 
     pub fn enqueue_worker(&self, epoch: i32, event: AiWorkerEvent) -> bool {
+        {
+            let state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if state.epoch != epoch {
+                drop(state);
+                reject_browser_call(event, "The AI workspace changed before the tool call ran.");
+                return false;
+            }
+        }
+
+        let event = project_worker_event(event);
         let mut state = self
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if state.epoch != epoch {
             drop(state);
-            reject_browser_call(event, "The AI workspace changed before the tool call ran.");
+            reject_runtime_event(event, "The AI workspace changed before the tool call ran.");
             return false;
         }
 
-        let event_is_snapshot = matches!(&event.payload, AiWorkerEventPayload::Snapshot(_));
-        let tail_is_snapshot = state.events.last().is_some_and(|tail| match tail {
-            AiRuntimeEvent::Worker(event) => {
-                matches!(&event.payload, AiWorkerEventPayload::Snapshot(_))
-            }
-            AiRuntimeEvent::Disconnected => false,
-        });
-        if event_is_snapshot && tail_is_snapshot {
-            state.events.pop();
-        }
-        state.events.push(AiRuntimeEvent::Worker(Box::new(event)));
-        if state.callback_scheduled {
+        let event_is_snapshot = matches!(&event, AiRuntimeEvent::Snapshot(_));
+        let tail_is_snapshot = state
+            .events
+            .last()
+            .is_some_and(|tail| matches!(tail, AiRuntimeEvent::Snapshot(_)));
+        let superseded = if event_is_snapshot && tail_is_snapshot {
+            state.events.pop()
+        } else {
+            None
+        };
+        state.events.push(event);
+        let should_schedule = if state.callback_scheduled {
             false
         } else {
             state.callback_scheduled = true;
             true
-        }
+        };
+        drop(state);
+        drop(superseded);
+        should_schedule
     }
 
     pub fn enqueue_disconnected(&self, epoch: i32) -> bool {
@@ -216,10 +243,44 @@ pub fn reject_browser_call(event: AiWorkerEvent, message: &str) {
     }
 }
 
+fn project_worker_event(event: AiWorkerEvent) -> AiRuntimeEvent {
+    let AiWorkerEvent {
+        workspace_key,
+        payload,
+    } = event;
+    match payload {
+        AiWorkerEventPayload::Snapshot(snapshot) => {
+            let requires_openai_auth = snapshot.requires_openai_auth;
+            let threads = AiThreadCatalogProjection::from_state(
+                &snapshot.state,
+                snapshot.active_thread_id.as_deref(),
+            );
+            let timeline = AiTimelineProjection::from_state(
+                &snapshot.state,
+                (!threads.active_thread_id.is_empty()).then_some(threads.active_thread_id.as_str()),
+            );
+            AiRuntimeEvent::Snapshot(Box::new(AiProjectedSnapshot {
+                workspace_key,
+                requires_openai_auth,
+                threads,
+                timeline,
+            }))
+        }
+        payload => AiRuntimeEvent::Worker(Box::new(AiWorkerEvent {
+            workspace_key,
+            payload,
+        })),
+    }
+}
+
+fn reject_runtime_event(event: AiRuntimeEvent, message: &str) {
+    if let AiRuntimeEvent::Worker(event) = event {
+        reject_browser_call(*event, message);
+    }
+}
+
 fn reject_browser_calls(events: Vec<AiRuntimeEvent>, message: &str) {
     for event in events {
-        if let AiRuntimeEvent::Worker(event) = event {
-            reject_browser_call(*event, message);
-        }
+        reject_runtime_event(event, message);
     }
 }
