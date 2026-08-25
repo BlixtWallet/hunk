@@ -248,9 +248,9 @@ Phase 4 toolchain decisions:
 - `hunk-qt` rejects builds unless `qmake -query QT_VERSION` returns exactly
   6.11.2. QtBridge is pinned to official commit
   `cad0d6cd81d1af294ec87c67f21d39133196dbc1`.
-- Linux CI installs and caches `linux_gcc_64` with
-  `jurplel/install-qt-action@v4` on an ephemeral Ubuntu 24.04 runner with pinned
-  Nix and Cargo caches. Windows uses the same Qt action with aqt pinned to
+- Linux PR CI installs and caches `linux_gcc_64` with
+  `jurplel/install-qt-action@v4` on the existing `ubuntu-self-hosted` runner.
+  Windows uses the same Qt action with aqt pinned to
   upstream merge commit `8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b`,
   which adds the Qt 6.11 Windows repository layout missing from aqt 3.3.0. Both
   jobs cache the exact official prebuilt Qt packages without Qt Account
@@ -1131,7 +1131,7 @@ external Cargo/CEF caches, and Qt 6.11.2 SDK:
 - [x] Remove GPUI, `gpui_platform`, GPUI Component, GPUI assets, shaders, and GPUI-only build inputs.
 - [x] Remove all remaining GPUI source and compatibility adapters.
 - [x] Remove orphaned editor/file-workspace crates or features proven unused after Diff and AI are complete.
-- [ ] Replace GPUI-oriented packaging scripts and resources with Qt deployment tooling.
+- [x] Replace GPUI-oriented packaging scripts and resources with Qt deployment tooling.
 - [x] Change PR CI so no job resolves or builds a GPUI package.
 - [x] Cache or preinstall exact-version Qt binaries; never compile Qt from source in ordinary CI.
 - [x] Run core fmt/clippy/tests independently from the final Qt desktop build.
@@ -1171,9 +1171,35 @@ approved external Cargo cache, and the exact Qt 6.11.2 and CEF 151 runtimes:
   verified remote base is `migration/24-qt-browser` and the head is
   `migration/25-qt-cutover`.
 
+Qt release-deployment hardening now provisions the exact Qt 6.11.2 SDK in all
+three release workflows and stages its runtime with the platform deployment
+model documented by Qt:
+
+- macOS runs `macdeployqt` with the Hunk QML import root, retains only
+  self-contained SQL plugins, bundles nested native dependencies for the main
+  app and CEF helpers, rejects build-host paths, and validates the required Qt
+  frameworks, Cocoa plugin, and QML modules before signing.
+- Windows runs `windeployqt` into a scoped runtime tree and injects the complete
+  validated tree into both the portable bundle and MSI.
+- Linux stages an application-private Qt library, plugin, and QML tree, writes
+  `qt.conf`, bundles recursive ELF dependencies, applies relative RPATHs, and
+  requires both X11/XCB and native Wayland platform plugins.
+- Linux PR builds use the project's `ubuntu-self-hosted` runner again. Release
+  jobs remain independently provisioned and do not resolve or compile GPUI.
+- A local production macOS packaging run reused `target/`, the external Cargo,
+  Qt, and CEF caches, produced `Hunk-0.0.11-macos-arm64.dmg`, passed recursive
+  dependency validation, and passed deep code-sign verification. Windows and
+  Linux installed-artifact tests remain cross-platform release-hardening work
+  and are not claimed by this local proof.
+- Release-workflow YAML parsing, shell syntax, formatting, the full serialized
+  workspace test suite, the full all-target workspace build, and warning-denied
+  workspace Clippy all passed through Nix. The initial parallel test invocation
+  exposed an existing nanosecond temp-database collision in three comment-store
+  tests; the isolated suite and the complete serialized rerun both passed.
+
 ### 9. Release Hardening and Completion Audit
 
-- [ ] Package Qt libraries, platform plugins, image plugins, QML modules, and accessibility plugins required by the application.
+- [x] Package Qt libraries, platform plugins, image plugins, QML modules, and accessibility plugins required by the application.
 - [ ] Produce and install-test macOS DMG/app, Windows MSI, and Linux tarball/DEB/RPM artifacts.
 - [ ] Verify updater manifests and OTA behavior for the renamed/repackaged binary.
 - [ ] Verify DPI scaling, fonts, IME, clipboard, drag/drop, shortcuts, notifications, dialogs, accessibility, and sleep inhibition on all platforms.

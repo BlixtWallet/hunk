@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/qt/qt_env.sh"
 TARGET_DIR="$ROOT_DIR/target"
 TARGET_TRIPLE="aarch64-apple-darwin"
 VERSION_LABEL="${HUNK_RELEASE_VERSION:-$("$ROOT_DIR/scripts/resolve_hunk_version.sh")}"
@@ -10,6 +12,7 @@ PACKAGER_OUT_DIR="$TARGET_DIR/packager/macos"
 APP_PATH="$PACKAGER_OUT_DIR/Hunk.app"
 APP_EXECUTABLE_PATH="$APP_PATH/Contents/MacOS/hunk_desktop"
 APP_FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks"
+QML_SOURCE_DIR="$ROOT_DIR/crates/hunk-desktop/src/qml"
 BROWSER_CEF_RUNTIME_DIR="${HUNK_CEF_RUNTIME_DIR:-$ROOT_DIR/assets/browser-runtime/cef/macos/runtime}"
 APP_BUNDLE_IDENTIFIER="com.niteshbalusu.hunk"
 DMG_PATH="$DIST_DIR/Hunk-$VERSION_LABEL-macos-arm64.dmg"
@@ -20,25 +23,71 @@ MACOS_CC="/usr/bin/clang"
 MACOS_CXX="/usr/bin/clang++"
 MACOS_AR="/usr/bin/ar"
 MACOS_RANLIB="/usr/bin/ranlib"
+MACDEPLOYQT="${HUNK_MACDEPLOYQT:-${HUNK_QT_ROOT:-}/bin/macdeployqt}"
+
+if [[ -z "${HUNK_QT_ROOT:-}" || ! -x "$MACDEPLOYQT" ]]; then
+  echo "error: Qt 6.11.2 macdeployqt was not found; install the pinned SDK with scripts/qt/install_qt.sh" >&2
+  exit 1
+fi
+
+validate_macos_qt_runtime() {
+  local required_path
+  local required_paths=(
+    "$APP_PATH/Contents/Frameworks/QtCore.framework/QtCore"
+    "$APP_PATH/Contents/Frameworks/QtGui.framework/QtGui"
+    "$APP_PATH/Contents/Frameworks/QtQml.framework/QtQml"
+    "$APP_PATH/Contents/Frameworks/QtQuick.framework/QtQuick"
+    "$APP_PATH/Contents/PlugIns/platforms/libqcocoa.dylib"
+    "$APP_PATH/Contents/Resources/qml/QtQml/qmldir"
+    "$APP_PATH/Contents/Resources/qml/QtQuick/qmldir"
+    "$APP_PATH/Contents/Resources/qml/QtQuick/Controls/qmldir"
+  )
+
+  for required_path in "${required_paths[@]}"; do
+    if [[ ! -f "$required_path" ]]; then
+      echo "error: macOS Qt deployment is missing $required_path" >&2
+      exit 1
+    fi
+  done
+
+  echo "Verified macOS app contains the Qt frameworks, Cocoa plugin, and QML runtime." >&2
+}
+
+is_macos_mach_o() {
+  file -b "$1" 2>/dev/null | grep -F 'Mach-O' >/dev/null
+}
 
 validate_macos_binary_dependencies() {
   local paths_to_check=("$APP_EXECUTABLE_PATH")
-  if [[ -d "$APP_FRAMEWORKS_DIR" ]]; then
-    while IFS= read -r dylib_path; do
-      [[ -n "$dylib_path" ]] && paths_to_check+=("$dylib_path")
-    done < <(find "$APP_FRAMEWORKS_DIR" -type f -name '*.dylib' | sort)
+  if [[ -d "$APP_PATH/Contents" ]]; then
+    while IFS= read -r binary_path; do
+      [[ -n "$binary_path" && "$binary_path" != "$APP_EXECUTABLE_PATH" ]] \
+        && paths_to_check+=("$binary_path")
+    done < <(find "$APP_PATH/Contents" -type f \( -name '*.dylib' -o -perm -111 \) | sort)
   fi
 
-  local candidate_path linked_libraries
+  local candidate_path linked_libraries linked_dependencies load_paths
   for candidate_path in "${paths_to_check[@]}"; do
-    linked_libraries="$(otool -L "$candidate_path")"
-    if printf '%s\n' "$linked_libraries" | grep -E '/(opt/homebrew|usr/local|opt/local|nix/store)/' >/dev/null; then
+    if ! is_macos_mach_o "$candidate_path"; then
+      continue
+    fi
+    if ! linked_libraries="$(otool -L "$candidate_path" 2>/dev/null)"; then
+      continue
+    fi
+    linked_dependencies="$(printf '%s\n' "$linked_libraries" | tail -n +2)"
+    if printf '%s\n' "$linked_dependencies" | grep -E '/(Applications|Users|Volumes|private/tmp|tmp|opt/homebrew|usr/local|opt/local|nix/store)/' >/dev/null; then
       echo "error: macOS binary links against non-system libraries: $candidate_path" >&2
       printf '%s\n' "$linked_libraries" >&2
       exit 1
     fi
+    load_paths="$(otool -l "$candidate_path" | awk '$1 == "path" { print $2 }')"
+    if printf '%s\n' "$load_paths" | grep -E '^/(Applications|Users|Volumes|private/tmp|tmp|opt/homebrew|usr/local|opt/local|nix/store)/' >/dev/null; then
+      echo "error: macOS binary contains a build-host runtime search path: $candidate_path" >&2
+      printf '%s\n' "$load_paths" >&2
+      exit 1
+    fi
     if [[ "$candidate_path" == "$APP_EXECUTABLE_PATH" ]] \
-      && printf '%s\n' "$linked_libraries" | grep -F '@rpath/libghostty-vt.dylib' >/dev/null \
+      && printf '%s\n' "$linked_dependencies" | grep -F '@rpath/libghostty-vt.dylib' >/dev/null \
       && ! otool -l "$candidate_path" | grep -F '@executable_path/../Frameworks' >/dev/null; then
       echo "error: macOS app binary still depends on @rpath/libghostty-vt.dylib without an app-bundle LC_RPATH" >&2
       printf '%s\n' "$linked_libraries" >&2
@@ -105,15 +154,22 @@ ensure_macos_bundle_rpath() {
 }
 
 bundle_macos_non_system_dylibs() {
-  local root_binary="$1"
+  local binary_paths=()
   local dylib_queue=()
   local bundled_dylibs=()
   local index=0
-  local dylib_path destination_path nested_path dylib_name current_path replacement_path
+  local binary_path dylib_path destination_path nested_path dylib_name current_path
+  local relative_frameworks_path replacement_path linked_libraries
 
-  while IFS= read -r dylib_path; do
-    [[ -n "$dylib_path" ]] && dylib_queue+=("$dylib_path")
-  done < <(list_non_system_macos_dylibs "$root_binary")
+  while IFS= read -r binary_path; do
+    [[ -n "$binary_path" ]] || continue
+    if is_macos_mach_o "$binary_path" && otool -L "$binary_path" >/dev/null 2>&1; then
+      binary_paths+=("$binary_path")
+      while IFS= read -r dylib_path; do
+        [[ -n "$dylib_path" ]] && dylib_queue+=("$dylib_path")
+      done < <(list_non_system_macos_dylibs "$binary_path")
+    fi
+  done < <(find "$APP_PATH/Contents" -type f \( -name '*.dylib' -o -perm -111 \) | sort)
 
   if [[ ${#dylib_queue[@]} -eq 0 ]]; then
     echo "No external macOS dylibs need bundling." >&2
@@ -121,7 +177,7 @@ bundle_macos_non_system_dylibs() {
   fi
 
   mkdir -p "$APP_FRAMEWORKS_DIR"
-  ensure_macos_bundle_rpath "$root_binary"
+  ensure_macos_bundle_rpath "$APP_EXECUTABLE_PATH"
   echo "Bundling non-system macOS dylibs into Hunk.app..." >&2
 
   while [[ $index -lt ${#dylib_queue[@]} ]]; do
@@ -146,17 +202,26 @@ bundle_macos_non_system_dylibs() {
 
   for dylib_path in "${bundled_dylibs[@]}"; do
     dylib_name="$(basename "$dylib_path")"
-    install_name_tool -change "$dylib_path" "@executable_path/../Frameworks/$dylib_name" "$root_binary"
-  done
-
-  for dylib_path in "${bundled_dylibs[@]}"; do
-    dylib_name="$(basename "$dylib_path")"
     destination_path="$APP_FRAMEWORKS_DIR/$dylib_name"
     install_name_tool -id "@loader_path/$dylib_name" "$destination_path"
+    binary_paths+=("$destination_path")
+  done
 
+  for binary_path in "${binary_paths[@]}"; do
+    linked_libraries="$(otool -L "$binary_path" 2>/dev/null || true)"
+    relative_frameworks_path="$(python3 - "$binary_path" "$APP_FRAMEWORKS_DIR" <<'PY'
+import os
+import sys
+
+print(os.path.relpath(sys.argv[2], os.path.dirname(sys.argv[1])))
+PY
+)"
     for current_path in "${bundled_dylibs[@]}"; do
-      replacement_path="@loader_path/$(basename "$current_path")"
-      install_name_tool -change "$current_path" "$replacement_path" "$destination_path" || true
+      if ! printf '%s\n' "$linked_libraries" | grep -F "$current_path" >/dev/null; then
+        continue
+      fi
+      replacement_path="@loader_path/$relative_frameworks_path/$(basename "$current_path")"
+      install_name_tool -change "$current_path" "$replacement_path" "$binary_path"
     done
   done
 }
@@ -167,6 +232,9 @@ sign_macos_app_bundle() {
   while IFS= read -r sign_target; do
     [[ -n "$sign_target" ]] || continue
     if [[ "$sign_target" == "$APP_EXECUTABLE_PATH" ]]; then
+      continue
+    fi
+    if ! is_macos_mach_o "$sign_target"; then
       continue
     fi
     codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$sign_target"
@@ -191,6 +259,9 @@ adhoc_sign_macos_app_bundle() {
   while IFS= read -r sign_target; do
     [[ -n "$sign_target" ]] || continue
     if [[ "$sign_target" == "$APP_EXECUTABLE_PATH" ]]; then
+      continue
+    fi
+    if ! is_macos_mach_o "$sign_target"; then
       continue
     fi
     codesign --force --timestamp=none --sign - "$sign_target"
@@ -338,13 +409,31 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
+echo "Deploying Qt 6.11.2 frameworks, plugins, and QML modules into Hunk.app..." >&2
+"$MACDEPLOYQT" \
+  "$APP_PATH" \
+  "-qmldir=$QML_SOURCE_DIR" \
+  -always-overwrite \
+  -appstore-compliant \
+  -no-codesign \
+  -no-strip \
+  -verbose=1
+
+# Keep the self-contained SQLite driver and drop database drivers that require
+# host-installed client libraries.
+rm -f \
+  "$APP_PATH/Contents/PlugIns/sqldrivers/libqsqlmimer.dylib" \
+  "$APP_PATH/Contents/PlugIns/sqldrivers/libqsqlodbc.dylib" \
+  "$APP_PATH/Contents/PlugIns/sqldrivers/libqsqlpsql.dylib"
+
 "$ROOT_DIR/scripts/package_browser_cef_macos.sh" \
   "$APP_PATH" \
   "$BROWSER_CEF_RUNTIME_DIR" \
   "$TARGET_DIR/$TARGET_TRIPLE/release/hunk-browser-helper"
 rm -rf "$APP_PATH/Contents/Resources/browser-runtime"
 "$ROOT_DIR/scripts/validate_release_bundle_layout.sh" macos-app "$APP_PATH"
-bundle_macos_non_system_dylibs "$APP_EXECUTABLE_PATH"
+validate_macos_qt_runtime
+bundle_macos_non_system_dylibs
 echo "Validating macOS app binary dependencies..." >&2
 validate_macos_binary_dependencies "$APP_EXECUTABLE_PATH"
 

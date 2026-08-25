@@ -706,3 +706,24 @@ append a correction when later evidence changes one.
   graph small. The first all-target cutover build still spent most of its time
   compiling the embedded Codex graph, so packaging and CI optimization must be
   measured independently from the frontend replacement.
+
+## 2026-08-25 — Qt release deployment
+
+- A successful Qt executable link is not a deployable desktop artifact. The
+  release must also contain the platform plugin, transitive QML modules, image
+  and TLS plugins, and every native dependency reachable from those modules.
+- Use Qt's deployment tools where Qt supplies them: `macdeployqt` on macOS and
+  `windeployqt` on Windows. Linux still needs an application-private runtime
+  tree, `qt.conf`, recursive ELF dependency staging, and relative RPATHs.
+- Validate every nested native binary, not only the main executable. CEF helper
+  apps retained a Nix `libiconv` path after the primary Qt executable was clean;
+  recursively relinking the helpers exposed and removed that host dependency.
+- Qt SDKs can include optional database drivers linked to client libraries that
+  are absent on user machines. Retain the self-contained driver the deployed
+  QML graph needs and exclude ODBC, PostgreSQL, and Mimer plugins from Hunk.
+- The aqt archive name for Qt's Linux Wayland module is
+  `qtwaylandcompositor`, not `qtwayland`; confirm repository module names before
+  encoding them into every release workflow.
+- Nix-wrapped Darwin toolchains and prebuilt universal Qt frameworks are a poor
+  match for deployment-time stripping. Pass `-no-strip` to `macdeployqt`, then
+  perform dependency validation and code signing explicitly.

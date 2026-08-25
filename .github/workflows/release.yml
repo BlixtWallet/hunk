@@ -14,6 +14,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  HUNK_QT_VERSION: "6.11.2"
   RUST_BACKTRACE: "1"
 
 jobs:
@@ -43,6 +44,15 @@ jobs:
 
       - name: Cache Nix store
         uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Install pinned Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.HUNK_QT_VERSION }}
+          arch: clang_64
+          cache: true
+          cache-key-prefix: hunk-desktop-qt-${{ env.HUNK_QT_VERSION }}-macos
+          aqtversion: ==3.3.0
 
       - name: Cache cargo registry and Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -155,6 +165,16 @@ jobs:
         with:
           clean: false
 
+      - name: Install pinned Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.HUNK_QT_VERSION }}
+          arch: linux_gcc_64
+          modules: qtwaylandcompositor
+          cache: true
+          cache-key-prefix: hunk-desktop-qt-${{ env.HUNK_QT_VERSION }}-linux-wayland
+          aqtversion: ==3.3.0
+
       # - name: Cache cargo registry and Rust dependencies
       #   uses: Swatinem/rust-cache@v2
       #   with:
@@ -218,6 +238,15 @@ jobs:
         with:
           use-cache: false
           version: 0.15.2
+
+      - name: Install pinned Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.HUNK_QT_VERSION }}
+          arch: win64_msvc2022_64
+          cache: true
+          cache-key-prefix: hunk-desktop-qt-${{ env.HUNK_QT_VERSION }}-windows-aqt-8c3695d4
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b
 
       - name: Cache cargo registry and Rust dependencies
         uses: Swatinem/rust-cache@v2

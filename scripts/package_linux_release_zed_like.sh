@@ -135,17 +135,22 @@ prepare_zed_like_linux_release_bundle() {
   cp "$CODEX_SOURCE_PATH" "$PACKAGED_CODEX_PATH"
   cp -R "$BROWSER_CEF_SOURCE_DIR"/. "$PACKAGE_LIB_DIR"/
   chmod +x "$PACKAGED_BINARY_PATH" "$PACKAGED_BROWSER_HELPER_PATH" "$PACKAGED_CODEX_PATH"
+  stage_linux_qt_runtime
 
   write_zed_like_linux_launcher
 
   echo "Bundling Linux shared libraries into experimental Zed-like release bundle..." >&2
   bundle_linux_runtime_dependencies "$BINARY_SOURCE_PATH" "$PACKAGE_LIB_DIR"
   bundle_linux_runtime_dependencies "$BROWSER_HELPER_SOURCE_PATH" "$PACKAGE_LIB_DIR"
+  bundle_linux_runtime_tree_dependencies "$PACKAGE_QT_DIR" "$PACKAGE_LIB_DIR"
   bundle_linux_dynamic_runtime_dependencies "$PACKAGE_LIB_DIR"
   patch_linux_runtime_paths "$PACKAGED_BINARY_PATH" "$PACKAGE_LIB_DIR" '$ORIGIN/lib'
   patch_linux_runtime_paths "$PACKAGED_BROWSER_HELPER_PATH" "$PACKAGE_LIB_DIR" '$ORIGIN/lib'
+  patch_linux_runtime_tree_paths "$PACKAGE_QT_DIR"
   validate_linux_runtime_bundle "$PACKAGED_BINARY_PATH" "$PACKAGE_LIB_DIR"
   validate_linux_runtime_bundle "$PACKAGED_BROWSER_HELPER_PATH" "$PACKAGE_LIB_DIR"
+  validate_linux_runtime_tree "$PACKAGE_QT_DIR" "$PACKAGE_LIB_DIR"
+  validate_linux_qt_runtime_layout "$PACKAGE_DIR" "$PACKAGE_LIB_DIR"
   "$ROOT_DIR/scripts/validate_release_bundle_layout.sh" linux-package "$PACKAGE_DIR"
   "$ROOT_DIR/scripts/validate_browser_cef_linux.sh" "$BROWSER_CEF_SOURCE_DIR" linux-package "$PACKAGE_DIR" >/dev/null
 }
