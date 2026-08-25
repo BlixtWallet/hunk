@@ -237,11 +237,14 @@ Phase 4 toolchain decisions:
 - `hunk-qt` rejects builds unless `qmake -query QT_VERSION` returns exactly
   6.11.2. QtBridge is pinned to official commit
   `cad0d6cd81d1af294ec87c67f21d39133196dbc1`.
-- CI installs and caches the same SDK with `jurplel/install-qt-action@v4` for
-  Linux `linux_gcc_64`, macOS `clang_64`, and Windows
-  `win64_msvc2022_64`. Duplicate CEF-enabled GPUI builds are removed in this
-  layer, while one legacy frontend build remains on each platform until the
-  atomic Qt cutover.
+- Linux CI installs and caches `linux_gcc_64` with
+  `jurplel/install-qt-action@v4`; macOS CI reuses the exact external `clang_64`
+  SDK; and Windows CI caches Qt Online Installer's official
+  `qt.qt6.6112.win64_msvc2022_64` package because aqt 3.3.0 does not understand
+  the Qt 6.11 Windows repository layout.
+- Qt migration branches no longer compile GPUI in CI. PR #179 is the validated
+  legacy-frontend baseline; subsequent layers test the headless workspace with
+  `hunk-desktop` excluded and build `hunk-qt` on all three target platforms.
 - The debug executable loads QML directly for fast iteration, the release build
   compiles the same module into `qrc:/qml`, and the offscreen smoke suite captures
   the rendered desktop-size shell under Cargo's ignored `target/` for visual

@@ -76,11 +76,11 @@ jobs:
         shell: bash
 
       - name: Run clippy
-        run: nix develop --accept-flake-config -c cargo clippy --workspace --all-targets -- -D warnings
+        run: nix develop --accept-flake-config -c cargo clippy --workspace --exclude hunk-desktop --all-targets -- -D warnings
         shell: bash
 
       - name: Run tests
-        run: nix develop --accept-flake-config -c cargo test --workspace
+        run: nix develop --accept-flake-config -c cargo test --workspace --exclude hunk-desktop
         shell: bash
 
       - name: Run Qt QML smoke tests
@@ -130,14 +130,12 @@ jobs:
         include:
           - name: macOS
             os: macOS
-            qt_arch: clang_64
             install_packager: cargo install cargo-packager --locked --version 0.11.8
             resolve_version: |
               version="$(./scripts/resolve_hunk_version.sh)"
               echo "HUNK_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
           - name: Windows
             os: blacksmith-4vcpu-windows-2025
-            qt_arch: win64_msvc2022_64
             install_packager: cargo install cargo-packager --locked --version 0.11.8
             resolve_version: |
               $version = (bash ./scripts/resolve_hunk_version.sh).Trim()
@@ -172,14 +170,32 @@ jobs:
           use-cache: false
           version: 0.15.2
 
-      - name: Install pinned Qt
-        uses: jurplel/install-qt-action@v4
+      - name: Expose pinned external Qt
+        if: runner.os == 'macOS'
+        env:
+          HUNK_QT_CACHE_ROOT: /Volumes/hulk/dev/cache/qt
+          HUNK_QT_TMPDIR: /Volumes/hulk/dev/cache/hunk-tmp
+        run: |
+          ./scripts/qt/install_qt.sh
+          source ./scripts/qt/qt_env.sh
+          echo "HUNK_BUILD_TMPDIR=/Volumes/hulk/dev/cache/hunk-tmp" >> "$GITHUB_ENV"
+          echo "HUNK_QT_ROOT=$HUNK_QT_ROOT" >> "$GITHUB_ENV"
+          echo "QT_ROOT_DIR=$HUNK_QT_ROOT" >> "$GITHUB_ENV"
+          echo "QMAKE=$HUNK_QT_ROOT/bin/qmake" >> "$GITHUB_ENV"
+          echo "$HUNK_QT_ROOT/bin" >> "$GITHUB_PATH"
+        shell: bash
+
+      - name: Cache pinned Qt
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
         with:
-          version: ${{ env.HUNK_QT_VERSION }}
-          arch: ${{ matrix.qt_arch }}
-          cache: true
-          cache-key-prefix: hunk-qt-${{ env.HUNK_QT_VERSION }}-${{ runner.os }}
-          aqtversion: ==3.3.0
+          path: ${{ runner.temp }}\hunk-qt
+          key: hunk-qt-${{ env.HUNK_QT_VERSION }}-windows-msvc2022-x64-v1
+
+      - name: Install pinned Qt
+        if: runner.os == 'Windows'
+        run: ./scripts/qt/install_qt_windows.ps1 -InstallRoot "${{ runner.temp }}\hunk-qt"
+        shell: pwsh
 
       # - name: Cache cargo registry and Rust dependencies
       #   if: runner.os == 'macOS'
@@ -231,20 +247,10 @@ jobs:
         run: cargo test -p hunk-terminal --tests
         shell: pwsh
 
-      - name: Build hunk-desktop
-        if: runner.os == 'macOS'
-        run: nix develop --accept-flake-config -c cargo build -p hunk-desktop --locked --profile ci
-        shell: bash
-
       - name: Build hunk-qt
         if: runner.os == 'macOS'
         run: nix develop --accept-flake-config -c cargo build -p hunk-qt --locked --profile ci
         shell: bash
-
-      - name: Build hunk-desktop
-        if: runner.os == 'Windows'
-        run: cargo build -p hunk-desktop --locked --profile ci
-        shell: pwsh
 
       - name: Build hunk-qt
         if: runner.os == 'Windows'

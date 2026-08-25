@@ -139,3 +139,12 @@ append a correction when later evidence changes one.
   shell directory. Export the configurable `HUNK_BUILD_TMPDIR` again from the
   shell hook (and prefer this machine's existing external cache) so generated
   C++ and linker temporary files do not consume scarce internal storage.
+- aqtinstall 3.3.0 cannot resolve Qt 6.11 Windows packages after Qt changed the
+  repository from a shared `qt6_6112` child to architecture-specific children.
+  Qt's supported unattended Online Installer accepts the exact
+  `qt.qt6.6112.win64_msvc2022_64` package, so use that pinned, checksummed path
+  for Windows CI and cache the resulting SDK.
+- On the self-hosted Mac, generic setup actions tried to create a hosted-tool
+  cache under an unavailable `/Users/runner` path. Reusing the already verified
+  external Qt SDK is faster, avoids another internal-disk copy, and removes that
+  hosted-runner assumption.
