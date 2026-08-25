@@ -1,6 +1,13 @@
+use std::sync::Arc;
+
+use hunk_forge::{ForgeCredentialKind, ForgeReviewWorkspace};
+use qtbridge::{QObjectHolder, invoke_method};
+
 use crate::Backend;
-use crate::backend_state::next_forge_epoch;
-use crate::forge::{ForgeSnapshotPayload, provider_label, review_kind_label, review_state_label};
+use crate::backend_state::{ForgeAsyncPayload, next_forge_epoch};
+use crate::forge::{
+    ForgeSnapshotPayload, provider_label, review_kind_label, review_state_label, save_forge_token,
+};
 
 impl Backend {
     pub(super) fn apply_review_summary(&mut self, review: Option<hunk_forge::OpenReviewSummary>) {
@@ -70,5 +77,53 @@ impl Backend {
         self.forge_device_verification_url.clear();
         self.forge_context = None;
         self.forge_token = None;
+    }
+
+    pub(super) fn begin_forge_action(&mut self, label: String) -> i32 {
+        let epoch = next_forge_epoch(self);
+        self.forge_busy = true;
+        self.forge_error.clear();
+        self.forge_status_message.clear();
+        self.forge_action_label = label;
+        self.forge_state_changed();
+        epoch
+    }
+
+    pub(super) fn run_save_forge_token(
+        &mut self,
+        label: &str,
+        workspace: ForgeReviewWorkspace,
+        token: String,
+        kind: ForgeCredentialKind,
+    ) {
+        if self.forge_loading || self.forge_busy {
+            return;
+        }
+        let epoch = self.begin_forge_action(label.to_owned());
+        let invoker = self.get_qml_method_invoker();
+        let results = Arc::clone(&self.forge_results);
+        let spawn_result = std::thread::Builder::new()
+            .name("hunk-qt-forge-credential".to_owned())
+            .spawn(move || {
+                let result = save_forge_token(workspace, token.as_str(), kind)
+                    .map(Box::new)
+                    .map(ForgeAsyncPayload::Snapshot)
+                    .map_err(|error| format!("{error:#}"));
+                if let Ok(mut pending) = results.lock() {
+                    pending.insert(epoch, result);
+                }
+                invoke_method!(invoker, "apply_forge_result", epoch);
+            });
+        if let Err(error) = spawn_result {
+            self.fail_forge_spawn("credential operation", error);
+        }
+    }
+
+    pub(super) fn fail_forge_spawn(&mut self, operation: &str, error: std::io::Error) {
+        self.forge_loading = false;
+        self.forge_busy = false;
+        self.forge_action_label.clear();
+        self.forge_error = format!("Failed to start {operation}: {error}");
+        self.forge_state_changed();
     }
 }

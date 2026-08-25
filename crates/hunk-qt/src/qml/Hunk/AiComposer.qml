@@ -12,6 +12,7 @@ FocusScope {
     property bool submitting: false
     property bool requestWasBlocking: false
     property bool queueWasBlocking: false
+    property bool attachmentWasPending: false
     property bool restoreFocusAfterRequest: false
     signal requestFocusRequested
     readonly property alias editor: editor
@@ -20,16 +21,20 @@ FocusScope {
     readonly property bool requestBlocking: backend.aiRequestId.length > 0
         || backend.aiRequestResolving
     readonly property bool queueBlocking: backend.aiActiveQueueSending
-        && !backend.aiTurnRunning
     readonly property bool editable: backend.aiReady && !backend.aiLoading
         && !backend.aiRequiresAuthentication && backend.aiActiveThreadId.length > 0
         && !backend.aiThreadActionPending
         && !backend.aiPromptPending && !backend.aiInterruptPending
+        && !backend.aiAttachmentPending
         && !queueBlocking
         && !requestBlocking
-    readonly property bool canSubmit: editable && editor.text.trim().length > 0
+    readonly property bool hasPromptInput: editor.text.trim().length > 0
+        || attachmentStrip.hasAttachments
+    readonly property bool attachmentsAllowed: !attachmentStrip.hasAttachments
+        || backend.aiModelSupportsImageInputs
+    readonly property bool canSubmit: editable && hasPromptInput && attachmentsAllowed
 
-    implicitHeight: 142
+    implicitHeight: 142 + attachmentStrip.implicitHeight
 
     function draftEntry(threadId) {
         return draftStore[threadId] || {
@@ -146,8 +151,11 @@ FocusScope {
             Qt.callLater(() => editor.forceActiveFocus())
         if (queueWasBlocking && !queueBlocking && editable)
             editorFocusTimer.restart()
+        if (attachmentWasPending && !backend.aiAttachmentPending && editable)
+            editorFocusTimer.restart()
         requestWasBlocking = requestBlocking
         queueWasBlocking = queueBlocking
+        attachmentWasPending = backend.aiAttachmentPending
     }
 
     function submit() {
@@ -188,7 +196,7 @@ FocusScope {
     }
 
     function editLatestQueuedFollowUp() {
-        if (editor.text.length > 0)
+        if (editor.text.length > 0 || attachmentStrip.hasAttachments)
             return
         const prompt = backend.edit_last_ai_queued_prompt()
         if (prompt.length === 0)
@@ -210,6 +218,15 @@ FocusScope {
         if (backend.aiTurnRunning && !backend.aiThreadActionPending
                 && !backend.aiInterruptPending)
             backend.interrupt_ai_turn()
+    }
+
+    function attachDroppedUrls(urls) {
+        if (!editable || !backend.aiModelSupportsImageInputs)
+            return false
+        const accepted = attachmentStrip.addUrls(urls)
+        if (accepted)
+            editorFocusTimer.restart()
+        return accepted
     }
 
     Rectangle {
@@ -235,18 +252,43 @@ FocusScope {
         anchors.bottomMargin: 12
         radius: Theme.radius
         color: Theme.input
-        border.width: editor.activeFocus ? 1 : 0
+        border.width: editor.activeFocus || attachmentDropArea.containsDrag ? 1 : 0
         border.color: Theme.accentStrong
+
+        DropArea {
+            id: attachmentDropArea
+            objectName: "aiAttachmentDropArea"
+            anchors.fill: parent
+            enabled: root.editable && root.backend.aiModelSupportsImageInputs
+            onDropped: drop => {
+                if (drop.hasUrls && root.attachDroppedUrls(drop.urls))
+                    drop.accept(Qt.CopyAction)
+            }
+        }
+
+        AiAttachmentStrip {
+            id: attachmentStrip
+            objectName: "aiAttachmentStrip"
+            anchors.left: parent.left
+            anchors.right: actions.left
+            anchors.top: parent.top
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            anchors.topMargin: 8
+            backend: root.backend
+            editable: root.editable
+            onInteractionCompleted: editorFocusTimer.restart()
+        }
 
         Flickable {
             id: editorViewport
             anchors.left: parent.left
             anchors.right: actions.left
-            anchors.top: parent.top
+            anchors.top: attachmentStrip.bottom
             anchors.bottom: footer.top
             anchors.leftMargin: 12
             anchors.rightMargin: 12
-            anchors.topMargin: 10
+            anchors.topMargin: attachmentStrip.hasAttachments ? 6 : 10
             anchors.bottomMargin: 6
             clip: true
             contentWidth: width
@@ -362,6 +404,7 @@ FocusScope {
 
         Row {
             id: footer
+            objectName: "aiComposerFooter"
             anchors.left: parent.left
             anchors.right: actions.left
             anchors.bottom: parent.bottom
@@ -370,7 +413,24 @@ FocusScope {
             anchors.bottomMargin: 8
             spacing: 8
 
+            ActionButton {
+                id: attachButton
+                objectName: "aiAttachButton"
+                label: qsTr("Attach")
+                accessibleName: root.backend.aiModelSupportsImageInputs
+                    ? qsTr("Attach images to the next Codex prompt")
+                    : qsTr("Selected model does not support image attachments")
+                compact: true
+                enabled: root.editable && root.backend.aiModelSupportsImageInputs
+                onClicked: attachmentStrip.openPicker()
+            }
+
             Text {
+                id: footerStatus
+                objectName: "aiComposerFooterStatus"
+                width: Math.max(0, footer.width - attachButton.width
+                    - (footerHint.visible ? footerHint.implicitWidth + footer.spacing * 2
+                        : footer.spacing))
                 text: root.backend.aiPromptPending ? "SENDING"
                     : (root.backend.aiInterruptPending ? "STOPPING"
                         : (root.backend.aiActiveQueuedMessageCount > 0
@@ -378,12 +438,17 @@ FocusScope {
                         : (root.backend.aiRequestId.length > 0
                             ? "RESPONSE REQUIRED" : "ENTER TO SEND")))
                 color: Theme.faint
+                elide: Text.ElideRight
                 font.family: Theme.monoFont
                 font.pixelSize: 8
                 font.letterSpacing: 0.6
             }
 
             Text {
+                id: footerHint
+                objectName: "aiComposerFooterHint"
+                visible: footer.width >= attachButton.implicitWidth
+                    + footerStatus.implicitWidth + implicitWidth + footer.spacing * 2
                 text: root.backend.aiTurnRunning
                     ? "TAB TO QUEUE · CTRL+SHIFT+UP TO EDIT"
                     : "SHIFT+ENTER FOR NEW LINE"
@@ -420,6 +485,7 @@ FocusScope {
     Component.onCompleted: {
         requestWasBlocking = requestBlocking
         queueWasBlocking = queueBlocking
+        attachmentWasPending = backend.aiAttachmentPending
         activateThread(backend.aiActiveThreadId)
         if (editable && !submitting)
             editor.forceActiveFocus()

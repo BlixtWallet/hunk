@@ -599,11 +599,42 @@ external caches:
 - [x] Implement queued message recovery.
 - [x] Implement persistent bookmark ordering and interaction.
 - [x] Implement context usage, model/settings, collaboration-mode, approval-policy, and service-tier controls still in product scope.
-- [ ] Implement prompt attachments still in product scope.
+- [x] Implement prompt attachments still in product scope.
 - [ ] Port required terminal surfaces with correct input, focus, cursor, selection, and resize behavior.
-- [ ] Decide retained embedded-browser requirements from product use; remove CEF if unneeded rather than automatically replacing it with Qt WebEngine.
+- [ ] Port the required embedded CEF browser surface, controls, input routing, and AI tool bridge to Qt.
 - [ ] Validate key flows without triggering unattended keychain prompts.
 - [ ] Complete the mandatory working loop and stacked PR.
+
+Product decision recorded on 2026-08-25: both the terminal and embedded browser
+remain required parts of Hunk and must work in the Qt application before the
+atomic cutover. Reuse the existing `hunk-terminal` and `hunk-browser`/CEF domain
+and runtime layers. Replace their GPUI presentation and input adapters with
+narrow Qt adapters; do not introduce Qt WebEngine or a second browser engine.
+
+Prompt attachment decisions:
+
+- Keep image validation in the shared headless application boundary so GPUI and
+  Qt accept the same formats during the migration.
+- Keep per-thread attachment drafts in Rust. QML owns only the native picker,
+  drag/drop interaction, bounded chip list, and focus behavior.
+- Bound candidate count and serialized input before crossing QtBridge, then run
+  canonicalization and filesystem checks on retained Rust workers rather than
+  the Qt thread. Pending validation is keyed by thread so one slow volume cannot
+  block composing and sending in an unrelated Codex thread.
+- Retain attachments through direct-send acknowledgement, queued follow-up
+  delivery, interrupt recovery, and edit-last recovery. Clear them only after
+  authoritative acceptance or an explicit successful queue transition.
+- Derive QML attachment presence from the list model's own notified row count;
+  do not export a separately notified count property that can drift from model
+  resets during recovery.
+
+Prompt attachment validation on macOS through Nix:
+
+- `cargo build --workspace --all-targets`
+- `cargo test --workspace -- --test-threads=1`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `qmllint` for the production Hunk QML module
+- Qt Quick Test: 69 passed, 0 failed, 0 skipped on Qt 6.11.2
 
 Phase 7 runtime-path prerequisite decisions:
 

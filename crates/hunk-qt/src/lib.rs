@@ -1,3 +1,4 @@
+mod ai_attachments;
 mod ai_bookmarks;
 mod ai_composer;
 mod ai_models;
@@ -35,7 +36,7 @@ pub use ai_models::{AiThreadCatalogProjection, AiThreadItem, AiThreadListModel};
 pub use ai_queue::{
     AI_MESSAGE_QUEUE_MAX_ITEMS, AI_MESSAGE_QUEUE_MAX_PROMPT_BYTES,
     AI_MESSAGE_QUEUE_MAX_RETAINED_BYTES, AiMessageQueue, AiQueueProjection,
-    AiQueueThreadProjection, AiQueuedMessageCommand,
+    AiQueueThreadProjection, AiQueuedMessageCommand, AiRecoveredDraft,
 };
 pub use ai_requests::{
     AiPendingOption, AiPendingQuestion, AiPendingRequest, AiPendingRequestProjection,
@@ -53,7 +54,7 @@ pub use backend::{Backend, Workspace};
 pub use comment_models::{DiffCommentItem, DiffCommentListModel, DiffCommentProjection};
 pub use diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
 pub use git_models::{GitBranchListModel, GitCommitListModel, GitFileListModel};
-pub use path::local_path_from_qml_folder_url;
+pub use path::{local_path_from_qml_file_url, local_path_from_qml_folder_url};
 
 #[cfg(debug_assertions)]
 const QML_MODULE_DIRECTORY: &str = "Hunk";
@@ -68,6 +69,7 @@ pub fn run() -> Result<()> {
     app.application_name("Hunk")
         .register::<AiThreadListModel>()
         .register::<AiTimelineListModel>()
+        .register::<AiAttachmentListModel>()
         .register::<AiSessionChoiceListModel>()
         .register::<DiffRowListModel>()
         .register::<DiffCommentListModel>()
@@ -149,3 +151,7 @@ fn file_url(path: &Path) -> String {
         format!("file:///{normalized}")
     }
 }
+pub use ai_attachments::{
+    AI_PROMPT_MAX_ATTACHMENTS, AiAttachmentAddOutcome, AiAttachmentDrafts, AiAttachmentItem,
+    AiAttachmentListModel, attachment_paths_from_qml_json,
+};

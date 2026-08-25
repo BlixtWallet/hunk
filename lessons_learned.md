@@ -587,3 +587,32 @@ append a correction when later evidence changes one.
   `keyClick(Qt.Key_Down)` does not take a control argument. Force and verify
   active focus first, then send the key, or the test can spend its timeout
   waiting for a command that never ran.
+
+## 2026-08-25 — Qt Codex prompt attachments
+
+- A native file picker does not make filesystem work UI-safe. Bound and decode
+  its URLs on the Qt side, but canonicalize paths and inspect files on retained
+  Rust workers; removable and network-backed volumes can make even ordinary
+  metadata calls exceed an 8 ms frame budget.
+- Async locks must be scoped to the resource they protect. A backend-global
+  attachment-pending bit makes one slow image freeze every thread; key pending
+  epochs by thread and derive the exposed property for only the active thread.
+- Model contents and separately notified count properties can drift. When a
+  recovery slot resets a `QAbstractListModel` from inside an existing state
+  callback, bind visibility and submission state to the view's notified count
+  instead of recursively emitting a broad backend signal.
+- An async interaction needs a completion focus path. Picker acceptance can
+  schedule validation and immediately make the editor non-editable, so track
+  the pending transition and restore focus on `true` to `false`, not only when
+  the picker closes.
+- Drag/drop should consume attachments as copies and only after the bounded
+  bridge request is accepted. Never honor a source-proposed move operation for
+  prompt images.
+- Attachment lifecycle follows message acknowledgement, not button clicks.
+  Preserve paths through direct-send receipts, queued delivery, edit recovery,
+  interrupts, and reconnects; clear only on an authoritative acceptance or an
+  explicit successful move into the Rust-owned queue.
+- Cargo integration-test working directories are crate roots, so a relative
+  `target/` temp fixture can silently target a nonexistent per-crate folder.
+  Resolve the workspace target from `CARGO_MANIFEST_DIR` when tests must keep
+  temporary data on the external-volume build cache.

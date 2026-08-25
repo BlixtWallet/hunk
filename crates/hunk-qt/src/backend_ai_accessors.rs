@@ -1,3 +1,4 @@
+use crate::ai_attachments::ai_attachment_pending;
 use crate::ai_session::{ai_session_controls_locked, compact_token_count, exact_token_count};
 use crate::backend_ai::{
     ai_active_queue_sending, ai_active_queued_message_count, ai_active_request_count,
@@ -9,6 +10,15 @@ use crate::backend_ai::{
 use crate::backend_state::Backend;
 
 impl Backend {
+    pub(super) fn ai_attachment_pending_value(&self) -> bool {
+        ai_attachment_pending(self)
+    }
+
+    pub(super) fn ai_model_supports_image_inputs_value(&self) -> bool {
+        self.ai_session_catalog
+            .model_supports_image_inputs(Some(self.ai_selected_model.as_str()))
+    }
+
     pub(super) fn ai_prompt_pending_value(&self) -> bool {
         ai_prompt_pending(self)
     }

@@ -176,6 +176,8 @@ pub struct AiSessionCatalogProjection {
     pub context_usage: AiContextUsageProjection,
     pub mad_max_mode: bool,
     pub include_hidden_models: bool,
+    pub image_capable_model_ids: BTreeSet<String>,
+    pub default_model_supports_image_inputs: bool,
 }
 
 impl AiSessionCatalogProjection {
@@ -189,6 +191,16 @@ impl AiSessionCatalogProjection {
         let mut model_choices = vec![default_model_choice()];
         let mut efforts_by_model = BTreeMap::new();
         let mut seen_model_ids = BTreeSet::new();
+        let mut image_capable_model_ids = BTreeSet::new();
+        let default_model_supports_image_inputs = models
+            .iter()
+            .find(|model| model.is_default)
+            .or_else(|| models.first())
+            .is_none_or(|model| {
+                model
+                    .input_modalities
+                    .contains(&hunk_codex::protocol::InputModality::Image)
+            });
 
         for model in models.iter().take(AI_MODEL_OPTION_MAX_ITEMS) {
             if model.id.trim().is_empty() || !seen_model_ids.insert(model.id.clone()) {
@@ -208,6 +220,12 @@ impl AiSessionCatalogProjection {
             choice.hidden = model.hidden;
             choice.is_default = model.is_default;
             model_choices.push(choice);
+            if model
+                .input_modalities
+                .contains(&hunk_codex::protocol::InputModality::Image)
+            {
+                image_capable_model_ids.insert(model.id.clone());
+            }
 
             let mut effort_choices = vec![default_effort_choice()];
             for option in model
@@ -239,6 +257,8 @@ impl AiSessionCatalogProjection {
             context_usage: AiContextUsageProjection::from_usage(usage),
             mad_max_mode,
             include_hidden_models,
+            image_capable_model_ids,
+            default_model_supports_image_inputs,
         }
     }
 
@@ -273,6 +293,13 @@ impl AiSessionCatalogProjection {
             session.effort = None;
         }
         session
+    }
+
+    pub fn model_supports_image_inputs(&self, selected_model: Option<&str>) -> bool {
+        selected_model
+            .filter(|model| !model.is_empty())
+            .map(|model| self.image_capable_model_ids.contains(model))
+            .unwrap_or(self.default_model_supports_image_inputs)
     }
 }
 

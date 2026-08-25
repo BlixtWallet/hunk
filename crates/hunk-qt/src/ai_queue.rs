@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 use hunk_codex::state::{AiState, ThreadLifecycleStatus, TurnStatus};
 
+use crate::AI_PROMPT_MAX_ATTACHMENTS;
 use crate::AiTimelineItem;
 
 pub const AI_MESSAGE_QUEUE_MAX_ITEMS: usize = 64;
@@ -47,6 +49,7 @@ struct AiQueuedMessage {
     id: u64,
     thread_id: String,
     prompt: String,
+    local_image_paths: Vec<PathBuf>,
     fingerprint: AiPromptFingerprint,
     status: AiQueuedMessageStatus,
 }
@@ -55,12 +58,25 @@ struct AiQueuedMessage {
 pub struct AiQueuedMessageCommand {
     pub thread_id: String,
     pub prompt: String,
+    pub local_image_paths: Vec<PathBuf>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct AiRecoveredDraft {
+    pub prompt: String,
+    pub local_image_paths: Vec<PathBuf>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AiRecoveredMessage {
+    prompt: String,
+    local_image_paths: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AiMessageQueue {
     messages: Vec<AiQueuedMessage>,
-    recovered_prompts: BTreeMap<String, Vec<String>>,
+    recovered_messages: BTreeMap<String, Vec<AiRecoveredMessage>>,
     interrupt_restore_thread_ids: BTreeSet<String>,
     next_id: u64,
 }
@@ -134,10 +150,22 @@ impl AiQueueProjection {
 
 impl AiMessageQueue {
     pub fn enqueue(&mut self, thread_id: String, prompt: String) -> Result<(), &'static str> {
+        self.enqueue_with_attachments(thread_id, prompt, Vec::new())
+    }
+
+    pub fn enqueue_with_attachments(
+        &mut self,
+        thread_id: String,
+        prompt: String,
+        local_image_paths: Vec<PathBuf>,
+    ) -> Result<(), &'static str> {
         let thread_id = thread_id.trim();
         let prompt = prompt.trim();
-        if thread_id.is_empty() || prompt.is_empty() {
+        if thread_id.is_empty() || (prompt.is_empty() && local_image_paths.is_empty()) {
             return Err("A queued follow-up requires an active thread and message.");
+        }
+        if local_image_paths.len() > AI_PROMPT_MAX_ATTACHMENTS {
+            return Err("The queued follow-up has too many image attachments.");
         }
         if self.retained_message_count() >= AI_MESSAGE_QUEUE_MAX_ITEMS {
             return Err("The queued follow-up limit has been reached.");
@@ -147,7 +175,7 @@ impl AiMessageQueue {
         }
         if self
             .retained_bytes()
-            .saturating_add(retained_prompt_cost(prompt))
+            .saturating_add(retained_message_cost(prompt, local_image_paths.as_slice()))
             > AI_MESSAGE_QUEUE_MAX_RETAINED_BYTES
         {
             return Err("The queued follow-ups are using too much memory.");
@@ -157,17 +185,26 @@ impl AiMessageQueue {
             id: self.next_id,
             thread_id: thread_id.to_owned(),
             prompt: prompt.to_owned(),
-            fingerprint: prompt_fingerprint(prompt),
+            fingerprint: prompt_input_fingerprint(prompt, local_image_paths.as_slice()),
+            local_image_paths,
             status: AiQueuedMessageStatus::Queued,
         });
         Ok(())
     }
 
-    pub fn edit_latest(&mut self, thread_id: &str) -> Option<String> {
+    pub fn edit_latest_with_attachments(
+        &mut self,
+        thread_id: &str,
+    ) -> Option<AiQueuedMessageCommand> {
         let index = self.messages.iter().rposition(|message| {
             message.thread_id == thread_id && message.status == AiQueuedMessageStatus::Queued
         })?;
-        Some(self.messages.remove(index).prompt)
+        let message = self.messages.remove(index);
+        Some(AiQueuedMessageCommand {
+            thread_id: message.thread_id,
+            prompt: message.prompt,
+            local_image_paths: message.local_image_paths,
+        })
     }
 
     pub fn mark_interrupt_restore(&mut self, thread_id: String) {
@@ -251,11 +288,17 @@ impl AiMessageQueue {
         Some(AiQueuedMessageCommand {
             thread_id: message.thread_id.clone(),
             prompt: message.prompt.clone(),
+            local_image_paths: message.local_image_paths.clone(),
         })
     }
 
-    pub fn accept_steer(&mut self, thread_id: &str, prompt: &str) -> bool {
-        let fingerprint = prompt_fingerprint(prompt);
+    pub fn accept_steer(
+        &mut self,
+        thread_id: &str,
+        prompt: &str,
+        local_image_paths: &[PathBuf],
+    ) -> bool {
+        let fingerprint = prompt_input_fingerprint(prompt, local_image_paths);
         let Some(index) = self.messages.iter().position(|message| {
             message.thread_id == thread_id
                 && message.fingerprint == fingerprint
@@ -289,8 +332,11 @@ impl AiMessageQueue {
             .iter()
             .filter(|message| message.thread_id == thread_id)
             .map(|message| {
-                let (text, truncated) =
-                    bounded_text(message.prompt.as_str(), AI_QUEUE_VISIBLE_TEXT_BYTES);
+                let content = prompt_input_content(
+                    message.prompt.as_str(),
+                    message.local_image_paths.as_slice(),
+                );
+                let (text, truncated) = bounded_text(content.as_str(), AI_QUEUE_VISIBLE_TEXT_BYTES);
                 let sending = matches!(
                     message.status,
                     AiQueuedMessageStatus::PendingConfirmation { .. }
@@ -310,11 +356,30 @@ impl AiMessageQueue {
             .collect()
     }
 
-    pub fn take_recovered_prompt(&mut self, thread_id: &str) -> String {
-        self.recovered_prompts
+    pub fn take_recovered_draft(&mut self, thread_id: &str) -> AiRecoveredDraft {
+        let messages = self
+            .recovered_messages
             .remove(thread_id)
-            .map(|prompts| prompts.join("\n\n"))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        let prompt = messages
+            .iter()
+            .map(|message| message.prompt.trim())
+            .filter(|prompt| !prompt.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let mut local_image_paths = Vec::new();
+        for path in messages
+            .into_iter()
+            .flat_map(|message| message.local_image_paths)
+        {
+            if !local_image_paths.contains(&path) {
+                local_image_paths.push(path);
+            }
+        }
+        AiRecoveredDraft {
+            prompt,
+            local_image_paths,
+        }
     }
 
     pub fn total_count(&self) -> usize {
@@ -338,26 +403,46 @@ impl AiMessageQueue {
         })
     }
 
+    pub fn next_queued_has_attachments(&self, thread_id: &str) -> bool {
+        self.messages
+            .iter()
+            .find(|message| message.thread_id == thread_id)
+            .is_some_and(|message| {
+                message.status == AiQueuedMessageStatus::Queued
+                    && !message.local_image_paths.is_empty()
+            })
+    }
+
     pub fn clear(&mut self) {
         self.messages.clear();
-        self.recovered_prompts.clear();
+        self.recovered_messages.clear();
         self.interrupt_restore_thread_ids.clear();
     }
 
     fn retained_message_count(&self) -> usize {
-        self.messages.len() + self.recovered_prompts.values().map(Vec::len).sum::<usize>()
+        self.messages.len()
+            + self
+                .recovered_messages
+                .values()
+                .map(Vec::len)
+                .sum::<usize>()
     }
 
     fn retained_bytes(&self) -> usize {
         self.messages
             .iter()
-            .map(|message| retained_prompt_cost(message.prompt.as_str()))
-            .chain(
-                self.recovered_prompts
-                    .values()
-                    .flatten()
-                    .map(|prompt| retained_prompt_cost(prompt.as_str())),
-            )
+            .map(|message| {
+                retained_message_cost(
+                    message.prompt.as_str(),
+                    message.local_image_paths.as_slice(),
+                )
+            })
+            .chain(self.recovered_messages.values().flatten().map(|message| {
+                retained_message_cost(
+                    message.prompt.as_str(),
+                    message.local_image_paths.as_slice(),
+                )
+            }))
             .fold(0usize, usize::saturating_add)
     }
 
@@ -403,10 +488,13 @@ impl AiMessageQueue {
         let mut recovered = false;
         for message in self.messages.drain(..) {
             if thread_ids.contains(message.thread_id.as_str()) {
-                self.recovered_prompts
+                self.recovered_messages
                     .entry(message.thread_id)
                     .or_default()
-                    .push(message.prompt);
+                    .push(AiRecoveredMessage {
+                        prompt: message.prompt,
+                        local_image_paths: message.local_image_paths,
+                    });
                 recovered = true;
             } else {
                 remaining.push(message);
@@ -417,8 +505,11 @@ impl AiMessageQueue {
     }
 }
 
-fn retained_prompt_cost(prompt: &str) -> usize {
-    prompt.len().saturating_add(2)
+fn retained_message_cost(prompt: &str, local_image_paths: &[PathBuf]) -> usize {
+    local_image_paths
+        .iter()
+        .map(|path| path.as_os_str().len().saturating_add(1))
+        .fold(prompt.len().saturating_add(2), usize::saturating_add)
 }
 
 fn thread_latest_timeline_sequence(state: &AiState, thread_id: &str) -> u64 {
@@ -472,6 +563,41 @@ fn prompt_fingerprint(prompt: &str) -> AiPromptFingerprint {
         hash = hash.wrapping_mul(FNV_PRIME);
     }
     AiPromptFingerprint { byte_len, hash }
+}
+
+fn prompt_input_fingerprint(prompt: &str, local_image_paths: &[PathBuf]) -> AiPromptFingerprint {
+    prompt_fingerprint(prompt_input_content(prompt, local_image_paths).as_str())
+}
+
+fn prompt_input_content(prompt: &str, local_image_paths: &[PathBuf]) -> String {
+    let prompt = prompt.trim();
+    if local_image_paths.is_empty() {
+        return prompt.to_owned();
+    }
+    let prefix = if local_image_paths.len() == 1 {
+        "[image]"
+    } else {
+        "[images]"
+    };
+    let images = local_image_paths
+        .iter()
+        .map(|path| local_image_display_name(path.as_path()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let summary = format!("{prefix} {images}");
+    if prompt.is_empty() {
+        summary
+    } else {
+        format!("{prompt}\n{summary}")
+    }
+}
+
+fn local_image_display_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
 fn bounded_text(text: &str, max_bytes: usize) -> (String, bool) {

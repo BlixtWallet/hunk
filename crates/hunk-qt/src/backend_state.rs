@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -10,6 +10,9 @@ use hunk_domain::state::{AiCollaborationModeSelection, AiServiceTierSelection, A
 use hunk_forge::{ForgeReviewOutcome, ForgeReviewWorkspace, GitHubDeviceAuthorization};
 use qtbridge::QObjectHolder;
 
+use crate::ai_attachments::{
+    AiAttachmentDrafts, AiAttachmentListModel, AiAttachmentTasks, AiAttachmentValidationResults,
+};
 use crate::ai_bookmarks::{AiBookmarkPersistResult, AiBookmarkTasks};
 use crate::ai_models::AiThreadListModel;
 use crate::ai_requests::AiPendingRequestProjection;
@@ -149,6 +152,13 @@ pub struct Backend {
     pub(super) git_unstaged_paths: Vec<String>,
     pub(super) ai_threads: Rc<RefCell<AiThreadListModel>>,
     pub(super) ai_timeline: Rc<RefCell<AiTimelineListModel>>,
+    pub(super) ai_attachments: Rc<RefCell<AiAttachmentListModel>>,
+    pub(super) ai_attachment_drafts: AiAttachmentDrafts,
+    pub(super) ai_attachment_epoch: i32,
+    pub(super) ai_attachment_pending_threads: BTreeMap<i32, String>,
+    pub(super) ai_attachment_validation_epochs: Arc<Mutex<BTreeSet<i32>>>,
+    pub(super) ai_attachment_results: AiAttachmentValidationResults,
+    pub(super) ai_attachment_tasks: AiAttachmentTasks,
     pub(super) ai_models: Rc<RefCell<AiSessionChoiceListModel>>,
     pub(super) ai_efforts: Rc<RefCell<AiSessionChoiceListModel>>,
     pub(super) ai_service_tiers: Rc<RefCell<AiSessionChoiceListModel>>,
@@ -323,6 +333,13 @@ impl Default for Backend {
             git_unstaged_paths: Vec::new(),
             ai_threads: AiThreadListModel::default_with_attached_qobject(),
             ai_timeline: AiTimelineListModel::default_with_attached_qobject(),
+            ai_attachments: AiAttachmentListModel::default_with_attached_qobject(),
+            ai_attachment_drafts: AiAttachmentDrafts::default(),
+            ai_attachment_epoch: 0,
+            ai_attachment_pending_threads: BTreeMap::new(),
+            ai_attachment_validation_epochs: Arc::new(Mutex::new(BTreeSet::new())),
+            ai_attachment_results: Arc::new(Mutex::new(HashMap::new())),
+            ai_attachment_tasks: AiAttachmentTasks::default(),
             ai_models,
             ai_efforts,
             ai_service_tiers,

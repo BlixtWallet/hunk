@@ -1236,9 +1236,7 @@ impl DiffViewer {
         for path in paths {
             let normalized = std::fs::canonicalize(path.as_path()).unwrap_or(path);
             if !normalized.is_file()
-                || !crate::app::ai_attachment_images::is_supported_ai_image_path(
-                    normalized.as_path(),
-                )
+                || !hunk_app::ai::is_supported_ai_image_path(normalized.as_path())
             {
                 continue;
             }

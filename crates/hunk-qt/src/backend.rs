@@ -4,10 +4,13 @@ use std::sync::Arc;
 use hunk_app::ai::AiWorkerCommand;
 use hunk_app::diff::DiffCommentStoreCommand;
 use hunk_domain::db::CommentStatus;
-use hunk_forge::{ForgeCredentialKind, ForgeProvider, ForgeReviewWorkspace};
+use hunk_forge::{ForgeCredentialKind, ForgeProvider};
 use hunk_git::workspace::{GitWorkspaceCommand, load_git_workspace};
 use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString};
 
+use crate::ai_attachments::{
+    complete_ai_attachment_add, queue_ai_attachments, remove_ai_attachment,
+};
 use crate::ai_bookmarks::{complete_ai_bookmark_persist, queue_ai_toggle_thread_bookmark};
 use crate::ai_session::{
     complete_ai_session_persist, queue_ai_select_collaboration_mode, queue_ai_select_effort,
@@ -26,7 +29,6 @@ use crate::comments::DiffCommentStartOutcome;
 use crate::diff_models::DiffSnapshotPayload;
 use crate::forge::{
     create_or_find_review, load_forge_snapshot, review_short_label, run_github_device_flow,
-    save_forge_token,
 };
 use crate::git_models::GitSnapshotPayload;
 use crate::local_path_from_qml_folder_url;
@@ -225,6 +227,17 @@ impl Backend {
     );
     qproperty!("aiThreads", Member = ai_threads, Constant);
     qproperty!("aiTimeline", Member = ai_timeline, Constant);
+    qproperty!("aiAttachments", Member = ai_attachments, Constant);
+    qproperty!(
+        "aiAttachmentPending",
+        Read = ai_attachment_pending,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiModelSupportsImageInputs",
+        Read = ai_model_supports_image_inputs,
+        Notify = ai_session_state_changed
+    );
     qproperty!("aiModels", Member = ai_models, Constant);
     qproperty!("aiEfforts", Member = ai_efforts, Constant);
     qproperty!("aiServiceTiers", Member = ai_service_tiers, Constant);
@@ -729,6 +742,14 @@ impl Backend {
 
     fn ai_context_billable_tokens(&self) -> String {
         self.ai_context_billable_tokens_value()
+    }
+
+    fn ai_attachment_pending(&self) -> bool {
+        self.ai_attachment_pending_value()
+    }
+
+    fn ai_model_supports_image_inputs(&self) -> bool {
+        self.ai_model_supports_image_inputs_value()
     }
 
     fn ai_thread_action_pending(&self) -> bool {
@@ -1347,6 +1368,26 @@ impl Backend {
     }
 
     #[qslot]
+    fn add_ai_attachments(&mut self, paths_json: String) -> bool {
+        let changed = queue_ai_attachments(self, paths_json);
+        self.ai_state_changed();
+        changed
+    }
+
+    #[qslot]
+    fn complete_ai_attachment_add(&mut self, epoch: i32) {
+        complete_ai_attachment_add(self, epoch);
+        self.ai_state_changed();
+    }
+
+    #[qslot]
+    fn remove_ai_attachment(&mut self, index: i32) -> bool {
+        let changed = remove_ai_attachment(self, index);
+        self.ai_state_changed();
+        changed
+    }
+
+    #[qslot]
     fn send_ai_prompt(&mut self, prompt: String) -> bool {
         self.ensure_ai_runtime_started();
         let queued = queue_ai_prompt(self, prompt);
@@ -1910,53 +1951,5 @@ impl Backend {
         }
         self.status_message = status_message;
         self.status_message_changed();
-    }
-
-    fn begin_forge_action(&mut self, label: String) -> i32 {
-        let epoch = next_forge_epoch(self);
-        self.forge_busy = true;
-        self.forge_error.clear();
-        self.forge_status_message.clear();
-        self.forge_action_label = label;
-        self.forge_state_changed();
-        epoch
-    }
-
-    fn run_save_forge_token(
-        &mut self,
-        label: &str,
-        workspace: ForgeReviewWorkspace,
-        token: String,
-        kind: ForgeCredentialKind,
-    ) {
-        if self.forge_loading || self.forge_busy {
-            return;
-        }
-        let epoch = self.begin_forge_action(label.to_owned());
-        let invoker = self.get_qml_method_invoker();
-        let results = Arc::clone(&self.forge_results);
-        let spawn_result = std::thread::Builder::new()
-            .name("hunk-qt-forge-credential".to_owned())
-            .spawn(move || {
-                let result = save_forge_token(workspace, token.as_str(), kind)
-                    .map(Box::new)
-                    .map(ForgeAsyncPayload::Snapshot)
-                    .map_err(|error| format!("{error:#}"));
-                if let Ok(mut pending) = results.lock() {
-                    pending.insert(epoch, result);
-                }
-                invoke_method!(invoker, "apply_forge_result", epoch);
-            });
-        if let Err(error) = spawn_result {
-            self.fail_forge_spawn("credential operation", error);
-        }
-    }
-
-    fn fail_forge_spawn(&mut self, operation: &str, error: std::io::Error) {
-        self.forge_loading = false;
-        self.forge_busy = false;
-        self.forge_action_label.clear();
-        self.forge_error = format!("Failed to start {operation}: {error}");
-        self.forge_state_changed();
     }
 }

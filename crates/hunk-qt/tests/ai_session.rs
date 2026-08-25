@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use hunk_codex::protocol::{Model, ReasoningEffort, ReasoningEffortOption};
+use hunk_codex::protocol::{InputModality, Model, ReasoningEffort, ReasoningEffortOption};
 use hunk_codex::state::{AiState, ThreadTokenUsageSummary, TokenUsageBreakdownSummary};
 use hunk_domain::state::{
     AiCollaborationModeSelection, AiServiceTierSelection, AiThreadSessionState, AppState,
@@ -55,7 +55,7 @@ fn model() -> Model {
             },
         ],
         default_reasoning_effort: ReasoningEffort::High,
-        input_modalities: Vec::new(),
+        input_modalities: vec![InputModality::Text, InputModality::Image],
         supports_personality: false,
         multi_agent_version: None,
         additional_speed_tiers: Vec::new(),
@@ -157,6 +157,8 @@ fn session_catalog_bounds_models_and_normalizes_model_effort_pairs() {
     assert_eq!(projection.models[1].value, "gpt-test");
     assert_eq!(projection.efforts_by_model["gpt-test"].len(), 3);
     assert_eq!(projection.efforts_by_model["gpt-test"][2].label, "High");
+    assert!(projection.model_supports_image_inputs(Some("gpt-test")));
+    assert!(projection.model_supports_image_inputs(None));
 
     let selected = projection.normalized_session(session(
         "gpt-test",
@@ -184,6 +186,17 @@ fn session_catalog_bounds_models_and_normalizes_model_effort_pairs() {
     ));
     assert_eq!(unavailable_model.model, None);
     assert_eq!(unavailable_model.effort, None);
+}
+
+#[test]
+fn session_catalog_rejects_images_for_text_only_models() {
+    let mut model = model();
+    model.input_modalities = vec![InputModality::Text];
+    let projection =
+        AiSessionCatalogProjection::from_snapshot(&AiState::default(), None, &[model], true, true);
+
+    assert!(!projection.model_supports_image_inputs(Some("gpt-test")));
+    assert!(!projection.model_supports_image_inputs(None));
 }
 
 #[test]
