@@ -282,7 +282,7 @@ selection, and expansion feedback is immediate and never ornamental.
 - [x] Implement refresh, stale-result rejection, and repository switching without blocking the Qt thread.
 - [x] Implement stage/unstage/discard/commit and required confirmations.
 - [x] Implement branch selection/activation and recent commits.
-- [ ] Implement forge authentication/review actions while skipping unattended keychain-blocked validation paths.
+- [x] Implement forge authentication/review actions while skipping unattended keychain-blocked validation paths.
 - [x] Add Rust service tests and QML interaction tests.
 - [x] Visually inspect empty, loading, error, and populated states.
 - [x] Complete the mandatory working loop and stacked PR
@@ -304,6 +304,16 @@ Phase 5 implementation decisions:
   persisted only after the selected folder loads successfully as a Git repo.
 - Discard is the sole destructive working-copy action in this slice and always
   requires an explicit confirmation before Rust receives the command.
+- Review-remote resolution, preferred base selection, find-or-create policy,
+  and the cross-platform keyring adapter live in `hunk-forge`. Both the GPUI
+  frontend and Qt migration consume the same credential-store implementation.
+- QML receives account labels, auth mode, review metadata, and operation state;
+  it never receives a stored token. PAT validation, GitHub device-flow polling,
+  keychain access, and PR/MR API calls run on background threads. Repository or
+  branch changes advance the same forge epoch and cancel stale callbacks.
+- GitHub.com uses the existing OAuth device flow. GitHub Enterprise and GitLab
+  use PAT entry. PAT text is cleared as soon as QML hands it to Rust, and tests
+  use a fake backend so unattended validation never opens the real keychain.
 - `hunk-domain` keeps its database and Markdown/language features enabled by
   default, but permits narrow consumers such as `hunk-git` to opt out. This
   prevents a Git-only Qt build from compiling SQLite, Comrak, and every
@@ -321,8 +331,28 @@ external-volume `target/` and Cargo cache:
   warm rebuild took 0.41 seconds, and a warm focused check took 0.76 seconds.
 - These are local dependency-boundary observations, not clean-machine CI
   promises. Vendored libgit2/OpenSSL and QtBridge C++ compilation remain
-  material on cold macOS builds; Linux and Windows cache behavior must still be
-  measured in PR CI.
+  material on cold macOS builds.
+- The final green PR #181 run measured 2 minutes 47 seconds on Windows and
+  11 minutes 42 seconds on Linux. The warm Windows Qt build itself took 8
+  seconds. Linux spent 1 minute 44 seconds in workspace Clippy and 6 minutes
+  51 seconds compiling/running the full non-GPUI workspace test suite; the QML
+  suite took 3 seconds. Moving off GPUI materially removes the second desktop
+  build, but the retained Rust/Codex dependency graph remains the dominant
+  Linux CI cost and must be narrowed separately rather than attributed to Qt.
+- The first PR #182 run after moving keyring/network dependencies into the Qt
+  graph measured 9 minutes 52 seconds on Windows and 29 minutes 23 seconds on
+  Linux. Windows spent 3 minutes in terminal tests and 3 minutes 39 seconds
+  building `hunk-qt`; Linux spent 11 minutes 7 seconds in Clippy and 14 minutes
+  11 seconds in tests. This is the cache-invalidated case, not a steady-state
+  Qt cost, and demonstrates that lockfile/dependency-graph churn can still
+  dominate even after GPUI is gone from the gate.
+- A subsequent cache-reuse run exposed a Linux `SIGILL` before the
+  `hunk-terminal` unit tests started. `libghostty-vt-sys` lets Zig auto-detect
+  native CPU features, while the dependency target cache can move its static
+  library between heterogeneous GitHub runners. The Linux cache key therefore
+  uses a fresh namespace plus the runner CPU model and feature flags;
+  compatible runners still share artifacts without falling back to native code
+  built for a different CPU.
 - The QML suite exercises 1,500 file rows and verifies distant rows are not
   instantiated. The final 8 ms/120 Hz hardware audit remains a cutover gate,
   especially for the substantially heavier Diff and streaming AI surfaces.
@@ -332,7 +362,9 @@ Phase 5 local validation through Nix:
 - The locked full workspace built successfully in 47.04 seconds on the shared
   warm external-volume cache, and the locked full workspace test suite passed.
 - Workspace Clippy passed for all targets with warnings denied.
-- All nine QML interaction/visual-state tests passed together with `qmllint`.
+- All 12 QML interaction/visual-state tests passed together with `qmllint`,
+  including PAT clearing, GitHub device-flow command routing, and PR/MR form
+  submission through the fake backend.
 - The real `hunk_qt` binary launched offscreen without QML or backend errors.
 
 ### 6. Diff Tab

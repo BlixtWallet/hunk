@@ -201,3 +201,25 @@ append a correction when later evidence changes one.
   installed Qt SDK. Qt GUI links `libfreetype` directly, so include `freetype`
   explicitly in the Nix-owned Linux runtime closure instead of relying on a
   transitive package relationship.
+- A Qt migration should not leave OS credential behavior owned by the outgoing
+  toolkit crate. Moving the existing keyring adapter into `hunk-forge` lets
+  both frontends share one serialized platform implementation while QML sees
+  only non-secret presentation state. Fake-client and fake-backend tests can
+  then cover review/auth routing without opening an unattended keychain prompt.
+- Removing GPUI from PR gates cuts a material desktop build, but it does not
+  make the retained Rust graph free. In the final green Qt Git run, Windows
+  finished in 2 minutes 47 seconds while Linux took 11 minutes 42 seconds; 6
+  minutes 51 seconds belonged to the full non-GPUI workspace tests. Treat core
+  dependency boundaries and test partitioning as separate CI work from the UI
+  toolkit migration.
+- Measure both exact-cache and dependency-invalidated CI runs. Moving forge
+  dependencies into the Qt graph changed the lockfile ownership and the first
+  follow-up run rose to 9 minutes 52 seconds on Windows and 29 minutes 23
+  seconds on Linux, despite GPUI already being absent from the gate. Toolkit
+  choice cannot compensate for a cold retained Rust dependency graph.
+- Do not share native Zig dependency artifacts across heterogeneous runners
+  without a CPU-aware cache key. `libghostty-vt-sys` intentionally lets Zig
+  detect the native CPU; restoring that static library on a different Linux
+  runner caused the test binary to exit with `SIGILL` before running tests. Use
+  a fresh cache namespace too, so fallback lookup cannot select an older unsafe
+  artifact before the first CPU-partitioned cache is saved.
