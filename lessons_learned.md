@@ -113,3 +113,52 @@ append a correction when later evidence changes one.
 - Compatibility re-exports used only by the legacy frontend's internal tests
   must be gated with `cfg(test)`; test-target checks can otherwise conceal an
   unused import that the normal binary and workspace clippy correctly reject.
+
+## 2026-08-25 — Qt foundation and external SDK cache
+
+- Correction to the migration baseline: moving the flake to the first Nixpkgs
+  revision containing Qt 6.11.2 would require locally building hundreds of
+  uncached derivations, including Qt itself. That is incompatible with the
+  machine's constrained internal storage. Keep Cargo inside the Nix shell, but
+  consume Qt's official prebuilt SDK from the persistent external-volume cache.
+- Pinning both sides matters: `hunk-qt` verifies `qmake` reports exactly 6.11.2,
+  and the official QtBridge dependency is locked to one commit instead of a
+  moving branch or wildcard version.
+- QtBridge's experimental macOS arm64 path discovers the online SDK's framework
+  headers but does not add the parent framework search directory. Supplying the
+  SDK's `lib` directory through `-F` fixes generated `<QtCore/...>` includes
+  without patching or forking QtBridge.
+- Cross-thread QtBridge invocation serializes arguments through `QVariant`.
+  Rust `String` is valid for QObject slots but is not itself a `QVariantValue`;
+  queue a `QString` and let the slot boundary convert it back to Rust.
+- The first QtBridge/C++ build is material, but subsequent focused checks reuse
+  the existing workspace `target/`. CI should cache the exact Qt SDK and avoid
+  compiling the legacy desktop a second time solely for its CEF feature while
+  Qt is still being introduced.
+- Nix development shells replace the caller's `TMPDIR` with an internal-disk
+  shell directory. Export the configurable `HUNK_BUILD_TMPDIR` again from the
+  shell hook (and prefer this machine's existing external cache) so generated
+  C++ and linker temporary files do not consume scarce internal storage.
+- aqtinstall 3.3.0 cannot resolve Qt 6.11 Windows packages after Qt changed the
+  repository from a shared `qt6_6112` child to architecture-specific children.
+  Qt's supported unattended Online Installer accepts the exact
+  `qt.qt6.6112.win64_msvc2022_64` package, so use that pinned, checksummed path
+  for Windows CI and cache the resulting SDK.
+- On the self-hosted Mac, generic setup actions tried to create a hosted-tool
+  cache under an unavailable `/Users/runner` path. Reusing the already verified
+  external Qt SDK is faster, avoids another internal-disk copy, and removes that
+  hosted-runner assumption.
+- The macOS Actions runner also cannot mount `/Volumes/hulk`; a path available
+  to the interactive Mac session is not automatically available to its runner
+  service. Do not silently fall back to internal storage for a multi-gigabyte
+  Qt SDK and Rust target. Keep the exact macOS gates local until the runner is
+  explicitly provisioned with external-volume access.
+- Correction to the Windows installer decision: the official Online Installer
+  requires Qt Account credentials even for this unattended open-source package
+  command. Upstream aqt merge commit `8c3695d4` contains the unreleased Qt 6.11
+  Windows repository-layout fix, so pin that revision and keep CI account-free
+  instead of introducing personal credentials.
+- A warm self-hosted Linux machine is not faster when no matching runner accepts
+  the job: the Qt foundation check remained unassigned for more than 13 minutes.
+  Use an ephemeral Ubuntu runner with pinned Nix, Qt, and Rust caches for PR
+  feedback; keep release-runner changes separate until Qt packaging is ready.

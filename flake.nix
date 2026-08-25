@@ -145,6 +145,12 @@
               "-rpath ${pkgs.lib.makeLibraryPath linuxRuntimeRpathLibraries}"
             );
             shellHook = ''
+              if [ -n "''${HUNK_BUILD_TMPDIR:-}" ]; then
+                export TMPDIR="$HUNK_BUILD_TMPDIR"
+              elif [ -d "/Volumes/hulk/dev/cache/hunk-tmp" ]; then
+                export TMPDIR="/Volumes/hulk/dev/cache/hunk-tmp"
+              fi
+
               if [ -d "$HOME/.cargo/bin" ]; then
                 export PATH="$PATH:$HOME/.cargo/bin"
               fi
@@ -170,6 +176,10 @@
                 export CXXFLAGS="-isysroot $sdkroot -mmacosx-version-min=$deployment_target''${CXXFLAGS:+ $CXXFLAGS}"
                 export LDFLAGS="-L$sdkroot/usr/lib -Wl,-macosx_version_min,$deployment_target''${LDFLAGS:+ $LDFLAGS}"
                 export RUSTFLAGS="-L native=$sdkroot/usr/lib -C link-arg=-mmacosx-version-min=$deployment_target''${RUSTFLAGS:+ $RUSTFLAGS}"
+              fi
+
+              if [ -f "$PWD/scripts/qt/qt_env.sh" ]; then
+                source "$PWD/scripts/qt/qt_env.sh"
               fi
             '';
           };

@@ -1986,6 +1986,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clang-format"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "696283b40e1a39d208ee614b92e5f6521d16962edeb47c48372585ec92419943"
+dependencies = [
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "clang-sys"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2161,6 +2170,16 @@ dependencies = [
  "core-graphics-types 0.2.0",
  "libc",
  "objc",
+]
+
+[[package]]
+name = "codespan-reporting"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3538270d33cc669650c4b093848450d380def10c331d38c768e34cac80576e6e"
+dependencies = [
+ "termcolor",
+ "unicode-width 0.1.12",
 ]
 
 [[package]]
@@ -4893,6 +4912,151 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "cxx"
+version = "1.0.199"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "824894a4a85dca76d4c95c2b9098c036f5a29f627b30c12780774f6654e60974"
+dependencies = [
+ "cc",
+ "cxx-build",
+ "cxxbridge-cmd",
+ "cxxbridge-flags",
+ "cxxbridge-macro",
+ "foldhash 0.2.0",
+ "link-cplusplus",
+]
+
+[[package]]
+name = "cxx-build"
+version = "1.0.199"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1ae0b651ea5b0000b19513aef5a03f194d7e3486f2d9258b658da8677fe9036"
+dependencies = [
+ "cc",
+ "codespan-reporting 0.13.1",
+ "indexmap 2.14.0",
+ "proc-macro2",
+ "quote",
+ "scratch",
+ "syn 3.0.4",
+]
+
+[[package]]
+name = "cxx-gen"
+version = "0.7.199"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51e54565cd4c9385e30c81b73b0f3702a7c92b3c86aad59c6d5d50d6dd9fb870"
+dependencies = [
+ "codespan-reporting 0.13.1",
+ "indexmap 2.14.0",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.4",
+]
+
+[[package]]
+name = "cxx-qt"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af6a52cbe33f8a23c6cc7dafb628819b89af6536102c3976f5efc33a038d4a82"
+dependencies = [
+ "cxx",
+ "cxx-qt-build",
+ "cxx-qt-macro",
+ "qt-build-utils",
+ "static_assertions",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "cxx-qt-build"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7bb2bb9e19b427e79ec5db1d88cde2f44f2d4190e5a0177e2d599ceb9277b670"
+dependencies = [
+ "cc",
+ "codespan-reporting 0.11.1",
+ "cxx-gen",
+ "cxx-qt-gen",
+ "proc-macro2",
+ "qt-build-utils",
+ "quote",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "cxx-qt-gen"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6de19cacc58672a9fb70fad66e3d62b6aeb4b2f323b6251aeb99b50c6b6aa0c"
+dependencies = [
+ "clang-format",
+ "convert_case 0.6.0",
+ "cxx-gen",
+ "indoc",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "cxx-qt-lib"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e3c9fea8106d4bbe438d15c1242acd38f4869ca4f6d2a0b19e1f0dbbf23a50e"
+dependencies = [
+ "cxx",
+ "cxx-qt",
+ "cxx-qt-build",
+ "qt-build-utils",
+]
+
+[[package]]
+name = "cxx-qt-macro"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb794f10a4d27bfbd810eb8bf7fd7d9a0b0b5cefcd86a4c7b13ae3f8d4fa0169"
+dependencies = [
+ "cxx-qt-gen",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "cxxbridge-cmd"
+version = "1.0.199"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb05f91d3fb8435d9bab6ac5ce6ac1868be774325fb7fb2a91be39393b21388e"
+dependencies = [
+ "clap",
+ "codespan-reporting 0.13.1",
+ "indexmap 2.14.0",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.4",
+]
+
+[[package]]
+name = "cxxbridge-flags"
+version = "1.0.199"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf293202e0e3e98495785745389e8d0755b217e66f19194a5c695c25e03282ef"
+
+[[package]]
+name = "cxxbridge-macro"
+version = "1.0.199"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca001d746947c7249ed9d332a10f7a59daedbafeb0ec68c5c18a7db7a93f6ccc"
+dependencies = [
+ "indexmap 2.14.0",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -8626,6 +8790,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hunk-qt"
+version = "0.0.11"
+dependencies = [
+ "anyhow",
+ "qtbridge",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "hunk-sleep-inhibitor"
 version = "0.1.0"
 dependencies = [
@@ -9200,6 +9374,15 @@ dependencies = [
  "unicode-width 0.2.2",
  "unit-prefix",
  "web-time",
+]
+
+[[package]]
+name = "indoc"
+version = "2.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79cf5c93f93228cf8efb3ba362535fb11199ac548a09ce117c9b1adc3030d706"
+dependencies = [
+ "rustversion",
 ]
 
 [[package]]
@@ -9918,6 +10101,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4a5ff6bcca6c4867b1c4fd4ef63e4db7436ef363e0ad7531d1558856bae64f4"
 
 [[package]]
+name = "link-cplusplus"
+version = "1.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f78c730aaa7d0b9336a299029ea49f9ee53b0ed06e9202e8cb7db9bae7b8c82"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "link-section"
 version = "0.19.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10461,7 +10653,7 @@ dependencies = [
  "bitflags 2.13.1",
  "cfg-if",
  "cfg_aliases 0.2.1",
- "codespan-reporting",
+ "codespan-reporting 0.13.1",
  "half",
  "hashbrown 0.16.1",
  "hexf-parse",
@@ -10487,7 +10679,7 @@ dependencies = [
  "bitflags 2.13.1",
  "cfg-if",
  "cfg_aliases 0.2.1",
- "codespan-reporting",
+ "codespan-reporting 0.13.1",
  "half",
  "hashbrown 0.16.1",
  "hexf-parse",
@@ -12341,6 +12533,102 @@ dependencies = [
 ]
 
 [[package]]
+name = "qt-build-utils"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c97911f105c362cbc035f631be7b43e44d9bca3a3aed2434260ba896f23d6b4"
+dependencies = [
+ "anyhow",
+ "cc",
+ "semver",
+ "serde",
+ "thiserror 1.0.69",
+ "which 8.0.2",
+]
+
+[[package]]
+name = "qtbridge"
+version = "0.2.0"
+source = "git+https://github.com/qt/qtbridge-rust.git?rev=cad0d6cd81d1af294ec87c67f21d39133196dbc1#cad0d6cd81d1af294ec87c67f21d39133196dbc1"
+dependencies = [
+ "qtbridge-build-utils",
+ "qtbridge-gen",
+ "qtbridge-interfaces",
+ "qtbridge-runtime",
+ "qtbridge-type-lib",
+]
+
+[[package]]
+name = "qtbridge-build-utils"
+version = "0.2.0"
+source = "git+https://github.com/qt/qtbridge-rust.git?rev=cad0d6cd81d1af294ec87c67f21d39133196dbc1#cad0d6cd81d1af294ec87c67f21d39133196dbc1"
+dependencies = [
+ "cc",
+ "qt-build-utils",
+]
+
+[[package]]
+name = "qtbridge-gen"
+version = "0.2.0"
+source = "git+https://github.com/qt/qtbridge-rust.git?rev=cad0d6cd81d1af294ec87c67f21d39133196dbc1#cad0d6cd81d1af294ec87c67f21d39133196dbc1"
+dependencies = [
+ "proc-macro2",
+ "qtbridge-build-utils",
+ "qtbridge-gen-common",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "qtbridge-gen-common"
+version = "0.2.0"
+source = "git+https://github.com/qt/qtbridge-rust.git?rev=cad0d6cd81d1af294ec87c67f21d39133196dbc1#cad0d6cd81d1af294ec87c67f21d39133196dbc1"
+dependencies = [
+ "proc-macro2",
+ "qtbridge-build-utils",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "qtbridge-interfaces"
+version = "0.2.0"
+source = "git+https://github.com/qt/qtbridge-rust.git?rev=cad0d6cd81d1af294ec87c67f21d39133196dbc1#cad0d6cd81d1af294ec87c67f21d39133196dbc1"
+dependencies = [
+ "cxx",
+ "cxx-build",
+ "cxx-qt-lib",
+ "qtbridge-build-utils",
+ "qtbridge-runtime",
+ "qtbridge-type-lib",
+]
+
+[[package]]
+name = "qtbridge-runtime"
+version = "0.2.0"
+source = "git+https://github.com/qt/qtbridge-rust.git?rev=cad0d6cd81d1af294ec87c67f21d39133196dbc1#cad0d6cd81d1af294ec87c67f21d39133196dbc1"
+dependencies = [
+ "cxx",
+ "cxx-build",
+ "cxx-qt",
+ "cxx-qt-lib",
+ "qtbridge-build-utils",
+ "qtbridge-type-lib",
+]
+
+[[package]]
+name = "qtbridge-type-lib"
+version = "0.2.0"
+source = "git+https://github.com/qt/qtbridge-rust.git?rev=cad0d6cd81d1af294ec87c67f21d39133196dbc1#cad0d6cd81d1af294ec87c67f21d39133196dbc1"
+dependencies = [
+ "cxx",
+ "cxx-build",
+ "cxx-qt",
+ "cxx-qt-lib",
+ "qtbridge-build-utils",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13877,6 +14165,12 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "scratch"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68f2ec51b097e4c1a75b681a8bec621909b5e91f15bb7b840c4f2f7b01148b2"
 
 [[package]]
 name = "screencapturekit"

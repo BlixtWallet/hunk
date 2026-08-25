@@ -19,6 +19,7 @@ on:
       - "tools/**"
       - "assets/browser-runtime/**"
       - "assets/icons/**"
+      - "docs/QT_MIGRATION_ROADMAP.md"
       - "README.md"
 
 permissions:
@@ -31,11 +32,12 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
+  HUNK_QT_VERSION: "6.11.2"
 
 jobs:
   linux:
     name: Linux Checks
-    runs-on: ubuntu-self-hosted
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
@@ -44,14 +46,32 @@ jobs:
         with:
           clean: false
 
-      # - name: Cache cargo registry and Rust dependencies
-      #   uses: Swatinem/rust-cache@v2
-      #   with:
-      #     shared-key: pr-build-${{ runner.os }}-desktop-v2
-      #     workspaces: |
-      #       . -> target
-      #     cache-on-failure: "true"
-      #     cmd-format: nix develop --accept-flake-config -c {0}
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          extra-conf: |
+            accept-flake-config = true
+
+      - name: Cache Nix store
+        uses: DeterminateSystems/magic-nix-cache-action@v14
+
+      - name: Install pinned Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.HUNK_QT_VERSION }}
+          arch: linux_gcc_64
+          cache: true
+          cache-key-prefix: hunk-qt-${{ env.HUNK_QT_VERSION }}-linux
+          aqtversion: ==3.3.0
+
+      - name: Cache cargo registry and Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: pr-build-${{ runner.os }}-qt-v1
+          workspaces: |
+            . -> target
+          cache-on-failure: "true"
+          cmd-format: nix develop --accept-flake-config -c {0}
 
       # Temporarily disabled for PR builds; release packaging stays in release workflows.
       # - name: Resolve release version
@@ -65,39 +85,15 @@ jobs:
         shell: bash
 
       - name: Run clippy
-        run: nix develop --accept-flake-config -c cargo clippy --workspace --all-targets -- -D warnings
+        run: nix develop --accept-flake-config -c cargo clippy --workspace --exclude hunk-desktop --all-targets -- -D warnings
         shell: bash
 
       - name: Run tests
-        run: nix develop --accept-flake-config -c cargo test --workspace
+        run: nix develop --accept-flake-config -c cargo test --workspace --exclude hunk-desktop
         shell: bash
 
-      - name: Build hunk-desktop
-        run: nix develop --accept-flake-config -c cargo build -p hunk-desktop --locked
-        shell: bash
-
-      - name: Test and build hunk-desktop with embedded browser
-        run: |
-          nix develop --accept-flake-config -c ./scripts/prepare_browser_cef_runtime.sh \
-            x86_64-unknown-linux-gnu \
-            "$PWD/assets/browser-runtime/cef/linux/runtime"
-          nix develop --accept-flake-config -c sh -lc '
-            CEF_PATH="$PWD/assets/browser-runtime/cef/linux/runtime" \
-            LD_LIBRARY_PATH="$PWD/assets/browser-runtime/cef/linux/runtime${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-            cargo test \
-              -p hunk-browser \
-              --locked \
-              --features cef
-          '
-          nix develop --accept-flake-config -c sh -lc '
-            CEF_PATH="$PWD/assets/browser-runtime/cef/linux/runtime" \
-            LD_LIBRARY_PATH="$PWD/assets/browser-runtime/cef/linux/runtime${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-            cargo build \
-              -p hunk-browser-helper \
-              -p hunk-desktop \
-              --locked \
-              --features hunk-browser-helper/cef-subprocess,hunk-desktop/cef-browser
-          '
+      - name: Run Qt QML smoke tests
+        run: nix develop --accept-flake-config -c ./scripts/qt/test_qml.sh
         shell: bash
 
       # Temporarily disabled for PR builds; release packaging stays in release workflows.
@@ -127,32 +123,9 @@ jobs:
       #     if-no-files-found: error
 
   build:
-    name: ${{ matrix.name }} Build
-    runs-on: ${{ matrix.os }}
+    name: Windows Build
+    runs-on: blacksmith-4vcpu-windows-2025
     timeout-minutes: 90
-    env:
-      APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_NOTARY_API_KEY_BASE64: ${{ secrets.APPLE_NOTARY_API_KEY_BASE64 }}
-      APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-      APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macOS
-            os: macOS
-            install_packager: cargo install cargo-packager --locked --version 0.11.8
-            resolve_version: |
-              version="$(./scripts/resolve_hunk_version.sh)"
-              echo "HUNK_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
-          - name: Windows
-            os: blacksmith-4vcpu-windows-2025
-            install_packager: cargo install cargo-packager --locked --version 0.11.8
-            resolve_version: |
-              $version = (bash ./scripts/resolve_hunk_version.sh).Trim()
-              "HUNK_RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     steps:
       - name: Checkout
@@ -160,28 +133,23 @@ jobs:
         with:
           clean: false
 
-      - name: Disable stale local Nix cache configuration
-        if: runner.os == 'macOS'
-        run: |
-          {
-            echo "NIX_CONFIG<<EOF"
-            echo "post-build-hook ="
-            echo "extra-substituters ="
-            echo "substituters = https://cache.nixos.org/"
-            echo "EOF"
-          } >> "$GITHUB_ENV"
-        shell: bash
-
       - name: Install stable Rust
-        if: runner.os != 'macOS'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Zig
-        if: runner.os != 'macOS'
         uses: mlugg/setup-zig@v2
         with:
           use-cache: false
           version: 0.15.2
+
+      - name: Install pinned Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.HUNK_QT_VERSION }}
+          arch: win64_msvc2022_64
+          cache: true
+          cache-key-prefix: hunk-qt-${{ env.HUNK_QT_VERSION }}-windows-aqt-8c3695d4
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b
 
       # - name: Cache cargo registry and Rust dependencies
       #   if: runner.os == 'macOS'
@@ -194,7 +162,6 @@ jobs:
       #     cmd-format: nix develop --accept-flake-config -c {0}
 
       - name: Cache cargo registry and Rust dependencies
-        if: runner.os != 'macOS'
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: pr-build-${{ runner.os }}-desktop-v2
@@ -224,57 +191,16 @@ jobs:
       #   shell: pwsh
 
       - name: Run hunk-terminal tests
-        if: runner.os == 'macOS'
-        run: nix develop --accept-flake-config -c cargo test -p hunk-terminal --tests
-        shell: bash
-
-      - name: Run hunk-terminal tests
-        if: runner.os == 'Windows'
         run: cargo test -p hunk-terminal --tests
         shell: pwsh
 
-      - name: Build hunk-desktop
-        if: runner.os == 'macOS'
-        run: nix develop --accept-flake-config -c cargo build -p hunk-desktop --locked --profile ci
-        shell: bash
-
-      - name: Build hunk-desktop with embedded browser
-        if: runner.os == 'macOS'
-        run: |
-          HUNK_CEF_TARGET="$(nix develop --accept-flake-config -c rustc -vV | sed -n 's/^host: //p')"
-          nix develop --accept-flake-config -c ./scripts/prepare_browser_cef_runtime.sh \
-            "$HUNK_CEF_TARGET" \
-            "$PWD/assets/browser-runtime/cef/macos/runtime"
-          CEF_PATH="$PWD/assets/browser-runtime/cef/macos/runtime" \
-            nix develop --accept-flake-config -c cargo build \
-              -p hunk-browser-helper \
-              -p hunk-desktop \
-              --locked \
-              --profile ci \
-              --features hunk-browser-helper/cef-subprocess,hunk-desktop/cef-browser
-        shell: bash
-
-      - name: Build hunk-desktop
-        if: runner.os == 'Windows'
-        run: cargo build -p hunk-desktop --locked --profile ci
+      - name: Build hunk-qt
+        run: cargo build -p hunk-qt --locked --profile ci
         shell: pwsh
 
-      - name: Build hunk-desktop with embedded browser
-        if: runner.os == 'Windows'
-        run: |
-          $runtimeDir = Join-Path $PWD "assets/browser-runtime/cef/windows/runtime"
-          ./scripts/prepare_browser_cef_runtime_windows.ps1 `
-            -TargetTriple "x86_64-pc-windows-msvc" `
-            -RuntimeDir $runtimeDir
-          $env:CEF_PATH = $runtimeDir
-          $env:PATH = "$env:PATH;$runtimeDir"
-          cargo build `
-            -p hunk-browser-helper `
-            -p hunk-desktop `
-            --locked `
-            --profile ci `
-            --features "hunk-browser-helper/cef-subprocess,hunk-desktop/cef-browser"
-        shell: pwsh
+      - name: Run Qt QML smoke tests
+        run: bash ./scripts/qt/test_qml.sh
+        shell: bash
 
       # Temporarily disabled for PR builds; release packaging stays in release workflows.
       # - name: Detect Apple signing configuration
