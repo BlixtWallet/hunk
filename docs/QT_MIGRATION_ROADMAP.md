@@ -339,6 +339,13 @@ external-volume `target/` and Cargo cache:
   suite took 3 seconds. Moving off GPUI materially removes the second desktop
   build, but the retained Rust/Codex dependency graph remains the dominant
   Linux CI cost and must be narrowed separately rather than attributed to Qt.
+- The first PR #182 run after moving keyring/network dependencies into the Qt
+  graph measured 9 minutes 52 seconds on Windows and 29 minutes 23 seconds on
+  Linux. Windows spent 3 minutes in terminal tests and 3 minutes 39 seconds
+  building `hunk-qt`; Linux spent 11 minutes 7 seconds in Clippy and 14 minutes
+  11 seconds in tests. This is the cache-invalidated case, not a steady-state
+  Qt cost, and demonstrates that lockfile/dependency-graph churn can still
+  dominate even after GPUI is gone from the gate.
 - The QML suite exercises 1,500 file rows and verifies distant rows are not
   instantiated. The final 8 ms/120 Hz hardware audit remains a cutover gate,
   especially for the substantially heavier Diff and streaming AI surfaces.

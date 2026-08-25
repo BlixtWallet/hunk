@@ -212,3 +212,8 @@ append a correction when later evidence changes one.
   minutes 51 seconds belonged to the full non-GPUI workspace tests. Treat core
   dependency boundaries and test partitioning as separate CI work from the UI
   toolkit migration.
+- Measure both exact-cache and dependency-invalidated CI runs. Moving forge
+  dependencies into the Qt graph changed the lockfile ownership and the first
+  follow-up run rose to 9 minutes 52 seconds on Windows and 29 minutes 23
+  seconds on Linux, despite GPUI already being absent from the gate. Toolkit
+  choice cannot compensate for a cold retained Rust dependency graph.
