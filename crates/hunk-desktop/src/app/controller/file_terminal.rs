@@ -9,7 +9,6 @@ impl DiffViewer {
             active_tab_id: self.files_terminal_active_tab_id,
             next_tab_id: self.files_terminal_next_tab_id,
             tabs: self.files_visible_terminal_tabs_snapshot(),
-            restore_target: self.files_terminal_restore_target,
         }
     }
 
@@ -19,7 +18,6 @@ impl DiffViewer {
         self.files_terminal_next_tab_id = state.next_tab_id;
         self.files_terminal_tabs = state.tabs;
         self.files_apply_visible_terminal_tab();
-        self.files_terminal_restore_target = state.restore_target;
         self.files_terminal_surface_focused = false;
         self.files_terminal_cursor_blink_generation =
             self.files_terminal_cursor_blink_generation.saturating_add(1);
@@ -232,72 +230,7 @@ impl DiffViewer {
         });
     }
 
-    fn defer_files_editor_focus(&self, cx: &mut Context<Self>) {
-        let window_handle = self.window_handle;
-        let focus_handle = self.files_editor_focus_handle.clone();
-        cx.defer(move |cx| {
-            let result = cx.update_window(window_handle, |_, window, cx| {
-                focus_handle.focus(window, cx);
-            });
-            if let Err(err) = result
-                && !Self::is_window_not_found_error(&err)
-            {
-                error!("failed to defer Files editor focus: {err:#}");
-            }
-        });
-    }
-
-    fn files_terminal_restore_target_for_window(&self, window: &Window) -> FilesTerminalRestoreTarget {
-        if self.editor_path.is_some()
-            && !self.editor_markdown_preview
-            && self.files_editor_focus_handle.is_focused(window)
-        {
-            FilesTerminalRestoreTarget::Editor
-        } else {
-            FilesTerminalRestoreTarget::WorkspaceRoot
-        }
-    }
-
-    fn capture_files_terminal_restore_target(
-        &mut self,
-        window: Option<&Window>,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(window) = window {
-            self.files_terminal_restore_target =
-                self.files_terminal_restore_target_for_window(window);
-            return;
-        }
-
-        let mut restore_target = FilesTerminalRestoreTarget::WorkspaceRoot;
-        let editor_focus_handle = self.files_editor_focus_handle.clone();
-        let editor_open = self.editor_path.is_some() && !self.editor_markdown_preview;
-        if editor_open
-            && let Err(err) = Self::update_any_window(cx, |window, _| {
-                if editor_focus_handle.is_focused(window) {
-                    restore_target = FilesTerminalRestoreTarget::Editor;
-                }
-            })
-        {
-            error!("failed to capture Files terminal restore target: {err:#}");
-        }
-        self.files_terminal_restore_target = restore_target;
-    }
-
     fn defer_files_focus_restore_after_terminal_close(&self, cx: &mut Context<Self>) {
-        if self.workspace_view_mode != WorkspaceViewMode::Files {
-            self.defer_root_focus(cx);
-            return;
-        }
-
-        if self.files_terminal_restore_target == FilesTerminalRestoreTarget::Editor
-            && self.editor_path.is_some()
-            && !self.editor_markdown_preview
-        {
-            self.defer_files_editor_focus(cx);
-            return;
-        }
-
         self.defer_root_focus(cx);
     }
 
@@ -346,13 +279,10 @@ impl DiffViewer {
 
     fn toggle_files_terminal_drawer(
         &mut self,
-        window: Option<&mut Window>,
+        _window: Option<&mut Window>,
         cx: &mut Context<Self>,
     ) {
         let next_open = !self.files_terminal_open;
-        if next_open {
-            self.capture_files_terminal_restore_target(window.as_deref(), cx);
-        }
         self.files_terminal_set_open(next_open, cx);
         if next_open {
             self.ensure_files_terminal_session(cx);
@@ -459,15 +389,12 @@ impl DiffViewer {
 
     pub(super) fn files_new_terminal_tab_action(
         &mut self,
-        window: Option<&mut Window>,
+        _window: Option<&mut Window>,
         cx: &mut Context<Self>,
     ) {
         let Some(project_key) = self.current_files_terminal_owner_key() else {
             return;
         };
-        if !self.files_terminal_open {
-            self.capture_files_terminal_restore_target(window.as_deref(), cx);
-        }
         self.files_save_visible_terminal_tab();
         self.files_park_visible_terminal_runtime_for_project(Some(project_key.as_str()));
         let tab_id = self.files_terminal_next_tab_id.max(1);
@@ -485,7 +412,7 @@ impl DiffViewer {
     fn files_select_relative_terminal_tab(
         &mut self,
         delta: isize,
-        window: Option<&mut Window>,
+        _window: Option<&mut Window>,
         cx: &mut Context<Self>,
     ) {
         if self.files_terminal_tabs.len() < 2 {
@@ -494,9 +421,6 @@ impl DiffViewer {
         let Some(project_key) = self.current_files_terminal_owner_key() else {
             return;
         };
-        if !self.files_terminal_open {
-            self.capture_files_terminal_restore_target(window.as_deref(), cx);
-        }
         self.files_save_visible_terminal_tab();
         self.files_park_visible_terminal_runtime_for_project(Some(project_key.as_str()));
         let tabs = self.files_terminal_tabs.clone();
@@ -523,7 +447,7 @@ impl DiffViewer {
     pub(super) fn files_select_terminal_tab(
         &mut self,
         tab_id: TerminalTabId,
-        window: Option<&mut Window>,
+        _window: Option<&mut Window>,
         cx: &mut Context<Self>,
     ) {
         if self.files_terminal_active_tab_id == tab_id {
@@ -536,9 +460,6 @@ impl DiffViewer {
         let Some(project_key) = self.current_files_terminal_owner_key() else {
             return;
         };
-        if !self.files_terminal_open {
-            self.capture_files_terminal_restore_target(window.as_deref(), cx);
-        }
         self.files_save_visible_terminal_tab();
         self.files_park_visible_terminal_runtime_for_project(Some(project_key.as_str()));
         self.files_terminal_active_tab_id = tab_id;
@@ -557,15 +478,12 @@ impl DiffViewer {
 
     fn files_close_terminal_tab_action(
         &mut self,
-        window: Option<&mut Window>,
+        _window: Option<&mut Window>,
         cx: &mut Context<Self>,
     ) {
         let Some(project_key) = self.current_files_terminal_owner_key() else {
             return;
         };
-        if !self.files_terminal_open {
-            self.capture_files_terminal_restore_target(window.as_deref(), cx);
-        }
         let closed_tab_id = self.files_terminal_active_tab_id;
         if self.files_terminal_runtime.as_ref().is_some_and(|runtime| {
             runtime.project_key == project_key && runtime.tab_id == closed_tab_id
@@ -1143,15 +1061,11 @@ impl DiffViewer {
             self.files_terminal_session.status_message =
                 Some("Open a repository before using the terminal.".to_string());
             self.files_terminal_session.status = AiTerminalSessionStatus::Failed;
-            self.capture_files_terminal_restore_target(None, cx);
             self.files_terminal_set_open(true, cx);
             cx.notify();
             return;
         };
 
-        if !self.files_terminal_open {
-            self.capture_files_terminal_restore_target(None, cx);
-        }
         self.files_terminal_set_open(true, cx);
         self.files_terminal_session.last_command = Some(command.clone());
         self.files_terminal_pending_input = Some(command);
@@ -1543,7 +1457,6 @@ impl DiffViewer {
         self.files_terminal_tabs = default_terminal_tabs();
         self.files_terminal_active_tab_id = 1;
         self.files_terminal_next_tab_id = 2;
-        self.files_terminal_restore_target = FilesTerminalRestoreTarget::default();
         self.files_terminal_grid_size = None;
         self.files_clear_terminal_cursor_output_suppression(cx);
         self.files_sync_terminal_cursor_blink(cx);

@@ -46,7 +46,6 @@ use hunk_domain::db::{
     format_comment_clipboard_blob, next_status_for_unmatched_anchor, now_unix_ms,
 };
 use hunk_domain::diff::{DiffCell, DiffCellKind, DiffRowKind, SideBySideRow};
-use hunk_domain::markdown_preview::MarkdownPreviewBlock;
 use hunk_domain::state::{
     AiCollaborationModeSelection, AiServiceTierSelection, AppState, AppStateStore,
     CachedChangedFileState, CachedLocalBranchState, CachedRecentCommitState,
@@ -94,8 +93,8 @@ use branch_picker::{
     BranchPickerDelegate, branch_picker_selected_index, build_branch_picker_delegate,
 };
 use data::{
-    DiffRowSegmentCache, DiffStreamRowMeta, FileRowRange, RepoTreeNode, RepoTreeNodeKind,
-    RepoTreeRow, WorkspaceSwitchAction, WorkspaceViewMode,
+    DiffRowSegmentCache, DiffStreamRowMeta, FileRowRange, RepoTreeRow, WorkspaceSwitchAction,
+    WorkspaceViewMode,
 };
 use hunk_picker::{
     HunkPickerAction, HunkPickerConfig, HunkPickerEvent, HunkPickerState,
@@ -107,13 +106,11 @@ use project_picker::{
 use refresh_policy::{
     GitWorkspaceRefreshRequest, SnapshotRefreshBehavior, SnapshotRefreshPriority,
     SnapshotRefreshRequest, diff_state_changed, line_stats_paths_from_dirty_paths,
-    missing_line_stat_paths, repo_watch_refresh_request, retained_selection_path,
-    should_bootstrap_empty_files_workspace_editor, should_refresh_line_stats_after_snapshot,
-    should_reload_diff_after_snapshot, should_reload_empty_files_workspace_tree,
-    should_reload_repo_tree_after_snapshot, should_request_startup_git_workspace_refresh,
-    should_run_cold_start_reconcile, should_scroll_selected_after_reload,
+    missing_line_stat_paths, repo_watch_refresh_request, should_refresh_line_stats_after_snapshot,
+    should_reload_diff_after_snapshot, should_reload_repo_tree_after_snapshot,
+    should_request_startup_git_workspace_refresh, should_run_cold_start_reconcile,
+    should_scroll_selected_after_reload,
 };
-use repo_file_search::RepoFileSearchProvider;
 use review_compare_picker::{
     ReviewComparePickerDelegate, ReviewCompareSourceOption, build_review_compare_picker_delegate,
 };
@@ -137,13 +134,10 @@ const DIFF_SCROLLBAR_SIZE: f32 = 16.0;
 const DIFF_SPLIT_MIN_CODE_WIDTH: f32 = 120.0;
 const DIFF_SPLIT_HANDLE_WIDTH: f32 = 1.0;
 const DIFF_SPLIT_HANDLE_HIT_WIDTH: f32 = 10.0;
-const FILE_EDITOR_MAX_BYTES: usize = 2_400_000;
-const FILE_EDITOR_TAB_LIMIT: usize = 8;
 pub(crate) const FILES_WORKSPACE_RAIL_HEIGHT: f32 = 32.0;
 const ABOUT_HUNK_VERSION_LABEL: &str = concat!("Version ", env!("CARGO_PKG_VERSION"));
 const ABOUT_HUNK_DESCRIPTION_LINE_ONE: &str = "A fast diff viewer and Codex orchestrator.";
 const ABOUT_HUNK_DESCRIPTION_LINE_TWO: &str = "Hunk is built in GPUI and aims to be very fast.";
-const MARKDOWN_PREVIEW_DEBOUNCE: Duration = Duration::from_millis(200);
 const DIFF_SEGMENT_PREFETCH_RADIUS_ROWS: usize = 120;
 const DIFF_SEGMENT_PREFETCH_STEP_ROWS: usize = 24;
 const DIFF_SEGMENT_PREFETCH_BATCH_ROWS: usize = 96;
@@ -230,9 +224,7 @@ actions!(
         PreviousHunk,
         NextFile,
         PreviousFile,
-        ViewCurrentReviewFile,
         ToggleSidebarTree,
-        SwitchToFilesView,
         SwitchToReviewView,
         SwitchToGitView,
         SwitchToAiView,
@@ -258,44 +250,10 @@ actions!(
         AiEditLastQueuedPrompt,
         AiInterruptSelectedTurn,
         OpenProject,
-        QuickOpenFile,
-        FilesEditorCopy,
-        FilesEditorCut,
-        FilesEditorPaste,
-        FilesEditorMoveUp,
-        FilesEditorMoveDown,
-        FilesEditorMoveLeft,
-        FilesEditorMoveRight,
-        FilesEditorMoveToBeginningOfLine,
-        FilesEditorMoveToEndOfLine,
-        FilesEditorMoveToBeginningOfDocument,
-        FilesEditorMoveToEndOfDocument,
-        FilesEditorMoveToPreviousWordStart,
-        FilesEditorMoveToNextWordEnd,
-        FilesEditorSelectUp,
-        FilesEditorSelectDown,
-        FilesEditorSelectLeft,
-        FilesEditorSelectRight,
-        FilesEditorSelectToBeginningOfLine,
-        FilesEditorSelectToEndOfLine,
-        FilesEditorSelectToBeginningOfDocument,
-        FilesEditorSelectToEndOfDocument,
-        FilesEditorSelectToPreviousWordStart,
-        FilesEditorSelectToNextWordEnd,
-        FilesEditorPageUp,
-        FilesEditorPageDown,
-        NextEditorTab,
-        PreviousEditorTab,
-        CloseEditorTab,
-        SaveCurrentFile,
         CheckForUpdates,
         AboutHunk,
         OpenSettings,
         QuitApp,
-        RepoTreeNewFile,
-        RepoTreeNewFolder,
-        RepoTreeRenameFile,
-        RepoTreeCancelInlineEdit,
     ]
 );
 
@@ -342,8 +300,6 @@ fn build_application_menus() -> Vec<Menu> {
                 disabled: false,
                 items: vec![
                     MenuItem::action("Open Project...", OpenProject),
-                    MenuItem::action("Quick Open...", QuickOpenFile),
-                    MenuItem::action("Save File", SaveCurrentFile),
                     MenuItem::separator(),
                     MenuItem::action("Check for Updates...", CheckForUpdates),
                     MenuItem::separator(),
@@ -367,8 +323,6 @@ fn build_application_menus() -> Vec<Menu> {
                 disabled: false,
                 items: vec![
                     MenuItem::action("Open Project...", OpenProject),
-                    MenuItem::action("Quick Open...", QuickOpenFile),
-                    MenuItem::action("Save File", SaveCurrentFile),
                     MenuItem::separator(),
                     MenuItem::action("Check for Updates...", CheckForUpdates),
                     MenuItem::separator(),
@@ -499,13 +453,6 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
             Some(WorkspaceViewMode::Diff.shortcut_context()),
         )
     }));
-    bindings.extend(shortcuts.view_current_review_file.iter().map(|shortcut| {
-        KeyBinding::new(
-            shortcut.as_str(),
-            ViewCurrentReviewFile,
-            Some(WorkspaceViewMode::Diff.shortcut_context()),
-        )
-    }));
     bindings.extend(shortcuts.toggle_sidebar_tree.iter().map(|shortcut| {
         KeyBinding::new(
             shortcut.as_str(),
@@ -520,12 +467,6 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
             Some(WorkspaceViewMode::Ai.shortcut_context()),
         )
     }));
-    bindings.extend(
-        shortcuts
-            .switch_to_files_view
-            .iter()
-            .map(|shortcut| KeyBinding::new(shortcut.as_str(), SwitchToFilesView, None)),
-    );
     bindings.extend(
         shortcuts
             .switch_to_review_view
@@ -549,13 +490,6 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
             shortcut.as_str(),
             AiToggleTerminalDrawer,
             Some(WorkspaceViewMode::Ai.shortcut_context()),
-        )
-    }));
-    bindings.extend(shortcuts.toggle_ai_terminal_drawer.iter().map(|shortcut| {
-        KeyBinding::new(
-            shortcut.as_str(),
-            AiToggleTerminalDrawer,
-            Some(WorkspaceViewMode::Files.shortcut_context()),
         )
     }));
     bindings.extend(shortcuts.toggle_ai_terminal_drawer.iter().map(|shortcut| {
@@ -679,257 +613,6 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
             .iter()
             .map(|shortcut| KeyBinding::new(shortcut.as_str(), OpenProject, None)),
     );
-    bindings.push(KeyBinding::new(
-        "cmd-p",
-        QuickOpenFile,
-        Some(WorkspaceViewMode::Files.shortcut_context()),
-    ));
-    bindings.push(KeyBinding::new(
-        "ctrl-p",
-        QuickOpenFile,
-        Some(WorkspaceViewMode::Files.shortcut_context()),
-    ));
-    bindings.push(KeyBinding::new(
-        "cmd-c",
-        FilesEditorCopy,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "ctrl-c",
-        FilesEditorCopy,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "cmd-x",
-        FilesEditorCut,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "ctrl-x",
-        FilesEditorCut,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "cmd-v",
-        FilesEditorPaste,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "ctrl-v",
-        FilesEditorPaste,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "up",
-        FilesEditorMoveUp,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "down",
-        FilesEditorMoveDown,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "left",
-        FilesEditorMoveLeft,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "right",
-        FilesEditorMoveRight,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "shift-up",
-        FilesEditorSelectUp,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "shift-down",
-        FilesEditorSelectDown,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "shift-left",
-        FilesEditorSelectLeft,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "shift-right",
-        FilesEditorSelectRight,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "home",
-        FilesEditorMoveToBeginningOfLine,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "end",
-        FilesEditorMoveToEndOfLine,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "shift-home",
-        FilesEditorSelectToBeginningOfLine,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "shift-end",
-        FilesEditorSelectToEndOfLine,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "pageup",
-        FilesEditorPageUp,
-        Some("FilesEditor"),
-    ));
-    bindings.push(KeyBinding::new(
-        "pagedown",
-        FilesEditorPageDown,
-        Some("FilesEditor"),
-    ));
-    if cfg!(target_os = "macos") {
-        bindings.push(KeyBinding::new(
-            "cmd-left",
-            FilesEditorMoveToBeginningOfLine,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "cmd-right",
-            FilesEditorMoveToEndOfLine,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "cmd-up",
-            FilesEditorMoveToBeginningOfDocument,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "cmd-down",
-            FilesEditorMoveToEndOfDocument,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "cmd-shift-left",
-            FilesEditorSelectToBeginningOfLine,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "cmd-shift-right",
-            FilesEditorSelectToEndOfLine,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "cmd-shift-up",
-            FilesEditorSelectToBeginningOfDocument,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "cmd-shift-down",
-            FilesEditorSelectToEndOfDocument,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "cmd-home",
-            FilesEditorMoveToBeginningOfDocument,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "cmd-end",
-            FilesEditorMoveToEndOfDocument,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "alt-left",
-            FilesEditorMoveToPreviousWordStart,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "alt-right",
-            FilesEditorMoveToNextWordEnd,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "alt-shift-left",
-            FilesEditorSelectToPreviousWordStart,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "alt-shift-right",
-            FilesEditorSelectToNextWordEnd,
-            Some("FilesEditor"),
-        ));
-    } else {
-        bindings.push(KeyBinding::new(
-            "ctrl-left",
-            FilesEditorMoveToPreviousWordStart,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "ctrl-right",
-            FilesEditorMoveToNextWordEnd,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "ctrl-shift-left",
-            FilesEditorSelectToPreviousWordStart,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "ctrl-shift-right",
-            FilesEditorSelectToNextWordEnd,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "ctrl-home",
-            FilesEditorMoveToBeginningOfDocument,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "ctrl-end",
-            FilesEditorMoveToEndOfDocument,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "ctrl-shift-home",
-            FilesEditorSelectToBeginningOfDocument,
-            Some("FilesEditor"),
-        ));
-        bindings.push(KeyBinding::new(
-            "ctrl-shift-end",
-            FilesEditorSelectToEndOfDocument,
-            Some("FilesEditor"),
-        ));
-    }
-    bindings.extend(shortcuts.save_current_file.iter().map(|shortcut| {
-        KeyBinding::new(
-            shortcut.as_str(),
-            SaveCurrentFile,
-            Some(WorkspaceViewMode::Files.shortcut_context()),
-        )
-    }));
-    bindings.extend(shortcuts.next_editor_tab.iter().map(|shortcut| {
-        KeyBinding::new(
-            shortcut.as_str(),
-            NextEditorTab,
-            Some(WorkspaceViewMode::Files.shortcut_context()),
-        )
-    }));
-    bindings.extend(shortcuts.previous_editor_tab.iter().map(|shortcut| {
-        KeyBinding::new(
-            shortcut.as_str(),
-            PreviousEditorTab,
-            Some(WorkspaceViewMode::Files.shortcut_context()),
-        )
-    }));
-    bindings.extend(shortcuts.close_editor_tab.iter().map(|shortcut| {
-        KeyBinding::new(
-            shortcut.as_str(),
-            CloseEditorTab,
-            Some(WorkspaceViewMode::Files.shortcut_context()),
-        )
-    }));
     bindings.extend(
         shortcuts
             .open_settings
@@ -942,32 +625,6 @@ fn bind_keyboard_shortcuts(cx: &mut App, shortcuts: &KeyboardShortcuts) {
             .iter()
             .map(|shortcut| KeyBinding::new(shortcut.as_str(), QuitApp, None)),
     );
-    bindings.extend(
-        shortcuts
-            .repo_tree_new_file
-            .iter()
-            .map(|shortcut| KeyBinding::new(shortcut.as_str(), RepoTreeNewFile, Some("RepoTree"))),
-    );
-    bindings.extend(
-        shortcuts.repo_tree_new_folder.iter().map(|shortcut| {
-            KeyBinding::new(shortcut.as_str(), RepoTreeNewFolder, Some("RepoTree"))
-        }),
-    );
-    bindings.extend(
-        shortcuts.repo_tree_rename_file.iter().map(|shortcut| {
-            KeyBinding::new(shortcut.as_str(), RepoTreeRenameFile, Some("RepoTree"))
-        }),
-    );
-    bindings.push(KeyBinding::new(
-        "escape",
-        RepoTreeCancelInlineEdit,
-        Some("RepoTree"),
-    ));
-    bindings.push(KeyBinding::new(
-        "escape",
-        RepoTreeCancelInlineEdit,
-        Some("RepoTreeInlineEdit"),
-    ));
     bindings.push(KeyBinding::new(
         "escape",
         AiInterruptSelectedTurn,
@@ -1087,33 +744,12 @@ fn quit_app(_: &QuitApp, cx: &mut App) {
 
 include!("app/settings.rs");
 
-struct RepoTreeCacheState {
-    nodes: Vec<RepoTreeNode>,
-    file_count: usize,
-    folder_count: usize,
-    expanded_dirs: BTreeSet<String>,
-    error: Option<String>,
-    scroll_anchor_path: Option<String>,
-    fingerprint: Option<RepoSnapshotFingerprint>,
-}
-
 struct RepoTreeState {
     list_state: ListState,
     row_count: usize,
-    nodes: Vec<RepoTreeNode>,
     rows: Vec<RepoTreeRow>,
     file_count: usize,
-    folder_count: usize,
-    expanded_dirs: BTreeSet<String>,
     scroll_anchor_path: Option<String>,
-    full_cache: Option<RepoTreeCacheState>,
-    epoch: usize,
-    task: Task<()>,
-    loading: bool,
-    reload_pending: bool,
-    error: Option<String>,
-    changed_only: bool,
-    last_reload: Instant,
 }
 
 impl RepoTreeState {
@@ -1125,20 +761,9 @@ impl RepoTreeState {
                 px(SIDEBAR_REPO_LIST_ESTIMATED_ROW_HEIGHT),
             ),
             row_count: 0,
-            nodes: Vec::new(),
             rows: Vec::new(),
             file_count: 0,
-            folder_count: 0,
-            expanded_dirs: BTreeSet::new(),
             scroll_anchor_path: None,
-            full_cache: None,
-            epoch: 0,
-            task: Task::ready(()),
-            loading: false,
-            reload_pending: false,
-            error: None,
-            changed_only: false,
-            last_reload: Instant::now(),
         }
     }
 }
@@ -1188,21 +813,6 @@ struct WorkspaceProjectState {
     last_recent_commits_fingerprint: Option<RecentCommitsFingerprint>,
     last_snapshot_fingerprint: Option<RepoSnapshotFingerprint>,
     repo_tree: RepoTreeState,
-    file_editor_tabs: Vec<FileEditorTab>,
-    active_file_editor_tab_id: Option<usize>,
-    next_file_editor_tab_id: usize,
-    file_editor_tab_scroll_handle: ScrollHandle,
-    files_editor: native_files_editor::SharedFilesEditor,
-    file_quick_open_visible: bool,
-    file_quick_open_matches: Vec<String>,
-    file_quick_open_selected_ix: usize,
-    editor_path: Option<String>,
-    editor_error: Option<String>,
-    editor_dirty: bool,
-    editor_last_saved_text: Option<String>,
-    editor_markdown_preview_blocks: Vec<MarkdownPreviewBlock>,
-    editor_markdown_preview_revision: usize,
-    editor_markdown_preview: bool,
     editor_search_visible: bool,
 }
 
@@ -1662,7 +1272,6 @@ struct DiffViewer {
     files_terminal_height_px: f32,
     files_terminal_session: AiTerminalSessionState,
     files_terminal_focus_handle: FocusHandle,
-    files_terminal_restore_target: FilesTerminalRestoreTarget,
     files_terminal_surface_focused: bool,
     files_terminal_cursor_blink_visible: bool,
     files_terminal_cursor_blink_active: bool,
@@ -1678,9 +1287,6 @@ struct DiffViewer {
     files_terminal_cursor_output_generation: usize,
     files_terminal_runtime_generation: usize,
     files_terminal_stop_requested: bool,
-    repo_file_search_provider: Rc<RepoFileSearchProvider>,
-    repo_file_search_reload_task: Task<()>,
-    repo_file_search_loading: bool,
     ai_composer_file_completion_provider: Rc<AiComposerFileCompletionProvider>,
     ai_composer_file_completion_reload_task: Task<()>,
     ai_composer_file_completion_menu: Option<AiComposerFileCompletionMenuState>,
@@ -1788,7 +1394,6 @@ struct DiffViewer {
     in_app_menu_bar: Option<Entity<AppMenuBar>>,
     focus_handle: FocusHandle,
     repo_tree_focus_handle: FocusHandle,
-    files_editor_focus_handle: FocusHandle,
     drag_selecting_rows: bool,
     scroll_selected_after_reload: bool,
     last_scroll_activity_at: Instant,
@@ -1803,49 +1408,16 @@ struct DiffViewer {
     ai_perf_metrics: RefCell<AiPerfMetrics>,
     repo_discovery_failed: bool,
     error_message: Option<String>,
-    files_sidebar_collapsed: bool,
     review_sidebar_collapsed: bool,
     ai_thread_sidebar_collapsed: bool,
     repo_tree: RepoTreeState,
-    repo_tree_inline_edit: Option<RepoTreeInlineEditState>,
-    repo_tree_context_menu: Option<RepoTreeContextMenuState>,
     workspace_text_context_menu: Option<WorkspaceTextContextMenuState>,
-    file_editor_tabs: Vec<FileEditorTab>,
-    active_file_editor_tab_id: Option<usize>,
-    next_file_editor_tab_id: usize,
-    file_editor_tab_scroll_handle: ScrollHandle,
-    files_editor: native_files_editor::SharedFilesEditor,
     editor_search_input_state: Entity<InputState>,
-    editor_replace_input_state: Entity<InputState>,
-    file_quick_open_input_state: Entity<InputState>,
-    file_quick_open_visible: bool,
-    file_quick_open_matches: Vec<String>,
-    file_quick_open_selected_ix: usize,
-    editor_path: Option<String>,
-    editor_loading: bool,
-    editor_error: Option<String>,
-    editor_dirty: bool,
-    editor_last_saved_text: Option<String>,
-    editor_epoch: usize,
-    editor_task: Task<()>,
-    editor_save_loading: bool,
-    editor_save_epoch: usize,
-    editor_save_task: Task<()>,
-    editor_markdown_preview_task: Task<()>,
-    editor_markdown_preview_blocks: Vec<MarkdownPreviewBlock>,
-    editor_markdown_preview_loading: bool,
-    editor_markdown_preview_revision: usize,
-    editor_markdown_preview: bool,
     editor_search_visible: bool,
 }
 
 impl Drop for DiffViewer {
     fn drop(&mut self) {
-        self.sync_active_file_editor_tab_state();
-        for tab in &self.file_editor_tabs {
-            tab.files_editor.borrow_mut().shutdown();
-        }
-        self.files_editor.borrow_mut().shutdown();
         self.ai_browser_pump_generation = self.ai_browser_pump_generation.saturating_add(1);
         self.ai_browser_pump_active = false;
         self.ai_browser_pump_task = Task::ready(());

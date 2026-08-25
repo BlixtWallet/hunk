@@ -199,12 +199,6 @@ impl DiffViewer {
             return;
         };
         match &menu_state.target {
-            WorkspaceTextContextMenuTarget::FilesEditor(_) => {
-                let Some(text) = self.files_editor.borrow().copy_selection_text() else {
-                    return;
-                };
-                cx.write_to_clipboard(ClipboardItem::new_string(text));
-            }
             WorkspaceTextContextMenuTarget::SelectableText(_)
             | WorkspaceTextContextMenuTarget::Terminal(_) => {
                 let target_row_id = match &menu_state.target {
@@ -240,25 +234,6 @@ impl DiffViewer {
         self.close_workspace_text_context_menu(cx);
     }
 
-    pub(super) fn workspace_text_context_menu_cut(
-        &mut self,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(WorkspaceTextContextMenuState {
-            target: WorkspaceTextContextMenuTarget::FilesEditor(_),
-            ..
-        }) = self.workspace_text_context_menu.as_ref()
-        else {
-            return;
-        };
-        let Some(text) = self.files_editor.borrow_mut().cut_selection_text() else {
-            return;
-        };
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
-        self.sync_editor_dirty_from_input(cx);
-        self.close_workspace_text_context_menu(cx);
-    }
-
     pub(super) fn workspace_text_context_menu_paste(
         &mut self,
         cx: &mut Context<Self>,
@@ -266,17 +241,7 @@ impl DiffViewer {
         let Some(menu_state) = self.workspace_text_context_menu.as_ref() else {
             return;
         };
-        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
-            return;
-        };
         match &menu_state.target {
-            WorkspaceTextContextMenuTarget::FilesEditor(_) => {
-                if self.files_editor.borrow_mut().paste_text(text.as_str()) {
-                    self.sync_editor_dirty_from_input(cx);
-                } else {
-                    return;
-                }
-            }
             WorkspaceTextContextMenuTarget::Terminal(target) => {
                 let pasted = match target.kind {
                     WorkspaceTerminalKind::Ai => self.ai_paste_terminal_from_clipboard(cx),
@@ -301,12 +266,6 @@ impl DiffViewer {
             return;
         };
         match menu_state.target {
-            WorkspaceTextContextMenuTarget::FilesEditor(_) => {
-                if !self.files_editor.borrow_mut().select_all_action() {
-                    return;
-                }
-                self.sync_editor_dirty_from_input(cx);
-            }
             WorkspaceTextContextMenuTarget::SelectableText(target) => {
                 if !self.ai_select_all_text_for_surfaces(
                     target.row_id.as_str(),

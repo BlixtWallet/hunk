@@ -43,9 +43,7 @@ fn validate_keyboard_shortcuts(shortcuts: &KeyboardShortcuts) -> Result<(), Stri
     validate_shortcut_list("Previous Hunk", &shortcuts.previous_hunk)?;
     validate_shortcut_list("Next File", &shortcuts.next_file)?;
     validate_shortcut_list("Previous File", &shortcuts.previous_file)?;
-    validate_shortcut_list("View Review File", &shortcuts.view_current_review_file)?;
     validate_shortcut_list("Toggle Sidebar", &shortcuts.toggle_sidebar_tree)?;
-    validate_shortcut_list("Switch to Files View", &shortcuts.switch_to_files_view)?;
     validate_shortcut_list("Switch to Review View", &shortcuts.switch_to_review_view)?;
     validate_shortcut_list("Switch to Git View", &shortcuts.switch_to_git_view)?;
     validate_shortcut_list("Switch to AI View", &shortcuts.switch_to_ai_view)?;
@@ -55,15 +53,8 @@ fn validate_keyboard_shortcuts(shortcuts: &KeyboardShortcuts) -> Result<(), Stri
     validate_shortcut_list("Terminal: Next Tab", &shortcuts.terminal_next_tab)?;
     validate_shortcut_list("Terminal: Previous Tab", &shortcuts.terminal_previous_tab)?;
     validate_shortcut_list("Open Project", &shortcuts.open_project)?;
-    validate_shortcut_list("Save Current File", &shortcuts.save_current_file)?;
-    validate_shortcut_list("Next Editor Tab", &shortcuts.next_editor_tab)?;
-    validate_shortcut_list("Previous Editor Tab", &shortcuts.previous_editor_tab)?;
-    validate_shortcut_list("Close Editor Tab", &shortcuts.close_editor_tab)?;
     validate_shortcut_list("Open Settings", &shortcuts.open_settings)?;
     validate_shortcut_list("Quit App", &shortcuts.quit_app)?;
-    validate_shortcut_list("Tree: New File", &shortcuts.repo_tree_new_file)?;
-    validate_shortcut_list("Tree: New Folder", &shortcuts.repo_tree_new_folder)?;
-    validate_shortcut_list("Tree: Rename File", &shortcuts.repo_tree_rename_file)?;
     Ok(())
 }
 
@@ -159,32 +150,26 @@ impl DiffViewer {
                 window,
                 cx,
             ),
-            view_current_review_file: settings_shortcut_input(
-                &self.config.keyboard_shortcuts.view_current_review_file,
-                "Comma-separated shortcuts, e.g. g space",
-                window,
-                cx,
-            ),
             toggle_sidebar_tree: settings_shortcut_input(
                 &self.config.keyboard_shortcuts.toggle_sidebar_tree,
                 "Comma-separated shortcuts, e.g. cmd-b, ctrl-b",
                 window,
                 cx,
             ),
-            switch_to_files_view: settings_shortcut_input(
-                &self.config.keyboard_shortcuts.switch_to_files_view,
-                "Comma-separated shortcuts, e.g. cmd-1, ctrl-1",
-                window,
-                cx,
-            ),
             switch_to_review_view: settings_shortcut_input(
                 &self.config.keyboard_shortcuts.switch_to_review_view,
-                "Comma-separated shortcuts, e.g. cmd-2, ctrl-2",
+                "Comma-separated shortcuts, e.g. cmd-1, ctrl-1",
                 window,
                 cx,
             ),
             switch_to_git_view: settings_shortcut_input(
                 &self.config.keyboard_shortcuts.switch_to_git_view,
+                "Comma-separated shortcuts, e.g. cmd-2, ctrl-2",
+                window,
+                cx,
+            ),
+            switch_to_ai_view: settings_shortcut_input(
+                &self.config.keyboard_shortcuts.switch_to_ai_view,
                 "Comma-separated shortcuts, e.g. cmd-3, ctrl-3",
                 window,
                 cx,
@@ -225,30 +210,6 @@ impl DiffViewer {
                 window,
                 cx,
             ),
-            save_current_file: settings_shortcut_input(
-                &self.config.keyboard_shortcuts.save_current_file,
-                "Comma-separated shortcuts, e.g. cmd-s, ctrl-s",
-                window,
-                cx,
-            ),
-            next_editor_tab: settings_shortcut_input(
-                &self.config.keyboard_shortcuts.next_editor_tab,
-                "Comma-separated shortcuts, e.g. cmd-}, ctrl-shift-]",
-                window,
-                cx,
-            ),
-            previous_editor_tab: settings_shortcut_input(
-                &self.config.keyboard_shortcuts.previous_editor_tab,
-                "Comma-separated shortcuts, e.g. cmd-{, ctrl-shift-[",
-                window,
-                cx,
-            ),
-            close_editor_tab: settings_shortcut_input(
-                &self.config.keyboard_shortcuts.close_editor_tab,
-                "Comma-separated shortcuts, e.g. cmd-w, ctrl-w",
-                window,
-                cx,
-            ),
             open_settings: settings_shortcut_input(
                 &self.config.keyboard_shortcuts.open_settings,
                 "Comma-separated shortcuts, e.g. cmd-, , ctrl-,",
@@ -258,24 +219,6 @@ impl DiffViewer {
             quit_app: settings_shortcut_input(
                 &self.config.keyboard_shortcuts.quit_app,
                 "Comma-separated shortcuts, e.g. cmd-q",
-                window,
-                cx,
-            ),
-            repo_tree_new_file: settings_shortcut_input(
-                &self.config.keyboard_shortcuts.repo_tree_new_file,
-                "Comma-separated shortcuts, e.g. %",
-                window,
-                cx,
-            ),
-            repo_tree_new_folder: settings_shortcut_input(
-                &self.config.keyboard_shortcuts.repo_tree_new_folder,
-                "Comma-separated shortcuts, e.g. d",
-                window,
-                cx,
-            ),
-            repo_tree_rename_file: settings_shortcut_input(
-                &self.config.keyboard_shortcuts.repo_tree_rename_file,
-                "Comma-separated shortcuts, e.g. shift-r",
                 window,
                 cx,
             ),
@@ -560,16 +503,8 @@ impl DiffViewer {
                 previous_hunk: read_shortcut_input(&settings.shortcuts.previous_hunk, cx),
                 next_file: read_shortcut_input(&settings.shortcuts.next_file, cx),
                 previous_file: read_shortcut_input(&settings.shortcuts.previous_file, cx),
-                view_current_review_file: read_shortcut_input(
-                    &settings.shortcuts.view_current_review_file,
-                    cx,
-                ),
                 toggle_sidebar_tree: read_shortcut_input(
                     &settings.shortcuts.toggle_sidebar_tree,
-                    cx,
-                ),
-                switch_to_files_view: read_shortcut_input(
-                    &settings.shortcuts.switch_to_files_view,
                     cx,
                 ),
                 switch_to_review_view: read_shortcut_input(
@@ -580,7 +515,10 @@ impl DiffViewer {
                     &settings.shortcuts.switch_to_git_view,
                     cx,
                 ),
-                switch_to_ai_view: self.config.keyboard_shortcuts.switch_to_ai_view.clone(),
+                switch_to_ai_view: read_shortcut_input(
+                    &settings.shortcuts.switch_to_ai_view,
+                    cx,
+                ),
                 toggle_ai_terminal_drawer: read_shortcut_input(
                     &settings.shortcuts.toggle_ai_terminal_drawer,
                     cx,
@@ -596,30 +534,8 @@ impl DiffViewer {
                     cx,
                 ),
                 open_project: read_shortcut_input(&settings.shortcuts.open_project, cx),
-                save_current_file: read_shortcut_input(
-                    &settings.shortcuts.save_current_file,
-                    cx,
-                ),
-                next_editor_tab: read_shortcut_input(&settings.shortcuts.next_editor_tab, cx),
-                previous_editor_tab: read_shortcut_input(
-                    &settings.shortcuts.previous_editor_tab,
-                    cx,
-                ),
-                close_editor_tab: read_shortcut_input(&settings.shortcuts.close_editor_tab, cx),
                 open_settings: read_shortcut_input(&settings.shortcuts.open_settings, cx),
                 quit_app: read_shortcut_input(&settings.shortcuts.quit_app, cx),
-                repo_tree_new_file: read_shortcut_input(
-                    &settings.shortcuts.repo_tree_new_file,
-                    cx,
-                ),
-                repo_tree_new_folder: read_shortcut_input(
-                    &settings.shortcuts.repo_tree_new_folder,
-                    cx,
-                ),
-                repo_tree_rename_file: read_shortcut_input(
-                    &settings.shortcuts.repo_tree_rename_file,
-                    cx,
-                ),
             };
 
             if let Err(err) = validate_keyboard_shortcuts(&keyboard_shortcuts) {

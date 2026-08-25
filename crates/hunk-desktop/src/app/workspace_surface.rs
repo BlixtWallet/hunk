@@ -9,7 +9,6 @@ use gpui::{
 use crate::app::{DiffViewer, review_workspace_session};
 
 pub(crate) enum WorkspaceSurfaceElement {
-    Files(Box<crate::app::native_files_editor::FilesEditorElement>),
     Projected(Box<ProjectedWorkspaceSurfaceElement>),
 }
 
@@ -18,7 +17,6 @@ impl IntoElement for WorkspaceSurfaceElement {
 
     fn into_element(self) -> Self::Element {
         match self {
-            Self::Files(element) => (*element).into_any_element(),
             Self::Projected(element) => (*element).into_any_element(),
         }
     }
@@ -30,7 +28,6 @@ pub(crate) struct ProjectedWorkspaceSurfaceElement {
     pub(crate) viewport: Rc<review_workspace_session::ReviewWorkspaceViewportSnapshot>,
     pub(crate) sticky_file_header:
         Option<review_workspace_session::ReviewWorkspaceVisibleFileHeader>,
-    pub(crate) sticky_file_can_view: bool,
     pub(crate) viewport_origin_px: usize,
     pub(crate) selected_row_range: Option<(usize, usize)>,
     pub(crate) left_panel_width: Option<Pixels>,
@@ -108,7 +105,6 @@ impl Element for ProjectedWorkspaceSurfaceElement {
     ) {
         let viewport = self.viewport.clone();
         let sticky_file_header = self.sticky_file_header.clone();
-        let sticky_file_can_view = self.sticky_file_can_view;
         let viewport_origin_px = self.viewport_origin_px;
         let paint_style = crate::app::render::ReviewWorkspaceViewportPaintStyle {
             left_panel_width: self.left_panel_width,
@@ -147,19 +143,6 @@ impl Element for ProjectedWorkspaceSurfaceElement {
                             });
                             return;
                         }
-                        if controls.view_bounds.contains(&event.position) {
-                            if !sticky_file_can_view {
-                                cx.stop_propagation();
-                                return;
-                            }
-                            let path = header.path.clone();
-                            let status = header.status;
-                            view.update(cx, |this, cx| {
-                                let _ = this.open_file_in_files_workspace(path, status, window, cx);
-                                cx.stop_propagation();
-                            });
-                            return;
-                        }
                     }
                     cx.stop_propagation();
                     return;
@@ -182,8 +165,7 @@ impl Element for ProjectedWorkspaceSurfaceElement {
             );
             if viewport_row.stream_kind == crate::app::data::DiffStreamRowKind::FileHeader
                 && matches!(event.button, MouseButton::Left | MouseButton::Middle)
-                && let (Some(path), Some(status)) =
-                    (viewport_row.file_path.as_ref(), viewport_row.file_status)
+                && let Some(path) = viewport_row.file_path.as_ref()
             {
                 let controls =
                     crate::app::render::review_workspace_file_header_controls_layout(row_bounds);
@@ -191,14 +173,6 @@ impl Element for ProjectedWorkspaceSurfaceElement {
                     let path = path.clone();
                     view.update(cx, |this, cx| {
                         this.toggle_file_collapsed(path, cx);
-                        cx.stop_propagation();
-                    });
-                    return;
-                }
-                if controls.view_bounds.contains(&event.position) && viewport_row.can_view_file {
-                    let path = path.clone();
-                    view.update(cx, |this, cx| {
-                        let _ = this.open_file_in_files_workspace(path, status, window, cx);
                         cx.stop_propagation();
                     });
                     return;
@@ -311,7 +285,6 @@ impl Element for ProjectedWorkspaceSurfaceElement {
                     cx,
                     header,
                     is_selected,
-                    self.sticky_file_can_view,
                     sticky_bounds,
                     &paint_style,
                 );

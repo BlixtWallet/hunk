@@ -123,7 +123,6 @@ pub(crate) struct ReviewWorkspaceViewportRow {
     pub(crate) file_status: Option<FileStatus>,
     pub(crate) file_line_stats: Option<LineStats>,
     pub(crate) file_is_collapsed: bool,
-    pub(crate) can_view_file: bool,
     pub(crate) show_comment_affordance: bool,
     pub(crate) open_comment_count: usize,
     pub(crate) text: String,
@@ -190,7 +189,6 @@ pub(crate) struct ReviewWorkspaceSurfaceOptions {
     pub(crate) comment_open_counts_by_row: BTreeMap<usize, usize>,
     pub(crate) active_comment_editor_row: Option<usize>,
     pub(crate) collapsed_paths: BTreeSet<String>,
-    pub(crate) view_file_enabled_paths: BTreeSet<String>,
     pub(crate) search_highlight_columns_by_row: BTreeMap<usize, Vec<Range<usize>>>,
 }
 
@@ -768,9 +766,6 @@ impl ReviewWorkspaceSession {
                     let file_is_collapsed = file_path
                         .as_deref()
                         .is_some_and(|path| options.collapsed_paths.contains(path));
-                    let can_view_file = file_path
-                        .as_deref()
-                        .is_some_and(|path| options.view_file_enabled_paths.contains(path));
                     let row_segment_cache = self.row_segment_cache(row_index);
                     let row_height_px = self.surface_row_height_px(row_index);
                     let display_row_offset = display_row_offsets_by_raw_row
@@ -817,7 +812,6 @@ impl ReviewWorkspaceSession {
                         file_path,
                         file_status,
                         file_is_collapsed,
-                        can_view_file,
                         show_comment_affordance: options
                             .comment_affordance_rows
                             .contains(&row_index),

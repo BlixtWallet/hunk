@@ -385,7 +385,10 @@ impl DiffViewer {
         if self.workspace_view_mode == WorkspaceViewMode::Ai && self.ai_copy_selected_text(cx) {
             return;
         }
-        if self.workspace_view_mode == WorkspaceViewMode::Files
+        if matches!(
+            self.workspace_view_mode,
+            WorkspaceViewMode::Diff | WorkspaceViewMode::GitWorkspace
+        )
             && self.files_terminal_selection_active()
             && self.ai_copy_selected_text(cx)
         {
@@ -409,7 +412,10 @@ impl DiffViewer {
         if self.workspace_view_mode == WorkspaceViewMode::Ai && self.ai_select_all_text(cx) {
             return;
         }
-        if self.workspace_view_mode == WorkspaceViewMode::Files
+        if matches!(
+            self.workspace_view_mode,
+            WorkspaceViewMode::Diff | WorkspaceViewMode::GitWorkspace
+        )
             && self.files_terminal_selection_active()
             && self.ai_select_all_text(cx)
         {

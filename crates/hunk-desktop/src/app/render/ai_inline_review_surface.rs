@@ -447,7 +447,6 @@ fn paint_ai_inline_review_file_header(
         header.line_stats,
         false,
         false,
-        false,
     );
     let is_dark = cx.theme().mode.is_dark();
     window.paint_quad(fill(bounds, paint.row_background));

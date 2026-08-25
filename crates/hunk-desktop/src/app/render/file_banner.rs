@@ -25,9 +25,6 @@ struct ReviewWorkspaceFileHeaderPaint {
     collapse_text_color: gpui::Hsla,
     control_background: gpui::Hsla,
     control_border: gpui::Hsla,
-    view_label: SharedString,
-    view_text_color: gpui::Hsla,
-    view_background: gpui::Hsla,
 }
 
 fn build_review_workspace_file_header_paint(
@@ -37,7 +34,6 @@ fn build_review_workspace_file_header_paint(
     stats: LineStats,
     is_selected: bool,
     is_collapsed: bool,
-    can_view_file: bool,
 ) -> ReviewWorkspaceFileHeaderPaint {
     let is_dark = theme.mode.is_dark();
     let chrome = hunk_diff_chrome(theme, is_dark);
@@ -66,35 +62,20 @@ fn build_review_workspace_file_header_paint(
         collapse_text_color: colors.arrow,
         control_background: hunk_blend(theme.background, theme.muted, is_dark, 0.18, 0.12),
         control_border: hunk_opacity(theme.border, is_dark, 0.88, 0.72),
-        view_label: SharedString::from("View File"),
-        view_text_color: if can_view_file {
-            theme.foreground
-        } else {
-            hunk_opacity(theme.muted_foreground, is_dark, 0.80, 0.92)
-        },
-        view_background: if can_view_file {
-            hunk_blend(theme.background, theme.muted, is_dark, 0.18, 0.12)
-        } else {
-            hunk_blend(theme.background, theme.muted, is_dark, 0.10, 0.06)
-        },
     }
 }
 
 #[derive(Clone, Copy)]
 pub(crate) struct ReviewWorkspaceFileHeaderControlsLayout {
     pub(crate) collapse_bounds: Bounds<Pixels>,
-    pub(crate) view_bounds: Bounds<Pixels>,
 }
 
 pub(crate) fn review_workspace_file_header_controls_layout(
     bounds: Bounds<Pixels>,
 ) -> ReviewWorkspaceFileHeaderControlsLayout {
     let left_padding = px(12.0);
-    let right_padding = px(12.0);
     let collapse_width = px(22.0);
     let collapse_height = px(22.0);
-    let view_width = px(72.0);
-    let view_height = px(22.0);
 
     ReviewWorkspaceFileHeaderControlsLayout {
         collapse_bounds: Bounds {
@@ -103,13 +84,6 @@ pub(crate) fn review_workspace_file_header_controls_layout(
                 bounds.origin.y + ((bounds.size.height - collapse_height) / 2.).max(Pixels::ZERO),
             ),
             size: gpui::size(collapse_width, collapse_height),
-        },
-        view_bounds: Bounds {
-            origin: point(
-                bounds.origin.x + bounds.size.width - right_padding - view_width,
-                bounds.origin.y + ((bounds.size.height - view_height) / 2.).max(Pixels::ZERO),
-            ),
-            size: gpui::size(view_width, view_height),
         },
     }
 }
@@ -127,7 +101,6 @@ fn paint_review_workspace_file_header_row(
     let badge_gap = px(8.0);
     let right_padding = px(12.0);
     let stats_gap = px(8.0);
-    let view_button_reserve = px(88.0);
     let badge_height = px(18.0);
 
     window.with_content_mask(Some(ContentMask { bounds }), |window| {
@@ -220,7 +193,7 @@ fn paint_review_workspace_file_header_row(
             (&paint.stats_added, paint.stats_added_color),
             (&paint.stats_label, paint.stats_label_color),
         ];
-        let mut cursor_x = bounds.origin.x + bounds.size.width - right_padding - view_button_reserve;
+        let mut cursor_x = bounds.origin.x + bounds.size.width - right_padding;
         for (text, color) in stats_items {
             let runs = vec![single_color_text_run(text.len(), color, font.clone())];
             let shape = shape_editor_line(window, text.clone(), font_size, &runs);
@@ -248,11 +221,9 @@ fn paint_review_workspace_file_header_row(
         let controls = review_workspace_file_header_controls_layout(bounds);
         window.paint_quad(gpui::fill(controls.collapse_bounds, paint.control_background));
         paint_review_workspace_outline(window, controls.collapse_bounds, paint.control_border);
-        window.paint_quad(gpui::fill(controls.view_bounds, paint.view_background));
-        paint_review_workspace_outline(window, controls.view_bounds, paint.control_border);
 
         let control_text_style = gpui::TextStyle {
-            color: paint.view_text_color,
+            color: paint.collapse_text_color,
             font_family: ui_font_family.clone(),
             font_size: px(11.0).into(),
             line_height: gpui::relative(1.35),
@@ -288,30 +259,5 @@ fn paint_review_workspace_file_header_row(
             control_line_height,
         );
 
-        let view_runs = vec![single_color_text_run(
-            paint.view_label.len(),
-            paint.view_text_color,
-            control_font,
-        )];
-        let view_shape = shape_editor_line(
-            window,
-            paint.view_label.clone(),
-            control_font_size,
-            &view_runs,
-        );
-        paint_editor_line(
-            window,
-            cx,
-            &view_shape,
-            point(
-                controls.view_bounds.origin.x
-                    + ((controls.view_bounds.size.width - view_shape.width()) / 2.)
-                        .max(Pixels::ZERO),
-                controls.view_bounds.origin.y
-                    + ((controls.view_bounds.size.height - control_line_height) / 2.)
-                        .max(Pixels::ZERO),
-            ),
-            control_line_height,
-        );
     });
 }

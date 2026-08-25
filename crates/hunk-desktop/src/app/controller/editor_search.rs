@@ -41,11 +41,7 @@ fn next_review_workspace_search_target(
 
 impl DiffViewer {
     pub(crate) fn active_editor_search_match_count(&self) -> usize {
-        if self.workspace_view_mode == WorkspaceViewMode::Diff {
-            return self.review_surface.workspace_search_matches.len();
-        }
-
-        self.files_editor.borrow().search_match_count()
+        self.review_surface.workspace_search_matches.len()
     }
 
     fn sync_review_workspace_search_query(&mut self, query: Option<&str>) {
@@ -81,13 +77,7 @@ impl DiffViewer {
             String::new()
         };
 
-        if self.workspace_view_mode == WorkspaceViewMode::Diff {
-            self.sync_review_workspace_search_query(Some(query.as_str()));
-        } else {
-            self.files_editor
-                .borrow_mut()
-                .set_search_query(Some(query.as_str()));
-        }
+        self.sync_review_workspace_search_query(Some(query.as_str()));
         cx.notify();
     }
 
@@ -107,20 +97,12 @@ impl DiffViewer {
             self.editor_search_input_state.update(cx, |state, cx| {
                 state.set_value("", window, cx);
             });
-            self.editor_replace_input_state.update(cx, |state, cx| {
-                state.set_value("", window, cx);
-            });
             self.review_surface.clear_workspace_search_matches();
             if let Some(owner) = self.review_surface.workspace_owner() {
                 owner.set_search_query(None);
             }
-            self.files_editor.borrow_mut().set_search_query(None);
-            if self.workspace_view_mode == WorkspaceViewMode::Diff {
-                let _ = self.rebuild_review_surface_display_rows();
-                self.focus_handle.focus(window, cx);
-            } else {
-                self.files_editor_focus_handle.focus(window, cx);
-            }
+            let _ = self.rebuild_review_surface_display_rows();
+            self.focus_handle.focus(window, cx);
         }
         cx.notify();
     }
@@ -134,70 +116,18 @@ impl DiffViewer {
     }
 
     pub(super) fn navigate_editor_search(&mut self, forward: bool, cx: &mut Context<Self>) {
-        if self.workspace_view_mode == WorkspaceViewMode::Diff {
-            let current_row = self.current_review_surface_row().unwrap_or(0);
-            let current_excerpt_id = self
-                .review_workspace_session
-                .as_ref()
-                .and_then(|session| session.excerpt_id_at_surface_row(current_row));
-            if let Some(target) = next_review_workspace_search_target(
-                &self.review_surface.workspace_search_matches,
-                current_excerpt_id,
-                current_row,
-                forward,
-            ) {
-                self.select_row_and_scroll(target.row_index, false, cx);
-            }
-            return;
-        }
-
-        if self.files_editor.borrow_mut().select_next_search_match(forward) {
-            cx.notify();
-        }
-    }
-
-    pub(super) fn replace_current_editor_search_match(
-        &mut self,
-        window: Option<&mut Window>,
-        cx: &mut Context<Self>,
-    ) {
-        if self.workspace_view_mode == WorkspaceViewMode::Diff {
-            if let Some(window) = window {
-                self.focus_handle.focus(window, cx);
-            }
-            return;
-        }
-
-        let replacement = self.editor_replace_input_state.read(cx).value().to_string();
-        if self
-            .files_editor
-            .borrow_mut()
-            .replace_selected_search_match(replacement.as_str())
-        {
-            self.sync_editor_dirty_from_input(cx);
-            let _ = self.files_editor.borrow_mut().select_next_search_match(true);
-            if let Some(window) = window {
-                self.files_editor_focus_handle.focus(window, cx);
-            }
-            self.sync_active_file_editor_tab_state();
-            cx.notify();
-        }
-    }
-
-    pub(super) fn replace_all_editor_search_matches(&mut self, cx: &mut Context<Self>) {
-        if self.workspace_view_mode == WorkspaceViewMode::Diff {
-            return;
-        }
-
-        let replacement = self.editor_replace_input_state.read(cx).value().to_string();
-        if self
-            .files_editor
-            .borrow_mut()
-            .replace_all_search_matches(replacement.as_str())
-        {
-            self.sync_editor_dirty_from_input(cx);
-            self.sync_active_file_editor_tab_state();
-            cx.notify();
+        let current_row = self.current_review_surface_row().unwrap_or(0);
+        let current_excerpt_id = self
+            .review_workspace_session
+            .as_ref()
+            .and_then(|session| session.excerpt_id_at_surface_row(current_row));
+        if let Some(target) = next_review_workspace_search_target(
+            &self.review_surface.workspace_search_matches,
+            current_excerpt_id,
+            current_row,
+            forward,
+        ) {
+            self.select_row_and_scroll(target.row_index, false, cx);
         }
     }
 }

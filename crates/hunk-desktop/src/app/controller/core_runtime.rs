@@ -64,20 +64,6 @@ impl DiffViewer {
         if let Some(row_ix) = active_comment_editor_row {
             comment_affordance_rows.insert(row_ix);
         }
-        let view_file_enabled_paths = self
-            .active_review_workspace_session()
-            .map(|session| {
-                session
-                    .file_ranges()
-                    .iter()
-                    .filter(|range| {
-                        self.can_open_file_in_files_workspace(range.path.as_str(), range.status)
-                    })
-                    .map(|range| range.path.clone())
-                    .collect::<BTreeSet<_>>()
-            })
-            .unwrap_or_default();
-
         let search_highlight_columns_by_row = self
             .active_review_workspace_session()
             .map(|session| {
@@ -92,7 +78,6 @@ impl DiffViewer {
             comment_open_counts_by_row,
             active_comment_editor_row,
             collapsed_paths: self.collapsed_files.clone(),
-            view_file_enabled_paths,
             search_highlight_columns_by_row,
         }
     }
@@ -938,6 +923,41 @@ impl DiffViewer {
 
     fn recently_scrolling(&self) -> bool {
         self.last_scroll_activity_at.elapsed() < AUTO_REFRESH_SCROLL_DEBOUNCE
+    }
+
+    fn update_any_window(
+        cx: &mut Context<Self>,
+        mut update: impl FnMut(&mut Window, &mut App),
+    ) -> anyhow::Result<bool> {
+        let window_handles = cx.windows().into_iter().collect::<Vec<_>>();
+        for window_handle in window_handles {
+            match cx.update_window(window_handle, |_, window, cx| update(window, cx)) {
+                Ok(()) => return Ok(true),
+                Err(err) if Self::is_window_not_found_error(&err) => continue,
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(false)
+    }
+
+    fn is_window_not_found_error(err: &anyhow::Error) -> bool {
+        err.chain()
+            .any(|cause| cause.to_string().contains("window not found"))
+    }
+
+    pub(crate) fn defer_root_focus(&self, cx: &mut Context<Self>) {
+        let window_handle = self.window_handle;
+        let focus_handle = self.focus_handle.clone();
+        cx.defer(move |cx| {
+            let result = cx.update_window(window_handle, |_, window, cx| {
+                focus_handle.focus(window, cx);
+            });
+            if let Err(err) = result
+                && !Self::is_window_not_found_error(&err)
+            {
+                error!("failed to restore root diff viewer focus: {err:#}");
+            }
+        });
     }
 }
 

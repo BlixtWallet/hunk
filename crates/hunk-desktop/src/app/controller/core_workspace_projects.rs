@@ -45,60 +45,13 @@ impl DiffViewer {
             last_recent_commits_fingerprint: None,
             last_snapshot_fingerprint: None,
             repo_tree: RepoTreeState::new(),
-            file_editor_tabs: Vec::new(),
-            active_file_editor_tab_id: None,
-            next_file_editor_tab_id: 0,
-            file_editor_tab_scroll_handle: ScrollHandle::default(),
-            files_editor: Rc::new(RefCell::new(crate::app::native_files_editor::FilesEditor::new())),
-            file_quick_open_visible: false,
-            file_quick_open_matches: Vec::new(),
-            file_quick_open_selected_ix: 0,
-            editor_path: None,
-            editor_error: None,
-            editor_dirty: false,
-            editor_last_saved_text: None,
-            editor_markdown_preview_blocks: Vec::new(),
-            editor_markdown_preview_revision: 0,
-            editor_markdown_preview: false,
             editor_search_visible: false,
         }
     }
 
     fn prepare_current_workspace_project_state_for_storage(&mut self) {
-        if self.workspace_view_mode == WorkspaceViewMode::Files {
+        if self.workspace_view_mode == WorkspaceViewMode::Diff {
             self.capture_sidebar_repo_scroll_anchor();
-            if self.repo_tree.full_cache.is_some() {
-                self.sync_full_repo_tree_cache_from_current();
-            }
-        }
-
-        self.sync_active_file_editor_tab_state();
-
-        self.repo_tree_context_menu = None;
-        self.repo_tree_inline_edit = None;
-        self.repo_tree.epoch = self.repo_tree.epoch.saturating_add(1);
-        self.repo_tree.task = Task::ready(());
-        self.repo_tree.loading = false;
-        self.repo_tree.reload_pending = false;
-
-        self.editor_epoch = self.editor_epoch.saturating_add(1);
-        self.editor_task = Task::ready(());
-        self.editor_loading = false;
-        self.editor_save_epoch = self.editor_save_epoch.saturating_add(1);
-        self.editor_save_task = Task::ready(());
-        self.editor_save_loading = false;
-        self.editor_markdown_preview_task = Task::ready(());
-        self.editor_markdown_preview_loading = false;
-
-        for tab in &mut self.file_editor_tabs {
-            tab.reload_epoch = tab.reload_epoch.saturating_add(1);
-            tab.reload_task = Task::ready(());
-            tab.loading = false;
-            tab.save_epoch = tab.save_epoch.saturating_add(1);
-            tab.save_task = Task::ready(());
-            tab.save_loading = false;
-            tab.markdown_preview_task = Task::ready(());
-            tab.markdown_preview_loading = false;
         }
     }
 
@@ -152,24 +105,6 @@ impl DiffViewer {
             last_recent_commits_fingerprint: self.last_recent_commits_fingerprint.take(),
             last_snapshot_fingerprint: self.last_snapshot_fingerprint.take(),
             repo_tree: std::mem::replace(&mut self.repo_tree, RepoTreeState::new()),
-            file_editor_tabs: std::mem::take(&mut self.file_editor_tabs),
-            active_file_editor_tab_id: self.active_file_editor_tab_id.take(),
-            next_file_editor_tab_id: self.next_file_editor_tab_id,
-            file_editor_tab_scroll_handle: std::mem::take(&mut self.file_editor_tab_scroll_handle),
-            files_editor: std::mem::replace(
-                &mut self.files_editor,
-                Rc::new(RefCell::new(crate::app::native_files_editor::FilesEditor::new())),
-            ),
-            file_quick_open_visible: self.file_quick_open_visible,
-            file_quick_open_matches: std::mem::take(&mut self.file_quick_open_matches),
-            file_quick_open_selected_ix: self.file_quick_open_selected_ix,
-            editor_path: self.editor_path.take(),
-            editor_error: self.editor_error.take(),
-            editor_dirty: self.editor_dirty,
-            editor_last_saved_text: self.editor_last_saved_text.take(),
-            editor_markdown_preview_blocks: std::mem::take(&mut self.editor_markdown_preview_blocks),
-            editor_markdown_preview_revision: self.editor_markdown_preview_revision,
-            editor_markdown_preview: self.editor_markdown_preview,
             editor_search_visible: self.editor_search_visible,
         }
     }
@@ -235,21 +170,6 @@ impl DiffViewer {
         self.last_recent_commits_fingerprint = state.last_recent_commits_fingerprint;
         self.last_snapshot_fingerprint = state.last_snapshot_fingerprint;
         self.repo_tree = state.repo_tree;
-        self.file_editor_tabs = state.file_editor_tabs;
-        self.active_file_editor_tab_id = state.active_file_editor_tab_id;
-        self.next_file_editor_tab_id = state.next_file_editor_tab_id;
-        self.file_editor_tab_scroll_handle = state.file_editor_tab_scroll_handle;
-        self.files_editor = state.files_editor;
-        self.file_quick_open_visible = state.file_quick_open_visible;
-        self.file_quick_open_matches = state.file_quick_open_matches;
-        self.file_quick_open_selected_ix = state.file_quick_open_selected_ix;
-        self.editor_path = state.editor_path;
-        self.editor_error = state.editor_error;
-        self.editor_dirty = state.editor_dirty;
-        self.editor_last_saved_text = state.editor_last_saved_text;
-        self.editor_markdown_preview_blocks = state.editor_markdown_preview_blocks;
-        self.editor_markdown_preview_revision = state.editor_markdown_preview_revision;
-        self.editor_markdown_preview = state.editor_markdown_preview;
         self.editor_search_visible = state.editor_search_visible;
 
         self.snapshot_loading = false;
@@ -288,13 +208,7 @@ impl DiffViewer {
 
     fn discard_workspace_project_state(&mut self, project_root: &std::path::Path) {
         let project_key = project_root.to_string_lossy().to_string();
-        let Some(mut state) = self.workspace_project_states.remove(project_key.as_str()) else {
-            return;
-        };
-        for tab in &mut state.file_editor_tabs {
-            tab.files_editor.borrow_mut().shutdown();
-        }
-        state.files_editor.borrow_mut().shutdown();
+        self.workspace_project_states.remove(project_key.as_str());
     }
 
     fn update_project_picker_state(&mut self, window: &mut Window, cx: &mut Context<Self>) {

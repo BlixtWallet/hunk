@@ -39,7 +39,6 @@ pub(crate) fn paint_review_workspace_viewport_row(
             stats,
             is_selected,
             viewport_row.file_is_collapsed,
-            viewport_row.can_view_file,
         );
         paint_review_workspace_file_header_row(
             window,
@@ -131,7 +130,6 @@ pub(crate) fn paint_review_workspace_sticky_header(
     cx: &mut App,
     header: &review_workspace_session::ReviewWorkspaceVisibleFileHeader,
     is_selected: bool,
-    can_view_file: bool,
     bounds: Bounds<Pixels>,
     style: &ReviewWorkspaceViewportPaintStyle,
 ) {
@@ -142,7 +140,6 @@ pub(crate) fn paint_review_workspace_sticky_header(
         header.line_stats,
         is_selected,
         false,
-        can_view_file,
     );
     paint_review_workspace_file_header_row(
         window,
