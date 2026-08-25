@@ -4,7 +4,7 @@ use hunk_codex::state::{AiState, ItemStatus, ItemSummary, TurnPlanStepStatus, Tu
 use qtbridge::{QListModel, QListModelBase, QModelItem, qobject};
 
 const AI_TIMELINE_MAX_VISIBLE_TURNS: usize = 80;
-const AI_TIMELINE_MAX_VISIBLE_ROWS: usize = 1_000;
+pub const AI_TIMELINE_MAX_VISIBLE_ROWS: usize = 1_000;
 const AI_TIMELINE_MAX_TEXT_BYTES: usize = 16 * 1024;
 const AI_TIMELINE_MAX_TITLE_BYTES: usize = 240;
 
@@ -316,7 +316,7 @@ fn saturating_u64_to_i64(value: u64) -> i64 {
 
 #[qobject(Base = QListModel)]
 mod timeline_model {
-    use super::{AiTimelineItem, QListModel, QListModelBase};
+    use super::{AI_TIMELINE_MAX_VISIBLE_ROWS, AiTimelineItem, QListModel, QListModelBase};
 
     #[derive(Default)]
     pub struct AiTimelineListModel {
@@ -348,6 +348,46 @@ mod timeline_model {
             true
         }
 
+        pub fn sync_queue_items(&mut self, queue_items: Vec<AiTimelineItem>) -> (bool, usize) {
+            let mut authoritative_len = self
+                .items
+                .iter()
+                .position(|item| item.kind == "queuedMessage")
+                .unwrap_or(self.items.len());
+            let hidden_authoritative_rows = authoritative_len
+                .saturating_add(queue_items.len())
+                .saturating_sub(AI_TIMELINE_MAX_VISIBLE_ROWS)
+                .min(authoritative_len);
+            let mut changed = hidden_authoritative_rows > 0;
+            for _ in 0..hidden_authoritative_rows {
+                self.remove(0);
+                authoritative_len -= 1;
+            }
+
+            let stable_queue_rows = self.items[authoritative_len..]
+                .iter()
+                .zip(&queue_items)
+                .take_while(|(current, next)| current.row_id == next.row_id)
+                .count();
+            for (offset, item) in queue_items.iter().take(stable_queue_rows).enumerate() {
+                let index = authoritative_len + offset;
+                if self.items[index] != *item {
+                    let _ = self.set(index, item.clone());
+                    changed = true;
+                }
+            }
+            while self.items.len() > authoritative_len + stable_queue_rows {
+                let _ = self.pop();
+                changed = true;
+            }
+            for item in queue_items.into_iter().skip(stable_queue_rows) {
+                self.push(item);
+                changed = true;
+            }
+
+            (changed, hidden_authoritative_rows)
+        }
+
         pub fn replace(&mut self, items: Vec<AiTimelineItem>) {
             self.replacement = Some(items);
             self.reset();
@@ -371,6 +411,18 @@ mod timeline_model {
             };
             *item = value;
             true
+        }
+
+        fn push_unnotified(&mut self, value: Self::Item) {
+            self.items.push(value);
+        }
+
+        fn pop_unnotified(&mut self) -> Option<Self::Item> {
+            self.items.pop()
+        }
+
+        fn remove_unnotified(&mut self, index: usize) -> Self::Item {
+            self.items.remove(index)
         }
 
         fn reset_unnotified(&mut self) {

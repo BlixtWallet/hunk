@@ -596,7 +596,7 @@ external caches:
 - [x] Implement streaming messages and tool output without per-token QObject churn or structural model resets.
 - [x] Implement approvals and request-user-input with exact pending-command state.
 - [x] Implement text steering, interruption, and plan-state presentation.
-- [ ] Implement queued message recovery.
+- [x] Implement queued message recovery.
 - [ ] Implement attachments, bookmarks, context usage, model/settings, and service-tier controls still in product scope.
 - [ ] Port required terminal surfaces with correct input, focus, cursor, selection, and resize behavior.
 - [ ] Decide retained embedded-browser requirements from product use; remove CEF if unneeded rather than automatically replacing it with Qt WebEngine.
@@ -862,6 +862,44 @@ target, Cargo cache, and Qt 6.11.2 SDK:
 - Workspace Clippy passed for all targets with warnings denied in 51.44 seconds.
   Validation used Rust/QML fixtures only and did not launch Hunk, Codex, or any
   credential/keychain path.
+
+Phase 7 Qt queued-message decisions:
+
+- Queued follow-ups are Rust-owned, repository-scoped, and FIFO per thread.
+  The queue holds at most 64 messages, rejects prompts larger than 256 KiB,
+  and caps total retained queued/recovered text at 1 MiB. QML receives only
+  bounded timeline projections and aggregate counts.
+- A message waits for the authoritative thread to become idle. Delivery marks
+  it as sending but does not remove it; removal requires either the exact
+  `SteerAccepted` prompt or a later exact user-message fingerprint after the
+  captured sequence. Runtime failures return unconfirmed sends to queued state.
+- Interrupting a turn or losing an available thread moves its queued text back
+  into that thread's in-memory draft. Same-repository runtime restarts preserve
+  the queue, while repository-root changes clear it before the new worker can
+  publish state.
+- Queued rows share the existing virtualized timeline model. QtBridge emits
+  incremental tail insert/remove/update notifications instead of resetting the
+  `ListView`; authoritative plus queued rows remain capped at 1,000, with any
+  displaced authoritative rows reflected in the hidden-row count.
+- Plain Tab queues only while a turn is running. Ctrl+Shift+Up moves the newest
+  still-queued message back to an empty composer, never overwrites an existing
+  draft, and acknowledgement or interrupt recovery restores keyboard focus.
+
+Phase 7 Qt queued-message validation through Nix, reusing the repository target,
+external Cargo cache, and Qt 6.11.2 SDK:
+
+- The full workspace all-target build passed in 1 minute 27 seconds, and the
+  complete workspace all-target test suite passed, including eight queue and
+  seven timeline-model tests.
+- System `qmllint` and all 47 QML interaction, recovery, focus, virtualization,
+  and rendered-state tests passed in 1.277 seconds. The inspected 1280-by-760 AI
+  render preserved the dense catalog, dominant timeline, and compact composer.
+- The deterministic QML lint plus six focused read-only review passes drove the
+  final suffix-model, byte-bound, stable-ID, focus, draft-preservation, and
+  keyboard corrections. Workspace Clippy then passed for all targets with
+  warnings denied in 7.01 seconds on the warm cache.
+- Validation used only Rust/QML fixtures. It did not launch Hunk or Codex and
+  did not access any credential or keychain path.
 
 ### 8. Atomic Qt Cutover and CI Replacement
 

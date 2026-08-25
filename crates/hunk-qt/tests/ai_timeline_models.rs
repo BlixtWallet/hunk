@@ -28,6 +28,15 @@ fn item(id: &str, turn_id: &str, kind: &str, content: &str, sequence: u64) -> It
     }
 }
 
+fn projected_item(row_id: &str, kind: &str, text: &str) -> AiTimelineItem {
+    AiTimelineItem {
+        row_id: row_id.to_owned(),
+        kind: kind.to_owned(),
+        text: text.to_owned(),
+        ..AiTimelineItem::default()
+    }
+}
+
 #[test]
 fn projection_orders_renderable_items_and_turn_plans() {
     let mut state = AiState::default();
@@ -228,4 +237,54 @@ fn timeline_model_updates_stable_rows_without_a_reset() {
     };
     assert!(model.sync(vec![replacement]));
     assert_eq!(model.get(0).expect("replacement row").row_id, "item:next");
+}
+
+#[test]
+fn timeline_model_reconciles_the_queue_suffix_without_replacing_authoritative_rows() {
+    let model = AiTimelineListModel::default_with_attached_qobject();
+    let mut model = model.borrow_mut();
+    let authoritative = projected_item("item:message", "agentMessage", "Done");
+    let first = projected_item("queued-message:1", "queuedMessage", "First");
+
+    assert!(model.sync(vec![authoritative.clone(), first.clone()]));
+    assert_eq!(model.sync_queue_items(vec![first.clone()]), (false, 0));
+
+    let mut sending = first;
+    sending.status = "sending".to_owned();
+    sending.streaming = true;
+    let second = projected_item("queued-message:2", "queuedMessage", "Second");
+    assert_eq!(
+        model.sync_queue_items(vec![sending, second.clone()]),
+        (true, 0)
+    );
+    assert_eq!(model.len(), 3);
+    assert_eq!(model.get(0), Some(&authoritative));
+    assert_eq!(model.get(1).expect("sending row").status, "sending");
+
+    assert_eq!(model.sync_queue_items(vec![second.clone()]), (true, 0));
+    assert_eq!(model.len(), 2);
+    assert_eq!(model.get(0), Some(&authoritative));
+    assert_eq!(model.get(1), Some(&second));
+}
+
+#[test]
+fn timeline_model_keeps_the_combined_authoritative_and_queue_rows_bounded() {
+    let model = AiTimelineListModel::default_with_attached_qobject();
+    let mut model = model.borrow_mut();
+    let authoritative = (0..1_000)
+        .map(|index| projected_item(format!("item:{index}").as_str(), "agentMessage", "row"))
+        .collect::<Vec<_>>();
+    assert!(model.sync(authoritative));
+
+    let queue = vec![
+        projected_item("queued-message:1", "queuedMessage", "First"),
+        projected_item("queued-message:2", "queuedMessage", "Second"),
+    ];
+    assert_eq!(model.sync_queue_items(queue), (true, 2));
+    assert_eq!(model.len(), 1_000);
+    assert_eq!(model.get(0).expect("first visible row").row_id, "item:2");
+    assert_eq!(
+        model.get(999).expect("last visible row").row_id,
+        "queued-message:2"
+    );
 }
