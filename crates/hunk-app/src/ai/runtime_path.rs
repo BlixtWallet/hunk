@@ -4,9 +4,7 @@ use std::path::{Path, PathBuf};
 use std::ffi::{OsStr, OsString};
 
 #[cfg(target_os = "linux")]
-const LEGACY_DESKTOP_PACKAGE_NAMES: &[&str] = &["hunk-desktop", "hunk_desktop"];
-#[cfg(target_os = "linux")]
-const QT_DESKTOP_PACKAGE_NAMES: &[&str] = &["hunk-qt", "hunk_qt"];
+const DESKTOP_PACKAGE_NAMES: &[&str] = &["hunk-desktop", "hunk_desktop"];
 
 #[cfg(target_os = "windows")]
 const BUNDLED_CODEX_ENTRYPOINT_FILE_NAMES: &[&str] = &["codex.exe", "codex.cmd"];
@@ -378,9 +376,8 @@ fn packaged_linux_binary_dir_names(current_exe: &Path) -> Vec<std::ffi::OsString
         names.push(file_name.to_os_string());
     }
 
-    for candidate in LEGACY_DESKTOP_PACKAGE_NAMES
+    for candidate in DESKTOP_PACKAGE_NAMES
         .iter()
-        .chain(QT_DESKTOP_PACKAGE_NAMES)
         .map(|name| OsString::from(*name))
     {
         if !names.iter().any(|existing| existing == &candidate) {

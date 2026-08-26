@@ -9,7 +9,7 @@ fn run_ai_worker(
 ) -> Result<(), CodexIntegrationError> {
     let mut runtime = AiWorkerRuntime::bootstrap(config.clone())?;
     let connected_message = runtime.connected_status_message();
-    runtime.sync_after_connect(event_tx, connected_message.as_str(), true)?;
+    runtime.sync_after_connect(event_tx, connected_message.as_str())?;
     let mut rate_limit_refresh_deadline = Some(Instant::now() + INITIAL_RATE_LIMIT_REFRESH_DELAY);
 
     loop {
@@ -92,7 +92,6 @@ impl AiWorkerRuntime {
         &mut self,
         event_tx: &Sender<AiWorkerEvent>,
         connected_message: &str,
-        emit_bootstrap_completed: bool,
     ) -> Result<(), CodexIntegrationError> {
         self.send_event(
             event_tx,
@@ -126,10 +125,8 @@ impl AiWorkerRuntime {
             );
         }
         self.emit_snapshot(event_tx);
-        if emit_bootstrap_completed {
-            self.send_event(event_tx, AiWorkerEventPayload::BootstrapCompleted);
-            self.emit_snapshot(event_tx);
-        }
+        self.send_event(event_tx, AiWorkerEventPayload::SyncCompleted);
+        self.emit_snapshot(event_tx);
         Ok(())
     }
 
@@ -168,7 +165,7 @@ impl AiWorkerRuntime {
                         "AI transport reconnect succeeded"
                     );
                     let connected_message = self.reconnected_status_message();
-                    match self.sync_after_connect(event_tx, connected_message.as_str(), false) {
+                    match self.sync_after_connect(event_tx, connected_message.as_str()) {
                         Ok(()) => return Ok(()),
                         Err(error) => {
                             tracing::warn!(

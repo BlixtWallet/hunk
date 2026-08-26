@@ -1,8 +1,13 @@
 mod backend;
+mod environment;
 mod input;
 mod runtime;
 mod snapshot;
 
+pub use environment::{
+    ResolvedTerminalShell, maybe_handle_terminal_env_helper_mode, maybe_hydrate_app_environment,
+    resolve_terminal_shell, terminal_shell_label,
+};
 pub use input::{
     TerminalGridPoint, TerminalInputModifiers, TerminalKeyInput, TerminalKeystroke,
     TerminalMouseButton, TerminalPointerInput, TerminalWheelInput, terminal_focus_input_bytes,

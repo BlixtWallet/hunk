@@ -79,7 +79,11 @@ fn resolver_finds_an_adjacent_bundled_runtime() {
 #[test]
 fn resolver_prefers_the_workspace_runtime_for_cargo_targets() {
     let root = TempDir::new().expect("temp dir should be created");
-    let exe_path = root.path().join("target").join("debug").join("hunk_qt");
+    let exe_path = root
+        .path()
+        .join("target")
+        .join("debug")
+        .join("hunk_desktop");
     std::fs::create_dir_all(exe_path.parent().expect("exe parent should exist"))
         .expect("exe dir should be created");
     std::fs::write(&exe_path, "").expect("fake executable should be written");
@@ -173,9 +177,9 @@ fn resolver_finds_the_resources_runtime_next_to_the_binary() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn resolver_includes_the_qt_linux_packager_directory() {
+fn resolver_includes_the_linux_desktop_packager_directory() {
     let root = TempDir::new().expect("temp dir should be created");
-    let exe_path = root.path().join("usr").join("bin").join("hunk_qt_bin");
+    let exe_path = root.path().join("usr").join("bin").join("hunk_desktop_bin");
     std::fs::create_dir_all(exe_path.parent().expect("exe parent should exist"))
         .expect("exe dir should be created");
     std::fs::write(&exe_path, "").expect("fake executable should be written");
@@ -183,7 +187,7 @@ fn resolver_includes_the_qt_linux_packager_directory() {
         .path()
         .join("usr")
         .join("lib")
-        .join("hunk_qt")
+        .join("hunk-desktop")
         .join("codex-runtime")
         .join(codex_runtime_platform_dir())
         .join(runtime_entrypoint_name());

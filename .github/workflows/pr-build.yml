@@ -37,7 +37,7 @@ env:
 jobs:
   linux:
     name: Linux Checks
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-self-hosted
     timeout-minutes: 60
 
     steps:
@@ -46,23 +46,9 @@ jobs:
         with:
           clean: false
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v22
-        with:
-          extra-conf: |
-            accept-flake-config = true
-
-      - name: Cache Nix store
-        uses: DeterminateSystems/magic-nix-cache-action@v14
-
-      - name: Install pinned Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: ${{ env.HUNK_QT_VERSION }}
-          arch: linux_gcc_64
-          cache: true
-          cache-key-prefix: hunk-qt-${{ env.HUNK_QT_VERSION }}-linux
-          aqtversion: ==3.3.0
+      - name: Install pinned Qt through Nix
+        run: nix develop --accept-flake-config -c ./scripts/qt/install_qt.sh
+        shell: bash
 
       # libghostty-vt lets Zig detect native CPU features. Do not restore its
       # cached static library onto a runner with a different feature set.
@@ -106,13 +92,21 @@ jobs:
         run: |
           nix develop --accept-flake-config -c bash -c '
             unset CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER
-            export LD_LIBRARY_PATH="$QT_ROOT_DIR/lib:$HUNK_LINUX_PACKAGING_LIBRARY_PATH"
+            export LD_LIBRARY_PATH="$HUNK_QT_ROOT/lib:$HUNK_LINUX_PACKAGING_LIBRARY_PATH"
             cargo test --workspace --exclude hunk-desktop
           '
         shell: bash
 
       - name: Run Qt QML smoke tests
         run: nix develop --accept-flake-config -c ./scripts/qt/test_qml.sh
+        shell: bash
+
+      - name: Run Qt desktop clippy
+        run: nix develop --accept-flake-config -c cargo clippy -p hunk-desktop --all-targets --locked -- -D warnings
+        shell: bash
+
+      - name: Build Qt desktop
+        run: nix develop --accept-flake-config -c cargo build -p hunk-desktop --locked --profile ci
         shell: bash
 
       # Temporarily disabled for PR builds; release packaging stays in release workflows.
@@ -167,7 +161,7 @@ jobs:
           version: ${{ env.HUNK_QT_VERSION }}
           arch: win64_msvc2022_64
           cache: true
-          cache-key-prefix: hunk-qt-${{ env.HUNK_QT_VERSION }}-windows-aqt-8c3695d4
+          cache-key-prefix: hunk-desktop-qt-${{ env.HUNK_QT_VERSION }}-windows-aqt-8c3695d4
           aqtsource: git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b
 
       # - name: Cache cargo registry and Rust dependencies
@@ -213,8 +207,8 @@ jobs:
         run: cargo test -p hunk-terminal --tests
         shell: pwsh
 
-      - name: Build hunk-qt
-        run: cargo build -p hunk-qt --locked --profile ci
+      - name: Build Qt desktop
+        run: cargo build -p hunk-desktop --locked --profile ci
         shell: pwsh
 
       - name: Run Qt QML smoke tests

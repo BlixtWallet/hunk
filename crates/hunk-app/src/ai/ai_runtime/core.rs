@@ -173,7 +173,7 @@ pub struct AiSnapshot {
 #[derive(Debug, Clone)]
 pub enum AiWorkerEventPayload {
     Snapshot(Box<AiSnapshot>),
-    BootstrapCompleted,
+    SyncCompleted,
     ThreadStarted { thread_id: String },
     SteerAccepted(AiPendingSteer),
     BrowserToolCall {

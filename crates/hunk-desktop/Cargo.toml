@@ -5,10 +5,11 @@ license.workspace = true
 rust-version.workspace = true
 edition = "2024"
 authors = ["Nitesh Balusu"]
+build = "build.rs"
 
 [features]
 default = []
-cef-browser = ["hunk-browser/cef"]
+cef-browser = ["hunk-browser/cef", "dep:hunk-browser-helper", "hunk-browser-helper/cef-subprocess"]
 
 [[bin]]
 name = "hunk_desktop"
@@ -18,8 +19,8 @@ path = "src/main.rs"
 product-name = "Hunk"
 identifier = "com.niteshbalusu.hunk"
 publisher = "Nitesh Balusu"
-description = "Very fast git diff viewer and codex orchestrator."
-long-description = "A super fast, simple Git diff viewer and codex orchestrator built with GPUI."
+description = "Very fast git diff viewer and Codex orchestrator."
+long-description = "A fast, cross-platform Git diff viewer and Codex orchestrator built with Qt Quick."
 authors = ["Nitesh Balusu"]
 category = "DeveloperTool"
 icons = [
@@ -35,59 +36,23 @@ main = true
 
 [dependencies]
 anyhow = "1.0"
-codex-utils-rustls-provider.workspace = true
-ctrlc = "3.5"
-dirs = "6.0"
-futures = "0.3"
-gpui = { git = "https://github.com/zed-industries/zed" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = [
-  "font-kit",
-  "x11",
-  "wayland",
-  "runtime_shaders",
-] }
-gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "af52cd899f4885f4f02c3530b63fb42afc619e0c", features = [
-  "tree-sitter-languages",
-] }
-gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "af52cd899f4885f4f02c3530b63fb42afc619e0c" }
-image = "0.25"
-libc = "0.2"
-notify = "8.2.0"
-notify-rust = "4.15.0"
+hunk-app = { path = "../hunk-app", default-features = false, features = ["ai", "comment-store"] }
+hunk-browser = { path = "../hunk-browser" }
+hunk-browser-helper = { path = "../hunk-browser-helper", optional = true }
+hunk-codex = { path = "../hunk-codex" }
+hunk-domain = { path = "../hunk-domain", default-features = false, features = ["database"] }
+hunk-git = { path = "../hunk-git" }
+hunk-terminal = { path = "../hunk-terminal" }
+hunk-updater = { path = "../hunk-updater" }
+qtbridge.workspace = true
 serde_json = "1.0"
-lsp-types = { version = "0.97.0", features = ["proposed"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-time = { version = "0.3", features = ["formatting", "local-offset"] }
-rust-embed = "8.11.0"
-hunk-domain = { path = "../hunk-domain" }
-hunk-app = { path = "../hunk-app" }
-hunk-browser = { path = "../hunk-browser" }
-hunk-browser-helper = { path = "../hunk-browser-helper" }
-hunk-git = { path = "../hunk-git" }
-hunk-forge = { path = "../hunk-forge" }
-hunk-codex = { path = "../hunk-codex" }
-hunk-terminal = { path = "../hunk-terminal" }
-hunk-editor = { path = "../hunk-editor" }
-hunk-language = { path = "../hunk-language" }
-hunk-text = { path = "../hunk-text" }
-hunk-updater = { path = "../hunk-updater" }
-hunk-sleep-inhibitor = { path = "../hunk-sleep-inhibitor" }
+url = "2.5"
 
-[target.'cfg(target_os = "macos")'.dev-dependencies]
-tempfile = "3.27.0"
+[build-dependencies]
+cc = "1.2"
+qtbridge-build-utils.workspace = true
 
-[target.'cfg(not(target_os = "macos"))'.dev-dependencies]
-tempfile = "3.27.0"
-
-[target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.59", features = [
-  "Win32_Foundation",
-  "Win32_System_Console",
-  "Win32_UI_WindowsAndMessaging",
-] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-block2 = "0.6.2"
-objc2-foundation = { version = "0.3.2", features = ["NSError", "NSString"] }
-objc2-user-notifications = "0.3.2"
+[dev-dependencies]
+tempfile = "3.23"

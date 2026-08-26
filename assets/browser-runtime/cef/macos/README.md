@@ -5,12 +5,13 @@ This folder is reserved for the bundled CEF runtime used by Hunk's embedded AI b
 Pinned runtime target:
 
 - OS/architecture: `aarch64-apple-darwin`
-- Candidate Rust binding: `tauri-apps/cef-rs`
-- Candidate binding version: `146.7.0+146.0.12`
-- Candidate CEF version: `146.0.12+g6214c8e+chromium-146.0.7680.179`
+- Rust binding: `tauri-apps/cef-rs`
+- Binding release: `cef-v151.8.0+151.3.24`
+- Binding commit: `a2e15ae659c4b3957883e34de879bd8b38360ce5`
+- CEF version: `151.3.24+g2384915+chromium-151.0.7922.174`
 - Download source used by cef-rs: `https://cef-builds.spotifycdn.com`
-- Current archive: `cef_binary_146.0.12+g6214c8e+chromium-146.0.7680.179_macosarm64_minimal.tar.bz2`
-- Current archive SHA-1 from cef-rs metadata: `c39b923b1af6790a869941d74e7c60b7ed51d0c4`
+- Current archive: `cef_binary_151.3.24+g2384915+chromium-151.0.7922.174_macosarm64_minimal.tar.bz2`
+- Current archive SHA-1: `82af2c0cadaafc4ad057f54c14cb3791cc139852`
 
 The exported runtime is generated under `assets/browser-runtime/cef/macos/runtime` and is intentionally ignored by git. Recreate it with:
 

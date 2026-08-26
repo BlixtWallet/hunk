@@ -1,0 +1,353 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+
+Item {
+    id: root
+
+    required property var backend
+    required property var draftStore
+    required property var requestAnswerStore
+    property Component browserSurfaceComponent: null
+    property Item browserPreviousFocusItem: null
+    property bool followTail: true
+    property string visibleThreadId: backend.aiActiveThreadId
+    readonly property alias timelineListView: timeline
+    readonly property alias composer: composer
+    readonly property alias requestPanel: requestPanel
+    readonly property alias forkButton: forkAction
+    readonly property real conversationWidth: Math.max(0,
+        Math.min(680, width - 32))
+    readonly property bool commandPending: backend.aiThreadActionPending || backend.aiPromptPending || backend.aiInterruptPending || backend.aiRequestResolving || backend.aiRequestId.length > 0
+    readonly property bool errorStateVisible: backend.aiError.length > 0 && !backend.aiReady
+    readonly property bool loadingStateVisible: backend.aiLoading && !errorStateVisible
+    readonly property bool timelineStateVisible: backend.aiActiveThreadId.length > 0
+        && timeline.count > 0 && !errorStateVisible && !loadingStateVisible
+    readonly property bool authenticationStateVisible: backend.aiRequiresAuthentication && !timelineStateVisible && !errorStateVisible && !loadingStateVisible
+    readonly property bool emptyStateVisible: !timelineStateVisible && !errorStateVisible && !loadingStateVisible && !authenticationStateVisible
+    readonly property bool browserVisible: backend.browser.open
+
+    function stateTitle() {
+        if (root.errorStateVisible)
+            return "Codex is unavailable";
+        if (root.loadingStateVisible)
+            return "Connecting to Codex…";
+        if (root.authenticationStateVisible)
+            return "OpenAI sign-in required";
+        if (root.backend.aiActiveThreadId.length === 0)
+            return root.backend.aiThreadCount > 0 ? "Select a thread" : "No Codex threads";
+        return "No messages yet";
+    }
+
+    function stateDescription() {
+        if (root.errorStateVisible)
+            return root.backend.aiError;
+        if (root.loadingStateVisible)
+            return "Starting the repository-scoped Codex worker and loading threads.";
+        if (root.authenticationStateVisible)
+            return "Complete authentication through the Codex runtime before starting a turn.";
+        if (root.backend.aiActiveThreadId.length === 0)
+            return root.backend.aiThreadCount > 0 ? "Choose a thread from the catalog to load its conversation." : "Create a thread from the sidebar to begin.";
+        return "This thread does not contain a visible turn yet.";
+    }
+
+    function forkThread() {
+        return root.backend.fork_ai_thread();
+    }
+
+    function toggleBrowser() {
+        if (!root.browserVisible) {
+            const hostWindow = root.Window.window;
+            root.browserPreviousFocusItem = hostWindow === null ? null : hostWindow.activeFocusItem;
+            if (!root.backend.browser.set_open(true))
+                Qt.callLater(root.restoreConversationFocus);
+        } else {
+            root.backend.browser.set_open(false);
+        }
+    }
+
+    function restoreConversationFocus() {
+        if (root.browserPreviousFocusItem !== null && root.browserPreviousFocusItem.visible && root.browserPreviousFocusItem.enabled) {
+            root.browserPreviousFocusItem.forceActiveFocus();
+        } else if (requestPanel.hasRequest) {
+            requestPanel.focusFirstControl();
+        } else if (composer.editable) {
+            composer.editor.forceActiveFocus();
+        }
+        root.browserPreviousFocusItem = null;
+    }
+
+    function focusBrowserSurface() {
+        browserPane.focusBrowserWhenReady();
+    }
+
+    onVisibleThreadIdChanged: {
+        followTail = true;
+        Qt.callLater(() => timeline.positionViewAtEnd());
+    }
+    onBrowserVisibleChanged: {
+        if (!browserVisible)
+            Qt.callLater(restoreConversationFocus);
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.canvas
+    }
+
+    Item {
+        id: workspaceHeader
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: 66
+
+        Column {
+            anchors.left: parent.left
+            anchors.right: headerActions.left
+            anchors.leftMargin: 20
+            anchors.rightMargin: 16
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 3
+
+            Text {
+                width: parent.width
+                text: root.backend.aiActiveThreadTitle || "Codex"
+                textFormat: Text.PlainText
+                color: Theme.foreground
+                elide: Text.ElideRight
+                font.family: Theme.uiFont
+                font.pixelSize: 17
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                width: parent.width
+                text: root.backend.aiActiveThreadCwd || root.backend.aiWorkspaceRoot
+                textFormat: Text.PlainText
+                color: Theme.faint
+                elide: Text.ElideMiddle
+                font.family: Theme.monoFont
+                font.pixelSize: 10
+            }
+        }
+
+        Row {
+            id: headerActions
+            anchors.right: parent.right
+            anchors.rightMargin: 20
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+
+            ActionButton {
+                id: forkAction
+                label: "Fork"
+                compact: true
+                enabled: root.backend.aiReady && root.backend.aiActiveThreadId.length > 0 && !root.backend.aiTurnRunning && !root.backend.aiLoading && !root.backend.aiRequiresAuthentication && !root.commandPending
+                onClicked: root.forkThread()
+            }
+
+            ActionButton {
+                id: browserAction
+                objectName: "browserAction"
+                label: root.browserVisible ? qsTr("Conversation") : qsTr("Browser")
+                compact: true
+                enabled: root.browserVisible || root.backend.aiActiveThreadId.length > 0
+                onClicked: root.toggleBrowser()
+            }
+
+            AiStatusControl {
+                anchors.verticalCenter: parent.verticalCenter
+                backend: root.backend
+                showMetrics: root.width >= 940
+            }
+        }
+
+        Rectangle {
+            anchors.bottom: parent.bottom
+            width: parent.width
+            height: 1
+            color: Theme.border
+        }
+    }
+
+    Rectangle {
+        id: statusBanner
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: workspaceHeader.bottom
+        height: visible ? 34 : 0
+        visible: root.backend.aiError.length > 0 || root.backend.aiRequiresAuthentication || root.backend.aiLoading || root.backend.aiStatusMessage.length > 0
+        color: root.backend.aiError.length > 0 ? Theme.negativeMuted
+            : (root.backend.aiLoading ? Theme.raised
+                : (root.backend.aiRequiresAuthentication ? Theme.accentMuted
+                    : Theme.raised))
+
+        Text {
+            anchors.left: parent.left
+            anchors.right: statusLabel.left
+            anchors.leftMargin: 20
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.backend.aiError.length > 0 ? root.backend.aiError
+                : (root.backend.aiLoading ? "Loading Codex threads…"
+                    : (root.backend.aiRequiresAuthentication
+                        ? "OpenAI authentication is required."
+                        : root.backend.aiStatusMessage))
+            textFormat: Text.PlainText
+            color: root.backend.aiError.length > 0 ? Theme.negative : Theme.muted
+            elide: Text.ElideRight
+            font.family: Theme.uiFont
+            font.pixelSize: 11
+        }
+
+        Text {
+            id: statusLabel
+            anchors.right: parent.right
+            anchors.rightMargin: 20
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.backend.aiError.length > 0 ? "ERROR"
+                : (root.backend.aiLoading ? "LOADING"
+                    : (root.backend.aiRequiresAuthentication ? "SIGN IN"
+                        : "STATUS"))
+            color: Theme.faint
+            font.family: Theme.monoFont
+            font.pixelSize: 9
+            font.letterSpacing: 0.6
+        }
+    }
+
+    Item {
+        id: timelinePane
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: statusBanner.bottom
+        anchors.bottom: requestPanel.top
+        visible: !root.browserVisible
+
+        Rectangle {
+            id: historyNotice
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: visible ? 28 : 0
+            visible: root.timelineStateVisible && (root.backend.aiTimelineHiddenTurnCount > 0 || root.backend.aiTimelineHiddenRowCount > 0)
+            color: Theme.chrome
+
+            Text {
+                anchors.centerIn: parent
+                text: {
+                    if (root.backend.aiTimelineHiddenTurnCount > 0)
+                        return "Showing the latest " + root.backend.aiTimelineVisibleTurnCount + " of " + root.backend.aiTimelineTotalTurnCount + " turns";
+                    return root.backend.aiTimelineHiddenRowCount + " earlier timeline rows hidden";
+                }
+                color: Theme.faint
+                font.family: Theme.monoFont
+                font.pixelSize: 9
+            }
+
+            Rectangle {
+                anchors.bottom: parent.bottom
+                width: parent.width
+                height: 1
+                color: Theme.border
+            }
+        }
+
+        ListView {
+            id: timeline
+            objectName: "aiTimelineList"
+            anchors.top: historyNotice.bottom
+            anchors.bottom: parent.bottom
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: root.conversationWidth
+            visible: root.timelineStateVisible
+            clip: true
+            spacing: 2
+            model: root.backend.aiTimeline
+            boundsBehavior: Flickable.StopAtBounds
+            reuseItems: true
+            cacheBuffer: Math.max(height, 640)
+            topMargin: 18
+            bottomMargin: 24
+
+            delegate: AiTimelineRow {
+                width: timeline.width
+                backend: root.backend
+            }
+
+            onCountChanged: {
+                if (root.followTail)
+                    Qt.callLater(() => timeline.positionViewAtEnd());
+            }
+            onContentHeightChanged: {
+                if (root.followTail)
+                    Qt.callLater(() => timeline.positionViewAtEnd());
+            }
+            onMovementStarted: root.followTail = false
+            onMovementEnded: root.followTail = timeline.atYEnd
+        }
+
+        Column {
+            anchors.centerIn: parent
+            width: Math.min(460, root.conversationWidth)
+            spacing: 8
+            visible: root.errorStateVisible || root.loadingStateVisible || root.authenticationStateVisible || root.emptyStateVisible
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: root.stateTitle()
+                color: root.errorStateVisible ? Theme.negative : Theme.foreground
+                font.family: Theme.uiFont
+                font.pixelSize: 17
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                width: parent.width
+                text: root.stateDescription()
+                textFormat: Text.PlainText
+                color: Theme.muted
+                horizontalAlignment: Text.AlignHCenter
+                lineHeight: 1.3
+                wrapMode: Text.WordWrap
+                font.family: Theme.uiFont
+                font.pixelSize: 12
+            }
+        }
+    }
+
+    AiRequestPanel {
+        id: requestPanel
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: composer.top
+        width: root.conversationWidth
+        height: implicitHeight
+        backend: root.backend
+        answerStore: root.requestAnswerStore
+        visible: !root.browserVisible
+    }
+
+    AiComposer {
+        id: composer
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        width: root.conversationWidth
+        backend: root.backend
+        draftStore: root.draftStore
+        visible: !root.browserVisible
+        onRequestFocusRequested: requestPanel.focusFirstControl()
+    }
+
+    BrowserPane {
+        id: browserPane
+        objectName: "browserPane"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: statusBanner.bottom
+        anchors.bottom: parent.bottom
+        visible: root.browserVisible
+        browser: root.backend.browser
+        surfaceComponent: root.browserSurfaceComponent
+    }
+}

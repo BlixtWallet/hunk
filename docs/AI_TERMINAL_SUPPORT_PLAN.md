@@ -4,7 +4,20 @@
 
 - In progress
 - Owner: Hunk
-- Last Updated: 2026-03-21
+- Last Updated: 2026-08-25
+
+## Qt Migration Update
+
+The retained terminal runtime is now being presented by the Qt application.
+The Qt product shape supersedes the older GPUI-only placement decisions below:
+
+- one repository-scoped bottom drawer is shared by Diff, Git, and AI
+- multiple shell tabs are supported
+- `hunk-terminal` remains the PTY/VT/input authority
+- repository changes tear down the previous repository's terminal sessions
+- closing the drawer unloads Qt presentation while live PTYs continue running
+- terminal startup and screen projection stay off the Qt UI thread
+- the GPUI terminal remains only as migration compatibility until atomic cutover
 
 ## Summary
 

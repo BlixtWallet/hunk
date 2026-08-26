@@ -51,6 +51,10 @@ impl BrowserFrame {
         self.bgra.as_ref()
     }
 
+    pub fn shared_bgra(&self) -> Arc<[u8]> {
+        Arc::clone(&self.bgra)
+    }
+
     pub fn is_blank(&self) -> bool {
         self.bgra.iter().all(|channel| *channel == 0)
     }

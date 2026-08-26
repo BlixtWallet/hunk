@@ -616,3 +616,216 @@ append a correction when later evidence changes one.
   `target/` temp fixture can silently target a nonexistent per-crate folder.
   Resolve the workspace target from `CARGO_MANIFEST_DIR` when tests must keep
   temporary data on the external-volume build cache.
+
+## 2026-08-25 — Qt terminal surface
+
+- Hiding a live terminal is not a geometry operation. Collapsing an attached
+  terminal item to zero height can debounce a resize into the PTY's minimum
+  grid and reflow the entire hidden session; unload the QML presentation and
+  preserve the last valid grid instead.
+- Coalescing after projection is too late for an 8 ms UI budget. Drain bursts
+  on the terminal listener, project only the newest VT snapshot off the Qt
+  thread, and limit the queued GUI callback to model patches and scalar state.
+- Recycled terminal rows need direct required model roles. Depending on an
+  implicit `model` object stops working once a delegate type declares required
+  properties and can silently produce blank rows that component-only tests miss.
+- A tabbed screen model needs explicit ownership of the rows currently lent to
+  the Qt list model. Move rows into the active model without cloning hot markup,
+  then return them to the previous tab when switching so inactive tabs remain
+  immediately restorable.
+- Bottom-panel focus restoration should retain the actual prior focus item.
+  Focusing a workspace root on close does not restore the AI composer, Git
+  commit editor, or any other nested editing control.
+
+## 2026-08-25 — Qt embedded browser surface
+
+- Keep large offscreen browser frames out of QML value bindings. A narrow
+  `QQuickItem` can wrap a retained Rust `Arc<[u8]>` in a read-only `QImage`,
+  release it through the image cleanup callback after upload, and reuse one
+  QRhi texture without a second CPU pixel copy, base64, data-URL, or
+  image-provider churn.
+- Browser frame cadence and shell cadence are separate budgets. Retaining the
+  CEF adapter's 60 fps publication limit does not prevent the surrounding Qt
+  Quick application from rendering at 120 Hz; it prevents duplicate 8 ms
+  uploads for a source that publishes at half that rate.
+- Lazy initialization is also a build/test boundary. Keep CEF behind the Qt
+  production feature and start it on first browser use so ordinary model and
+  QML tests do not touch browser profiles, helper processes, or keychain-facing
+  application state.
+- Machine-specific cache policy belongs in the invocation environment, not a
+  repository script. Portable preparation defaults can use `TMPDIR` or
+  `XDG_CACHE_HOME`; this machine passes `/Volumes/hulk/dev/cache/cef-rs`
+  explicitly through `HUNK_CEF_RS_DIR`.
+- Qt Quick's `visible` value is affected by ancestor visibility. An offscreen
+  shell integration test should assert the browser's authoritative open state
+  and the control label, while the component-level rendered test owns direct
+  surface visibility assertions.
+- `Loader.Ready` only proves that a native browser item exists; it does not
+  prove that CEF has delivered pixels. Expose a first-frame property from the
+  native item and keep pointer, keyboard, and focus forwarding disabled until
+  that property is true.
+- An external CEF message pump and an external begin-frame request are separate
+  responsibilities. Keep servicing the backend loop while it is active, but
+  request pixels only for the visible session and only while its pane is shown;
+  otherwise background tabs consume frame-copy and upload budget unnecessarily.
+- Cache the exact rows exposed by a Qt list model, not a broader domain summary.
+  Browser tab summaries include changing frame metadata; comparing those at
+  presentation time needlessly reprojects tab rows for every browser frame even
+  when the tab label, loading state, and identity did not change.
+- Visibility includes the application window, not only the pane. A minimized
+  window should keep servicing CEF's lightweight message loop but must stop
+  requesting pixels that cannot be presented.
+- Dialog focus restoration needs a visible fallback. If a browser approval
+  hides the control captured before the dialog opened, resolution should hand
+  focus to the already-ready browser surface instead of leaving the window
+  without an active focus item.
+
+## 2026-08-25 — Atomic Qt cutover
+
+- Preserve the stable package and binary contract at cutover. Moving the
+  reviewed Qt adapter into `crates/hunk-desktop` and keeping the
+  `hunk_desktop` binary avoids simultaneous churn in launchers, runtime lookup,
+  updater targets, and release artifact names.
+- Regenerating the lockfile after removing the old frontend is the clearest
+  dependency audit. Deleting GPUI, GPUI Component, and the orphaned editor
+  crate removed 349 locked packages; searches of manifests and the lockfile
+  then prove that remaining historical GPUI text is attribution or migration
+  documentation rather than a production dependency.
+- The removed File Explorer can leave non-visual residue. A shortcut field
+  referenced only by config defaults and tests is still dead product surface,
+  even when it no longer has a controller, so remove it together with stale
+  README examples.
+- A legacy performance script is not useful merely because its filename still
+  sounds relevant. The old harness targeted a deleted GPUI integration test and
+  had to be removed; retain the toolkit-neutral large-diff fixture and rebuild
+  measured 120 Hz coverage around the Qt renderer during release hardening.
+- File-size cleanup should follow ownership. Extracting macOS CEF sidecar
+  staging into a focused module brought the backend below 2,000 lines without
+  changing cross-platform browser logic or disguising the limit with formatting.
+- A much smaller UI dependency graph does not make the retained application
+  graph small. The first all-target cutover build still spent most of its time
+  compiling the embedded Codex graph, so packaging and CI optimization must be
+  measured independently from the frontend replacement.
+
+## 2026-08-25 — Qt release deployment
+
+- A successful Qt executable link is not a deployable desktop artifact. The
+  release must also contain the platform plugin, transitive QML modules, image
+  and TLS plugins, and every native dependency reachable from those modules.
+- Use Qt's deployment tools where Qt supplies them: `macdeployqt` on macOS and
+  `windeployqt` on Windows. Linux still needs an application-private runtime
+  tree, `qt.conf`, recursive ELF dependency staging, and relative RPATHs.
+- Validate every nested native binary, not only the main executable. CEF helper
+  apps retained a Nix `libiconv` path after the primary Qt executable was clean;
+  recursively relinking the helpers exposed and removed that host dependency.
+- Qt SDKs can include optional database drivers linked to client libraries that
+  are absent on user machines. Retain the self-contained driver the deployed
+  QML graph needs and exclude ODBC, PostgreSQL, and Mimer plugins from Hunk.
+- The aqt archive name for Qt's Linux Wayland module is
+  `qtwaylandcompositor`, not `qtwayland`; confirm repository module names before
+  encoding them into every release workflow.
+- Nix-wrapped Darwin toolchains and prebuilt universal Qt frameworks are a poor
+  match for deployment-time stripping. Pass `-no-strip` to `macdeployqt`, then
+  perform dependency validation and code signing explicitly.
+- A self-hosted runner's OS can be newer than GitHub's Python toolcache.
+  `install-qt-action` delegated to `actions/setup-python` and failed before Qt
+  installation on Ubuntu 25.10. Run Hunk's exact aqt installer inside Nix on
+  Linux instead, with Nix owning Python/virtualenv and the runner cache owning
+  the downloaded Qt SDK.
+
+## 2026-08-25 — Qt updater restoration
+
+- Keep blocking updater work outside the UI framework. A dedicated QtBridge
+  QObject can expose scalar state while manifest fetches, signature checks, and
+  package downloads stay on one worker thread and return through queued Qt
+  invocations.
+- Applying an update is a process-lifecycle problem, not a renderer problem.
+  Spawning the current executable in helper mode before requesting `Qt.quit()`
+  preserves the existing signed updater core and avoids replacing a running
+  macOS app or Linux bundle in-process.
+- Relaunch the supported public entry point. A Linux update that starts
+  `hunk_desktop_bin` directly bypasses the bundle launcher contract; the updater
+  should reopen `hunk-desktop` after syncing the replacement tree.
+- Package-manager detection must be encoded by the package. DEB/RPM wrappers
+  now export the updater explanation before launching Hunk, preventing a system
+  install from being mistaken for a writable direct tarball.
+- OTA compatibility is broader than the executable name. Regression tests
+  should pin manifest target keys, asset formats, and release filenames so a UI
+  migration cannot silently break the static update service.
+
+## 2026-08-26 — Two-workspace hardening and QtBridge re-entrancy
+
+- A QtBridge child `QAbstractListModel` reset can synchronously notify QML while
+  the parent `Backend` still holds its mutable `RefCell` borrow. If a binding
+  reads any parent property during that notification, the nested borrow aborts
+  at the FFI boundary. Queue and coalesce attached-model mutations through each
+  model's own `QmlMethodInvoker`; do not emit a synchronous model reset from a
+  parent backend slot.
+- Deferred models still need an authoritative pending view for Rust-side
+  selection. Source lookup performed before the queued reset runs must consult
+  the pending replacement, while `QListModel::get` and `len` continue to expose
+  only the notified live rows to QML.
+- Removing the Git product does not mean removing Git reads required by Diff.
+  Keep comparison loading in `hunk-git`, remove the desktop mutation/Forge
+  bridge and QML, and move repository selection into the retained AI sidebar so
+  the final product boundary is exactly Diff and AI.
+- A shared Cargo `target/` directory exposes non-idempotent dependency build
+  scripts that clean builds conceal. The libghostty simdutf namespace transform
+  must detect its already-patched form before rewriting, allowing debug,
+  release, and packaged builds to reuse the same external-volume cache.
+- Native folder dialogs can deactivate an offscreen Qt Quick Test window for
+  the rest of the process on macOS. Production code must capture and restore the
+  previous focus item when the dialog closes; keep the native-dialog smoke case
+  last so the harness limitation cannot invalidate unrelated keyboard tests.
+- A CEF-enabled compile proves dependency and helper compatibility, not browser
+  behavior. Keep browser, terminal, AI, Diff, and shutdown rows unclaimed until
+  the native Qt app is directly exercised alongside the installed baseline.
+- QtBridge child-object signals can trigger the same re-entrant borrow failure as
+  attached model resets. Queue property notifications through the object's QML
+  invoker, and use the registered snake-case signal name; a camel-case no-op can
+  hide the crash while silently starving bindings.
+- Codex `requires_openai_auth` describes the selected model provider, not the
+  current login state. Gate sign-in UI on that flag only when `account/read`
+  returns no account, otherwise a valid ChatGPT session is incorrectly disabled.
+- A raw macOS Mach-O can display a window but is not reliably addressable by
+  bundle-aware automation. A small debug `.app` with its own bundle identifier
+  lets native testing target Qt Hunk independently from installed GPUI Hunk.
+- Source Qt environment setup only after the Nix Cargo build in a debug bundler.
+  Leaking host SDK flags into `cargo build` changes fingerprints and defeats the
+  shared external-volume cache.
+- Remembered projects live in the shared application-state TOML under macOS
+  Application Support; `~/.hunkdiff` owns Hunk worktrees and chats. Clear or
+  switch only the project-selection fields when preparing a permission-safe
+  Documents-based parity run.
+
+## 2026-08-26 — Native parity iteration
+
+- Cargo's progress denominator describes the full unit graph, not the amount
+  rebuilt. A warm QML edit jumped directly to the final desktop units, and
+  repeated app bundles completed in under three seconds while reusing the
+  default external-volume `target/` and staged CEF runtime. Keep targeted app
+  builds in the parity loop and reserve incompatible test/Clippy artifact sets
+  for their actual gates. The functional launcher also builds the desktop CEF
+  feature graph and helper subprocess feature graph separately; both caches are
+  reusable, but their first builds should not be mistaken for one shared warm
+  artifact set.
+- A Codex snapshot emitted immediately after transport connection is partial:
+  thread listing, account state, session metadata, and timeline hydration still
+  follow. Do not clear the UI loading state on that first snapshot; only the
+  explicit sync-completed event proves the initial catalog is ready. Emit that
+  event after reconnect synchronization too, so partial reconnect snapshots do
+  not claim the connection is ready prematurely.
+- Threshold-based drag handlers can look inert to one-step desktop automation
+  because most pointer motion occurs before the handler becomes active. A
+  direct overlay pointer surface is simpler and makes native debug interaction
+  deterministic for narrow splitters.
+- Qt parity gaps can exist even when the shared Codex runtime is complete. The
+  account, login attempt, rate limits, approvals, and input requests were all
+  present in `AiSnapshot`, but the Qt mailbox projection discarded the account
+  fields and merged request types. Preserve a small frontend-neutral projection
+  at that boundary so QML remains declarative and the same data survives
+  reconnect snapshots without duplicating protocol logic in the view.
+- Rate-limit position is only a fallback when the server omits window-duration
+  metadata. If a snapshot names only a 7-day window, assigning the primary
+  window to a missing 5-hour slot duplicates usage under a false label. Match
+  known durations strictly and show the absent window as unavailable.

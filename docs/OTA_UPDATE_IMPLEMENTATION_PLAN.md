@@ -129,7 +129,7 @@ That state should drive:
 - progress notifications
 - restart prompts
 
-### 5. GPUI integration
+### 5. Desktop integration
 
 Add the following desktop actions:
 
@@ -138,12 +138,10 @@ Add the following desktop actions:
 - `RestartToApplyUpdate`
 - `ViewReleaseNotes`
 
-Surface areas:
-
-- app menu item
-- settings pane
-- notifications/toasts
-- optional About dialog version/update section
+The original GPUI app used menu, Settings, and notification surfaces. The Qt
+cutover keeps the same updater state machine behind a compact application-header
+control and a restart confirmation dialog, without retaining the removed GPUI
+settings frontend.
 
 ## Platform-Specific Design
 
@@ -341,6 +339,9 @@ Completed in the current repo state:
 - [x] Hardcode the production updater public key in source while retaining a runtime override for local testing.
 - [x] Verify the update manifest itself with the updater signing key and publish a companion `stable.json.sig`.
 - [x] Automate `stable.json` and `stable.json.sig` publishing to the current Cloudflare R2 public bucket from the release workflow.
+- [x] Restore startup, periodic, and manual updater checks in the Qt frontend without blocking the Qt event thread.
+- [x] Restore helper-driven apply/relaunch from the Qt frontend and retain the release manifest artifact contract.
+- [x] Relaunch Linux tarball updates through the packaged launcher and disable self-update from DEB/RPM wrappers.
 
 Still pending:
 

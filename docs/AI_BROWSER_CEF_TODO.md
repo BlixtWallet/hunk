@@ -1,14 +1,14 @@
 # AI Browser CEF TODO
 
-Status: Optional production CEF backend compiles behind `hunk-desktop/cef-browser`; the GPUI pane renders CEF frames, forwards user input, and routes AI browser tools to the visible embedded browser session on macOS.
+Status: The retained CEF backend compiles behind `hunk-desktop/cef-browser`. The Qt desktop presents the same per-thread browser sessions, forwards input, and routes AI browser tools without introducing Qt WebEngine or a second browser engine.
 
-This tracks the implementation of a true in-app browser for Hunk that can be controlled by the AI agent. The v1 direction is CEF offscreen rendering, embedded inside the GPUI AI workspace, with a single browser surface tied to the active AI session.
+This tracks the implementation of a true in-app browser for Hunk that can be controlled by the AI agent. CEF offscreen rendering and browser state remain toolkit-neutral Rust responsibilities; the active frontend owns only presentation, scene-graph upload, and input translation.
 
 ## Decisions
 
 - Use CEF as the v1 browser engine.
 - Do not implement Servo, Wry, or Lightpanda for v1.
-- Use offscreen/windowless rendering so GPUI owns the visible browser surface.
+- Use offscreen/windowless rendering so the active desktop frontend owns the visible browser surface.
 - Bundle a pinned CEF runtime with Hunk. App size increase is acceptable.
 - Start with macOS arm64, then add Linux and Windows packaging.
 - Support one AI-controlled browser tab per browser-enabled AI thread in v1.
@@ -46,7 +46,7 @@ Exit criteria:
 
 Implementation notes:
 
-- Candidate binding: `tauri-apps/cef-rs` version `146.7.0+146.0.12`, backed by CEF `146.0.12+g6214c8e+chromium-146.0.7680.179`.
+- Retained binding: `tauri-apps/cef-rs` release `cef-v151.8.0+151.3.24` at commit `a2e15ae659c4b3957883e34de879bd8b38360ce5`, backed by CEF `151.3.24+g2384915+chromium-151.0.7922.174`.
 - First spike target: `aarch64-apple-darwin`, using cef-rs' prebuilt CEF download/export flow.
 - The cef-rs OSR example uses `cef::execute_process` for subprocess dispatch, `cef::initialize` with `Settings { windowless_rendering_enabled: true, external_message_pump: true, .. }`, `WindowInfo { windowless_rendering_enabled: true, .. }`, and `browser_host_create_browser_sync`.
 - The example provides the exact callback shape we need: `wrap_render_handler!` implements `view_rect`, `screen_info`, `on_paint`, and optional `on_accelerated_paint`. For Hunk v1, start with CPU BGRA `on_paint`; accelerated OSR can follow after the basic GPUI texture path is stable.
@@ -166,6 +166,30 @@ Implementation notes:
 - Browser dynamic tool calls now render as compact `Browser` timeline rows with action summaries for navigate, snapshot, click, type, press, scroll, screenshot, and confirmation-required results.
 - The browser surface now tracks GPUI focus, resizes CEF OSR view bounds from the pane, forwards mouse/down/wheel/key/text input, and suppresses mouse move forwarding outside the browser hitbox.
 - The CEF `on_paint` adapter now applies `BrowserFrameRateLimiter::v1_60fps()` per browser session before allocating/storing a new frame event.
+
+### Qt presentation migration
+
+- [x] Add a QtBridge browser object and bounded tab list model without moving browser state out of `hunk-browser`.
+- [x] Start CEF lazily on first browser use and keep ordinary Qt builds CEF-free behind `hunk-desktop/cef-browser`.
+- [x] Upload validated BGRA frames through a narrow native `QQuickItem` and `QSGSimpleTextureNode` instead of encoding frames through QML.
+- [x] Port tabs, navigation, address entry, DevTools, context actions, focus, resize, pointer, wheel, key, and text input.
+- [x] Route the retained Codex browser tools to the visible Qt-owned session.
+- [x] Preserve allow-once/deny handling for sensitive browser actions in the Qt shell.
+- [x] Keep CEF frame publication capped at 60 fps while the surrounding Qt Quick shell remains eligible for the 120 Hz/8 ms gate.
+
+The Qt adapter wraps each retained Rust `Arc<[u8]>` in a read-only `QImage`
+with an ownership callback, so the Qt boundary adds no full-frame CPU copy or
+pixel allocation. The scene graph uploads changed epochs into one persistent
+QRhi texture, and QML enables browser input only after the native item reports
+its first frame. While the backend is active, the 16 ms pump services CEF's
+message loop continuously but requests a new frame only for the visible session
+and only while the browser pane is shown in a non-minimized window. Frame-only
+updates bypass tab-model projection. It does not add per-frame
+base64/data-URL conversion, QML image-provider churn, or a second copy of the
+browser runtime. The production dependency is pinned to cef-rs
+`cef-v151.8.0+151.3.24`, CEF
+`151.3.24+g2384915+chromium-151.0.7922.174`, and Chromium
+`151.0.7922.174`.
 
 ## Phase 3: AI Dynamic Browser Tools
 

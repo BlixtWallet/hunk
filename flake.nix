@@ -109,6 +109,10 @@
                 ninja
                 openssl
                 pkgconf
+                (python3.withPackages (pythonPackages: [
+                  pythonPackages.pip
+                  pythonPackages.virtualenv
+                ]))
               ]
               ++ lib.optionals stdenv.isLinux [
                 gcc
@@ -147,6 +151,8 @@
               "-L${pkgs.libglvnd}/lib -rpath ${pkgs.lib.makeLibraryPath linuxRuntimeRpathLibraries}"
             );
             shellHook = ''
+              unset CARGO_TARGET_DIR
+
               if [ -n "''${HUNK_BUILD_TMPDIR:-}" ]; then
                 export TMPDIR="$HUNK_BUILD_TMPDIR"
               elif [ -d "/Volumes/hulk/dev/cache/hunk-tmp" ]; then

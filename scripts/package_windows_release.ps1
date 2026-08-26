@@ -65,6 +65,60 @@ function Assert-CommandAvailable {
     throw "Missing required Windows packaging tool: $Description. Install '$Command' and ensure it is on PATH."
 }
 
+function Get-WindowsQtDeployment {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RequiredVersion
+    )
+
+    $qtRoot = $env:HUNK_QT_ROOT
+    if ([string]::IsNullOrWhiteSpace($qtRoot)) {
+        $qtRoot = $env:QT_ROOT_DIR
+    }
+
+    $qmakePath = $env:QMAKE
+    if ([string]::IsNullOrWhiteSpace($qmakePath) -and -not [string]::IsNullOrWhiteSpace($qtRoot)) {
+        $qmakePath = Join-Path $qtRoot "bin/qmake.exe"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($qmakePath) -and -not (Test-Path $qmakePath -PathType Leaf)) {
+        $qmakeCommand = Get-Command $qmakePath -ErrorAction SilentlyContinue
+        if ($qmakeCommand) {
+            $qmakePath = $qmakeCommand.Source
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($qmakePath)) {
+        $qmakeCommand = Get-Command "qmake.exe" -ErrorAction SilentlyContinue
+        if ($qmakeCommand) {
+            $qmakePath = $qmakeCommand.Source
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($qmakePath) -or -not (Test-Path $qmakePath -PathType Leaf)) {
+        throw "Qt $RequiredVersion qmake.exe was not found. Install the pinned Qt SDK or set HUNK_QT_ROOT."
+    }
+
+    $qmakePath = (Resolve-Path $qmakePath).Path
+    if ([string]::IsNullOrWhiteSpace($qtRoot)) {
+        $qtRoot = Split-Path (Split-Path $qmakePath -Parent) -Parent
+    }
+    $qtRoot = (Resolve-Path $qtRoot).Path
+
+    $actualVersion = (& $qmakePath -query QT_VERSION | Select-Object -Last 1).Trim()
+    if ($actualVersion -ne $RequiredVersion) {
+        throw "Hunk requires Qt $RequiredVersion, found Qt $actualVersion at $qtRoot."
+    }
+
+    $windeployQtPath = Join-Path $qtRoot "bin/windeployqt.exe"
+    if (-not (Test-Path $windeployQtPath -PathType Leaf)) {
+        throw "Qt $RequiredVersion windeployqt.exe was not found at $windeployQtPath."
+    }
+
+    return @{
+        Root = $qtRoot
+        Qmake = $qmakePath
+        WinDeployQt = $windeployQtPath
+    }
+}
+
 function Get-WindowsRuntimeSidecarDlls {
     param(
         [Parameter(Mandatory = $true)]
@@ -144,6 +198,60 @@ function Stage-WindowsPackagerSidecars {
     }
 }
 
+function Stage-WindowsQtRuntime {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WinDeployQtPath,
+        [Parameter(Mandatory = $true)]
+        [string]$DesktopBinaryPath,
+        [Parameter(Mandatory = $true)]
+        [string]$QmlSourceDir,
+        [Parameter(Mandatory = $true)]
+        [string]$TargetDir
+    )
+
+    if (-not (Test-Path $DesktopBinaryPath -PathType Leaf)) {
+        throw "Missing Windows desktop binary for Qt deployment: $DesktopBinaryPath"
+    }
+
+    $stageDir = Join-Path $TargetDir "windows-qt-runtime"
+    if (Test-Path $stageDir) {
+        Remove-Item -Path $stageDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+
+    Write-Host "Deploying Qt 6.11.2 DLLs, plugins, and QML modules..."
+    & $WinDeployQtPath `
+        --release `
+        --force `
+        --no-translations `
+        --qmldir $QmlSourceDir `
+        --dir $stageDir `
+        $DesktopBinaryPath
+
+    $requiredRelativePaths = @(
+        "Qt6Core.dll",
+        "Qt6Gui.dll",
+        "Qt6Qml.dll",
+        "Qt6Quick.dll",
+        "platforms/qwindows.dll",
+        "qml/QtQml/qmldir",
+        "qml/QtQuick/qmldir",
+        "qml/QtQuick/Controls/qmldir"
+    )
+    foreach ($relativePath in $requiredRelativePaths) {
+        $requiredPath = Join-Path $stageDir $relativePath
+        if (-not (Test-Path $requiredPath -PathType Leaf)) {
+            throw "Windows Qt deployment is missing $requiredPath"
+        }
+    }
+
+    return @{
+        Directory = $stageDir
+        FileNames = @("Qt6Core.dll", "Qt6Gui.dll", "Qt6Qml.dll", "Qt6Quick.dll", "qwindows.dll")
+    }
+}
+
 function Get-WindowsMsiFileNames {
     param(
         [Parameter(Mandatory = $true)]
@@ -220,7 +328,8 @@ function Invoke-CargoPackagerWithManifestOverride {
         [string]$PackagerOutDir,
         [string]$WindowsSidecarResourcePath,
         [string]$WindowsBrowserCefRuntimeResourcePath,
-        [string]$WindowsBrowserHelperResourcePath
+        [string]$WindowsBrowserHelperResourcePath,
+        [string]$WindowsQtRuntimeResourcePath
     )
 
     $originalCargoToml = Get-Content $CargoTomlPath -Raw
@@ -235,7 +344,7 @@ function Invoke-CargoPackagerWithManifestOverride {
         }
     }
 
-    if ($WindowsSidecarResourcePath -or $WindowsBrowserCefRuntimeResourcePath -or $WindowsBrowserHelperResourcePath) {
+    if ($WindowsSidecarResourcePath -or $WindowsBrowserCefRuntimeResourcePath -or $WindowsBrowserHelperResourcePath -or $WindowsQtRuntimeResourcePath) {
         $cargoTomlBeforeResourceRewrite = $updatedCargoToml
         $resourceLines = @(
             "resources = [",
@@ -254,13 +363,17 @@ function Invoke-CargoPackagerWithManifestOverride {
             $normalizedSidecarPath = $WindowsSidecarResourcePath.Replace('\', '/')
             $resourceLines += "  { src = ""$normalizedSidecarPath"", target = ""."" },"
         }
+        if ($WindowsQtRuntimeResourcePath) {
+            $normalizedQtRuntimePath = $WindowsQtRuntimeResourcePath.Replace('\', '/')
+            $resourceLines += "  { src = ""$normalizedQtRuntimePath"", target = ""."" },"
+        }
         $resourceLines += "]"
         $windowsResourcesReplacement = $resourceLines -join "`n"
         $resourcePattern = '(?ms)^resources\s*=\s*\[\s*"../../assets/codex-runtime"\s*,\s*"../../assets/browser-runtime"\s*,?\s*\]\s*$'
         $updatedCargoToml = [regex]::Replace($updatedCargoToml, $resourcePattern, $windowsResourcesReplacement, 1)
 
         if ($updatedCargoToml -eq $cargoTomlBeforeResourceRewrite) {
-            throw "Failed to inject Windows sidecar DLL resources into $CargoTomlPath"
+            throw "Failed to inject Windows runtime resources into $CargoTomlPath"
         }
     }
 
@@ -305,6 +418,8 @@ $cargoLockPath = Join-Path $rootDir "Cargo.lock"
 $desktopCrateDir = Split-Path $cargoTomlPath -Parent
 $targetTriple = "x86_64-pc-windows-msvc"
 $targetDir = Join-Path $rootDir "target"
+$qmlSourceDir = Join-Path $rootDir "crates/hunk-desktop/src/qml"
+$desktopBinaryPath = Join-Path $targetDir "$targetTriple/release/hunk_desktop.exe"
 $browserCefRuntimeDir = Join-Path $rootDir "assets/browser-runtime/cef/windows/runtime"
 $browserHelperPath = Join-Path $targetDir "$targetTriple/release/hunk-browser-helper.exe"
 $versionLabel = if ($env:HUNK_RELEASE_VERSION) {
@@ -321,8 +436,13 @@ $windowsSidecarBundle = $null
 $windowsSidecarResourcePath = $null
 $windowsBrowserCefRuntimeResourcePath = $null
 $windowsBrowserHelperResourcePath = $null
+$windowsQtRuntimeResourcePath = $null
 $windowsSidecarFileNames = @()
+$windowsQtFileNames = @()
 $windowsBrowserCefFileNames = @("hunk-browser-helper.exe", "libcef.dll", "chrome_elf.dll", "icudtl.dat", "resources.pak")
+$qtDeployment = Get-WindowsQtDeployment -RequiredVersion "6.11.2"
+$env:QMAKE = $qtDeployment.Qmake
+$env:PATH = (Join-Path $qtDeployment.Root "bin") + ";" + $env:PATH
 
 Push-Location $rootDir
 try {
@@ -342,6 +462,13 @@ try {
     cargo build -p hunk-browser-helper --release --target $targetTriple --locked --features hunk-browser-helper/cef-subprocess
     Write-Host "Building Windows release binary..."
     cargo build -p hunk-desktop --release --target $targetTriple --locked --features hunk-desktop/cef-browser
+    $windowsQtBundle = Stage-WindowsQtRuntime `
+        -WinDeployQtPath $qtDeployment.WinDeployQt `
+        -DesktopBinaryPath $desktopBinaryPath `
+        -QmlSourceDir $qmlSourceDir `
+        -TargetDir $targetDir
+    $windowsQtRuntimeResourcePath = [System.IO.Path]::GetRelativePath($desktopCrateDir, $windowsQtBundle.Directory)
+    $windowsQtFileNames = @($windowsQtBundle.FileNames)
     $windowsSidecarBundle = Stage-WindowsPackagerSidecars -TargetDir $targetDir -TargetTriple $targetTriple
     if ($windowsSidecarBundle.Directory) {
         $windowsSidecarResourcePath = [System.IO.Path]::GetRelativePath($desktopCrateDir, $windowsSidecarBundle.Directory)
@@ -360,7 +487,8 @@ try {
         -PackagerOutDir $packagerOutDir `
         -WindowsSidecarResourcePath $windowsSidecarResourcePath `
         -WindowsBrowserCefRuntimeResourcePath $windowsBrowserCefRuntimeResourcePath `
-        -WindowsBrowserHelperResourcePath $windowsBrowserHelperResourcePath
+        -WindowsBrowserHelperResourcePath $windowsBrowserHelperResourcePath `
+        -WindowsQtRuntimeResourcePath $windowsQtRuntimeResourcePath
     & $validateBundleScript -RootDir $rootDir -PackagerOutDir $packagerOutDir
 } finally {
     Pop-Location
@@ -381,7 +509,7 @@ if (-not $bundleMsi) {
 }
 
 New-Item -ItemType Directory -Path $distDir -Force | Out-Null
-Assert-WindowsMsiContainsFiles -MsiPath $bundleMsi.FullName -ExpectedFileNames ($windowsSidecarFileNames + $windowsBrowserCefFileNames)
+Assert-WindowsMsiContainsFiles -MsiPath $bundleMsi.FullName -ExpectedFileNames ($windowsSidecarFileNames + $windowsBrowserCefFileNames + $windowsQtFileNames)
 Copy-Item -Path $bundleMsi.FullName -Destination $releaseMsiPath -Force
 
 Write-Host "Created Windows release artifact at $releaseMsiPath"

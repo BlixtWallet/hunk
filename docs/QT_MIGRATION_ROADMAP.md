@@ -91,7 +91,7 @@ Qt Quick / QML
   shell, navigation, Git, AI, settings, ordinary diff chrome
                          |
                          v
-hunk-qt adapter layer
+hunk-desktop adapter layer
   QtBridge QObjects and models; UI commands; immutable snapshots
                          |
                          v
@@ -248,9 +248,9 @@ Phase 4 toolchain decisions:
 - `hunk-qt` rejects builds unless `qmake -query QT_VERSION` returns exactly
   6.11.2. QtBridge is pinned to official commit
   `cad0d6cd81d1af294ec87c67f21d39133196dbc1`.
-- Linux CI installs and caches `linux_gcc_64` with
-  `jurplel/install-qt-action@v4` on an ephemeral Ubuntu 24.04 runner with pinned
-  Nix and Cargo caches. Windows uses the same Qt action with aqt pinned to
+- Linux PR CI installs and caches `linux_gcc_64` with
+  `jurplel/install-qt-action@v4` on the existing `ubuntu-self-hosted` runner.
+  Windows uses the same Qt action with aqt pinned to
   upstream merge commit `8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b`,
   which adds the Qt 6.11 Windows repository layout missing from aqt 3.3.0. Both
   jobs cache the exact official prebuilt Qt packages without Qt Account
@@ -600,16 +600,59 @@ external caches:
 - [x] Implement persistent bookmark ordering and interaction.
 - [x] Implement context usage, model/settings, collaboration-mode, approval-policy, and service-tier controls still in product scope.
 - [x] Implement prompt attachments still in product scope.
-- [ ] Port required terminal surfaces with correct input, focus, cursor, selection, and resize behavior.
-- [ ] Port the required embedded CEF browser surface, controls, input routing, and AI tool bridge to Qt.
+- [x] Port required terminal surfaces with correct input, focus, cursor, selection, and resize behavior.
+- [x] Port the required embedded CEF browser surface, controls, input routing, and AI tool bridge to Qt.
 - [ ] Validate key flows without triggering unattended keychain prompts.
-- [ ] Complete the mandatory working loop and stacked PR.
+- [x] Complete the mandatory working loop and stacked PR.
 
 Product decision recorded on 2026-08-25: both the terminal and embedded browser
 remain required parts of Hunk and must work in the Qt application before the
 atomic cutover. Reuse the existing `hunk-terminal` and `hunk-browser`/CEF domain
 and runtime layers. Replace their GPUI presentation and input adapters with
 narrow Qt adapters; do not introduce Qt WebEngine or a second browser engine.
+
+Qt terminal decisions:
+
+- The Qt application uses one repository-scoped bottom drawer shared by Diff,
+  Git, and AI. It supports up to 12 live tabs and resets those sessions when the
+  active repository changes, avoiding both the removed Files workspace and a
+  second per-thread presentation model.
+- `hunk-terminal` remains the only PTY, VT, key encoding, mouse protocol,
+  scrollback, and shell-resolution authority. The former desktop-only shell
+  environment helper moved into that crate so GPUI and Qt consume the same
+  configured shell and login-environment behavior.
+- Shell startup, VT screen projection, and burst coalescing run off the Qt
+  thread. Listener threads retain only the latest projected screen and terminal
+  end event per tab generation and schedule at most one queued Qt callback.
+  Raw output events do not cross QtBridge, stale tab generations are rejected,
+  and dropping a tab drops its session handle without joining on the
+  frame-sensitive Qt thread.
+- The QML surface uses one recycled delegate per visible row rather than one
+  delegate per cell. Rust projects bounded rich-text rows, patches only changed
+  rows when the grid size is stable, preserves wide/combining-cell selection,
+  and keeps all terminal palette values in `Theme.qml`.
+- Closing the drawer unloads its QML tree without resizing or stopping live PTY
+  sessions. Hidden sessions keep only their latest projected screen; reopening
+  applies it once and restores focus to the exact control that owned focus
+  before the terminal opened.
+- The retained interaction contract includes shell tabs, keyboard and IME text,
+  bracketed paste, focus reporting, cursor shapes and blink, scrollback,
+  selection/copy, VT mouse and wheel modes, PTY resize, and the existing
+  platform terminal toggle/tab shortcuts. AI command rows can explicitly send
+  an untruncated command to the matching cwd; commands never run automatically.
+
+Qt terminal validation on 2026-08-25 used the shared external-volume caches and
+did not launch Hunk, Codex, or any keychain-facing runtime:
+
+- `cargo build --workspace --all-targets` passed through the Nix shell.
+- `cargo test --workspace` passed through the Nix shell.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed through the Nix shell.
+- Qt 6.11.2 `qmllint` accepted the changed terminal QML; its expected warnings
+  are limited to dynamic QtBridge backend properties that have no static QML type.
+- The offscreen Qt Quick suite passed all 92 tests, including terminal delegate
+  roles, hidden resize preservation, tab overflow visibility, and exact AI/Git
+  focus restoration. Live 120 Hz hardware profiling remains part of the atomic
+  cutover performance gate rather than this non-interactive validation layer.
 
 Prompt attachment decisions:
 
@@ -1029,16 +1072,69 @@ target, external Cargo cache, and Qt 6.11.2 SDK:
 - Validation used only Rust/QML fixtures. It did not launch Hunk or Codex and
   did not access any credential or keychain path.
 
+Qt browser decisions:
+
+- `hunk-browser` remains the sole CEF runtime, session, snapshot, console,
+  safety, and input authority. Qt adds a thin `BrowserBridge`, bounded tab
+  model, QML controls, and a narrow native `QQuickItem`; it does not add Qt
+  WebEngine or fork browser behavior into QML.
+- CEF initializes lazily on first user or AI browser action. The ordinary Qt
+  dependency graph stays CEF-free, while `hunk-desktop/cef-browser` enables the
+  matching `hunk-browser` and helper subprocess features for production builds.
+- Changed CEF BGRA frames retain their Rust `Arc<[u8]>` allocation across a
+  read-only `QImage` ownership callback and upload through
+  `QSGSimpleTextureNode`. The Qt boundary adds no second full-frame CPU copy,
+  QML never receives encoded frame data, and changed epochs reuse one
+  persistent QRhi texture allocation.
+- CEF publication remains capped at 60 fps. Its message loop stays serviced at
+  16 ms while the backend is active, but external frame requests target only
+  the visible session and stop when the pane is hidden or the window is
+  minimized. Tab projection also ignores frame-only metadata changes. The rest
+  of the Qt Quick shell retains its 120 Hz/8 ms target; live hardware profiling
+  remains a cutover gate.
+- AI browser tools operate on the selected thread's visible CEF session.
+  Sensitive actions pause in the global Qt allow-once/deny dialog, preserving
+  the retained browser safety policy and structured tool responses.
+- The native item exposes first-frame readiness. Pointer, keyboard, and focus
+  forwarding remain disabled until pixels exist, and approval dialogs restore
+  the exact previously focused control. If opening the browser hid that
+  control, approval completion hands focus to the ready browser surface.
+- cef-rs is pinned to `cef-v151.8.0+151.3.24` at commit
+  `a2e15ae659c4b3957883e34de879bd8b38360ce5`, backed by CEF
+  `151.3.24+g2384915+chromium-151.0.7922.174` and Chromium
+  `151.0.7922.174`.
+
+Qt browser validation on macOS through Nix reused the repository target,
+external Cargo/CEF caches, and Qt 6.11.2 SDK:
+
+- The staged CEF 151.3.24 runtime passed the Hunk macOS layout validator.
+- `cargo check -p hunk-desktop --features cef-browser --locked` passed against the
+  staged runtime and exact cef-rs release.
+- The standalone Qt Quick suite passed all 109 browser, terminal, AI, Git, and
+  Diff interaction tests in 1.747 seconds. Browser coverage includes injected
+  native-surface ownership, address state, first-frame input gating, approval
+  focus restoration, modified printable shortcuts, active-tab model resets,
+  and shell state toggling.
+- Six focused read-only QML review passes drove corrections for first-frame
+  ownership, approval focus, hidden/minimized frame requests, tab projection,
+  and browser input routing. System `qmllint` then passed with only the expected
+  dynamic QObject-property warnings.
+- `cargo build --workspace --all-targets --locked`,
+  `cargo test --workspace --all-targets --locked`, and warning-denied workspace
+  Clippy all passed. The warm-cache build took 3 minutes 54 seconds; the final
+  Clippy pass took 6.02 seconds.
+- Validation did not launch Hunk, Codex, or a keychain-facing runtime.
+
 ### 8. Atomic Qt Cutover and CI Replacement
 
-- [ ] Make the Qt binary the workspace default desktop application.
-- [ ] Remove GPUI, `gpui_platform`, GPUI Component, GPUI assets, shaders, and GPUI-only build inputs.
-- [ ] Remove all remaining GPUI source and compatibility adapters.
-- [ ] Remove orphaned editor/file-workspace crates or features proven unused after Diff and AI are complete.
-- [ ] Replace GPUI-oriented packaging scripts and resources with Qt deployment tooling.
-- [ ] Change PR CI so no job resolves or builds a GPUI package.
-- [ ] Cache or preinstall exact-version Qt binaries; never compile Qt from source in ordinary CI.
-- [ ] Run core fmt/clippy/tests independently from the final Qt desktop build.
+- [x] Make the Qt binary the workspace default desktop application.
+- [x] Remove GPUI, `gpui_platform`, GPUI Component, GPUI assets, shaders, and GPUI-only build inputs.
+- [x] Remove all remaining GPUI source and compatibility adapters.
+- [x] Remove orphaned editor/file-workspace crates or features proven unused after Diff and AI are complete.
+- [x] Replace GPUI-oriented packaging scripts and resources with Qt deployment tooling.
+- [x] Change PR CI so no job resolves or builds a GPUI package.
+- [x] Cache or preinstall exact-version Qt binaries; never compile Qt from source in ordinary CI.
+- [x] Run core fmt/clippy/tests independently from the final Qt desktop build.
 - [ ] Build one production feature configuration per platform instead of plain and CEF duplicates.
 - [ ] Add path-aware QML validation so QML-only changes do not trigger needless Rust rebuild work.
 - [ ] Build the Qt app on Linux, Windows, and macOS in PR CI.
@@ -1047,11 +1143,76 @@ target, external Cargo cache, and Qt 6.11.2 SDK:
 The GPUI build is removed in the same reviewed layer that makes Qt the default.
 There must not be a merged state where the shipping frontend has no CI build.
 
+Cutover validation on macOS through Nix reused the repository `target/`, the
+approved external Cargo cache, and the exact Qt 6.11.2 and CEF 151 runtimes:
+
+- `hunk-desktop` is now the only desktop package and the workspace default; its
+  binary remains `hunk_desktop`, preserving the existing launcher, updater, and
+  release naming contract while changing the implementation to Qt.
+- The old GPUI source tree, GPUI-specific assets and skills, the `hunk-editor`
+  crate, and the temporary `hunk-qt` package are removed. The lockfile contains
+  no GPUI package and shrank from 1,678 to 1,329 packages.
+- PR CI builds `hunk-desktop` on Linux and Windows, runs the QML suite, and
+  keeps core workspace validation separate from the Qt desktop build. The
+  macOS PR job and production deployment configuration remain release-hardening
+  work and are intentionally not claimed here.
+- The CEF production-feature check passed against the staged CEF 151.3.24
+  runtime. The Qt Quick suite passed all 109 tests in 2.001 seconds.
+- The full all-target workspace build passed in 3 minutes 13 seconds, the full
+  workspace test suite passed, and warning-denied workspace Clippy passed in
+  1 minute 19 seconds.
+- Review confirmed the moved Qt source and test behavior is unchanged from the
+  previously reviewed frontend: diffs are limited to the stable package/module
+  rename and Rustfmt's corresponding import sorting. The remaining oversized
+  CEF backend was reduced to 1,973 lines by extracting a 55-line macOS
+  sidecar-staging helper.
+- Validation did not launch Hunk, Codex, CEF, or a keychain-facing runtime.
+- The reviewed cutover is open as stacked PR #204 above browser PR #203; the
+  verified remote base is `migration/24-qt-browser` and the head is
+  `migration/25-qt-cutover`.
+
+Qt release-deployment hardening now provisions the exact Qt 6.11.2 SDK in all
+three release workflows and stages its runtime with the platform deployment
+model documented by Qt:
+
+- macOS runs `macdeployqt` with the Hunk QML import root, retains only
+  self-contained SQL plugins, bundles nested native dependencies for the main
+  app and CEF helpers, rejects build-host paths, and validates the required Qt
+  frameworks, Cocoa plugin, and QML modules before signing.
+- Windows runs `windeployqt` into a scoped runtime tree and injects the complete
+  validated tree into both the portable bundle and MSI.
+- Linux stages an application-private Qt library, plugin, and QML tree, writes
+  `qt.conf`, bundles recursive ELF dependencies, applies relative RPATHs, and
+  requires both X11/XCB and native Wayland platform plugins.
+- Linux PR builds use the project's `ubuntu-self-hosted` runner again. They
+  provision the official Qt SDK through the Nix-owned pinned installer and the
+  runner's persistent cache, avoiding GitHub's unavailable Ubuntu 25.10 Python
+  toolcache. Linux release jobs use the same path with native Wayland enabled;
+  none of these jobs resolve or compile GPUI.
+- A local production macOS packaging run reused `target/`, the external Cargo,
+  Qt, and CEF caches, produced `Hunk-0.0.11-macos-arm64.dmg`, passed recursive
+  dependency validation, and passed deep code-sign verification. Windows and
+  Linux installed-artifact tests remain cross-platform release-hardening work
+  and are not claimed by this local proof.
+- Release-workflow YAML parsing, shell syntax, formatting, the full serialized
+  workspace test suite, the full all-target workspace build, and warning-denied
+  workspace Clippy all passed through Nix. The initial parallel test invocation
+  exposed an existing nanosecond temp-database collision in three comment-store
+  tests; the isolated suite and the complete serialized rerun both passed.
+- The Qt desktop now owns the updater lifecycle through a dedicated QObject:
+  startup/manual/periodic checks and verified downloads run off the Qt thread,
+  the header exposes progress and restart controls, and macOS/Linux apply via a
+  post-exit helper while Windows retains the staged MSI helper. Release
+  manifest targets and artifact names still match the stable `hunk_desktop`
+  package contract. Linux direct bundles relaunch through their public launcher,
+  while DEB/RPM wrappers explicitly disable self-update.
+
 ### 9. Release Hardening and Completion Audit
 
-- [ ] Package Qt libraries, platform plugins, image plugins, QML modules, and accessibility plugins required by the application.
+- [x] Package Qt libraries, platform plugins, image plugins, QML modules, and accessibility plugins required by the application.
 - [ ] Produce and install-test macOS DMG/app, Windows MSI, and Linux tarball/DEB/RPM artifacts.
-- [ ] Verify updater manifests and OTA behavior for the renamed/repackaged binary.
+- [x] Restore the updater in Qt and verify signed manifest/asset contracts for the retained packaged binary.
+- [ ] Run end-to-end packaged OTA apply/relaunch smoke tests on macOS, Windows, and Linux.
 - [ ] Verify DPI scaling, fonts, IME, clipboard, drag/drop, shortcuts, notifications, dialogs, accessibility, and sleep inhibition on all platforms.
 - [ ] Verify terminal and any retained browser surface on all platforms.
 - [ ] Run automated QML tests and representative UI smoke tests.

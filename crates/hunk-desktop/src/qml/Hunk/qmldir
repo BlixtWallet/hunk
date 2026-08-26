@@ -1,0 +1,27 @@
+module Hunk
+singleton Theme 1.0 Theme.qml
+ActionButton 1.0 ActionButton.qml
+AiComposer 1.0 AiComposer.qml
+AiComposerCompletionMenu 1.0 AiComposerCompletionMenu.qml
+AiAttachmentStrip 1.0 AiAttachmentStrip.qml
+TerminalDrawer 1.0 TerminalDrawer.qml
+TerminalScreen 1.0 TerminalScreen.qml
+TerminalRow 1.0 TerminalRow.qml
+UpdateControl 1.0 UpdateControl.qml
+AiRequestPanel 1.0 AiRequestPanel.qml
+AiSidebar 1.0 AiSidebar.qml
+AiSessionControls 1.0 AiSessionControls.qml
+AiStatusControl 1.0 AiStatusControl.qml
+AiTimelineRow 1.0 AiTimelineRow.qml
+AiUsageRow 1.0 AiUsageRow.qml
+AiWorkspace 1.0 AiWorkspace.qml
+BrowserPane 1.0 BrowserPane.qml
+ConfirmationDialog 1.0 ConfirmationDialog.qml
+CompareSourcePicker 1.0 CompareSourcePicker.qml
+DiffCommentComposer 1.0 DiffCommentComposer.qml
+DiffCommentInspector 1.0 DiffCommentInspector.qml
+DiffSidebar 1.0 DiffSidebar.qml
+DiffWorkspace 1.0 DiffWorkspace.qml
+NavigationButton 1.0 NavigationButton.qml
+SessionComboBox 1.0 SessionComboBox.qml
+Shell 1.0 Shell.qml

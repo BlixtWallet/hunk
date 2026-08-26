@@ -704,6 +704,13 @@ impl BrowserRuntime {
     }
 
     pub fn pump_backend(&mut self) -> Result<bool, BrowserError> {
+        self.pump_backend_with_frame_request(true)
+    }
+
+    pub fn pump_backend_with_frame_request(
+        &mut self,
+        request_frame: bool,
+    ) -> Result<bool, BrowserError> {
         self.require_ready_for_operation(BrowserRuntimeOperation::Pump)?;
 
         #[cfg(feature = "cef")]
@@ -713,11 +720,16 @@ impl BrowserRuntime {
                     "CEF backend is marked ready but is not connected".to_string(),
                 ));
             };
-            backend.pump(&mut self.sessions)
+            backend.pump(
+                &mut self.sessions,
+                self.visible_session_id.as_ref(),
+                request_frame,
+            )
         }
 
         #[cfg(not(feature = "cef"))]
         {
+            let _ = request_frame;
             Err(BrowserError::BackendUnavailable(
                 "hunk-browser was built without the optional CEF backend".to_string(),
             ))

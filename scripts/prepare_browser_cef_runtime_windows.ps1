@@ -18,8 +18,8 @@ if ($TargetTriple -notin @("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc", 
 }
 
 $cefRsRepo = if ($env:HUNK_CEF_RS_REPO) { $env:HUNK_CEF_RS_REPO } else { "https://github.com/tauri-apps/cef-rs.git" }
-$cefRsRev = if ($env:HUNK_CEF_RS_REV) { $env:HUNK_CEF_RS_REV } else { "f20249dd2e34afdc0102af347f30f0218dd67e7b" }
-$cefRsDir = if ($env:HUNK_CEF_RS_DIR) { $env:HUNK_CEF_RS_DIR } else { Join-Path $env:TEMP "cef-rs" }
+$cefRsRev = if ($env:HUNK_CEF_RS_REV) { $env:HUNK_CEF_RS_REV } else { "a2e15ae659c4b3957883e34de879bd8b38360ce5" }
+$cefRsDir = if ($env:HUNK_CEF_RS_DIR) { $env:HUNK_CEF_RS_DIR } else { Join-Path $env:LOCALAPPDATA "Hunk/cef-rs" }
 $forceExport = $env:HUNK_CEF_FORCE_EXPORT -eq "1"
 $validator = Join-Path $PSScriptRoot "validate_browser_cef_windows.ps1"
 
@@ -50,8 +50,9 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 
 if (-not (Test-Path (Join-Path $cefRsDir ".git") -PathType Container)) {
     if (Test-Path $cefRsDir) {
-        Remove-Item -Path $cefRsDir -Recurse -Force
+        throw "Refusing to replace non-checkout CEF path: $cefRsDir"
     }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $cefRsDir) -Force | Out-Null
     git clone --depth=1 $cefRsRepo $cefRsDir
 }
 
