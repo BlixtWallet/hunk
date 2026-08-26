@@ -10,6 +10,7 @@ use hunk_app::ai::{
     spawn_ai_worker, validate_codex_executable_path,
 };
 
+use crate::ai_account::AiAccountProjection;
 use crate::ai_models::AiThreadCatalogProjection;
 use crate::ai_queue::AiQueueProjection;
 use crate::ai_requests::AiPendingRequestProjection;
@@ -19,6 +20,7 @@ use crate::ai_timeline_models::AiTimelineProjection;
 pub struct AiProjectedSnapshot {
     pub workspace_key: String,
     pub authentication_required: bool,
+    pub account: AiAccountProjection,
     pub threads: AiThreadCatalogProjection,
     pub timeline: AiTimelineProjection,
     pub queue: AiQueueProjection,
@@ -279,6 +281,12 @@ fn project_worker_event(
         AiWorkerEventPayload::Snapshot(snapshot) => {
             let authentication_required =
                 snapshot.requires_openai_auth && snapshot.account.is_none();
+            let account = AiAccountProjection::from_snapshot(
+                snapshot.account.as_ref(),
+                snapshot.requires_openai_auth,
+                snapshot.pending_chatgpt_login_id.as_deref(),
+                snapshot.rate_limits.as_ref(),
+            );
             let session = AiSessionCatalogProjection::from_snapshot(
                 &snapshot.state,
                 snapshot.active_thread_id.as_deref(),
@@ -312,6 +320,7 @@ fn project_worker_event(
             AiRuntimeEvent::Snapshot(Box::new(AiProjectedSnapshot {
                 workspace_key,
                 authentication_required,
+                account,
                 threads,
                 timeline,
                 queue,

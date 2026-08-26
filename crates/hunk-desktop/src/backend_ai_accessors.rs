@@ -47,6 +47,50 @@ impl Backend {
         ai_pending_request_count(self)
     }
 
+    pub(super) fn ai_account_summary_value(&self) -> String {
+        self.ai_account.summary.clone()
+    }
+
+    pub(super) fn ai_account_connected_value(&self) -> bool {
+        self.ai_account.connected
+    }
+
+    pub(super) fn ai_login_pending_value(&self) -> bool {
+        self.ai_account.login_pending
+    }
+
+    pub(super) fn ai_approval_request_count_value(&self) -> i32 {
+        self.ai_requests.approval_count
+    }
+
+    pub(super) fn ai_input_request_count_value(&self) -> i32 {
+        self.ai_requests.input_count
+    }
+
+    pub(super) fn ai_five_hour_limit_available_value(&self) -> bool {
+        self.ai_account.five_hour_limit.available
+    }
+
+    pub(super) fn ai_five_hour_limit_remaining_percent_value(&self) -> i32 {
+        self.ai_account.five_hour_limit.remaining_percent
+    }
+
+    pub(super) fn ai_five_hour_limit_reset_label_value(&self) -> String {
+        self.ai_account.five_hour_limit.reset_label.clone()
+    }
+
+    pub(super) fn ai_weekly_limit_available_value(&self) -> bool {
+        self.ai_account.weekly_limit.available
+    }
+
+    pub(super) fn ai_weekly_limit_remaining_percent_value(&self) -> i32 {
+        self.ai_account.weekly_limit.remaining_percent
+    }
+
+    pub(super) fn ai_weekly_limit_reset_label_value(&self) -> String {
+        self.ai_account.weekly_limit.reset_label.clone()
+    }
+
     pub(super) fn ai_active_request_count_value(&self) -> i32 {
         ai_active_request_count(self)
     }

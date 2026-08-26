@@ -5,6 +5,7 @@ use hunk_app::ai::{AiApprovalDecision, AiWorkerCommand, AiWorkerEventPayload};
 use qtbridge::{QObjectHolder, invoke_method};
 
 use crate::AiPromptReceipt;
+use crate::ai_account::AiAccountProjection;
 use crate::ai_attachments::{
     clear_ai_attachment_drafts, clear_ai_attachments_for_thread, current_ai_attachment_paths,
     restore_ai_attachment_paths, sync_ai_attachments,
@@ -31,6 +32,7 @@ pub(super) fn reset_ai_runtime_state(backend: &mut Backend) {
     backend.ai_ready = false;
     backend.ai_loading = false;
     backend.ai_requires_authentication = false;
+    backend.ai_account = AiAccountProjection::default();
     backend.ai_connection_state = "disconnected".to_owned();
     backend.ai_workspace_root.clear();
     backend.ai_active_thread_id.clear();
@@ -178,6 +180,7 @@ pub(super) fn apply_ai_runtime_events(backend: &mut Backend, events: Vec<AiRunti
 fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     let AiProjectedSnapshot {
         authentication_required,
+        account,
         threads: mut projection,
         timeline,
         queue,
@@ -281,6 +284,7 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
         backend.ai_session_state_changed();
     }
     backend.ai_requires_authentication = authentication_required;
+    backend.ai_account = account;
     backend.ai_ready = true;
     backend.ai_error.clear();
     if let Some(receipt) = completed_thread_action {

@@ -60,6 +60,8 @@ fn projection_prioritizes_selected_thread_approvals_and_marks_attention() {
 
     assert_eq!(projection.total_count, 3);
     assert_eq!(projection.active_count, 2);
+    assert_eq!(projection.approval_count, 2);
+    assert_eq!(projection.input_count, 1);
     assert_eq!(
         projection.current.as_ref().unwrap().request_id,
         "active-approval"

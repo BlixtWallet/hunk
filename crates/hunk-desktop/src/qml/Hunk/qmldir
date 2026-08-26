@@ -11,7 +11,9 @@ UpdateControl 1.0 UpdateControl.qml
 AiRequestPanel 1.0 AiRequestPanel.qml
 AiSidebar 1.0 AiSidebar.qml
 AiSessionControls 1.0 AiSessionControls.qml
+AiStatusControl 1.0 AiStatusControl.qml
 AiTimelineRow 1.0 AiTimelineRow.qml
+AiUsageRow 1.0 AiUsageRow.qml
 AiWorkspace 1.0 AiWorkspace.qml
 BrowserPane 1.0 BrowserPane.qml
 ConfirmationDialog 1.0 ConfirmationDialog.qml

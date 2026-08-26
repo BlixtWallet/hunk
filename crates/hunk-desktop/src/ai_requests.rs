@@ -17,6 +17,8 @@ const MAX_ANSWER_BYTES: usize = 4 * 1024;
 pub struct AiPendingRequestProjection {
     pub total_count: i32,
     pub active_count: i32,
+    pub approval_count: i32,
+    pub input_count: i32,
     pub current: Option<AiPendingRequest>,
     attention_thread_ids: BTreeSet<String>,
     pending_request_ids: BTreeSet<String>,
@@ -121,6 +123,8 @@ impl AiPendingRequestProjection {
         Self {
             total_count: saturating_usize_to_i32(total_count),
             active_count: saturating_usize_to_i32(active_count),
+            approval_count: saturating_usize_to_i32(approvals.len()),
+            input_count: saturating_usize_to_i32(user_inputs.len()),
             current,
             attention_thread_ids,
             pending_request_ids,

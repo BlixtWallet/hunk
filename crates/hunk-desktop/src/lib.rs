@@ -1,3 +1,4 @@
+mod ai_account;
 mod ai_attachments;
 mod ai_bookmarks;
 mod ai_completions;
@@ -41,6 +42,7 @@ use qtbridge::QApp;
 use qtbridge::include_bytes_qml;
 use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 
+pub use ai_account::{AiAccountProjection, AiRateLimitWindowProjection};
 pub use ai_completions::{
     ComposerCompletion, SlashCommand, SlashCommandAvailability, composer_completions,
     prompt_after_completion, slash_command,

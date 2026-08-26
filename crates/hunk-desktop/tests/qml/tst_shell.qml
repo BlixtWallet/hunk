@@ -84,6 +84,10 @@ TestCase {
         property bool aiReady: true
         property bool aiLoading: false
         property bool aiRequiresAuthentication: false
+        property string aiAccountSummary: "ChatGPT: test@example.com (Plus)"; property bool aiAccountConnected: true; property bool aiLoginPending: false
+        property int aiApprovalRequestCount: 0; property int aiInputRequestCount: 0
+        property bool aiFiveHourLimitAvailable: true; property int aiFiveHourLimitRemainingPercent: 75; property string aiFiveHourLimitResetLabel: "Resets in 2h"
+        property bool aiWeeklyLimitAvailable: true; property int aiWeeklyLimitRemainingPercent: 50; property string aiWeeklyLimitResetLabel: "Resets in 4d"
         property string aiConnectionState: "ready"
         property string aiWorkspaceRoot: "/Volumes/hulk/dev/projects/hunk"
         property string aiActiveThreadId: "thread-qt-migration"
@@ -456,6 +460,9 @@ TestCase {
         function select_ai_collaboration_mode(mode) { record("select_ai_collaboration_mode", mode); return true }
         function select_ai_service_tier(index) { record("select_ai_service_tier", String(index)); return true }
         function set_ai_mad_max_mode(enabled) { record("set_ai_mad_max_mode", String(enabled)); return true }
+        function start_ai_chatgpt_login() { record("start_ai_chatgpt_login"); return true }
+        function cancel_ai_chatgpt_login() { record("cancel_ai_chatgpt_login"); return true }
+        function logout_ai_account() { record("logout_ai_account"); return true }
         function add_ai_attachments(pathsJson) {
             const paths = JSON.parse(pathsJson)
             for (const path of paths) {

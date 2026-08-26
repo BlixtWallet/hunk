@@ -422,6 +422,61 @@ impl Backend {
         Notify = ai_state_changed
     );
     qproperty!(
+        "aiAccountSummary",
+        Read = ai_account_summary,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiAccountConnected",
+        Read = ai_account_connected,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiLoginPending",
+        Read = ai_login_pending,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiApprovalRequestCount",
+        Read = ai_approval_request_count,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiInputRequestCount",
+        Read = ai_input_request_count,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiFiveHourLimitAvailable",
+        Read = ai_five_hour_limit_available,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiFiveHourLimitRemainingPercent",
+        Read = ai_five_hour_limit_remaining_percent,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiFiveHourLimitResetLabel",
+        Read = ai_five_hour_limit_reset_label,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiWeeklyLimitAvailable",
+        Read = ai_weekly_limit_available,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiWeeklyLimitRemainingPercent",
+        Read = ai_weekly_limit_remaining_percent,
+        Notify = ai_state_changed
+    );
+    qproperty!(
+        "aiWeeklyLimitResetLabel",
+        Read = ai_weekly_limit_reset_label,
+        Notify = ai_state_changed
+    );
+    qproperty!(
         "aiConnectionState",
         Member = ai_connection_state,
         Notify = ai_state_changed
@@ -733,6 +788,50 @@ impl Backend {
 
     fn ai_pending_request_count(&self) -> i32 {
         self.ai_pending_request_count_value()
+    }
+
+    fn ai_account_summary(&self) -> String {
+        self.ai_account_summary_value()
+    }
+
+    fn ai_account_connected(&self) -> bool {
+        self.ai_account_connected_value()
+    }
+
+    fn ai_login_pending(&self) -> bool {
+        self.ai_login_pending_value()
+    }
+
+    fn ai_approval_request_count(&self) -> i32 {
+        self.ai_approval_request_count_value()
+    }
+
+    fn ai_input_request_count(&self) -> i32 {
+        self.ai_input_request_count_value()
+    }
+
+    fn ai_five_hour_limit_available(&self) -> bool {
+        self.ai_five_hour_limit_available_value()
+    }
+
+    fn ai_five_hour_limit_remaining_percent(&self) -> i32 {
+        self.ai_five_hour_limit_remaining_percent_value()
+    }
+
+    fn ai_five_hour_limit_reset_label(&self) -> String {
+        self.ai_five_hour_limit_reset_label_value()
+    }
+
+    fn ai_weekly_limit_available(&self) -> bool {
+        self.ai_weekly_limit_available_value()
+    }
+
+    fn ai_weekly_limit_remaining_percent(&self) -> i32 {
+        self.ai_weekly_limit_remaining_percent_value()
+    }
+
+    fn ai_weekly_limit_reset_label(&self) -> String {
+        self.ai_weekly_limit_reset_label_value()
     }
 
     fn ai_active_request_count(&self) -> i32 {
@@ -1512,6 +1611,45 @@ impl Backend {
         self.ai_state_changed();
     }
 
+    #[qslot]
+    fn start_ai_chatgpt_login(&mut self) -> bool {
+        if self.ai_account.connected || self.ai_account.login_pending {
+            return false;
+        }
+        ensure_ai_runtime_started(self);
+        let sent = send_ai_worker_command(
+            self,
+            AiWorkerCommand::StartChatgptLogin,
+            "Starting ChatGPT login…",
+        );
+        self.ai_state_changed();
+        sent
+    }
+
+    #[qslot]
+    fn cancel_ai_chatgpt_login(&mut self) -> bool {
+        if !self.ai_account.login_pending {
+            return false;
+        }
+        let sent = send_ai_worker_command(
+            self,
+            AiWorkerCommand::CancelChatgptLogin,
+            "Canceling ChatGPT login…",
+        );
+        self.ai_state_changed();
+        sent
+    }
+
+    #[qslot]
+    fn logout_ai_account(&mut self) -> bool {
+        if !self.ai_account.connected || self.ai_account.login_pending {
+            return false;
+        }
+        let sent = send_ai_worker_command(self, AiWorkerCommand::LogoutAccount, "Logging out…");
+        self.ai_state_changed();
+        sent
+    }
+
     fn execute_ai_composer_command(&mut self, name: &str) -> bool {
         let Some(command) = slash_command(name) else {
             return false;
@@ -1553,22 +1691,8 @@ impl Backend {
                 self.ai_state_changed();
                 true
             }
-            "login" => {
-                self.ensure_ai_runtime_started();
-                self.send_ai_worker_command(
-                    AiWorkerCommand::StartChatgptLogin,
-                    "Starting ChatGPT login…",
-                );
-                true
-            }
-            "logout" => {
-                self.ensure_ai_runtime_started();
-                self.send_ai_worker_command(
-                    AiWorkerCommand::LogoutAccount,
-                    "Logging out of ChatGPT…",
-                );
-                true
-            }
+            "login" => self.start_ai_chatgpt_login(),
+            "logout" => self.logout_ai_account(),
             _ => false,
         }
     }

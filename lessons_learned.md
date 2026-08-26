@@ -819,3 +819,13 @@ append a correction when later evidence changes one.
   because most pointer motion occurs before the handler becomes active. A
   direct overlay pointer surface is simpler and makes native debug interaction
   deterministic for narrow splitters.
+- Qt parity gaps can exist even when the shared Codex runtime is complete. The
+  account, login attempt, rate limits, approvals, and input requests were all
+  present in `AiSnapshot`, but the Qt mailbox projection discarded the account
+  fields and merged request types. Preserve a small frontend-neutral projection
+  at that boundary so QML remains declarative and the same data survives
+  reconnect snapshots without duplicating protocol logic in the view.
+- Rate-limit position is only a fallback when the server omits window-duration
+  metadata. If a snapshot names only a 7-day window, assigning the primary
+  window to a missing 5-hour slot duplicates usage under a false label. Match
+  known durations strictly and show the absent window as unavailable.

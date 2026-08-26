@@ -1,5 +1,5 @@
 use hunk_app::ai::{AiSnapshot, AiWorkerEvent, AiWorkerEventPayload};
-use hunk_codex::protocol::{Account, DynamicToolCallParams};
+use hunk_codex::protocol::{Account, DynamicToolCallParams, RateLimitSnapshot, RateLimitWindow};
 use hunk_codex::state::{AiState, ThreadLifecycleStatus, ThreadSummary};
 use hunk_desktop::{AiEventMailbox, AiRuntimeEvent};
 use std::collections::BTreeSet;
@@ -105,6 +105,40 @@ fn mailbox_coalesces_only_consecutive_snapshots() {
         panic!("expected the coalesced snapshot first");
     };
     assert_eq!(event.threads.active_thread_id, "new");
+}
+
+#[test]
+fn mailbox_preserves_account_login_and_rate_limit_state() {
+    let mailbox = AiEventMailbox::default();
+    mailbox.reset(12);
+    let mut state = snapshot("thread");
+    state.account = Some(Account::ApiKey {});
+    state.pending_chatgpt_login_id = Some("login".to_owned());
+    state.rate_limits = Some(RateLimitSnapshot {
+        limit_id: None,
+        limit_name: None,
+        primary: Some(RateLimitWindow {
+            used_percent: 25,
+            window_duration_mins: Some(300),
+            resets_at: None,
+        }),
+        secondary: None,
+        credits: None,
+        individual_limit: None,
+        spend_control_reached: None,
+        plan_type: None,
+        rate_limit_reached_type: None,
+    });
+
+    assert!(mailbox.enqueue_worker(12, event(AiWorkerEventPayload::Snapshot(Box::new(state)))));
+    let events = mailbox.take(12);
+    let AiRuntimeEvent::Snapshot(event) = &events[0] else {
+        panic!("expected projected account snapshot");
+    };
+    assert!(event.account.connected);
+    assert!(event.account.login_pending);
+    assert_eq!(event.account.summary, "Signed in with API key.");
+    assert_eq!(event.account.five_hour_limit.remaining_percent, 75);
 }
 
 #[test]

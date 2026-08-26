@@ -156,22 +156,10 @@ Item {
                 onClicked: root.toggleBrowser()
             }
 
-            Rectangle {
+            AiStatusControl {
                 anchors.verticalCenter: parent.verticalCenter
-                width: 7
-                height: 7
-                radius: 4
-                color: root.backend.aiConnectionState === "ready" ? Theme.positive : (root.backend.aiConnectionState === "failed" ? Theme.negative : Theme.warning)
-            }
-
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.backend.aiConnectionState.toUpperCase()
-                textFormat: Text.PlainText
-                color: Theme.muted
-                font.family: Theme.monoFont
-                font.pixelSize: 9
-                font.letterSpacing: 0.5
+                backend: root.backend
+                showMetrics: root.width >= 940
             }
         }
 

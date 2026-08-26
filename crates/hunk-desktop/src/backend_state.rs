@@ -12,6 +12,7 @@ use hunk_domain::state::{
 };
 use qtbridge::QObjectHolder;
 
+use crate::ai_account::AiAccountProjection;
 use crate::ai_attachments::{
     AiAttachmentDrafts, AiAttachmentListModel, AiAttachmentTasks, AiAttachmentValidationResults,
 };
@@ -198,6 +199,7 @@ pub struct Backend {
     pub(super) ai_ready: bool,
     pub(super) ai_loading: bool,
     pub(super) ai_requires_authentication: bool,
+    pub(super) ai_account: AiAccountProjection,
     pub(super) ai_connection_state: String,
     pub(super) ai_workspace_root: String,
     pub(super) ai_active_thread_id: String,
@@ -370,6 +372,7 @@ impl Default for Backend {
             ai_ready: false,
             ai_loading: false,
             ai_requires_authentication: false,
+            ai_account: AiAccountProjection::default(),
             ai_connection_state: "disconnected".to_owned(),
             ai_workspace_root: String::new(),
             ai_active_thread_id: String::new(),
