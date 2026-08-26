@@ -752,3 +752,31 @@ append a correction when later evidence changes one.
 - OTA compatibility is broader than the executable name. Regression tests
   should pin manifest target keys, asset formats, and release filenames so a UI
   migration cannot silently break the static update service.
+
+## 2026-08-26 — Two-workspace hardening and QtBridge re-entrancy
+
+- A QtBridge child `QAbstractListModel` reset can synchronously notify QML while
+  the parent `Backend` still holds its mutable `RefCell` borrow. If a binding
+  reads any parent property during that notification, the nested borrow aborts
+  at the FFI boundary. Queue and coalesce attached-model mutations through each
+  model's own `QmlMethodInvoker`; do not emit a synchronous model reset from a
+  parent backend slot.
+- Deferred models still need an authoritative pending view for Rust-side
+  selection. Source lookup performed before the queued reset runs must consult
+  the pending replacement, while `QListModel::get` and `len` continue to expose
+  only the notified live rows to QML.
+- Removing the Git product does not mean removing Git reads required by Diff.
+  Keep comparison loading in `hunk-git`, remove the desktop mutation/Forge
+  bridge and QML, and move repository selection into the retained AI sidebar so
+  the final product boundary is exactly Diff and AI.
+- A shared Cargo `target/` directory exposes non-idempotent dependency build
+  scripts that clean builds conceal. The libghostty simdutf namespace transform
+  must detect its already-patched form before rewriting, allowing debug,
+  release, and packaged builds to reuse the same external-volume cache.
+- Native folder dialogs can deactivate an offscreen Qt Quick Test window for
+  the rest of the process on macOS. Production code must capture and restore the
+  previous focus item when the dialog closes; keep the native-dialog smoke case
+  last so the harness limitation cannot invalidate unrelated keyboard tests.
+- A CEF-enabled compile proves dependency and helper compatibility, not browser
+  behavior. Keep browser, terminal, AI, Diff, and shutdown rows unclaimed until
+  the native Qt app is directly exercised alongside the installed baseline.

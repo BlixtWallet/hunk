@@ -18,12 +18,16 @@ pub struct TerminalTabItem {
 
 #[qobject(Base = QListModel)]
 mod terminal_tab_model {
+    use qtbridge::QObjectHolder;
+
     use super::{QListModel, QListModelBase, TerminalTabItem};
 
     #[derive(Default)]
     pub struct TerminalTabListModel {
         items: Vec<TerminalTabItem>,
         replacement: Option<Vec<TerminalTabItem>>,
+        deferred_replacement: Option<Vec<TerminalTabItem>>,
+        deferred_update_scheduled: bool,
     }
 
     impl TerminalTabListModel {
@@ -33,6 +37,33 @@ mod terminal_tab_model {
             }
             self.replacement = Some(items);
             self.reset();
+        }
+
+        pub fn defer_replace(&mut self, items: Vec<TerminalTabItem>) {
+            let current = self.deferred_replacement.as_ref().unwrap_or(&self.items);
+            if current == &items {
+                return;
+            }
+            self.deferred_replacement = Some(items);
+            if self.deferred_update_scheduled {
+                return;
+            }
+            self.deferred_update_scheduled = true;
+            if !self
+                .get_qml_method_invoker()
+                .invoke_method("apply_deferred_replacement")
+            {
+                self.deferred_update_scheduled = false;
+            }
+        }
+
+        #[qslot]
+        fn apply_deferred_replacement(&mut self) {
+            self.deferred_update_scheduled = false;
+            let Some(items) = self.deferred_replacement.take() else {
+                return;
+            };
+            self.replace(items);
         }
     }
 
@@ -72,12 +103,16 @@ pub struct TerminalRowItem {
 
 #[qobject(Base = QListModel)]
 mod terminal_row_model {
+    use qtbridge::QObjectHolder;
+
     use super::{QListModel, QListModelBase, TerminalRowItem};
 
     #[derive(Default)]
     pub struct TerminalRowListModel {
         items: Vec<TerminalRowItem>,
         replacement: Option<Vec<TerminalRowItem>>,
+        deferred_items: Option<Vec<TerminalRowItem>>,
+        deferred_update_scheduled: bool,
     }
 
     impl TerminalRowListModel {
@@ -85,6 +120,15 @@ mod terminal_row_model {
             let previous = std::mem::take(&mut self.items);
             self.replacement = Some(items);
             self.reset();
+            previous
+        }
+
+        pub fn defer_replace_for_tab(
+            &mut self,
+            items: Vec<TerminalRowItem>,
+        ) -> Vec<TerminalRowItem> {
+            let previous = self.deferred_items.as_ref().unwrap_or(&self.items).clone();
+            self.queue_deferred_items(items);
             previous
         }
 
@@ -102,12 +146,55 @@ mod terminal_row_model {
             }
         }
 
+        pub fn defer_replace_or_patch(&mut self, items: Vec<TerminalRowItem>) {
+            let current = self.deferred_items.as_ref().unwrap_or(&self.items);
+            if current == &items {
+                return;
+            }
+            self.queue_deferred_items(items);
+        }
+
         pub fn clear(&mut self) {
             if self.items.is_empty() {
                 return;
             }
             self.replacement = Some(Vec::new());
             self.reset();
+        }
+
+        pub fn defer_clear(&mut self) {
+            if self
+                .deferred_items
+                .as_ref()
+                .unwrap_or(&self.items)
+                .is_empty()
+            {
+                return;
+            }
+            self.queue_deferred_items(Vec::new());
+        }
+
+        fn queue_deferred_items(&mut self, items: Vec<TerminalRowItem>) {
+            self.deferred_items = Some(items);
+            if self.deferred_update_scheduled {
+                return;
+            }
+            self.deferred_update_scheduled = true;
+            if !self
+                .get_qml_method_invoker()
+                .invoke_method("apply_deferred_items")
+            {
+                self.deferred_update_scheduled = false;
+            }
+        }
+
+        #[qslot]
+        fn apply_deferred_items(&mut self) {
+            self.deferred_update_scheduled = false;
+            let Some(items) = self.deferred_items.take() else {
+                return;
+            };
+            self.replace_or_patch(items);
         }
     }
 

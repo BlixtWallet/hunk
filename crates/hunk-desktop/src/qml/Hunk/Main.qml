@@ -13,15 +13,16 @@ Window {
     title: "Hunk"
     color: Theme.canvas
 
+    onClosing: {
+        backend.browser.shutdown()
+        backend.updates.shutdown()
+    }
+
     Backend {
         id: backend
         Component.onCompleted: {
             backend.bootstrap()
             backend.updates.bootstrap()
-        }
-        Component.onDestruction: {
-            backend.browser.shutdown()
-            backend.updates.shutdown()
         }
     }
 

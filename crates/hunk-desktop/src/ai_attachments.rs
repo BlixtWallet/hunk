@@ -35,12 +35,16 @@ impl AiAttachmentItem {
 
 #[qobject(Base = QListModel)]
 mod attachment_model {
+    use qtbridge::QObjectHolder;
+
     use super::{AiAttachmentItem, QListModel, QListModelBase};
 
     #[derive(Default)]
     pub struct AiAttachmentListModel {
         items: Vec<AiAttachmentItem>,
         replacement: Option<Vec<AiAttachmentItem>>,
+        deferred_replacement: Option<Vec<AiAttachmentItem>>,
+        deferred_update_scheduled: bool,
     }
 
     impl AiAttachmentListModel {
@@ -50,6 +54,33 @@ mod attachment_model {
             }
             self.replacement = Some(items);
             self.reset();
+        }
+
+        pub fn defer_replace(&mut self, items: Vec<AiAttachmentItem>) {
+            let current = self.deferred_replacement.as_ref().unwrap_or(&self.items);
+            if current == &items {
+                return;
+            }
+            self.deferred_replacement = Some(items);
+            if self.deferred_update_scheduled {
+                return;
+            }
+            self.deferred_update_scheduled = true;
+            if !self
+                .get_qml_method_invoker()
+                .invoke_method("apply_deferred_replacement")
+            {
+                self.deferred_update_scheduled = false;
+            }
+        }
+
+        #[qslot]
+        fn apply_deferred_replacement(&mut self) {
+            self.deferred_update_scheduled = false;
+            let Some(items) = self.deferred_replacement.take() else {
+                return;
+            };
+            self.replace(items);
         }
     }
 
@@ -450,14 +481,17 @@ pub(super) fn clear_ai_attachment_drafts(backend: &mut Backend) {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clear();
     backend.ai_attachment_drafts.clear();
-    backend.ai_attachments.borrow_mut().replace(Vec::new());
+    backend
+        .ai_attachments
+        .borrow_mut()
+        .defer_replace(Vec::new());
 }
 
 pub(super) fn sync_ai_attachments(backend: &mut Backend) {
     let items = backend
         .ai_attachment_drafts
         .items(backend.ai_active_thread_id.as_str());
-    backend.ai_attachments.borrow_mut().replace(items);
+    backend.ai_attachments.borrow_mut().defer_replace(items);
 }
 
 pub(super) fn ai_attachment_pending(backend: &Backend) -> bool {

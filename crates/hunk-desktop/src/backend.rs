@@ -4,7 +4,7 @@ use std::sync::Arc;
 use hunk_app::ai::AiWorkerCommand;
 use hunk_app::diff::DiffCommentStoreCommand;
 use hunk_domain::db::CommentStatus;
-use hunk_git::workspace::{GitWorkspaceCommand, load_git_workspace};
+use hunk_git::workspace::load_git_workspace;
 use qtbridge::{QObjectHolder, invoke_method, qobject, qtbridge_type_lib::QString};
 
 use crate::ai_attachments::{
@@ -38,6 +38,36 @@ impl Backend {
     );
     qproperty!("diffFiles", Member = diff_files, Constant);
     qproperty!("diffRows", Member = diff_rows, Constant);
+    qproperty!(
+        "diffCompareSources",
+        Member = diff_compare_sources,
+        Constant
+    );
+    qproperty!(
+        "diffCompareLeftLabel",
+        Member = diff_compare_left_label,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffCompareRightLabel",
+        Member = diff_compare_right_label,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffCompareLeftIndex",
+        Member = diff_compare_left_index,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffCompareRightIndex",
+        Member = diff_compare_right_index,
+        Notify = diff_state_changed
+    );
+    qproperty!(
+        "diffCompareFileCount",
+        Member = diff_compare_file_count,
+        Notify = diff_state_changed
+    );
     qproperty!(
         "diffSelectedPath",
         Member = diff_selected_path,
@@ -154,9 +184,6 @@ impl Backend {
         Member = diff_comment_target_revision,
         Notify = diff_comments_state_changed
     );
-    qproperty!("gitFiles", Member = git_files, Constant);
-    qproperty!("gitBranches", Member = git_branches, Constant);
-    qproperty!("gitCommits", Member = git_commits, Constant);
     qproperty!("gitRoot", Member = git_root, Notify = git_state_changed);
     qproperty!(
         "gitRepositoryName",
@@ -169,38 +196,8 @@ impl Backend {
         Notify = git_state_changed
     );
     qproperty!(
-        "gitBranchHasUpstream",
-        Member = git_branch_has_upstream,
-        Notify = git_state_changed
-    );
-    qproperty!(
-        "gitBranchAheadCount",
-        Member = git_branch_ahead_count,
-        Notify = git_state_changed
-    );
-    qproperty!(
-        "gitBranchBehindCount",
-        Member = git_branch_behind_count,
-        Notify = git_state_changed
-    );
-    qproperty!(
         "gitChangedFileCount",
         Member = git_changed_file_count,
-        Notify = git_state_changed
-    );
-    qproperty!(
-        "gitStagedFileCount",
-        Member = git_staged_file_count,
-        Notify = git_state_changed
-    );
-    qproperty!(
-        "gitUnstagedFileCount",
-        Member = git_unstaged_file_count,
-        Notify = git_state_changed
-    );
-    qproperty!(
-        "gitLastCommitSubject",
-        Member = git_last_commit_subject,
         Notify = git_state_changed
     );
     qproperty!("gitReady", Member = git_ready, Notify = git_state_changed);
@@ -209,18 +206,7 @@ impl Backend {
         Member = git_loading,
         Notify = git_state_changed
     );
-    qproperty!("gitBusy", Member = git_busy, Notify = git_state_changed);
     qproperty!("gitError", Member = git_error, Notify = git_state_changed);
-    qproperty!(
-        "gitStatusMessage",
-        Member = git_status_message,
-        Notify = git_state_changed
-    );
-    qproperty!(
-        "gitActionLabel",
-        Member = git_action_label,
-        Notify = git_state_changed
-    );
     qproperty!("terminalTabs", Member = terminal_tabs, Constant);
     qproperty!("terminalRows", Member = terminal_rows, Constant);
     qproperty!("browser", Member = browser, Constant);
@@ -588,126 +574,6 @@ impl Backend {
         Member = ai_status_message,
         Notify = ai_state_changed
     );
-    qproperty!(
-        "forgeAvailable",
-        Member = forge_available,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeProviderLabel",
-        Member = forge_provider_label,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeReviewKindLabel",
-        Member = forge_review_kind_label,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeHost",
-        Member = forge_host,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeRepositoryPath",
-        Member = forge_repository_path,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeAuthenticated",
-        Member = forge_authenticated,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeAccountLabel",
-        Member = forge_account_label,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeAuthMode",
-        Member = forge_auth_mode,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeReady",
-        Member = forge_ready,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeLoading",
-        Member = forge_loading,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeBusy",
-        Member = forge_busy,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeError",
-        Member = forge_error,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeStatusMessage",
-        Member = forge_status_message,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeActionLabel",
-        Member = forge_action_label,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeDefaultTargetBranch",
-        Member = forge_default_target_branch,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeReviewExists",
-        Member = forge_review_exists,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeReviewNumber",
-        Member = forge_review_number,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeReviewTitle",
-        Member = forge_review_title,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeReviewUrl",
-        Member = forge_review_url,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeReviewState",
-        Member = forge_review_state,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeReviewDraft",
-        Member = forge_review_draft,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeDeviceFlowActive",
-        Member = forge_device_flow_active,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeDeviceUserCode",
-        Member = forge_device_user_code,
-        Notify = forge_state_changed
-    );
-    qproperty!(
-        "forgeDeviceVerificationUrl",
-        Member = forge_device_verification_url,
-        Notify = forge_state_changed
-    );
     qproperty!("ready", Member = ready, Notify = ready_changed);
     qproperty!("updates", Member = updates, Constant);
     qproperty!(
@@ -748,9 +614,6 @@ impl Backend {
 
     #[qsignal]
     pub(super) fn ai_session_state_changed(&mut self);
-
-    #[qsignal]
-    pub(super) fn forge_state_changed(&mut self);
 
     fn ai_selected_model_index(&self) -> i32 {
         self.ai_selected_model_index_value()
@@ -1124,6 +987,21 @@ impl Backend {
     }
 
     #[qslot]
+    fn select_diff_compare_source(&mut self, side: String, index: i32) {
+        self.update_diff_compare_source(side.as_str(), index);
+    }
+
+    #[qslot]
+    fn refresh_diff_compare(&mut self) {
+        self.start_diff_compare_refresh();
+    }
+
+    #[qslot]
+    fn apply_diff_compare_snapshot(&mut self, epoch: i32) {
+        self.complete_diff_compare_snapshot(epoch);
+    }
+
+    #[qslot]
     pub(super) fn refresh_diff(&mut self) {
         if self.diff_loading || self.diff_selected_path.is_empty() {
             return;
@@ -1138,12 +1016,22 @@ impl Backend {
             return;
         };
 
+        if let Some(patch) = self
+            .diff_compare_patches
+            .get(self.diff_selected_path.as_str())
+            .cloned()
+        {
+            let payload = DiffSnapshotPayload::from_patch(&summary, patch.as_str());
+            self.apply_diff_snapshot_payload(payload);
+            return;
+        }
+
         self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
         let epoch = self.diff_epoch;
         self.diff_loading = true;
         self.diff_ready = false;
         self.diff_error.clear();
-        self.diff_rows.borrow_mut().replace(
+        self.diff_rows.borrow_mut().defer_replace(
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -1187,23 +1075,10 @@ impl Backend {
         }
 
         self.diff_loading = false;
-        let mut refresh_comments = false;
         match result {
             Some(Ok(payload)) if payload.path == self.diff_selected_path => {
-                self.diff_status_tag = payload.status_tag;
-                self.diff_additions = payload.additions;
-                self.diff_removals = payload.removals;
-                self.diff_comment_anchors = Arc::clone(&payload.comment_anchors);
-                self.diff_rows.borrow_mut().replace(
-                    payload.rows,
-                    payload.search_texts,
-                    payload.copy_texts,
-                    payload.comment_anchors,
-                );
-                self.rebuild_diff_search_results();
-                self.diff_ready = true;
-                self.diff_error.clear();
-                refresh_comments = true;
+                self.apply_diff_snapshot_payload(payload);
+                return;
             }
             Some(Ok(_)) => return,
             Some(Err(error)) => {
@@ -1216,9 +1091,6 @@ impl Backend {
             }
         }
         self.diff_state_changed();
-        if refresh_comments {
-            self.refresh_diff_comments();
-        }
     }
 
     #[qslot]
@@ -1687,7 +1559,7 @@ impl Backend {
 
     #[qslot]
     fn refresh_git_workspace(&mut self) {
-        if self.git_loading || self.git_busy {
+        if self.git_loading {
             return;
         }
 
@@ -1721,12 +1593,6 @@ impl Backend {
 
     #[qslot]
     fn select_git_root(&mut self, root: String) {
-        if self.git_busy {
-            self.git_error =
-                "Wait for the current Git operation before switching repositories".to_owned();
-            self.git_state_changed();
-            return;
-        }
         let root = match local_path_from_qml_folder_url(root.as_str()) {
             Ok(root) => root,
             Err(error) => {
@@ -1754,29 +1620,15 @@ impl Backend {
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| self.git_root.clone());
         self.git_branch_name.clear();
-        self.git_branch_has_upstream = false;
-        self.git_branch_ahead_count = 0;
-        self.git_branch_behind_count = 0;
         self.git_changed_file_count = 0;
-        self.git_staged_file_count = 0;
-        self.git_unstaged_file_count = 0;
-        self.git_last_commit_subject.clear();
         self.git_ready = false;
         self.git_error.clear();
-        self.git_status_message.clear();
         self.git_root_pending_persist = true;
-        self.git_staged_paths.clear();
-        self.git_unstaged_paths.clear();
-        self.git_files.borrow_mut().replace(Vec::new());
-        self.git_branches.borrow_mut().replace(Vec::new());
-        self.git_commits.borrow_mut().replace(Vec::new());
         self.reset_diff_state();
         self.reset_diff_comment_state();
-        self.reset_forge_state();
         self.git_state_changed();
         self.ai_state_changed();
         self.diff_comments_state_changed();
-        self.forge_state_changed();
         self.refresh_git_workspace();
     }
 
@@ -1807,162 +1659,6 @@ impl Backend {
         self.apply_git_payload(payload);
     }
 
-    #[qslot]
-    fn stage_path(&mut self, path: String) {
-        self.run_git_command("Staging file", GitWorkspaceCommand::StagePaths(vec![path]));
-    }
-
-    #[qslot]
-    fn unstage_path(&mut self, path: String) {
-        self.run_git_command(
-            "Unstaging file",
-            GitWorkspaceCommand::UnstagePaths(vec![path]),
-        );
-    }
-
-    #[qslot]
-    fn stage_all(&mut self) {
-        self.run_git_command(
-            "Staging files",
-            GitWorkspaceCommand::StagePaths(self.git_unstaged_paths.clone()),
-        );
-    }
-
-    #[qslot]
-    fn unstage_all(&mut self) {
-        self.run_git_command(
-            "Unstaging files",
-            GitWorkspaceCommand::UnstagePaths(self.git_staged_paths.clone()),
-        );
-    }
-
-    #[qslot]
-    fn discard_path(&mut self, path: String) {
-        self.run_git_command(
-            "Discarding changes",
-            GitWorkspaceCommand::RestorePaths(vec![path]),
-        );
-    }
-
-    #[qslot]
-    fn commit_staged(&mut self, message: String) {
-        self.run_git_command(
-            "Creating commit",
-            GitWorkspaceCommand::CommitStaged { message },
-        );
-    }
-
-    #[qslot]
-    fn activate_branch(&mut self, name: String) {
-        self.run_git_command(
-            "Activating branch",
-            GitWorkspaceCommand::ActivateBranch { name },
-        );
-    }
-
-    #[qslot]
-    fn fetch_remote_branches(&mut self) {
-        self.run_git_command(
-            "Fetching branches",
-            GitWorkspaceCommand::FetchRemoteBranches,
-        );
-    }
-
-    #[qslot]
-    fn publish_branch(&mut self) {
-        self.run_git_command(
-            "Publishing branch",
-            GitWorkspaceCommand::PublishBranch {
-                name: self.git_branch_name.clone(),
-            },
-        );
-    }
-
-    #[qslot]
-    fn push_branch(&mut self) {
-        self.run_git_command(
-            "Pushing branch",
-            GitWorkspaceCommand::PushBranch {
-                name: self.git_branch_name.clone(),
-            },
-        );
-    }
-
-    #[qslot]
-    fn sync_branch(&mut self) {
-        self.run_git_command(
-            "Syncing branch",
-            GitWorkspaceCommand::SyncBranch {
-                name: self.git_branch_name.clone(),
-            },
-        );
-    }
-
-    #[qslot]
-    fn pull_branch_with_rebase(&mut self) {
-        self.run_git_command(
-            "Rebasing branch",
-            GitWorkspaceCommand::PullBranchWithRebase {
-                name: self.git_branch_name.clone(),
-            },
-        );
-    }
-
-    #[qslot]
-    pub(super) fn refresh_forge_review(&mut self) {
-        self.refresh_forge_review_impl();
-    }
-
-    #[qslot]
-    fn save_forge_personal_access_token(&mut self, token: String) {
-        self.save_forge_personal_access_token_impl(token);
-    }
-
-    #[qslot]
-    fn create_forge_review(
-        &mut self,
-        target_branch: String,
-        title: String,
-        body: String,
-        draft: bool,
-    ) {
-        self.create_forge_review_impl(target_branch, title, body, draft);
-    }
-
-    #[qslot]
-    fn start_github_device_flow(&mut self) {
-        self.start_github_device_flow_impl();
-    }
-
-    #[qslot]
-    fn cancel_github_device_flow(&mut self) {
-        self.cancel_github_device_flow_impl();
-    }
-
-    #[qslot]
-    fn apply_github_device_authorization(&mut self, epoch: i32) {
-        self.apply_github_device_authorization_impl(epoch);
-    }
-
-    #[qslot]
-    fn apply_forge_result(&mut self, epoch: i32) {
-        self.apply_forge_result_impl(epoch);
-    }
-
-    #[qslot]
-    fn complete_git_command(&mut self, success: bool, message: String) {
-        self.git_busy = false;
-        self.git_action_label.clear();
-        if success {
-            self.git_status_message = message;
-            self.git_state_changed();
-            self.refresh_git_workspace();
-        } else {
-            self.git_error = message;
-            self.git_state_changed();
-        }
-    }
-
     pub(super) fn ensure_ai_runtime_started(&mut self) {
         if ensure_ai_runtime_started(self) {
             self.ai_state_changed();
@@ -1974,7 +1670,7 @@ impl Backend {
         self.ai_state_changed();
     }
 
-    fn set_status_message(&mut self, status_message: String) {
+    pub(super) fn set_status_message(&mut self, status_message: String) {
         if self.status_message == status_message {
             return;
         }

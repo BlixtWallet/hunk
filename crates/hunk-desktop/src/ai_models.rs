@@ -193,12 +193,16 @@ mod thread_model {
     use qtbridge::QObjectHolder;
     use qtbridge::qtbridge_type_lib::QModelIndex;
 
-    use super::{AiThreadItem, QListModel, QListModelBase, compare_thread_items};
+    use super::{
+        AiThreadItem, QListModel, QListModelBase, apply_bookmarks_to_items, compare_thread_items,
+    };
 
     #[derive(Default)]
     pub struct AiThreadListModel {
         items: Vec<AiThreadItem>,
         replacement: Option<Vec<AiThreadItem>>,
+        deferred_replacement: Option<Vec<AiThreadItem>>,
+        deferred_update_scheduled: bool,
     }
 
     impl AiThreadListModel {
@@ -215,10 +219,40 @@ mod thread_model {
             true
         }
 
+        pub fn defer_replace(&mut self, items: Vec<AiThreadItem>) {
+            self.queue_deferred_replacement(items);
+        }
+
+        pub fn defer_replace_if_changed(&mut self, items: Vec<AiThreadItem>) -> bool {
+            let current = self.deferred_replacement.as_ref().unwrap_or(&self.items);
+            if current == &items {
+                return false;
+            }
+            self.queue_deferred_replacement(items);
+            true
+        }
+
         pub fn contains_thread_id(&self, thread_id: &str) -> bool {
-            self.items
+            self.deferred_replacement
+                .as_ref()
+                .unwrap_or(&self.items)
                 .iter()
                 .any(|thread| thread.thread_id == thread_id)
+        }
+
+        pub fn defer_apply_bookmarks(&mut self, bookmarked_thread_ids: &BTreeSet<String>) -> bool {
+            let mut items = self
+                .deferred_replacement
+                .as_ref()
+                .unwrap_or(&self.items)
+                .clone();
+            let previous = items.clone();
+            apply_bookmarks_to_items(&mut items, bookmarked_thread_ids);
+            if items == previous {
+                return false;
+            }
+            self.queue_deferred_replacement(items);
+            true
         }
 
         pub fn apply_bookmarks(&mut self, bookmarked_thread_ids: &BTreeSet<String>) -> bool {
@@ -265,6 +299,29 @@ mod thread_model {
             let item = self.items.remove(source);
             self.items.insert(destination, item);
             unsafe { &mut *proxy }.base_end_move_rows(&mut *self);
+        }
+
+        fn queue_deferred_replacement(&mut self, items: Vec<AiThreadItem>) {
+            self.deferred_replacement = Some(items);
+            if self.deferred_update_scheduled {
+                return;
+            }
+            self.deferred_update_scheduled = true;
+            if !self
+                .get_qml_method_invoker()
+                .invoke_method("apply_deferred_replacement")
+            {
+                self.deferred_update_scheduled = false;
+            }
+        }
+
+        #[qslot]
+        fn apply_deferred_replacement(&mut self) {
+            self.deferred_update_scheduled = false;
+            let Some(items) = self.deferred_replacement.take() else {
+                return;
+            };
+            self.replace(items);
         }
     }
 

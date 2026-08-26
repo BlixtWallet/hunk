@@ -22,8 +22,8 @@ use crate::backend_state::Backend;
 
 pub(super) fn reset_ai_runtime_state(backend: &mut Backend) {
     stop_ai_runtime(backend);
-    backend.ai_threads.borrow_mut().replace(Vec::new());
-    backend.ai_timeline.borrow_mut().replace(Vec::new());
+    backend.ai_threads.borrow_mut().defer_replace(Vec::new());
+    backend.ai_timeline.borrow_mut().defer_replace(Vec::new());
     clear_ai_attachment_drafts(backend);
     backend
         .ai_message_queue
@@ -225,7 +225,7 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     backend
         .ai_threads
         .borrow_mut()
-        .replace_if_changed(projection.items);
+        .defer_replace_if_changed(projection.items);
     let timeline_items = timeline.items;
     backend.ai_active_thread_id = projection.active_thread_id;
     if active_thread_changed {
@@ -821,7 +821,7 @@ fn sync_ai_timeline_snapshot(backend: &mut Backend, mut items: Vec<crate::AiTime
         .min(items.len());
     items.drain(..hidden_authoritative_rows);
     items.extend(queue_items);
-    backend.ai_timeline.borrow_mut().sync(items);
+    backend.ai_timeline.borrow_mut().defer_sync(items);
     backend.ai_timeline_hidden_row_count = backend
         .ai_timeline_hidden_row_count
         .saturating_add(i32::try_from(hidden_authoritative_rows).unwrap_or(i32::MAX));
@@ -831,7 +831,10 @@ fn sync_ai_timeline_queue(backend: &mut Backend) {
     let items = backend
         .ai_message_queue
         .timeline_items(backend.ai_active_thread_id.as_str());
-    let (_, hidden_authoritative_rows) = backend.ai_timeline.borrow_mut().sync_queue_items(items);
+    let (_, hidden_authoritative_rows) = backend
+        .ai_timeline
+        .borrow_mut()
+        .defer_sync_queue_items(items);
     backend.ai_timeline_hidden_row_count = backend
         .ai_timeline_hidden_row_count
         .saturating_add(i32::try_from(hidden_authoritative_rows).unwrap_or(i32::MAX));

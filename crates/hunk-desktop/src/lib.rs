@@ -11,8 +11,8 @@ mod ai_timeline_models;
 mod backend;
 mod backend_ai;
 mod backend_ai_accessors;
+mod backend_compare;
 mod backend_diff;
-mod backend_forge;
 mod backend_git;
 mod backend_state;
 mod browser;
@@ -20,8 +20,8 @@ mod browser_frame;
 mod browser_models;
 mod comment_models;
 mod comments;
+mod compare_models;
 mod diff_models;
-mod forge;
 mod git_models;
 mod path;
 mod terminal;
@@ -65,8 +65,12 @@ pub use browser_models::{
     browser_tab_projection_changed, project_browser_tab_sources, project_browser_tabs,
 };
 pub use comment_models::{DiffCommentItem, DiffCommentListModel, DiffCommentProjection};
+pub use compare_models::{
+    DiffCompareSnapshotPayload, DiffCompareSourceCatalog, DiffCompareSourceItem,
+    DiffCompareSourceListModel,
+};
 pub use diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
-pub use git_models::{GitBranchListModel, GitCommitListModel, GitFileListModel};
+pub use git_models::GitFileListModel;
 pub use path::{local_path_from_qml_file_url, local_path_from_qml_folder_url};
 pub use terminal_models::{
     TerminalRowItem, TerminalRowListModel, TerminalScreenProjection, TerminalTabItem,
@@ -103,9 +107,8 @@ pub fn run() -> Result<()> {
         .register::<AiSessionChoiceListModel>()
         .register::<DiffRowListModel>()
         .register::<DiffCommentListModel>()
+        .register::<DiffCompareSourceListModel>()
         .register::<GitFileListModel>()
-        .register::<GitBranchListModel>()
-        .register::<GitCommitListModel>()
         .register::<TerminalTabListModel>()
         .register::<TerminalRowListModel>()
         .register::<BrowserTabListModel>()

@@ -10,6 +10,9 @@ Item {
     readonly property alias diffListView: diffList
     readonly property alias searchInput: searchInput
     readonly property alias commentsInspector: commentsInspector
+    readonly property alias leftComparePicker: leftComparePicker
+    readonly property alias rightComparePicker: rightComparePicker
+    readonly property alias refreshButton: refreshButton
     readonly property var commentComposer: commentComposerLoader.item
     readonly property bool loadingStateVisible: loadingState.visible
     readonly property bool errorStateVisible: errorState.visible
@@ -285,10 +288,78 @@ Item {
     }
 
     Item {
-        id: toolbar
+        id: compareBar
         anchors.left: parent.left
         anchors.right: commentsInspector.left
         anchors.top: parent.top
+        height: 42
+
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.chrome
+        }
+
+        Row {
+            anchors.left: parent.left
+            anchors.leftMargin: 18
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+
+            Text {
+                id: compareHeading
+                anchors.verticalCenter: parent.verticalCenter
+                visible: compareBar.width >= 500
+                text: "COMPARE"
+                color: Theme.muted
+                font.family: Theme.monoFont
+                font.pixelSize: 9
+                font.weight: Font.DemiBold
+                font.letterSpacing: 0.7
+            }
+
+            CompareSourcePicker {
+                id: leftComparePicker
+                width: Math.min(240, Math.max(90,
+                    (compareBar.width - (compareHeading.visible ? 180 : 64)) / 2))
+                model: root.backend.diffCompareSources
+                currentIndex: root.backend.diffCompareLeftIndex
+                currentLabel: root.backend.diffCompareLeftLabel
+                accessibleName: qsTr("Before comparison source")
+                onSelected: index => root.backend.select_diff_compare_source("left", index)
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "→"
+                color: Theme.faint
+                font.family: Theme.monoFont
+                font.pixelSize: 12
+            }
+
+            CompareSourcePicker {
+                id: rightComparePicker
+                width: leftComparePicker.width
+                model: root.backend.diffCompareSources
+                currentIndex: root.backend.diffCompareRightIndex
+                currentLabel: root.backend.diffCompareRightLabel
+                accessibleName: qsTr("After comparison source")
+                onSelected: index => root.backend.select_diff_compare_source("right", index)
+            }
+        }
+
+        Rectangle {
+            anchors.bottom: parent.bottom
+            width: parent.width
+            height: 1
+            color: Theme.border
+        }
+    }
+
+    Item {
+        id: toolbar
+        anchors.left: parent.left
+        anchors.right: commentsInspector.left
+        anchors.top: compareBar.bottom
         height: 52
 
         Column {
@@ -302,7 +373,7 @@ Item {
             Text {
                 width: parent.width
                 text: root.backend.diffSelectedPath.length > 0
-                    ? root.backend.diffSelectedPath : "Working tree"
+                    ? root.backend.diffSelectedPath : "Comparison"
                 color: Theme.foreground
                 elide: Text.ElideMiddle
                 font.family: Theme.monoFont
@@ -466,10 +537,18 @@ Item {
             }
 
             ActionButton {
+                id: refreshButton
                 label: "Refresh"
                 compact: true
-                enabled: root.backend.diffSelectedPath.length > 0 && !root.backend.diffLoading
-                onClicked: root.backend.refresh_diff()
+                enabled: root.backend.gitRoot.length > 0 && !root.backend.diffLoading
+                onClicked: {
+                    if (root.backend.diffCompareLeftIndex >= 0
+                            && root.backend.diffCompareRightIndex >= 0) {
+                        root.backend.refresh_diff_compare()
+                    } else {
+                        root.backend.refresh_git_workspace()
+                    }
+                }
             }
         }
 
@@ -937,7 +1016,7 @@ Item {
         visible: !root.backend.diffLoading
             && root.backend.diffError.length === 0
             && root.backend.diffSelectedPath.length === 0
-        text: "Working tree is clean"
+        text: "No changes between the selected sources"
         color: Theme.muted
         font.family: Theme.uiFont
         font.pixelSize: 12

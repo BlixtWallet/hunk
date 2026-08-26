@@ -14,15 +14,11 @@ AiTimelineRow 1.0 AiTimelineRow.qml
 AiWorkspace 1.0 AiWorkspace.qml
 BrowserPane 1.0 BrowserPane.qml
 ConfirmationDialog 1.0 ConfirmationDialog.qml
+CompareSourcePicker 1.0 CompareSourcePicker.qml
 DiffCommentComposer 1.0 DiffCommentComposer.qml
 DiffCommentInspector 1.0 DiffCommentInspector.qml
 DiffSidebar 1.0 DiffSidebar.qml
 DiffWorkspace 1.0 DiffWorkspace.qml
-ForgePanel 1.0 ForgePanel.qml
-ForgeReviewDialog 1.0 ForgeReviewDialog.qml
-ForgeTokenDialog 1.0 ForgeTokenDialog.qml
-GitSidebar 1.0 GitSidebar.qml
-GitWorkspace 1.0 GitWorkspace.qml
 NavigationButton 1.0 NavigationButton.qml
 SessionComboBox 1.0 SessionComboBox.qml
 Shell 1.0 Shell.qml

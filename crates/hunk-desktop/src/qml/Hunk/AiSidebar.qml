@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Dialogs
 
 Item {
     id: root
@@ -9,8 +10,10 @@ Item {
     property string pendingArchiveId: ""
     property string pendingArchiveTitle: ""
     property bool archiveConfirmationVisible: false
+    property Item repositoryPreviousFocusItem: null
     readonly property alias threadListView: threadList
     readonly property alias archiveDialog: archiveConfirmation
+    readonly property alias repositoryDialog: repositoryDialog
     readonly property bool loadingStateVisible: backend.aiLoading && !backend.aiReady
     readonly property bool emptyStateVisible: threadList.count === 0
         && backend.aiReady && !backend.aiLoading
@@ -35,6 +38,24 @@ Item {
 
     function createThread() {
         backend.create_ai_thread()
+    }
+
+    function openRepository() {
+        const hostWindow = root.Window.window
+        repositoryPreviousFocusItem = hostWindow === null
+            ? null : hostWindow.activeFocusItem
+        repositoryDialog.open()
+    }
+
+    function restoreRepositoryFocus() {
+        const previous = repositoryPreviousFocusItem
+        repositoryPreviousFocusItem = null
+        Qt.callLater(() => {
+            if (previous !== null && previous.visible && previous.enabled)
+                previous.forceActiveFocus()
+            else
+                threadList.forceActiveFocus()
+        })
     }
 
     function toggleBookmark(threadId) {
@@ -92,6 +113,13 @@ Item {
             anchors.top: parent.top
             anchors.topMargin: 10
             spacing: 6
+
+            ActionButton {
+                label: "Open"
+                compact: true
+                enabled: !root.backend.aiLoading && !root.commandPending
+                onClicked: root.openRepository()
+            }
 
             ActionButton {
                 label: "Refresh"
@@ -166,6 +194,16 @@ Item {
             width: parent.width
             height: 1
             color: Theme.border
+        }
+    }
+
+    FolderDialog {
+        id: repositoryDialog
+        title: "Open Git repository"
+        onAccepted: root.backend.select_git_root(selectedFolder.toString())
+        onVisibleChanged: {
+            if (!visible && root.repositoryPreviousFocusItem !== null)
+                root.restoreRepositoryFocus()
         }
     }
 

@@ -716,7 +716,9 @@ impl BrowserBridge {
         self.status_message = status_message;
         if browser_tab_projection_changed(&self.projected_tab_sources, state.tabs.as_slice()) {
             let projected_tabs = project_browser_tabs(state.tabs.as_slice());
-            self.tabs.borrow_mut().replace_or_patch(projected_tabs);
+            self.tabs
+                .borrow_mut()
+                .defer_replace_or_patch(projected_tabs);
             self.projected_tab_sources = project_browser_tab_sources(state.tabs.as_slice());
         }
 
@@ -747,7 +749,7 @@ impl BrowserBridge {
 
     fn clear_projection(&mut self) {
         self.projected_tab_sources.clear();
-        self.tabs.borrow_mut().replace_or_patch(Vec::new());
+        self.tabs.borrow_mut().defer_replace_or_patch(Vec::new());
         self.active_tab_id.clear();
         self.active_tab_index = -1;
         self.url.clear();

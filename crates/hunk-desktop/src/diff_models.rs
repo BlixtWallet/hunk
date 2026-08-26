@@ -339,6 +339,8 @@ fn saturating_u64_to_i32(value: u64) -> i32 {
 
 #[qobject(Base = QListModel)]
 mod row_model {
+    use qtbridge::QObjectHolder;
+
     use super::{
         Arc, DiffCommentAnchor, DiffRowItem, QListModel, QListModelBase, matching_text_indices,
         selection_text, wrapped_hunk_target,
@@ -358,6 +360,8 @@ mod row_model {
         copy_texts: Vec<String>,
         comment_anchors: Arc<Vec<Option<DiffCommentAnchor>>>,
         replacement: Option<DiffRowReplacement>,
+        deferred_replacement: Option<DiffRowReplacement>,
+        deferred_update_scheduled: bool,
     }
 
     impl DiffRowListModel {
@@ -375,21 +379,79 @@ mod row_model {
             self.reset();
         }
 
+        pub fn defer_replace(
+            &mut self,
+            items: Vec<DiffRowItem>,
+            search_texts: Vec<String>,
+            copy_texts: Vec<String>,
+            comment_anchors: Arc<Vec<Option<DiffCommentAnchor>>>,
+        ) {
+            debug_assert_eq!(items.len(), search_texts.len());
+            debug_assert_eq!(items.len(), copy_texts.len());
+            debug_assert_eq!(items.len(), comment_anchors.len());
+            self.deferred_replacement = Some((items, search_texts, copy_texts, comment_anchors));
+            if self.deferred_update_scheduled {
+                return;
+            }
+            self.deferred_update_scheduled = true;
+            if !self
+                .get_qml_method_invoker()
+                .invoke_method("apply_deferred_replacement")
+            {
+                self.deferred_update_scheduled = false;
+            }
+        }
+
+        #[qslot]
+        fn apply_deferred_replacement(&mut self) {
+            self.deferred_update_scheduled = false;
+            let Some((items, search_texts, copy_texts, comment_anchors)) =
+                self.deferred_replacement.take()
+            else {
+                return;
+            };
+            self.replace(items, search_texts, copy_texts, comment_anchors);
+        }
+
         pub fn matching_rows(&self, query: &str) -> Vec<usize> {
-            matching_text_indices(self.search_texts.as_slice(), query)
+            let search_texts = self
+                .deferred_replacement
+                .as_ref()
+                .map_or(self.search_texts.as_slice(), |replacement| {
+                    replacement.1.as_slice()
+                });
+            matching_text_indices(search_texts, query)
         }
 
         pub fn selection_text(&self, anchor: i32, head: i32) -> String {
-            selection_text(self.copy_texts.as_slice(), anchor, head)
+            let copy_texts = self
+                .deferred_replacement
+                .as_ref()
+                .map_or(self.copy_texts.as_slice(), |replacement| {
+                    replacement.2.as_slice()
+                });
+            selection_text(copy_texts, anchor, head)
         }
 
         pub fn hunk_target(&self, start: i32, direction: i32) -> i32 {
-            wrapped_hunk_target(self.items.as_slice(), start, direction)
+            let items = self
+                .deferred_replacement
+                .as_ref()
+                .map_or(self.items.as_slice(), |replacement| {
+                    replacement.0.as_slice()
+                });
+            wrapped_hunk_target(items, start, direction)
         }
 
         pub fn comment_anchor(&self, row: i32) -> Option<&DiffCommentAnchor> {
             let row = usize::try_from(row).ok()?;
-            self.comment_anchors.get(row)?.as_ref()
+            let anchors = self
+                .deferred_replacement
+                .as_ref()
+                .map_or(self.comment_anchors.as_ref(), |replacement| {
+                    replacement.3.as_ref()
+                });
+            anchors.get(row)?.as_ref()
         }
     }
 

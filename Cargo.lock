@@ -7284,7 +7284,6 @@ dependencies = [
  "hunk-browser-helper",
  "hunk-codex",
  "hunk-domain",
- "hunk-forge",
  "hunk-git",
  "hunk-terminal",
  "hunk-updater",
@@ -8444,7 +8443,7 @@ dependencies = [
 [[package]]
 name = "libghostty-vt"
 version = "0.1.1"
-source = "git+https://github.com/niteshbalusu11/libghostty-rs?rev=73b35bceb08729d08e164cc29125667911907e65#73b35bceb08729d08e164cc29125667911907e65"
+source = "git+https://github.com/niteshbalusu11/libghostty-rs?rev=3ea0aadf4f35c8e5edc2877cc0102ef30c15ce1a#3ea0aadf4f35c8e5edc2877cc0102ef30c15ce1a"
 dependencies = [
  "bitflags 2.13.1",
  "int-enum",
@@ -8454,7 +8453,7 @@ dependencies = [
 [[package]]
 name = "libghostty-vt-sys"
 version = "0.1.1"
-source = "git+https://github.com/niteshbalusu11/libghostty-rs?rev=73b35bceb08729d08e164cc29125667911907e65#73b35bceb08729d08e164cc29125667911907e65"
+source = "git+https://github.com/niteshbalusu11/libghostty-rs?rev=3ea0aadf4f35c8e5edc2877cc0102ef30c15ce1a#3ea0aadf4f35c8e5edc2877cc0102ef30c15ce1a"
 
 [[package]]
 name = "libgit2-sys"

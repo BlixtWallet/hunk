@@ -40,6 +40,14 @@ fn qt_shell_exposes_check_download_and_restart_lifecycle() {
 }
 
 #[test]
+fn qt_window_shuts_services_down_before_backend_destruction() {
+    assert!(MAIN_QML.contains("onClosing:"));
+    assert!(MAIN_QML.contains("backend.browser.shutdown()"));
+    assert!(MAIN_QML.contains("backend.updates.shutdown()"));
+    assert!(!MAIN_QML.contains("Component.onDestruction"));
+}
+
+#[test]
 fn staged_updates_use_post_exit_helpers_on_every_platform() {
     assert!(UPDATE_HELPER.contains("--apply-staged-update"));
     assert!(UPDATE_HELPER.contains("wait_for_process_to_exit"));

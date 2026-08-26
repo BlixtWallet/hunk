@@ -83,6 +83,13 @@ fn self_hosted_qt_installer_is_nix_owned_and_wayland_aware() {
 }
 
 #[test]
+fn nix_shell_uses_cargos_default_workspace_target_directory() {
+    let flake = include_str!("../../../flake.nix");
+    assert!(flake.contains("unset CARGO_TARGET_DIR"));
+    assert!(!flake.contains("export CARGO_TARGET_DIR="));
+}
+
+#[test]
 fn platform_packagers_require_deployed_qt_runtimes() {
     let macos = include_str!("../../../scripts/package_macos_release.sh");
     assert!(macos.contains("/bin/macdeployqt"));

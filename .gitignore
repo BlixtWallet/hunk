@@ -8,4 +8,5 @@ assets/browser-runtime/cef/linux/*
 assets/browser-runtime/cef/windows/*
 !assets/browser-runtime/cef/macos/README.md
 tools/*/target/
+profiler/traces/*.qtd
 .DS_Store

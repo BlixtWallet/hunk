@@ -358,12 +358,16 @@ fn saturating_u64_to_i64(value: u64) -> i64 {
 
 #[qobject(Base = QListModel)]
 mod timeline_model {
+    use qtbridge::QObjectHolder;
+
     use super::{AI_TIMELINE_MAX_VISIBLE_ROWS, AiTimelineItem, QListModel, QListModelBase};
 
     #[derive(Default)]
     pub struct AiTimelineListModel {
         items: Vec<AiTimelineItem>,
         replacement: Option<Vec<AiTimelineItem>>,
+        deferred_items: Option<Vec<AiTimelineItem>>,
+        deferred_update_scheduled: bool,
     }
 
     impl AiTimelineListModel {
@@ -387,6 +391,15 @@ mod timeline_model {
                 self.replacement = Some(items);
                 self.reset();
             }
+            true
+        }
+
+        pub fn defer_sync(&mut self, items: Vec<AiTimelineItem>) -> bool {
+            let current = self.deferred_items.as_ref().unwrap_or(&self.items);
+            if current == &items {
+                return false;
+            }
+            self.queue_deferred_items(items);
             true
         }
 
@@ -430,9 +443,59 @@ mod timeline_model {
             (changed, hidden_authoritative_rows)
         }
 
+        pub fn defer_sync_queue_items(
+            &mut self,
+            queue_items: Vec<AiTimelineItem>,
+        ) -> (bool, usize) {
+            let current = self.deferred_items.as_ref().unwrap_or(&self.items);
+            let authoritative_len = current
+                .iter()
+                .position(|item| item.kind == "queuedMessage")
+                .unwrap_or(current.len());
+            let hidden_authoritative_rows = authoritative_len
+                .saturating_add(queue_items.len())
+                .saturating_sub(AI_TIMELINE_MAX_VISIBLE_ROWS)
+                .min(authoritative_len);
+            let retained_start = hidden_authoritative_rows;
+            let mut items = current[retained_start..authoritative_len].to_vec();
+            items.extend(queue_items);
+            if current == &items {
+                return (false, hidden_authoritative_rows);
+            }
+            self.queue_deferred_items(items);
+            (true, hidden_authoritative_rows)
+        }
+
         pub fn replace(&mut self, items: Vec<AiTimelineItem>) {
             self.replacement = Some(items);
             self.reset();
+        }
+
+        pub fn defer_replace(&mut self, items: Vec<AiTimelineItem>) {
+            self.queue_deferred_items(items);
+        }
+
+        fn queue_deferred_items(&mut self, items: Vec<AiTimelineItem>) {
+            self.deferred_items = Some(items);
+            if self.deferred_update_scheduled {
+                return;
+            }
+            self.deferred_update_scheduled = true;
+            if !self
+                .get_qml_method_invoker()
+                .invoke_method("apply_deferred_items")
+            {
+                self.deferred_update_scheduled = false;
+            }
+        }
+
+        #[qslot]
+        fn apply_deferred_items(&mut self) {
+            self.deferred_update_scheduled = false;
+            let Some(items) = self.deferred_items.take() else {
+                return;
+            };
+            self.sync(items);
         }
     }
 

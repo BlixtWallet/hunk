@@ -2,12 +2,14 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::AtomicI32;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use hunk_app::diff::DiffCommentAnchor;
-use hunk_domain::state::{AiCollaborationModeSelection, AiServiceTierSelection, AppStateStore};
-use hunk_forge::{ForgeReviewOutcome, ForgeReviewWorkspace, GitHubDeviceAuthorization};
+use hunk_domain::state::{
+    AiCollaborationModeSelection, AiServiceTierSelection, AppStateStore,
+    ReviewCompareSelectionState,
+};
 use qtbridge::QObjectHolder;
 
 use crate::ai_attachments::{
@@ -25,27 +27,18 @@ use crate::ai_thread_actions::AiThreadActionReceipt;
 use crate::ai_timeline_models::AiTimelineListModel;
 use crate::browser::BrowserBridge;
 use crate::comment_models::{DiffCommentListModel, DiffCommentProjection};
+use crate::compare_models::{DiffCompareSnapshotPayload, DiffCompareSourceListModel};
 use crate::diff_models::{DiffFileSummary, DiffRowListModel, DiffSnapshotPayload};
-use crate::forge::ForgeSnapshotPayload;
-use crate::git_models::{
-    GitBranchListModel, GitCommitListModel, GitFileListModel, GitSnapshotPayload,
-};
+use crate::git_models::GitSnapshotPayload;
 use crate::terminal::TerminalRuntimeState;
 use crate::terminal_models::{TerminalRowListModel, TerminalTabListModel};
 use crate::updater::UpdateBridge;
-use crate::{AiMessageQueue, AiPromptReceipt};
+use crate::{AiMessageQueue, AiPromptReceipt, GitFileListModel};
 
 pub(super) type GitRefreshResult = Result<GitSnapshotPayload, String>;
 pub(super) type DiffRefreshResult = Result<DiffSnapshotPayload, String>;
+pub(super) type DiffCompareRefreshResult = Result<DiffCompareSnapshotPayload, String>;
 pub(super) type DiffCommentAsyncResult = Result<DiffCommentAsyncPayload, String>;
-pub(super) type ForgeAsyncResult = Result<ForgeAsyncPayload, String>;
-type GitHubDeviceStartResult = Result<GitHubDeviceAuthorization, String>;
-
-pub(super) enum ForgeAsyncPayload {
-    Snapshot(Box<ForgeSnapshotPayload>),
-    Review(ForgeReviewOutcome),
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum DiffCommentRequestKind {
     Load,
@@ -62,17 +55,15 @@ pub(super) struct DiffCommentAsyncPayload {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Workspace {
     Diff,
-    Git,
     Ai,
 }
 
 impl Workspace {
-    pub const ALL: [Self; 3] = [Self::Diff, Self::Git, Self::Ai];
+    pub const ALL: [Self; 2] = [Self::Diff, Self::Ai];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Diff => "diff",
-            Self::Git => "git",
             Self::Ai => "ai",
         }
     }
@@ -80,7 +71,6 @@ impl Workspace {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "diff" => Some(Self::Diff),
-            "git" => Some(Self::Git),
             "ai" => Some(Self::Ai),
             _ => None,
         }
@@ -108,6 +98,17 @@ pub struct Backend {
     pub(super) diff_search_matches: Vec<usize>,
     pub(super) diff_epoch: i32,
     pub(super) diff_file_summaries: HashMap<String, DiffFileSummary>,
+    pub(super) diff_compare_sources: Rc<RefCell<DiffCompareSourceListModel>>,
+    pub(super) diff_compare_left_source_id: String,
+    pub(super) diff_compare_right_source_id: String,
+    pub(super) diff_compare_left_label: String,
+    pub(super) diff_compare_right_label: String,
+    pub(super) diff_compare_left_index: i32,
+    pub(super) diff_compare_right_index: i32,
+    pub(super) diff_compare_file_count: i32,
+    pub(super) diff_compare_epoch: i32,
+    pub(super) diff_compare_results: Arc<Mutex<HashMap<i32, DiffCompareRefreshResult>>>,
+    pub(super) diff_compare_patches: HashMap<String, String>,
     pub(super) diff_refresh_results: Arc<Mutex<HashMap<i32, DiffRefreshResult>>>,
     pub(super) diff_comments: Rc<RefCell<DiffCommentListModel>>,
     pub(super) diff_comment_projection: Option<DiffCommentProjection>,
@@ -130,30 +131,16 @@ pub struct Backend {
     pub(super) diff_comment_initial_prune_done: bool,
     pub(super) diff_comment_miss_streaks: HashMap<String, u8>,
     pub(super) diff_comment_pending_jump_id: Option<String>,
-    pub(super) git_files: Rc<RefCell<GitFileListModel>>,
-    pub(super) git_branches: Rc<RefCell<GitBranchListModel>>,
-    pub(super) git_commits: Rc<RefCell<GitCommitListModel>>,
     pub(super) git_root: String,
     pub(super) git_repository_name: String,
     pub(super) git_branch_name: String,
-    pub(super) git_branch_has_upstream: bool,
-    pub(super) git_branch_ahead_count: i32,
-    pub(super) git_branch_behind_count: i32,
     pub(super) git_changed_file_count: i32,
-    pub(super) git_staged_file_count: i32,
-    pub(super) git_unstaged_file_count: i32,
-    pub(super) git_last_commit_subject: String,
     pub(super) git_ready: bool,
     pub(super) git_loading: bool,
-    pub(super) git_busy: bool,
     pub(super) git_error: String,
-    pub(super) git_status_message: String,
-    pub(super) git_action_label: String,
     pub(super) git_epoch: i32,
     pub(super) git_refresh_results: Arc<Mutex<HashMap<i32, GitRefreshResult>>>,
     pub(super) git_root_pending_persist: bool,
-    pub(super) git_staged_paths: Vec<String>,
-    pub(super) git_unstaged_paths: Vec<String>,
     pub(super) terminal_tabs: Rc<RefCell<TerminalTabListModel>>,
     pub(super) terminal_rows: Rc<RefCell<TerminalRowListModel>>,
     pub(super) terminal_runtime: TerminalRuntimeState,
@@ -231,36 +218,6 @@ pub struct Backend {
     pub(super) ai_timeline_hidden_row_count: i32,
     pub(super) ai_error: String,
     pub(super) ai_status_message: String,
-    pub(super) forge_available: bool,
-    pub(super) forge_provider_label: String,
-    pub(super) forge_review_kind_label: String,
-    pub(super) forge_host: String,
-    pub(super) forge_repository_path: String,
-    pub(super) forge_authenticated: bool,
-    pub(super) forge_account_label: String,
-    pub(super) forge_auth_mode: String,
-    pub(super) forge_ready: bool,
-    pub(super) forge_loading: bool,
-    pub(super) forge_busy: bool,
-    pub(super) forge_error: String,
-    pub(super) forge_status_message: String,
-    pub(super) forge_action_label: String,
-    pub(super) forge_default_target_branch: String,
-    pub(super) forge_review_exists: bool,
-    pub(super) forge_review_number: i32,
-    pub(super) forge_review_title: String,
-    pub(super) forge_review_url: String,
-    pub(super) forge_review_state: String,
-    pub(super) forge_review_draft: bool,
-    pub(super) forge_device_flow_active: bool,
-    pub(super) forge_device_user_code: String,
-    pub(super) forge_device_verification_url: String,
-    pub(super) forge_context: Option<ForgeReviewWorkspace>,
-    pub(super) forge_token: Option<String>,
-    pub(super) forge_epoch: i32,
-    pub(super) forge_current_epoch: Arc<AtomicI32>,
-    pub(super) forge_results: Arc<Mutex<HashMap<i32, ForgeAsyncResult>>>,
-    pub(super) forge_device_start_results: Arc<Mutex<HashMap<i32, GitHubDeviceStartResult>>>,
 }
 
 impl Default for Backend {
@@ -309,6 +266,17 @@ impl Default for Backend {
             diff_search_matches: Vec::new(),
             diff_epoch: 0,
             diff_file_summaries: HashMap::new(),
+            diff_compare_sources: DiffCompareSourceListModel::default_with_attached_qobject(),
+            diff_compare_left_source_id: String::new(),
+            diff_compare_right_source_id: String::new(),
+            diff_compare_left_label: String::new(),
+            diff_compare_right_label: String::new(),
+            diff_compare_left_index: -1,
+            diff_compare_right_index: -1,
+            diff_compare_file_count: 0,
+            diff_compare_epoch: 0,
+            diff_compare_results: Arc::new(Mutex::new(HashMap::new())),
+            diff_compare_patches: HashMap::new(),
             diff_refresh_results: Arc::new(Mutex::new(HashMap::new())),
             diff_comments: DiffCommentListModel::default_with_attached_qobject(),
             diff_comment_projection: None,
@@ -331,30 +299,16 @@ impl Default for Backend {
             diff_comment_initial_prune_done: false,
             diff_comment_miss_streaks: HashMap::new(),
             diff_comment_pending_jump_id: None,
-            git_files: GitFileListModel::default_with_attached_qobject(),
-            git_branches: GitBranchListModel::default_with_attached_qobject(),
-            git_commits: GitCommitListModel::default_with_attached_qobject(),
             git_root: git_root.display().to_string(),
             git_repository_name: "Repository".to_owned(),
             git_branch_name: String::new(),
-            git_branch_has_upstream: false,
-            git_branch_ahead_count: 0,
-            git_branch_behind_count: 0,
             git_changed_file_count: 0,
-            git_staged_file_count: 0,
-            git_unstaged_file_count: 0,
-            git_last_commit_subject: String::new(),
             git_ready: false,
             git_loading: false,
-            git_busy: false,
             git_error: String::new(),
-            git_status_message: String::new(),
-            git_action_label: String::new(),
             git_epoch: 0,
             git_refresh_results: Arc::new(Mutex::new(HashMap::new())),
             git_root_pending_persist: false,
-            git_staged_paths: Vec::new(),
-            git_unstaged_paths: Vec::new(),
             terminal_tabs: TerminalTabListModel::default_with_attached_qobject(),
             terminal_rows: TerminalRowListModel::default_with_attached_qobject(),
             terminal_runtime: TerminalRuntimeState::default(),
@@ -432,36 +386,6 @@ impl Default for Backend {
             ai_timeline_hidden_row_count: 0,
             ai_error: String::new(),
             ai_status_message: String::new(),
-            forge_available: false,
-            forge_provider_label: String::new(),
-            forge_review_kind_label: String::new(),
-            forge_host: String::new(),
-            forge_repository_path: String::new(),
-            forge_authenticated: false,
-            forge_account_label: String::new(),
-            forge_auth_mode: String::new(),
-            forge_ready: false,
-            forge_loading: false,
-            forge_busy: false,
-            forge_error: String::new(),
-            forge_status_message: String::new(),
-            forge_action_label: String::new(),
-            forge_default_target_branch: String::new(),
-            forge_review_exists: false,
-            forge_review_number: 0,
-            forge_review_title: String::new(),
-            forge_review_url: String::new(),
-            forge_review_state: String::new(),
-            forge_review_draft: false,
-            forge_device_flow_active: false,
-            forge_device_user_code: String::new(),
-            forge_device_verification_url: String::new(),
-            forge_context: None,
-            forge_token: None,
-            forge_epoch: 0,
-            forge_current_epoch: Arc::new(AtomicI32::new(0)),
-            forge_results: Arc::new(Mutex::new(HashMap::new())),
-            forge_device_start_results: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -499,15 +423,41 @@ pub(super) fn persist_active_project(root: PathBuf) -> anyhow::Result<()> {
     store.save(&state)
 }
 
+pub(super) fn load_review_compare_selection(
+    repo_root: &str,
+) -> Option<ReviewCompareSelectionState> {
+    AppStateStore::new()
+        .and_then(|store| store.load_or_default())
+        .ok()
+        .and_then(|state| {
+            state
+                .review_compare_selection_by_repo
+                .get(repo_root)
+                .cloned()
+        })
+}
+
+pub(super) fn persist_review_compare_selection(
+    repo_root: &str,
+    left_source_id: &str,
+    right_source_id: &str,
+) -> anyhow::Result<()> {
+    let _guard = app_state_write_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let store = AppStateStore::new()?;
+    let mut state = store.load_or_default()?;
+    state.review_compare_selection_by_repo.insert(
+        repo_root.to_owned(),
+        ReviewCompareSelectionState {
+            left_source_id: Some(left_source_id.to_owned()),
+            right_source_id: Some(right_source_id.to_owned()),
+        },
+    );
+    store.save(&state)
+}
+
 pub(super) fn app_state_write_lock() -> &'static Mutex<()> {
     static APP_STATE_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     APP_STATE_WRITE_LOCK.get_or_init(|| Mutex::new(()))
-}
-
-pub(super) fn next_forge_epoch(backend: &mut Backend) -> i32 {
-    backend.forge_epoch = backend.forge_epoch.wrapping_add(1).max(1);
-    backend
-        .forge_current_epoch
-        .store(backend.forge_epoch, Ordering::Release);
-    backend.forge_epoch
 }

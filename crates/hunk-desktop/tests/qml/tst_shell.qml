@@ -8,9 +8,7 @@ TestCase {
     when: windowShown
     property bool snapshotReady: false
     property bool snapshotSaved: false
-    ListModel { id: gitFilesModel }
-    ListModel { id: gitBranchesModel }
-    ListModel { id: gitCommitsModel }
+    ListModel { id: compareSourcesModel }
     ListModel { id: diffFilesModel }
     ListModel { id: diffRowsModel }
     ListModel { id: diffCommentsModel }
@@ -29,6 +27,12 @@ TestCase {
         property string lastRequestedWorkspace: ""
         property var diffFiles: diffFilesModel
         property var diffRows: diffRowsModel
+        property var diffCompareSources: compareSourcesModel
+        property string diffCompareLeftLabel: "migration/05-qt-git"
+        property string diffCompareRightLabel: "Primary Checkout"
+        property int diffCompareLeftIndex: 1
+        property int diffCompareRightIndex: 0
+        property int diffCompareFileCount: 3
         property string diffSelectedPath: "crates/hunk-desktop/src/backend.rs"
         property string diffStatusTag: "M"
         property int diffAdditions: 132
@@ -56,25 +60,10 @@ TestCase {
         property int diffCommentTargetRevision: 0
         property var diffCommentRecords: []
         property bool failNextDiffComment: false
-        property var gitFiles: gitFilesModel
-        property var gitBranches: gitBranchesModel
-        property var gitCommits: gitCommitsModel
         property string gitRoot: "/Volumes/hulk/dev/projects/hunk"
         property string gitRepositoryName: "hunk"
         property string gitBranchName: "migration/05-qt-git"
-        property bool gitBranchHasUpstream: true
-        property int gitBranchAheadCount: 2
-        property int gitBranchBehindCount: 0
         property int gitChangedFileCount: 3
-        property int gitStagedFileCount: 1
-        property int gitUnstagedFileCount: 2
-        property string gitLastCommitSubject: "Connect QtBridge to the Rust Git core"
-        property bool gitReady: true
-        property bool gitLoading: false
-        property bool gitBusy: false
-        property string gitError: ""
-        property string gitStatusMessage: "Repository refreshed"
-        property string gitActionLabel: ""
         property var terminalTabs: terminalTabsModel; property var terminalRows: terminalRowsModel
         property bool terminalOpen: false; property int terminalActiveTabId: 1; property int terminalActiveTabIndex: 0; property string terminalShellLabel: "zsh"
         property string terminalStatus: "idle"; property string terminalStatusMessage: ""; property string terminalCwd: gitRoot
@@ -124,37 +113,9 @@ TestCase {
         property int aiTimelineHiddenRowCount: 0
         property string aiError: ""
         property string aiStatusMessage: "Codex thread catalog refreshed"
-        property bool forgeAvailable: true
-        property string forgeProviderLabel: "GitHub"
-        property string forgeReviewKindLabel: "Pull Request"
-        property string forgeHost: "github.com"
-        property string forgeRepositoryPath: "smolcars/hunk"
-        property bool forgeAuthenticated: true
-        property string forgeAccountLabel: "Nitesh"
-        property string forgeAuthMode: "device"
-        property bool forgeReady: true
-        property bool forgeLoading: false
-        property bool forgeBusy: false
-        property string forgeError: ""
-        property string forgeStatusMessage: "GitHub connected"
-        property string forgeActionLabel: ""
-        property string forgeDefaultTargetBranch: "master"
-        property bool forgeReviewExists: false
-        property int forgeReviewNumber: 0
-        property string forgeReviewTitle: ""
-        property string forgeReviewUrl: ""
-        property string forgeReviewState: ""
-        property bool forgeReviewDraft: false
-        property bool forgeDeviceFlowActive: false
-        property string forgeDeviceUserCode: ""
-        property string forgeDeviceVerificationUrl: ""
         property string lastCommand: ""
         property string lastArgument: ""
         property int commandCount: 0
-        property string lastTargetBranch: ""
-        property string lastReviewTitle: ""
-        property string lastReviewBody: ""
-        property bool lastReviewDraft: false
         property string lastAnswersJson: ""
         property bool failNextAiRequest: false
         property var pendingAiRequestIds: []
@@ -178,6 +139,18 @@ TestCase {
             diffSelectedPath = path
         }
         function refresh_diff() { record("refresh_diff") }
+        function refresh_diff_compare() { record("refresh_diff_compare") }
+        function select_diff_compare_source(side, index) {
+            const source = compareSourcesModel.get(index)
+            if (side === "left") {
+                diffCompareLeftIndex = index
+                diffCompareLeftLabel = source.label
+            } else {
+                diffCompareRightIndex = index
+                diffCompareRightLabel = source.label
+            }
+            record("select_diff_compare_" + side, String(index))
+        }
         function set_diff_search(query) {
             record("set_diff_search", query)
             diffSearchQuery = query
@@ -382,18 +355,6 @@ TestCase {
                 .join("\n\n---\n\n")
         }
         function select_git_root(root) { record("select_root", root) }
-        function stage_path(path) { record("stage", path) }
-        function unstage_path(path) { record("unstage", path) }
-        function stage_all() { record("stage_all") }
-        function unstage_all() { record("unstage_all") }
-        function discard_path(path) { record("discard", path) }
-        function commit_staged(message) { record("commit", message) }
-        function activate_branch(name) { record("activate_branch", name) }
-        function fetch_remote_branches() { record("fetch") }
-        function publish_branch() { record("publish") }
-        function push_branch() { record("push") }
-        function sync_branch() { record("sync") }
-        function pull_branch_with_rebase() { record("pull_rebase") }
         function set_terminal_open(open) { terminalOpen = open; if (open) { terminalFocusRevision += 1; terminalFocusChanged() } terminalStateChanged(); return true }
         function new_terminal_tab() { return true } function close_terminal_tab(tabId) { return tabId > 0 }
         function select_terminal_tab(tabId) { terminalActiveTabId = tabId; terminalStateChanged(); return true } function move_terminal_tab(direction) { return direction !== 0 }
@@ -723,17 +684,6 @@ TestCase {
             set_ai_attention(threadId, false)
             aiStateChanged()
         }
-        function refresh_forge_review() { record("refresh_forge") }
-        function save_forge_personal_access_token(token) { record("save_forge_token", token) }
-        function start_github_device_flow() { record("start_github_device_flow") }
-        function cancel_github_device_flow() { record("cancel_github_device_flow") }
-        function create_forge_review(targetBranch, title, body, draft) {
-            record("create_forge_review")
-            lastTargetBranch = targetBranch
-            lastReviewTitle = title
-            lastReviewBody = body
-            lastReviewDraft = draft
-        }
     }
     Shell {
         id: shell
@@ -741,40 +691,18 @@ TestCase {
         height: 760
         backend: fakeBackend
     }
-    function appendFile(path, staged, additions, removals) {
-        const slash = path.lastIndexOf("/")
-        gitFilesModel.append({
-            path: path,
-            file_name: slash >= 0 ? path.slice(slash + 1) : path,
-            directory: slash >= 0 ? path.slice(0, slash) : "",
-            status_tag: staged ? "A" : "M",
-            status_label: staged ? "Added" : "Modified",
-            section: staged ? "STAGED" : "CHANGES",
-            staged: staged,
-            additions: additions,
-            removals: removals
-        })
-    }
     function populateModels() {
-        gitFilesModel.clear()
-        gitBranchesModel.clear()
-        gitCommitsModel.clear()
+        compareSourcesModel.clear()
         diffFilesModel.clear()
         diffRowsModel.clear()
         diffCommentsModel.clear()
         aiThreadsModel.clear()
         aiTimelineModel.clear()
-        appendFile("crates/hunk-git/src/workspace.rs", false, 84, 4)
-        appendFile("crates/hunk-desktop/src/backend.rs", false, 132, 8)
-        appendFile("crates/hunk-desktop/src/qml/Hunk/GitWorkspace.qml", true, 635, 0)
         diffFilesModel.append({
             path: "crates/hunk-desktop/src/backend.rs",
             file_name: "backend.rs",
             directory: "crates/hunk-desktop/src",
             status_tag: "M",
-            status_label: "Modified",
-            section: "",
-            staged: false,
             additions: 132,
             removals: 8
         })
@@ -783,9 +711,6 @@ TestCase {
             file_name: "DiffWorkspace.qml",
             directory: "crates/hunk-desktop/src/qml/Hunk",
             status_tag: "A",
-            status_label: "Added",
-            section: "",
-            staged: false,
             additions: 318,
             removals: 0
         })
@@ -828,35 +753,32 @@ TestCase {
             right_kind: "added",
             text: ""
         })
-        gitBranchesModel.append({
-            name: "migration/05-qt-git",
-            current: true,
-            remote: false,
-            workspace_label: ""
+        compareSourcesModel.append({
+            source_id: "workspace:primary",
+            label: "Primary Checkout",
+            detail: "Primary checkout · master",
+            kind: "workspace",
+            branch_name: "master",
+            target_id: "primary",
+            root: "/Volumes/hulk/dev/projects/hunk"
         })
-        gitBranchesModel.append({
-            name: "migration/04-qt-foundation",
-            current: false,
-            remote: false,
-            workspace_label: ""
+        compareSourcesModel.append({
+            source_id: "branch:migration/05-qt-git",
+            label: "migration/05-qt-git",
+            detail: "Local branch · checked out",
+            kind: "branch",
+            branch_name: "migration/05-qt-git",
+            target_id: "",
+            root: ""
         })
-        gitBranchesModel.append({
-            name: "origin/master",
-            current: false,
-            remote: true,
-            workspace_label: ""
-        })
-        gitCommitsModel.append({
-            commit_id: "59b2f24303feef4e8d4b3dc17fdbe0f93e04feaa",
-            short_id: "59b2f243",
-            subject: "Move Qt Linux checks to cached ephemeral runners",
-            committed_unix_time: 1787677200
-        })
-        gitCommitsModel.append({
-            commit_id: "7037955a4b1b7db3a56aa409093beaabdf40fc43",
-            short_id: "7037955a",
-            subject: "Pin unreleased aqt Windows layout fix for Qt 6.11.2",
-            committed_unix_time: 1787673600
+        compareSourcesModel.append({
+            source_id: "branch:master",
+            label: "master",
+            detail: "Local branch",
+            kind: "branch",
+            branch_name: "master",
+            target_id: "",
+            root: ""
         })
         aiThreadsModel.append({
             thread_id: "thread-qt-migration",
@@ -941,10 +863,6 @@ TestCase {
             last_sequence: 4
         })
     }
-    function openGitWorkspace() {
-        shell.activateWorkspace("git")
-        tryVerify(() => shell.workspaceItem !== null && shell.workspaceItem.objectName === "gitWorkspace")
-    }
     function openDiffWorkspace() {
         shell.activateWorkspace("diff")
         tryVerify(() => shell.workspaceItem !== null && shell.workspaceItem.objectName === "diffWorkspace")
@@ -1006,14 +924,11 @@ TestCase {
         fakeBackend.diffCommentRecords = []
         fakeBackend.failNextDiffComment = false
         fakeBackend.gitChangedFileCount = 3
-        fakeBackend.gitStagedFileCount = 1
-        fakeBackend.gitUnstagedFileCount = 2
-        fakeBackend.gitReady = true
-        fakeBackend.gitLoading = false
-        fakeBackend.gitBusy = false
-        fakeBackend.gitError = ""
-        fakeBackend.gitStatusMessage = "Repository refreshed"
-        fakeBackend.gitActionLabel = ""
+        fakeBackend.diffCompareLeftLabel = "migration/05-qt-git"
+        fakeBackend.diffCompareRightLabel = "Primary Checkout"
+        fakeBackend.diffCompareLeftIndex = 1
+        fakeBackend.diffCompareRightIndex = 0
+        fakeBackend.diffCompareFileCount = 3
         fakeBackend.terminalOpen = false
         terminalTabsModel.clear(); terminalRowsModel.clear()
         fakeBackend.aiReady = true
@@ -1064,34 +979,6 @@ TestCase {
         shell.aiDraftWorkspaceRoot = fakeBackend.aiWorkspaceRoot
         shell.aiDraftStore = ({})
         shell.aiRequestAnswerStore = ({})
-        fakeBackend.forgeAvailable = true
-        fakeBackend.forgeProviderLabel = "GitHub"
-        fakeBackend.forgeReviewKindLabel = "Pull Request"
-        fakeBackend.forgeHost = "github.com"
-        fakeBackend.forgeRepositoryPath = "smolcars/hunk"
-        fakeBackend.forgeAuthenticated = true
-        fakeBackend.forgeAccountLabel = "Nitesh"
-        fakeBackend.forgeAuthMode = "device"
-        fakeBackend.forgeReady = true
-        fakeBackend.forgeLoading = false
-        fakeBackend.forgeBusy = false
-        fakeBackend.forgeError = ""
-        fakeBackend.forgeStatusMessage = "GitHub connected"
-        fakeBackend.forgeActionLabel = ""
-        fakeBackend.forgeDefaultTargetBranch = "master"
-        fakeBackend.forgeReviewExists = false
-        fakeBackend.forgeReviewNumber = 0
-        fakeBackend.forgeReviewTitle = ""
-        fakeBackend.forgeReviewUrl = ""
-        fakeBackend.forgeReviewState = ""
-        fakeBackend.forgeReviewDraft = false
-        fakeBackend.forgeDeviceFlowActive = false
-        fakeBackend.forgeDeviceUserCode = ""
-        fakeBackend.forgeDeviceVerificationUrl = ""
-        fakeBackend.lastTargetBranch = ""
-        fakeBackend.lastReviewTitle = ""
-        fakeBackend.lastReviewBody = ""
-        fakeBackend.lastReviewDraft = false
         snapshotReady = false
         snapshotSaved = false
         populateModels()
@@ -1122,8 +1009,40 @@ TestCase {
         fakeBackend.lastArgument = ""
     }
     function test_retainedWorkspaceContract() {
-        compare(shell.workspaceCount, 3)
-        compare(shell.workspaceIds, ["diff", "git", "ai"])
+        compare(shell.workspaceCount, 2)
+        compare(shell.workspaceIds, ["diff", "ai"])
+    }
+    function test_diffCompareSourcesRouteThroughBackend() {
+        openDiffWorkspace()
+        compare(shell.workspaceItem.leftComparePicker.currentLabel, "migration/05-qt-git")
+        compare(shell.workspaceItem.rightComparePicker.currentLabel, "Primary Checkout")
+        shell.workspaceItem.leftComparePicker.selected(2)
+        compare(fakeBackend.lastCommand, "select_diff_compare_left")
+        compare(fakeBackend.lastArgument, "2")
+        compare(fakeBackend.diffCompareLeftLabel, "master")
+
+        fakeBackend.lastCommand = ""
+        shell.workspaceItem.refreshButton.clicked()
+        compare(fakeBackend.lastCommand, "refresh_diff_compare")
+
+        fakeBackend.diffCompareLeftIndex = -1
+        fakeBackend.diffCompareRightIndex = -1
+        wait(0)
+        shell.workspaceItem.refreshButton.clicked()
+        compare(fakeBackend.lastCommand, "refresh")
+    }
+    function test_diffComparePopupActivatesFocusedSourceFromKeyboard() {
+        openDiffWorkspace()
+        const picker = shell.workspaceItem.leftComparePicker
+        picker.popup.open()
+        tryCompare(picker.popup, "opened", true)
+        picker.listView.currentIndex = 2
+        picker.listView.forceActiveFocus()
+        tryCompare(picker.listView, "activeFocus", true)
+        keyClick(Qt.Key_Return)
+        tryCompare(picker.popup, "opened", false)
+        compare(fakeBackend.lastCommand, "select_diff_compare_left")
+        compare(fakeBackend.lastArgument, "2")
     }
     function test_aiWorkspaceUsesVirtualizedRustModelsAndPlainText() {
         openAiWorkspace()
@@ -1586,8 +1505,8 @@ TestCase {
         compare(panel.answerFor("approach"), "Broad")
         compare(panel.answerFor("token"), "do-not-log-this")
 
-        shell.activateWorkspace("git")
-        tryVerify(() => shell.workspaceItem.objectName === "gitWorkspace")
+        shell.activateWorkspace("diff")
+        tryVerify(() => shell.workspaceItem.objectName === "diffWorkspace")
         shell.activateWorkspace("ai")
         tryVerify(() => shell.workspaceItem.objectName === "aiWorkspace")
         panel = shell.workspaceItem.requestPanel
@@ -1633,7 +1552,7 @@ TestCase {
         tryVerify(() => panel.requestViewport.contentHeight
             > panel.requestViewport.height)
         lastInput.forceActiveFocus()
-        verify(lastInput.activeFocus)
+        tryVerify(() => lastInput.activeFocus)
         tryVerify(() => panel.requestViewport.contentY > 0)
     }
     function test_aiOversizedInputCannotBeSubmitted() {
@@ -1693,7 +1612,7 @@ TestCase {
         openDiffWorkspace()
         shell.workspaceItem.resetSelection()
         shell.workspaceItem.forceActiveFocus()
-        verify(shell.workspaceItem.activeFocus)
+        tryVerify(() => shell.workspaceItem.activeFocus)
 
         keyClick(Qt.Key_Down)
         compare(shell.workspaceItem.selectionAnchorRow, 0)
@@ -1871,130 +1790,25 @@ TestCase {
         shell.workspaceItem.resetSelection()
     }
     function test_workspaceActivationUsesBackendCommand() {
-        openGitWorkspace()
-        compare(fakeBackend.lastRequestedWorkspace, "git")
-        compare(shell.activeWorkspace, "git")
+        openAiWorkspace()
+        compare(fakeBackend.lastRequestedWorkspace, "ai")
+        compare(shell.activeWorkspace, "ai")
     }
     function test_terminalRestoresAiComposerFocus() {
         openAiWorkspace()
         verifyTerminalFocusRoundTrip(shell.workspaceItem.composer.editor)
     }
-    function test_terminalRestoresGitCommitFocus() {
-        openGitWorkspace()
-        verifyTerminalFocusRoundTrip(shell.workspaceItem.commitMessageInput)
-    }
-    function test_discardRequiresConfirmationBeforeRustCommand() {
-        openGitWorkspace()
-        shell.workspaceItem.requestDiscard("crates/hunk-git/src/workspace.rs")
-        verify(shell.workspaceItem.discardConfirmationVisible)
-        compare(fakeBackend.lastCommand, "")
-        shell.workspaceItem.confirmDiscard()
-        verify(!shell.workspaceItem.discardConfirmationVisible)
-        compare(fakeBackend.lastCommand, "discard")
-        compare(fakeBackend.lastArgument, "crates/hunk-git/src/workspace.rs")
-    }
-    function test_commitComposerUsesStagedCommitCommand() {
-        openGitWorkspace()
-        shell.workspaceItem.commitMessageInput.text = "Migrate the Git workspace"
-        shell.workspaceItem.submitCommit()
-        compare(fakeBackend.lastCommand, "commit")
-        compare(fakeBackend.lastArgument, "Migrate the Git workspace")
-        compare(shell.workspaceItem.commitMessageInput.text, "")
-    }
-    function test_githubDeviceAuthenticationUsesRustCommand() {
-        fakeBackend.forgeAuthenticated = false
-        openGitWorkspace()
-        shell.workspaceItem.requestForgeAuthentication()
-        compare(fakeBackend.lastCommand, "start_github_device_flow")
-        verify(!shell.workspaceItem.forgeTokenDialogVisible)
-    }
-
-    function test_personalAccessTokenIsClearedAfterSubmission() {
-        fakeBackend.forgeAuthenticated = false
-        fakeBackend.forgeProviderLabel = "GitLab"
-        fakeBackend.forgeReviewKindLabel = "Merge Request"
-        fakeBackend.forgeAuthMode = "token"
-        openGitWorkspace()
-
-        shell.workspaceItem.requestForgeAuthentication()
-        verify(shell.workspaceItem.forgeTokenDialogVisible)
-        captureSnapshot("target/hunk-desktop-forge-token.png")
-        shell.workspaceItem.forgeTokenDialog.tokenInput.text = "secret-token"
-        shell.workspaceItem.forgeTokenDialog.submitted("secret-token")
-
-        compare(fakeBackend.lastCommand, "save_forge_token")
-        compare(fakeBackend.lastArgument, "secret-token")
-        verify(!shell.workspaceItem.forgeTokenDialogVisible)
-        compare(shell.workspaceItem.forgeTokenDialog.tokenInput.text, "")
-    }
-
-    function test_reviewDialogSubmitsFindOrCreateFields() {
-        openGitWorkspace()
-        shell.workspaceItem.openForgeReviewDialog()
-        verify(shell.workspaceItem.forgeReviewDialogVisible)
-        captureSnapshot("target/hunk-desktop-forge-review.png")
-        compare(shell.workspaceItem.forgeReviewDialog.targetInput.text, "master")
-        compare(
-            shell.workspaceItem.forgeReviewDialog.titleInput.text,
-            "Connect QtBridge to the Rust Git core"
-        )
-
-        shell.workspaceItem.forgeReviewDialog.titleInput.text = "Qt forge controls"
-        shell.workspaceItem.forgeReviewDialog.bodyInput.text = "Move review actions to Qt."
-        shell.workspaceItem.forgeReviewDialog.draft = true
-        shell.workspaceItem.forgeReviewDialog.submitted(
-            "master",
-            "Qt forge controls",
-            "Move review actions to Qt.",
-            true
-        )
-
-        compare(fakeBackend.lastCommand, "create_forge_review")
-        compare(fakeBackend.lastTargetBranch, "master")
-        compare(fakeBackend.lastReviewTitle, "Qt forge controls")
-        compare(fakeBackend.lastReviewBody, "Move review actions to Qt.")
-        verify(fakeBackend.lastReviewDraft)
-        verify(!shell.workspaceItem.forgeReviewDialogVisible)
-    }
-
-    function test_fileListRemainsVirtualizedForLargeRepositories() {
-        gitFilesModel.clear()
-        for (let index = 0; index < 1500; ++index)
-            appendFile("generated/path/file-" + index + ".rs", false, index % 7, index % 3)
-        fakeBackend.gitChangedFileCount = 1500
-        fakeBackend.gitStagedFileCount = 0
-        fakeBackend.gitUnstagedFileCount = 1500
-
-        openGitWorkspace()
-        shell.workspaceItem.fileListView.forceLayout()
-        compare(shell.workspaceItem.fileListView.count, 1500)
-        verify(shell.workspaceItem.fileListView.reuseItems)
-        verify(shell.workspaceItem.fileListView.itemAtIndex(0) !== null)
-        verify(shell.workspaceItem.fileListView.itemAtIndex(1000) === null)
-    }
-
-    function test_gitWorkspaceStatesCoverLoadingEmptyAndError() {
-        gitFilesModel.clear()
-        fakeBackend.gitChangedFileCount = 0
-        fakeBackend.gitStagedFileCount = 0
-        fakeBackend.gitUnstagedFileCount = 0
-        openGitWorkspace()
-        verify(shell.workspaceItem.emptyStateVisible)
-        captureSnapshot("target/hunk-desktop-git-empty.png")
-
-        fakeBackend.gitReady = false
-        fakeBackend.gitLoading = true
-        verify(shell.workspaceItem.loadingStateVisible)
-        captureSnapshot("target/hunk-desktop-git-loading.png")
-
-        fakeBackend.gitLoading = false
-        fakeBackend.gitError = "Unable to open repository"
-        verify(shell.workspaceItem.errorStateVisible)
-        captureSnapshot("target/hunk-desktop-git-error.png")
-    }
-
-    function test_gitWorkspaceRendersAtDesktopSize() {
-        openGitWorkspace()
-        captureSnapshot("target/hunk-desktop-git.png")
+    // macOS's offscreen native dialog backend does not reactivate the test
+    // window after close, so keep this integration check last in the suite.
+    function test_z_aiRepositoryPickerOpensAndRestoresFocus() {
+        openAiWorkspace()
+        const editor = shell.workspaceItem.composer.editor
+        editor.forceActiveFocus()
+        tryVerify(() => editor.activeFocus)
+        shell.sidebarItem.openRepository()
+        tryCompare(shell.sidebarItem.repositoryDialog, "visible", true)
+        shell.sidebarItem.repositoryDialog.close()
+        tryCompare(shell.sidebarItem.repositoryDialog, "visible", false)
+        tryVerify(() => editor.activeFocus)
     }
 }

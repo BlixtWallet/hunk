@@ -954,7 +954,7 @@ fn sync_terminal_projection(backend: &mut Backend) {
         .filter_map(|tab_id| backend.terminal_runtime.tabs.get(tab_id))
         .map(TerminalTabRuntime::item)
         .collect();
-    backend.terminal_tabs.borrow_mut().replace(tab_items);
+    backend.terminal_tabs.borrow_mut().defer_replace(tab_items);
     backend.terminal_active_tab_id = backend.terminal_runtime.active_tab_id;
     backend.terminal_active_tab_index = backend
         .terminal_runtime
@@ -999,7 +999,7 @@ fn sync_terminal_projection(backend: &mut Backend) {
             let previous_rows = backend
                 .terminal_rows
                 .borrow_mut()
-                .replace_for_tab(new_rows.unwrap_or_default());
+                .defer_replace_for_tab(new_rows.unwrap_or_default());
             if let Some(previous_tab) =
                 previous_tab_id.and_then(|tab_id| backend.terminal_runtime.tabs.get_mut(&tab_id))
                 && let Some(projection) = previous_tab.projection.as_mut()
@@ -1008,7 +1008,10 @@ fn sync_terminal_projection(backend: &mut Backend) {
             }
             backend.terminal_runtime.displayed_tab_id = Some(active_tab_id);
         } else if let Some(rows) = new_rows {
-            backend.terminal_rows.borrow_mut().replace_or_patch(rows);
+            backend
+                .terminal_rows
+                .borrow_mut()
+                .defer_replace_or_patch(rows);
         }
     }
 
@@ -1040,7 +1043,7 @@ fn sync_terminal_projection(backend: &mut Backend) {
         backend.terminal_cursor_shape = cursor_shape;
         backend.terminal_cursor_visible = cursor_visible;
     } else {
-        backend.terminal_rows.borrow_mut().clear();
+        backend.terminal_rows.borrow_mut().defer_clear();
         backend.terminal_display_offset = 0;
         backend.terminal_mouse_mode = false;
         backend.terminal_cursor_row = -1;

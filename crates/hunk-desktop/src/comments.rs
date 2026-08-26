@@ -163,7 +163,7 @@ impl Backend {
             .as_ref()
             .map(|projection| projection.visible_items(self.diff_comments_show_non_open))
             .unwrap_or_default();
-        self.diff_comments.borrow_mut().replace(items);
+        self.diff_comments.borrow_mut().defer_replace(items);
     }
 
     pub(super) fn next_diff_comment_reconcile_command(
@@ -190,7 +190,7 @@ impl Backend {
 
     pub(super) fn reset_diff_comment_state(&mut self) {
         self.diff_comment_epoch = self.diff_comment_epoch.wrapping_add(1).max(1);
-        self.diff_comments.borrow_mut().replace(Vec::new());
+        self.diff_comments.borrow_mut().defer_replace(Vec::new());
         self.diff_comment_projection = None;
         self.diff_comment_anchors = Arc::new(Vec::new());
         self.diff_comments_ready = false;

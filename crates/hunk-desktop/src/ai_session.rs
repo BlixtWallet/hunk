@@ -49,12 +49,16 @@ impl AiSessionChoiceItem {
 
 #[qobject(Base = QListModel)]
 mod choice_model {
+    use qtbridge::QObjectHolder;
+
     use super::{AiSessionChoiceItem, QListModel, QListModelBase};
 
     #[derive(Default)]
     pub struct AiSessionChoiceListModel {
         items: Vec<AiSessionChoiceItem>,
         replacement: Option<Vec<AiSessionChoiceItem>>,
+        deferred_replacement: Option<Vec<AiSessionChoiceItem>>,
+        deferred_update_scheduled: bool,
     }
 
     impl AiSessionChoiceListModel {
@@ -66,15 +70,48 @@ mod choice_model {
             self.reset();
         }
 
+        pub fn defer_replace(&mut self, items: Vec<AiSessionChoiceItem>) {
+            let current = self.deferred_replacement.as_ref().unwrap_or(&self.items);
+            if current == &items {
+                return;
+            }
+            self.deferred_replacement = Some(items);
+            if self.deferred_update_scheduled {
+                return;
+            }
+            self.deferred_update_scheduled = true;
+            if !self
+                .get_qml_method_invoker()
+                .invoke_method("apply_deferred_replacement")
+            {
+                self.deferred_update_scheduled = false;
+            }
+        }
+
+        #[qslot]
+        fn apply_deferred_replacement(&mut self) {
+            self.deferred_update_scheduled = false;
+            let Some(items) = self.deferred_replacement.take() else {
+                return;
+            };
+            self.replace(items);
+        }
+
+        fn visible_items(&self) -> &[AiSessionChoiceItem] {
+            self.deferred_replacement
+                .as_deref()
+                .unwrap_or(self.items.as_slice())
+        }
+
         pub fn value_at(&self, index: i32) -> Option<&str> {
             usize::try_from(index)
                 .ok()
-                .and_then(|index| self.items.get(index))
+                .and_then(|index| self.visible_items().get(index))
                 .map(|item| item.value.as_str())
         }
 
         pub fn index_of(&self, value: &str) -> i32 {
-            self.items
+            self.visible_items()
                 .iter()
                 .position(|item| item.value == value)
                 .and_then(|index| i32::try_from(index).ok())
@@ -82,20 +119,20 @@ mod choice_model {
         }
 
         pub fn label_for_value(&self, value: &str) -> String {
-            self.items
+            self.visible_items()
                 .iter()
                 .find(|item| item.value == value)
                 .map(|item| item.label.clone())
-                .or_else(|| self.items.first().map(|item| item.label.clone()))
+                .or_else(|| self.visible_items().first().map(|item| item.label.clone()))
                 .unwrap_or_default()
         }
 
         pub fn contains_value(&self, value: &str) -> bool {
-            self.items.iter().any(|item| item.value == value)
+            self.visible_items().iter().any(|item| item.value == value)
         }
 
         pub fn item_count(&self) -> i32 {
-            i32::try_from(self.items.len()).unwrap_or(i32::MAX)
+            i32::try_from(self.visible_items().len()).unwrap_or(i32::MAX)
         }
     }
 
@@ -413,7 +450,7 @@ pub(super) fn apply_ai_session_projection(
     backend
         .ai_models
         .borrow_mut()
-        .replace(projection.models.clone());
+        .defer_replace(projection.models.clone());
     backend.ai_session_catalog = projection;
     sync_ai_session_selection(backend);
 }
@@ -423,11 +460,11 @@ pub(super) fn reset_ai_session_projection(backend: &mut Backend) {
     backend
         .ai_models
         .borrow_mut()
-        .replace(vec![default_model_choice()]);
+        .defer_replace(vec![default_model_choice()]);
     backend
         .ai_efforts
         .borrow_mut()
-        .replace(vec![default_effort_choice()]);
+        .defer_replace(vec![default_effort_choice()]);
     sync_ai_session_selection(backend);
 }
 
@@ -747,7 +784,7 @@ fn replace_effort_choices(backend: &mut Backend) {
     backend
         .ai_efforts
         .borrow_mut()
-        .replace(backend.ai_session_catalog.effort_choices(selected_model));
+        .defer_replace(backend.ai_session_catalog.effort_choices(selected_model));
 }
 
 fn current_workspace(backend: &Backend) -> Option<&str> {

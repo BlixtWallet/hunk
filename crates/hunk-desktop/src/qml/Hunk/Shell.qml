@@ -7,7 +7,7 @@ Item {
 
     required property QtObject backend
     property Component browserSurfaceComponent: null
-    readonly property var workspaceIds: ["diff", "git", "ai"]
+    readonly property var workspaceIds: ["diff", "ai"]
     readonly property int workspaceCount: workspaceIds.length
     readonly property string activeWorkspace: backend.activeWorkspace
     readonly property var sidebarItem: sidebarLoader.item
@@ -133,7 +133,6 @@ Item {
             Repeater {
                 model: [
                     { label: "Diff", workspace: "diff" },
-                    { label: "Git", workspace: "git" },
                     { label: "AI", workspace: "ai" }
                 ]
 
@@ -197,8 +196,8 @@ Item {
         Loader {
             id: sidebarLoader
             anchors.fill: parent
-            sourceComponent: root.activeWorkspace === "git" ? gitSidebarComponent
-                : (root.activeWorkspace === "diff" ? diffSidebarComponent : aiSidebarComponent)
+            sourceComponent: root.activeWorkspace === "diff"
+                ? diffSidebarComponent : aiSidebarComponent
         }
 
         Rectangle {
@@ -216,8 +215,8 @@ Item {
         anchors.right: parent.right
         anchors.top: header.bottom
         anchors.bottom: terminalDrawerLoader.top
-        sourceComponent: root.activeWorkspace === "git" ? gitWorkspaceComponent
-            : (root.activeWorkspace === "diff" ? diffWorkspaceComponent : aiWorkspaceComponent)
+        sourceComponent: root.activeWorkspace === "diff"
+            ? diffWorkspaceComponent : aiWorkspaceComponent
     }
 
     Loader {
@@ -264,23 +263,6 @@ Item {
 
         DiffWorkspace {
             objectName: "diffWorkspace"
-            backend: root.backend
-        }
-    }
-
-    Component {
-        id: gitSidebarComponent
-
-        GitSidebar {
-            backend: root.backend
-        }
-    }
-
-    Component {
-        id: gitWorkspaceComponent
-
-        GitWorkspace {
-            objectName: "gitWorkspace"
             backend: root.backend
         }
     }

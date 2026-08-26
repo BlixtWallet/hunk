@@ -42,18 +42,26 @@ Rectangle {
         }
 
         Row {
+            width: parent.width
             spacing: 7
 
             Text {
-                text: root.backend.gitBranchName.length > 0
-                    ? root.backend.gitBranchName : "No branch"
+                width: Math.max(0, parent.width - fileCount.width - parent.spacing)
+                text: root.backend.diffCompareLeftLabel.length > 0
+                    ? root.backend.diffCompareLeftLabel + " → "
+                        + root.backend.diffCompareRightLabel
+                    : (root.backend.gitBranchName.length > 0
+                        ? root.backend.gitBranchName : "No branch")
+                textFormat: Text.PlainText
                 color: Theme.faint
+                elide: Text.ElideMiddle
                 font.family: Theme.monoFont
                 font.pixelSize: 9
             }
 
             Text {
-                text: "· " + root.backend.gitChangedFileCount
+                id: fileCount
+                text: "· " + root.backend.diffCompareFileCount
                 color: Theme.faint
                 font.family: Theme.monoFont
                 font.pixelSize: 9

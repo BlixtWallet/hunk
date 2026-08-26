@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::Backend;
 use crate::diff_models::DiffFileSummary;
+use crate::diff_models::DiffSnapshotPayload;
 
 impl Backend {
     pub(super) fn clear_diff_search_results(&mut self) {
@@ -37,7 +38,7 @@ impl Backend {
         self.diff_loading = false;
         self.diff_ready = false;
         self.diff_error.clear();
-        self.diff_rows.borrow_mut().replace(
+        self.diff_rows.borrow_mut().defer_replace(
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -45,7 +46,7 @@ impl Backend {
         );
         self.clear_diff_comment_row_state();
         self.clear_diff_search_results();
-        self.diff_files.borrow_mut().replace(files);
+        self.diff_files.borrow_mut().defer_replace(files);
         self.diff_file_summaries = summaries
             .into_iter()
             .map(|summary| (summary.path.clone(), summary))
@@ -77,7 +78,7 @@ impl Backend {
     pub(super) fn apply_diff_selection(&mut self, summary: &DiffFileSummary) {
         self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
         self.diff_loading = false;
-        self.diff_rows.borrow_mut().replace(
+        self.diff_rows.borrow_mut().defer_replace(
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -95,10 +96,33 @@ impl Backend {
         self.diff_comments_state_changed();
     }
 
+    pub(super) fn apply_diff_snapshot_payload(&mut self, payload: DiffSnapshotPayload) {
+        self.diff_loading = false;
+        self.diff_status_tag = payload.status_tag;
+        self.diff_additions = payload.additions;
+        self.diff_removals = payload.removals;
+        self.diff_comment_anchors = Arc::clone(&payload.comment_anchors);
+        self.diff_rows.borrow_mut().defer_replace(
+            payload.rows,
+            payload.search_texts,
+            payload.copy_texts,
+            payload.comment_anchors,
+        );
+        self.rebuild_diff_search_results();
+        self.diff_ready = true;
+        self.diff_error.clear();
+        self.diff_state_changed();
+        self.refresh_diff_comments();
+    }
+
     pub(super) fn reset_diff_state(&mut self) {
         self.diff_epoch = self.diff_epoch.wrapping_add(1).max(1);
-        self.diff_files.borrow_mut().replace(Vec::new());
-        self.diff_rows.borrow_mut().replace(
+        self.diff_compare_epoch = self.diff_compare_epoch.wrapping_add(1).max(1);
+        self.diff_files.borrow_mut().defer_replace(Vec::new());
+        self.diff_compare_sources
+            .borrow_mut()
+            .defer_replace(Vec::new());
+        self.diff_rows.borrow_mut().defer_replace(
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -113,6 +137,7 @@ impl Backend {
         self.diff_loading = false;
         self.diff_error.clear();
         self.diff_file_summaries.clear();
+        self.clear_diff_compare_selection();
         self.diff_search_query.clear();
         self.clear_diff_search_results();
         self.diff_state_changed();

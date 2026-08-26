@@ -58,12 +58,16 @@ impl From<&BrowserTabSummary> for BrowserTabItem {
 
 #[qobject(Base = QListModel)]
 mod browser_tab_model {
+    use qtbridge::QObjectHolder;
+
     use super::{BrowserTabItem, QListModel, QListModelBase};
 
     #[derive(Default)]
     pub struct BrowserTabListModel {
         items: Vec<BrowserTabItem>,
         replacement: Option<Vec<BrowserTabItem>>,
+        deferred_items: Option<Vec<BrowserTabItem>>,
+        deferred_update_scheduled: bool,
     }
 
     impl BrowserTabListModel {
@@ -81,8 +85,37 @@ mod browser_tab_model {
             }
         }
 
+        pub fn defer_replace_or_patch(&mut self, items: Vec<BrowserTabItem>) {
+            let current = self.deferred_items.as_ref().unwrap_or(&self.items);
+            if current == &items {
+                return;
+            }
+            self.deferred_items = Some(items);
+            if self.deferred_update_scheduled {
+                return;
+            }
+            self.deferred_update_scheduled = true;
+            if !self
+                .get_qml_method_invoker()
+                .invoke_method("apply_deferred_items")
+            {
+                self.deferred_update_scheduled = false;
+            }
+        }
+
+        #[qslot]
+        fn apply_deferred_items(&mut self) {
+            self.deferred_update_scheduled = false;
+            let Some(items) = self.deferred_items.take() else {
+                return;
+            };
+            self.replace_or_patch(items);
+        }
+
         pub fn items(&self) -> &[BrowserTabItem] {
-            self.items.as_slice()
+            self.deferred_items
+                .as_deref()
+                .unwrap_or(self.items.as_slice())
         }
     }
 

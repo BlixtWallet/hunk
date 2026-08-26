@@ -231,18 +231,45 @@ fn comment_line_hint(comment: &CommentRecord) -> String {
 
 #[qobject(Base = QListModel)]
 mod comment_model {
+    use qtbridge::QObjectHolder;
+
     use super::{DiffCommentItem, QListModel, QListModelBase};
 
     #[derive(Default)]
     pub struct DiffCommentListModel {
         items: Vec<DiffCommentItem>,
         replacement: Option<Vec<DiffCommentItem>>,
+        deferred_replacement: Option<Vec<DiffCommentItem>>,
+        deferred_update_scheduled: bool,
     }
 
     impl DiffCommentListModel {
         pub fn replace(&mut self, items: Vec<DiffCommentItem>) {
             self.replacement = Some(items);
             self.reset();
+        }
+
+        pub fn defer_replace(&mut self, items: Vec<DiffCommentItem>) {
+            self.deferred_replacement = Some(items);
+            if self.deferred_update_scheduled {
+                return;
+            }
+            self.deferred_update_scheduled = true;
+            if !self
+                .get_qml_method_invoker()
+                .invoke_method("apply_deferred_replacement")
+            {
+                self.deferred_update_scheduled = false;
+            }
+        }
+
+        #[qslot]
+        fn apply_deferred_replacement(&mut self) {
+            self.deferred_update_scheduled = false;
+            let Some(items) = self.deferred_replacement.take() else {
+                return;
+            };
+            self.replace(items);
         }
     }
 

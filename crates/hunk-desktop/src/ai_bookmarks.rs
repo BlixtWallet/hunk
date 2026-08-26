@@ -163,7 +163,7 @@ fn sync_bookmark_projection(backend: &mut Backend) {
     backend
         .ai_threads
         .borrow_mut()
-        .apply_bookmarks(&backend.ai_bookmarked_thread_ids);
+        .defer_apply_bookmarks(&backend.ai_bookmarked_thread_ids);
     backend
         .ai_runtime
         .mailbox
