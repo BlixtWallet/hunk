@@ -55,6 +55,23 @@ Item {
         return root.backend.fork_ai_thread();
     }
 
+    function copyTimelineText(text) {
+        if (text.length === 0)
+            return false;
+        const hostWindow = root.Window.window;
+        const previousFocus = hostWindow === null ? null : hostWindow.activeFocusItem;
+        timelineClipboardProxy.text = text;
+        timelineClipboardProxy.forceActiveFocus();
+        timelineClipboardProxy.selectAll();
+        timelineClipboardProxy.copy();
+        timelineClipboardProxy.deselect();
+        if (previousFocus && previousFocus.visible && previousFocus.enabled)
+            previousFocus.forceActiveFocus();
+        else
+            timeline.forceActiveFocus();
+        return true;
+    }
+
     function toggleBrowser() {
         if (!root.browserVisible) {
             const hostWindow = root.Window.window;
@@ -267,6 +284,7 @@ Item {
             model: root.backend.aiTimeline
             boundsBehavior: Flickable.StopAtBounds
             reuseItems: true
+            currentIndex: -1
             cacheBuffer: Math.max(height, 640)
             topMargin: 18
             bottomMargin: 24
@@ -274,6 +292,7 @@ Item {
             delegate: AiTimelineRow {
                 width: timeline.width
                 backend: root.backend
+                onCopyRequested: text => root.copyTimelineText(text)
             }
 
             onCountChanged: {
@@ -326,6 +345,16 @@ Item {
         backend: root.backend
         answerStore: root.requestAnswerStore
         visible: !root.browserVisible
+    }
+
+    TextEdit {
+        id: timelineClipboardProxy
+        x: -2
+        y: -2
+        width: 1
+        height: 1
+        readOnly: true
+        textFormat: TextEdit.PlainText
     }
 
     AiComposer {

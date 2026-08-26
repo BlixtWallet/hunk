@@ -4,6 +4,7 @@ ActionButton 1.0 ActionButton.qml
 AiComposer 1.0 AiComposer.qml
 AiComposerCompletionMenu 1.0 AiComposerCompletionMenu.qml
 AiAttachmentStrip 1.0 AiAttachmentStrip.qml
+AiMarkdownBlock 1.0 AiMarkdownBlock.qml
 TerminalDrawer 1.0 TerminalDrawer.qml
 TerminalScreen 1.0 TerminalScreen.qml
 TerminalRow 1.0 TerminalRow.qml

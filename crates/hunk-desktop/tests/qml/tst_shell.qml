@@ -829,6 +829,7 @@ TestCase {
             role: "user",
             title: "You",
             text: "<b>Keep this text literal and do not parse it as HTML.</b>",
+            markdown_kind: "", markdown_markup: "", markdown_language: "", markdown_heading_level: 0, markdown_first: false, markdown_last: false,
             command: "", cwd: "",
             status: "",
             streaming: false,
@@ -843,6 +844,7 @@ TestCase {
             role: "assistant",
             title: "Assistant",
             text: "The selected thread now comes from the retained Rust reducer and renders through a bounded Qt model.",
+            markdown_kind: "", markdown_markup: "", markdown_language: "", markdown_heading_level: 0, markdown_first: false, markdown_last: false,
             command: "", cwd: "",
             status: "",
             streaming: false,
@@ -857,6 +859,7 @@ TestCase {
             role: "tool",
             title: "Running focused Qt tests",
             text: "nix develop -c cargo test -p hunk-desktop",
+            markdown_kind: "", markdown_markup: "", markdown_language: "", markdown_heading_level: 0, markdown_first: false, markdown_last: false,
             command: "nix develop -c cargo test -p hunk-desktop", cwd: "/Volumes/hulk/dev/projects/hunk",
             status: "streaming",
             streaming: true,
@@ -1205,7 +1208,7 @@ TestCase {
                 kind: "agentMessage",
                 role: "assistant",
                 title: "Assistant",
-                text: "Bounded timeline row " + index, command: "", cwd: "",
+                text: "Bounded timeline row " + index, markdown_kind: "", markdown_markup: "", markdown_language: "", markdown_heading_level: 0, markdown_first: false, markdown_last: false, command: "", cwd: "",
                 status: "",
                 streaming: false,
                 mono: false,
@@ -1218,6 +1221,7 @@ TestCase {
         shell.workspaceItem.timelineListView.positionViewAtBeginning()
         shell.workspaceItem.timelineListView.forceLayout()
         compare(shell.workspaceItem.timelineListView.count, 1000)
+        compare(shell.workspaceItem.timelineListView.currentIndex, -1)
         verify(shell.workspaceItem.timelineListView.itemAtIndex(0) !== null)
         verify(shell.workspaceItem.timelineListView.itemAtIndex(500) === null)
     }

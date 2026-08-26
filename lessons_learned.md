@@ -829,3 +829,20 @@ append a correction when later evidence changes one.
   metadata. If a snapshot names only a 7-day window, assigning the primary
   window to a missing 5-hour slot duplicates usage under a false label. Match
   known durations strictly and show the absent window as unavailable.
+- Completed AI Markdown should be parsed and syntax-highlighted before it
+  reaches the Qt thread, then cached by stable row/version. Keep streaming
+  messages on the plain-text path so token updates do not repeatedly rebuild a
+  nested QML block tree; load the structured delegate only after completion.
+- Rich-text transcript projections must escape every user-controlled character
+  in Rust and carry symbolic syntax roles rather than concrete colors. QML can
+  safely resolve those roles through `Theme.qml`, preserving theme ownership
+  without accepting arbitrary HTML from an assistant response.
+- Cargo's compiled `target/` cache and its registry source cache are separate.
+  Alternating between the default `~/.cargo` and an external `CARGO_HOME`
+  changes dependency source paths and leaves duplicate artifact families in the
+  same target tree. Pick one Cargo home for an iteration run; changing it once
+  can be cold, but changing it repeatedly defeats reuse.
+- A source-byte limit does not bound QML delegate fan-out or rich-text expansion.
+  Bound parsed blocks, code blocks, spans, and projected markup independently,
+  then flatten Markdown blocks into the already-virtualized timeline model.
+  Avoid nested repeaters and per-delegate JSON parsing for retained transcripts.

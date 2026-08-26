@@ -11,6 +11,7 @@ use hunk_app::ai::{
 };
 
 use crate::ai_account::AiAccountProjection;
+use crate::ai_markdown::AiMarkdownProjectionCache;
 use crate::ai_models::AiThreadCatalogProjection;
 use crate::ai_queue::AiQueueProjection;
 use crate::ai_requests::AiPendingRequestProjection;
@@ -45,6 +46,7 @@ struct AiEventMailboxState {
 pub struct AiEventMailbox {
     state: Mutex<AiEventMailboxState>,
     bookmarked_thread_ids: Mutex<BTreeSet<String>>,
+    timeline_markdown_cache: Mutex<AiMarkdownProjectionCache>,
 }
 
 pub struct AiRuntimeSession {
@@ -164,6 +166,10 @@ impl AiEventMailbox {
     }
 
     pub fn reset(&self, epoch: i32) {
+        self.timeline_markdown_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
         let mut state = self
             .state
             .lock()
@@ -196,7 +202,14 @@ impl AiEventMailbox {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
-        let event = project_worker_event(event, &bookmarked_thread_ids);
+        let event = project_worker_event(
+            event,
+            &bookmarked_thread_ids,
+            &mut self
+                .timeline_markdown_cache
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        );
         let mut state = self
             .state
             .lock()
@@ -272,6 +285,7 @@ pub fn reject_browser_call(event: AiWorkerEvent, message: &str) {
 fn project_worker_event(
     event: AiWorkerEvent,
     bookmarked_thread_ids: &BTreeSet<String>,
+    timeline_markdown_cache: &mut AiMarkdownProjectionCache,
 ) -> AiRuntimeEvent {
     let AiWorkerEvent {
         workspace_key,
@@ -299,9 +313,10 @@ fn project_worker_event(
                 snapshot.active_thread_id.as_deref(),
                 bookmarked_thread_ids,
             );
-            let timeline = AiTimelineProjection::from_state(
+            let timeline = AiTimelineProjection::from_state_with_markdown_cache(
                 &snapshot.state,
                 (!threads.active_thread_id.is_empty()).then_some(threads.active_thread_id.as_str()),
+                timeline_markdown_cache,
             );
             let visible_thread_ids = threads
                 .items

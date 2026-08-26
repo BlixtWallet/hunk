@@ -11,6 +11,12 @@ Item {
     required property string role
     required property string title
     required property string text
+    required property string markdown_kind
+    required property string markdown_markup
+    required property string markdown_language
+    required property int markdown_heading_level
+    required property bool markdown_first
+    required property bool markdown_last
     required property string command
     required property string cwd
     required property string status
@@ -19,13 +25,26 @@ Item {
     required property bool truncated
     required property double last_sequence
     required property var backend
+    property bool pooled: false
+    signal copyRequested(string text)
 
     readonly property bool userRow: role === "user"
     readonly property bool toolRow: role === "tool"
     readonly property bool systemRow: role === "system"
+    readonly property bool structuredMarkdown: markdown_kind.length > 0
+    readonly property Item markdownBodyItem: markdownBodyLoader.item as Item
+    readonly property bool markdownReady: structuredMarkdown && !pooled
+        && markdownBodyLoader.status === Loader.Ready && markdownBodyItem
     readonly property alias bodyTextItem: bodyText
 
-    implicitHeight: content.implicitHeight + (toolRow ? 20 : 28)
+    implicitHeight: content.implicitHeight + (structuredMarkdown ? 16 : (toolRow ? 20 : 28))
+    visible: !pooled
+    ListView.onPooled: {
+        pooled = true;
+    }
+    ListView.onReused: {
+        pooled = false;
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -58,6 +77,7 @@ Item {
         Row {
             width: parent.width
             spacing: 8
+            visible: !root.structuredMarkdown || root.markdown_first
 
             Text {
                 id: rowTitle
@@ -99,10 +119,32 @@ Item {
             }
         }
 
+        Loader {
+            id: markdownBodyLoader
+            width: parent.width
+            height: implicitHeight
+            implicitHeight: status === Loader.Ready && root.markdownBodyItem
+                ? root.markdownBodyItem.implicitHeight : 0
+            active: root.structuredMarkdown && !root.pooled
+            visible: root.markdownReady
+            asynchronous: true
+            sourceComponent: AiMarkdownBlock {
+                width: markdownBodyLoader.width
+                blockKind: root.markdown_kind
+                plainText: root.text
+                markup: root.markdown_markup
+                language: root.markdown_language
+                copyText: root.text
+                headingLevel: root.markdown_heading_level
+                onCopyRequested: text => root.copyRequested(text)
+            }
+        }
+
         TextEdit {
             id: bodyText
             width: parent.width
             height: contentHeight
+            visible: !root.markdownReady
             text: root.text
             textFormat: TextEdit.PlainText
             color: root.systemRow ? Theme.muted : Theme.foreground
@@ -111,12 +153,13 @@ Item {
             readOnly: true
             selectByMouse: true
             wrapMode: TextEdit.Wrap
-            font.family: root.mono ? Theme.monoFont : Theme.uiFont
-            font.pixelSize: root.mono ? 11 : 13
+            font.family: root.mono || root.markdown_kind === "code"
+                ? Theme.monoFont : Theme.uiFont
+            font.pixelSize: root.mono || root.markdown_kind === "code" ? 11 : 13
         }
 
         Text {
-            visible: root.truncated
+            visible: root.truncated && (!root.structuredMarkdown || root.markdown_last)
             text: "CONTENT TRUNCATED"
             color: Theme.faint
             font.family: Theme.monoFont
@@ -127,6 +170,7 @@ Item {
 
     Rectangle {
         visible: !root.userRow && !root.toolRow
+            && (!root.structuredMarkdown || root.markdown_last)
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom

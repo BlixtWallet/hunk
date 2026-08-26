@@ -114,6 +114,9 @@ fn projection_orders_renderable_items_and_turn_plans() {
     );
     assert_eq!(projection.items[1].text, "{\"phase\":\"analysis\"}");
     assert_eq!(projection.items[2].role, "assistant");
+    assert_eq!(projection.items[2].markdown_kind, "paragraph");
+    assert!(projection.items[2].markdown_first);
+    assert!(projection.items[2].markdown_last);
     assert_eq!(projection.items[3].title, "Running focused tests");
     assert_eq!(projection.items[3].status, "streaming");
     assert!(projection.items[3].streaming);
@@ -126,6 +129,111 @@ fn projection_orders_renderable_items_and_turn_plans() {
         projection.items[4].text,
         "Verify the change\n[x] Read the parser\n[~] Run the tests"
     );
+}
+
+#[test]
+fn projection_structures_completed_assistant_markdown_and_escapes_markup() {
+    let mut state = AiState::default();
+    state.turns.insert("turn".to_owned(), turn("turn", 1));
+    state.items.insert(
+        "assistant".to_owned(),
+        item(
+            "assistant",
+            "turn",
+            "agentMessage",
+            "Use **Rust**.\n\n```rust\nfn main() {\n    println!(\"<ready>@\");\n}\n```\n\n<script>alert('no')</script>",
+            2,
+        ),
+    );
+
+    let projection = AiTimelineProjection::from_state(&state, Some("thread"));
+    assert_eq!(projection.items.len(), 3);
+    assert!(projection.items[0].markdown_first);
+    assert!(!projection.items[0].markdown_last);
+    assert!(projection.items[0].markdown_markup.contains("<b>Rust</b>"));
+    let code = projection
+        .items
+        .iter()
+        .find(|item| item.markdown_kind == "code")
+        .expect("code block");
+    assert_eq!(code.markdown_language, "rust");
+    assert!(code.text.contains("fn main()"));
+    assert!(code.markdown_markup.contains("@keyword@"));
+    assert!(code.markdown_markup.contains("&lt;ready&gt;&#64;"));
+    let html = projection
+        .items
+        .iter()
+        .find(|item| item.text.contains("script"))
+        .expect("literal html block");
+    assert!(html.markdown_markup.contains("&lt;script&gt;"));
+    assert!(!html.markdown_markup.contains("<script>"));
+    assert!(html.markdown_last);
+}
+
+#[test]
+fn projection_keeps_streaming_assistant_markdown_on_the_plain_text_path() {
+    let mut state = AiState::default();
+    state.turns.insert("turn".to_owned(), turn("turn", 1));
+    let mut assistant = item(
+        "assistant",
+        "turn",
+        "agentMessage",
+        "```rust\nfn streaming() {}\n```",
+        2,
+    );
+    assistant.status = ItemStatus::Streaming;
+    state.items.insert("assistant".to_owned(), assistant);
+
+    let projection = AiTimelineProjection::from_state(&state, Some("thread"));
+
+    assert!(projection.items[0].streaming);
+    assert!(projection.items[0].markdown_kind.is_empty());
+    assert!(projection.items[0].text.starts_with("```rust"));
+}
+
+#[test]
+fn projection_falls_back_to_one_plain_row_when_markdown_exceeds_render_budgets() {
+    let mut state = AiState::default();
+    state.turns.insert("turn".to_owned(), turn("turn", 1));
+    let many_blocks = (0..129)
+        .map(|index| format!("paragraph {index}"))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    state.items.insert(
+        "many-blocks".to_owned(),
+        item(
+            "many-blocks",
+            "turn",
+            "agentMessage",
+            many_blocks.as_str(),
+            2,
+        ),
+    );
+
+    let projection = AiTimelineProjection::from_state(&state, Some("thread"));
+
+    assert_eq!(projection.items.len(), 1);
+    assert!(projection.items[0].markdown_kind.is_empty());
+    assert_eq!(projection.items[0].text, many_blocks);
+
+    state.items.clear();
+    let expanded_markup = format!("```text\n{}\n```", "\t".repeat(3_000));
+    state.items.insert(
+        "large-markup".to_owned(),
+        item(
+            "large-markup",
+            "turn",
+            "agentMessage",
+            expanded_markup.as_str(),
+            3,
+        ),
+    );
+
+    let projection = AiTimelineProjection::from_state(&state, Some("thread"));
+
+    assert_eq!(projection.items.len(), 1);
+    assert!(projection.items[0].markdown_kind.is_empty());
+    assert_eq!(projection.items[0].text, expanded_markup);
 }
 
 #[test]

@@ -1,7 +1,11 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use hunk_codex::state::{AiState, ItemStatus, ItemSummary, TurnPlanStepStatus, TurnPlanSummary};
 use qtbridge::{QListModel, QListModelBase, QModelItem, qobject};
+
+use crate::ai_markdown::{
+    AI_MARKDOWN_MAX_VISIBLE_MESSAGES, AiMarkdownBlockProjection, AiMarkdownProjectionCache,
+};
 
 const AI_TIMELINE_MAX_VISIBLE_TURNS: usize = 80;
 pub const AI_TIMELINE_MAX_VISIBLE_ROWS: usize = 1_000;
@@ -18,6 +22,12 @@ pub struct AiTimelineItem {
     pub role: String,
     pub title: String,
     pub text: String,
+    pub markdown_kind: String,
+    pub markdown_markup: String,
+    pub markdown_language: String,
+    pub markdown_heading_level: i32,
+    pub markdown_first: bool,
+    pub markdown_last: bool,
     pub command: String,
     pub cwd: String,
     pub status: String,
@@ -69,7 +79,17 @@ impl TimelineSource<'_> {
 
 impl AiTimelineProjection {
     pub fn from_state(state: &AiState, thread_id: Option<&str>) -> Self {
+        let mut markdown_cache = AiMarkdownProjectionCache::default();
+        Self::from_state_with_markdown_cache(state, thread_id, &mut markdown_cache)
+    }
+
+    pub(crate) fn from_state_with_markdown_cache(
+        state: &AiState,
+        thread_id: Option<&str>,
+        markdown_cache: &mut AiMarkdownProjectionCache,
+    ) -> Self {
         let Some(thread_id) = thread_id.filter(|thread_id| !thread_id.is_empty()) else {
+            markdown_cache.clear();
             return Self::default();
         };
 
@@ -127,13 +147,55 @@ impl AiTimelineProjection {
                 .then_with(|| left.sort_key().cmp(&right.sort_key()))
         });
 
-        let total_row_count = rows.len();
-        let hidden_row_count = total_row_count.saturating_sub(AI_TIMELINE_MAX_VISIBLE_ROWS);
-        let items = rows
+        let source_total_row_count = rows.len();
+        let source_hidden_row_count =
+            source_total_row_count.saturating_sub(AI_TIMELINE_MAX_VISIBLE_ROWS);
+        let source_items = rows
             .into_iter()
-            .skip(hidden_row_count)
+            .skip(source_hidden_row_count)
             .map(TimelineSource::project)
-            .collect();
+            .collect::<Vec<_>>();
+        let markdown_row_ids = source_items
+            .iter()
+            .rev()
+            .filter(|item| item.kind == "agentMessage" && !item.streaming)
+            .take(AI_MARKDOWN_MAX_VISIBLE_MESSAGES)
+            .map(|item| item.row_id.clone())
+            .collect::<HashSet<_>>();
+        let mut projected_items = Vec::with_capacity(source_items.len());
+        for item in source_items {
+            if markdown_row_ids.contains(item.row_id.as_str()) {
+                let blocks = markdown_cache.project_completed_message(
+                    item.row_id.as_str(),
+                    item.last_sequence,
+                    item.text.as_str(),
+                );
+                if let Some(blocks) = blocks {
+                    projected_items.extend(expand_markdown_item(item, blocks));
+                } else {
+                    projected_items.push(item);
+                }
+            } else {
+                markdown_cache.remove(item.row_id.as_str());
+                projected_items.push(item);
+            }
+        }
+        markdown_cache.retain_visible(markdown_row_ids.iter().map(String::as_str));
+
+        let projected_hidden_row_count = projected_items
+            .len()
+            .saturating_sub(AI_TIMELINE_MAX_VISIBLE_ROWS);
+        let mut items = projected_items
+            .into_iter()
+            .skip(projected_hidden_row_count)
+            .collect::<Vec<_>>();
+        if let Some(first) = items.first_mut()
+            && !first.markdown_kind.is_empty()
+        {
+            first.markdown_first = true;
+        }
+        let hidden_row_count = source_hidden_row_count.saturating_add(projected_hidden_row_count);
+        let total_row_count = hidden_row_count.saturating_add(items.len());
 
         Self {
             items,
@@ -148,6 +210,42 @@ impl AiTimelineProjection {
             hidden_row_count: saturating_usize_to_i32(hidden_row_count),
         }
     }
+}
+
+fn expand_markdown_item(
+    item: AiTimelineItem,
+    blocks: Vec<AiMarkdownBlockProjection>,
+) -> Vec<AiTimelineItem> {
+    let block_count = blocks.len();
+    blocks
+        .into_iter()
+        .enumerate()
+        .map(|(index, block)| {
+            let first = index == 0;
+            let last = index + 1 == block_count;
+            AiTimelineItem {
+                row_id: format!("{}:markdown:{index}", item.row_id),
+                turn_id: item.turn_id.clone(),
+                kind: item.kind.clone(),
+                role: item.role.clone(),
+                title: item.title.clone(),
+                text: block.text,
+                markdown_kind: block.kind,
+                markdown_markup: block.markup,
+                markdown_language: block.language,
+                markdown_heading_level: block.heading_level,
+                markdown_first: first,
+                markdown_last: last,
+                command: String::new(),
+                cwd: String::new(),
+                status: String::new(),
+                streaming: false,
+                mono: false,
+                truncated: item.truncated && last,
+                last_sequence: item.last_sequence,
+            }
+        })
+        .collect()
 }
 
 fn timeline_item(item_key: &str, item: &hunk_codex::state::ItemSummary) -> AiTimelineItem {
@@ -170,6 +268,12 @@ fn timeline_item(item_key: &str, item: &hunk_codex::state::ItemSummary) -> AiTim
         role: item_role(item.kind.as_str()).to_owned(),
         title: bounded_text(item_title(item).as_str(), AI_TIMELINE_MAX_TITLE_BYTES).0,
         text,
+        markdown_kind: String::new(),
+        markdown_markup: String::new(),
+        markdown_language: String::new(),
+        markdown_heading_level: 0,
+        markdown_first: false,
+        markdown_last: false,
         command,
         cwd,
         status: item_status_label(item.status).to_owned(),
@@ -212,6 +316,12 @@ fn timeline_plan(turn_key: &str, plan: &hunk_codex::state::TurnPlanSummary) -> A
         role: "assistant".to_owned(),
         title: "Plan".to_owned(),
         text,
+        markdown_kind: String::new(),
+        markdown_markup: String::new(),
+        markdown_language: String::new(),
+        markdown_heading_level: 0,
+        markdown_first: false,
+        markdown_last: false,
         command: String::new(),
         cwd: String::new(),
         status: if streaming { "in progress" } else { "" }.to_owned(),

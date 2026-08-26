@@ -40,7 +40,7 @@ hunk-app = { path = "../hunk-app", default-features = false, features = ["ai", "
 hunk-browser = { path = "../hunk-browser" }
 hunk-browser-helper = { path = "../hunk-browser-helper", optional = true }
 hunk-codex = { path = "../hunk-codex" }
-hunk-domain = { path = "../hunk-domain", default-features = false, features = ["database"] }
+hunk-domain = { path = "../hunk-domain", default-features = false, features = ["database", "markdown-preview"] }
 hunk-git = { path = "../hunk-git" }
 hunk-terminal = { path = "../hunk-terminal" }
 hunk-updater = { path = "../hunk-updater" }

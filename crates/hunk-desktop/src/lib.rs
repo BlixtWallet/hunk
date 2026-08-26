@@ -3,6 +3,7 @@ mod ai_attachments;
 mod ai_bookmarks;
 mod ai_completions;
 mod ai_composer;
+mod ai_markdown;
 mod ai_models;
 mod ai_projects;
 mod ai_queue;
