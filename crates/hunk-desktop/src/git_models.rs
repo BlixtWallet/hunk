@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use hunk_git::git::{ChangedFile, LineStats};
+use hunk_git::git::{ChangedFile, LineStats, load_visible_repo_file_paths};
 use hunk_git::workspace::GitWorkspaceSnapshot;
 use qtbridge::{QListModel, QListModelBase, QModelItem, qobject};
 
@@ -26,6 +26,7 @@ pub struct GitSnapshotPayload {
     pub diff_files: Vec<GitFileItem>,
     pub diff_file_summaries: Vec<DiffFileSummary>,
     pub compare_catalog: DiffCompareSourceCatalog,
+    pub visible_file_paths: Vec<String>,
 }
 
 impl From<GitWorkspaceSnapshot> for GitSnapshotPayload {
@@ -34,6 +35,8 @@ impl From<GitWorkspaceSnapshot> for GitSnapshotPayload {
         let compare_catalog =
             DiffCompareSourceCatalog::load(snapshot.root.as_path(), snapshot.branches.as_slice())
                 .unwrap_or_default();
+        let visible_file_paths =
+            load_visible_repo_file_paths(snapshot.root.as_path()).unwrap_or_default();
         let repository_name = snapshot
             .root
             .file_name()
@@ -65,6 +68,7 @@ impl From<GitWorkspaceSnapshot> for GitSnapshotPayload {
             diff_files,
             diff_file_summaries,
             compare_catalog,
+            visible_file_paths,
         }
     }
 }

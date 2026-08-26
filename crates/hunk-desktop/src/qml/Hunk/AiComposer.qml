@@ -14,6 +14,9 @@ FocusScope {
     property bool queueWasBlocking: false
     property bool attachmentWasPending: false
     property bool restoreFocusAfterRequest: false
+    property var completionItems: []
+    property int completionSelectedIndex: 0
+    property string dismissedCompletionKey: ""
     signal requestFocusRequested
     readonly property alias editor: editor
     readonly property alias sendButton: sendButton
@@ -33,6 +36,7 @@ FocusScope {
     readonly property bool attachmentsAllowed: !attachmentStrip.hasAttachments
         || backend.aiModelSupportsImageInputs
     readonly property bool canSubmit: editable && hasPromptInput && attachmentsAllowed
+    readonly property string completionKey: editor.text + "\u0000" + editor.cursorPosition
 
     implicitHeight: 142 + attachmentStrip.implicitHeight
 
@@ -55,6 +59,54 @@ FocusScope {
         const entry = draftEntry(currentThreadId)
         entry.text = editor.text
         storeEntry(currentThreadId, entry)
+    }
+
+    function refreshCompletions() {
+        if (!editable || completionKey === dismissedCompletionKey
+                || typeof backend.ai_composer_completions !== "function") {
+            completionItems = []
+            completionSelectedIndex = 0
+            return
+        }
+        let parsed = []
+        try {
+            parsed = JSON.parse(backend.ai_composer_completions(
+                editor.text, editor.cursorPosition))
+        } catch (error) {
+            parsed = []
+        }
+        completionItems = Array.isArray(parsed) ? parsed : []
+        completionSelectedIndex = Math.min(
+            completionSelectedIndex,
+            Math.max(0, completionItems.length - 1)
+        )
+    }
+
+    function moveCompletionSelection(delta) {
+        if (completionItems.length === 0)
+            return
+        completionSelectedIndex = (completionSelectedIndex + delta
+            + completionItems.length) % completionItems.length
+    }
+
+    function acceptCompletion(index) {
+        if (index < 0 || index >= completionItems.length)
+            return false
+        const item = completionItems[index]
+        if (item.disabled)
+            return true
+        const nextPrompt = backend.accept_ai_composer_completion(
+            editor.text,
+            editor.cursorPosition,
+            item.kind,
+            item.value
+        )
+        completionItems = []
+        dismissedCompletionKey = ""
+        editor.text = nextPrompt
+        editor.cursorPosition = editor.text.length
+        editor.forceActiveFocus()
+        return true
     }
 
     function mergedPrompt(existing, recovered) {
@@ -241,6 +293,30 @@ FocusScope {
         }
     }
 
+    AiComposerCompletionMenu {
+        id: completionMenu
+        objectName: "aiComposerCompletionMenu"
+        z: 20
+        anchors.left: parent.left
+        anchors.bottom: parent.top
+        anchors.leftMargin: 20
+        anchors.bottomMargin: 6
+        width: Math.min(540, parent.width - 40)
+        height: implicitHeight
+        items: root.completionItems
+        selectedIndex: root.completionSelectedIndex
+        onHovered: index => root.completionSelectedIndex = index
+        onAccepted: (kind, value) => {
+            for (let index = 0; index < root.completionItems.length; ++index) {
+                const item = root.completionItems[index]
+                if (item.kind === kind && item.value === value) {
+                    root.acceptCompletion(index)
+                    return
+                }
+            }
+        }
+    }
+
     Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
@@ -318,7 +394,11 @@ FocusScope {
                             && !root.backend.aiThreadActionPending)
                         root.restoreFocusAfterRequest = false
                 }
-                onTextChanged: root.saveCurrentDraft()
+                onTextChanged: {
+                    root.saveCurrentDraft()
+                    root.refreshCompletions()
+                }
+                onCursorPositionChanged: root.refreshCompletions()
                 onCursorRectangleChanged: {
                     if (cursorRectangle.y < editorViewport.contentY)
                         editorViewport.contentY = Math.max(0, cursorRectangle.y)
@@ -329,6 +409,31 @@ FocusScope {
                 }
 
                 Keys.onPressed: event => {
+                    if (root.completionItems.length > 0) {
+                        if (event.key === Qt.Key_Up) {
+                            root.moveCompletionSelection(-1)
+                            event.accepted = true
+                            return
+                        }
+                        if (event.key === Qt.Key_Down) {
+                            root.moveCompletionSelection(1)
+                            event.accepted = true
+                            return
+                        }
+                        if (event.key === Qt.Key_Escape) {
+                            root.dismissedCompletionKey = root.completionKey
+                            root.completionItems = []
+                            event.accepted = true
+                            return
+                        }
+                        if (event.key === Qt.Key_Tab
+                                || event.key === Qt.Key_Return
+                                || event.key === Qt.Key_Enter) {
+                            root.acceptCompletion(root.completionSelectedIndex)
+                            event.accepted = true
+                            return
+                        }
+                    }
                     if (event.key === Qt.Key_Tab
                             && event.modifiers === Qt.NoModifier
                             && root.backend.aiTurnRunning) {
@@ -425,10 +530,20 @@ FocusScope {
                 onClicked: attachmentStrip.openPicker()
             }
 
+            AiSessionControls {
+                id: footerSessionControls
+                objectName: "aiComposerSessionControls"
+                backend: root.backend
+                popupAbove: true
+                visible: footer.width >= 500
+            }
+
             Text {
                 id: footerStatus
                 objectName: "aiComposerFooterStatus"
                 width: Math.max(0, footer.width - attachButton.width
+                    - (footerSessionControls.visible
+                        ? footerSessionControls.width + footer.spacing : 0)
                     - (footerHint.visible ? footerHint.implicitWidth + footer.spacing * 2
                         : footer.spacing))
                 text: root.backend.aiPromptPending ? "SENDING"
@@ -487,6 +602,7 @@ FocusScope {
         queueWasBlocking = queueBlocking
         attachmentWasPending = backend.aiAttachmentPending
         activateThread(backend.aiActiveThreadId)
+        refreshCompletions()
         if (editable && !submitting)
             editor.forceActiveFocus()
     }

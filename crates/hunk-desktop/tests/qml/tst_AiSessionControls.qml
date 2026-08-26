@@ -198,6 +198,7 @@ Item {
             verify(!!controls, "Component exists");
             let popup = openSettings(controls);
             tryCompare(popup, "visible", true);
+            verify(popup.height > 240, "Popup content has a visible height");
             compare(controls.summary, qsTr("GPT Test · Model default"));
             let percentLabel = findChild(controls, "aiContextPercentLabel");
             let tokenSummary = findChild(controls, "aiContextTokenSummary");

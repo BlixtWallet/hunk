@@ -136,10 +136,6 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
 
-            AiSessionControls {
-                backend: root.backend
-            }
-
             ActionButton {
                 id: forkAction
                 label: "Fork"

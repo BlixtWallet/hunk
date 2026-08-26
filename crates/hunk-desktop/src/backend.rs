@@ -11,6 +11,9 @@ use crate::ai_attachments::{
     complete_ai_attachment_add, queue_ai_attachments, remove_ai_attachment,
 };
 use crate::ai_bookmarks::{complete_ai_bookmark_persist, queue_ai_toggle_thread_bookmark};
+use crate::ai_completions::{
+    SlashCommandAvailability, composer_completions_json, prompt_after_completion, slash_command,
+};
 use crate::ai_session::{
     complete_ai_session_persist, queue_ai_select_collaboration_mode, queue_ai_select_effort,
     queue_ai_select_model, queue_ai_select_service_tier, queue_ai_set_mad_max_mode,
@@ -1466,10 +1469,103 @@ impl Backend {
     }
 
     #[qslot]
+    fn ai_composer_completions(&self, prompt: String, cursor_position: i32) -> String {
+        composer_completions_json(
+            prompt.as_str(),
+            usize::try_from(cursor_position).unwrap_or_default(),
+            self.ai_turn_running,
+            self.ai_completion_paths.as_slice(),
+        )
+    }
+
+    #[qslot]
+    fn accept_ai_composer_completion(
+        &mut self,
+        prompt: String,
+        cursor_position: i32,
+        kind: String,
+        value: String,
+    ) -> String {
+        let Some(next_prompt) = prompt_after_completion(
+            prompt.as_str(),
+            usize::try_from(cursor_position).unwrap_or_default(),
+            kind.as_str(),
+            value.as_str(),
+        ) else {
+            return prompt;
+        };
+        if kind == "command" && !self.execute_ai_composer_command(value.as_str()) {
+            return prompt;
+        }
+        next_prompt
+    }
+
+    #[qslot]
     fn complete_ai_session_persist(&mut self, epoch: i32) {
         complete_ai_session_persist(self, epoch);
         self.ai_session_state_changed();
         self.ai_state_changed();
+    }
+
+    fn execute_ai_composer_command(&mut self, name: &str) -> bool {
+        let Some(command) = slash_command(name) else {
+            return false;
+        };
+        if self.ai_turn_running && command.availability == SlashCommandAvailability::IdleOnly {
+            return false;
+        }
+
+        match name {
+            "code" => self.select_ai_collaboration_mode("code".to_owned()),
+            "plan" => self.select_ai_collaboration_mode("plan".to_owned()),
+            "review" => {
+                self.select_workspace(Workspace::Diff.as_str().to_owned());
+                true
+            }
+            "fast-mode-on" => {
+                let index = self.ai_service_tiers.borrow().index_of("fast");
+                self.select_ai_service_tier(index)
+            }
+            "fast-mode-off" => {
+                let index = self.ai_service_tiers.borrow().index_of("standard");
+                self.select_ai_service_tier(index)
+            }
+            "status" => {
+                self.ai_status_message = if self.ai_context_available_value() {
+                    format!(
+                        "{} · {} · {} context used",
+                        self.ai_selected_model_label_value(),
+                        self.ai_selected_effort_label_value(),
+                        self.ai_context_token_summary_value(),
+                    )
+                } else {
+                    format!(
+                        "{} · {} · no context usage yet",
+                        self.ai_selected_model_label_value(),
+                        self.ai_selected_effort_label_value(),
+                    )
+                };
+                self.ai_state_changed();
+                true
+            }
+            "login" => {
+                self.ensure_ai_runtime_started();
+                self.send_ai_worker_command(
+                    AiWorkerCommand::StartChatgptLogin,
+                    "Starting ChatGPT login…",
+                );
+                true
+            }
+            "logout" => {
+                self.ensure_ai_runtime_started();
+                self.send_ai_worker_command(
+                    AiWorkerCommand::LogoutAccount,
+                    "Logging out of ChatGPT…",
+                );
+                true
+            }
+            _ => false,
+        }
     }
 
     #[qslot]

@@ -1,5 +1,6 @@
 mod ai_attachments;
 mod ai_bookmarks;
+mod ai_completions;
 mod ai_composer;
 mod ai_models;
 mod ai_queue;
@@ -39,6 +40,10 @@ use qtbridge::QApp;
 use qtbridge::include_bytes_qml;
 use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 
+pub use ai_completions::{
+    ComposerCompletion, SlashCommand, SlashCommandAvailability, composer_completions,
+    prompt_after_completion, slash_command,
+};
 pub use ai_composer::AiPromptReceipt;
 pub use ai_models::{AiThreadCatalogProjection, AiThreadItem, AiThreadListModel};
 pub use ai_queue::{

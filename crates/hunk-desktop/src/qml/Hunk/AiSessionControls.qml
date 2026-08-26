@@ -7,6 +7,7 @@ FocusScope {
     id: root
 
     required property var backend
+    property bool popupAbove: false
     readonly property string summary: backend.aiSelectedModelLabel + " · " + backend.aiSelectedEffortLabel
 
     implicitWidth: actionRow.implicitWidth
@@ -68,12 +69,12 @@ FocusScope {
         id: settingsPopup
         objectName: "aiSessionSettingsPopup"
         x: root.width - width
-        y: root.height + 7
+        y: root.popupAbove ? -height - 7 : root.height + 7
         width: 374
+        height: settingsContent.implicitHeight + topPadding + bottomPadding
         padding: 14
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        contentItem: settingsLoader
         background: Rectangle {
             radius: Theme.radius
             color: Theme.chrome
@@ -81,18 +82,10 @@ FocusScope {
             border.color: Theme.borderStrong
         }
 
-        Loader {
-            id: settingsLoader
-            active: settingsPopup.visible
-            sourceComponent: settingsContentComponent
-        }
-
-        Component {
-            id: settingsContentComponent
-
-            Column {
-                width: settingsPopup.availableWidth
-                spacing: 10
+        contentItem: Column {
+            id: settingsContent
+            width: settingsPopup.availableWidth
+            spacing: 10
 
                 Row {
                     width: parent.width
@@ -378,7 +371,6 @@ FocusScope {
                         }
                     }
                 }
-            }
         }
     }
 }

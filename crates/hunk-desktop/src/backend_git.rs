@@ -15,6 +15,7 @@ impl Backend {
         self.git_repository_name = payload.repository_name;
         self.git_branch_name = payload.branch_name;
         self.git_changed_file_count = payload.changed_file_count;
+        self.ai_completion_paths = payload.visible_file_paths;
         self.git_ready = true;
         self.git_error.clear();
         if comment_scope_changed {

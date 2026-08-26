@@ -2,6 +2,7 @@ module Hunk
 singleton Theme 1.0 Theme.qml
 ActionButton 1.0 ActionButton.qml
 AiComposer 1.0 AiComposer.qml
+AiComposerCompletionMenu 1.0 AiComposerCompletionMenu.qml
 AiAttachmentStrip 1.0 AiAttachmentStrip.qml
 TerminalDrawer 1.0 TerminalDrawer.qml
 TerminalScreen 1.0 TerminalScreen.qml
