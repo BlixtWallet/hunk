@@ -1610,6 +1610,94 @@ TestCase {
         compare(shell.sidebarItem.fileListView.count, 2)
         verify(shell.sidebarItem.fileListView.reuseItems)
     }
+    function test_diffSplitDividerBalancesAndKeepsBoundedPaneWidths() {
+        openDiffWorkspace()
+        tryCompare(shell.workspaceItem.commentsInspector, "width", 0)
+        const viewport = shell.workspaceItem.diffViewport
+        const divider = findChild(shell.workspaceItem, "diffSplitHandle")
+        const splitPointer = findChild(shell.workspaceItem,
+            "diffSplitPointer")
+        verify(!!viewport, "Object exists")
+        verify(!!divider, "Object exists")
+        verify(!!splitPointer, "Object exists")
+        compare(splitPointer.hoverEnabled, true)
+        verify(divider.width > 0)
+        verify(divider.height > 0)
+        compare(Math.round(shell.workspaceItem.splitPosition),
+            Math.round(viewport.width / 2))
+        compare(divider.activeFocusOnTab, true)
+        compare(divider.Accessible.focusable, true)
+
+        shell.workspaceItem.diffListView.forceLayout()
+        const changedRow = shell.workspaceItem.diffListView.itemAtIndex(1)
+        verify(!!changedRow, "Object exists")
+        const beforeCell = findChild(changedRow, "diffBeforeCell")
+        const afterCell = findChild(changedRow, "diffAfterCell")
+        const beforeContent = findChild(changedRow, "diffBeforeContent")
+        const afterContent = findChild(changedRow, "diffAfterContent")
+        verify(!!beforeCell, "Object exists")
+        verify(!!afterCell, "Object exists")
+        verify(!!beforeContent, "Object exists")
+        verify(!!afterContent, "Object exists")
+        compare(beforeCell.width, shell.workspaceItem.splitPosition)
+        compare(afterCell.width,
+            viewport.width - shell.workspaceItem.splitPosition)
+
+        const initialPosition = shell.workspaceItem.splitPosition
+        shell.workspaceItem.setSplitPosition(initialPosition + 80)
+        compare(shell.workspaceItem.splitPosition, initialPosition + 80)
+        compare(beforeCell.width, shell.workspaceItem.splitPosition)
+        compare(afterCell.width,
+            viewport.width - shell.workspaceItem.splitPosition)
+
+        shell.workspaceItem.setSplitPosition(0)
+        compare(shell.workspaceItem.splitPosition,
+            shell.workspaceItem.splitMinimumPaneWidth)
+        shell.workspaceItem.setSplitPosition(viewport.width)
+        compare(shell.workspaceItem.splitPosition,
+            viewport.width - shell.workspaceItem.splitMinimumPaneWidth)
+
+        shell.workspaceItem.setSplitPosition(viewport.width / 2)
+        const scrollOffset = Math.min(120,
+            viewport.contentWidth - viewport.width)
+        verify(scrollOffset > 0)
+        viewport.contentX = scrollOffset
+        compare(Math.round(beforeCell.mapToItem(viewport, 0, 0).x), 0)
+        compare(Math.round(afterCell.mapToItem(viewport, 0, 0).x),
+            Math.round(shell.workspaceItem.splitPosition))
+
+        divider.forceActiveFocus()
+        tryCompare(divider, "activeFocus", true)
+        const keyboardPosition = shell.workspaceItem.splitPosition
+        keyClick(Qt.Key_Right)
+        compare(Math.round(shell.workspaceItem.splitPosition),
+            Math.round(keyboardPosition + 16))
+
+        shell.workspaceItem.setSplitPosition(
+            shell.workspaceItem.splitMinimumPaneWidth)
+        viewport.contentX = viewport.contentWidth - viewport.width
+        compare(Math.round(beforeCell.mapToItem(viewport, 0, 0).x), 0)
+        compare(Math.round(afterCell.mapToItem(viewport, 0, 0).x),
+            Math.round(shell.workspaceItem.splitPosition))
+        compare(Math.round(beforeContent.mapToItem(viewport,
+            beforeContent.width, 0).x),
+            Math.round(shell.workspaceItem.splitMinimumPaneWidth))
+        compare(Math.round(afterContent.mapToItem(viewport,
+            afterContent.width, 0).x),
+            Math.round(shell.workspaceItem.splitPosition
+                + shell.workspaceItem.splitMinimumPaneWidth))
+
+        divider.forceActiveFocus()
+        tryCompare(divider, "activeFocus", true)
+        shell.workspaceItem.setDiffMode("unified")
+        compare(divider.visible, false)
+        compare(divider.activeFocus, false)
+        const unifiedPosition = shell.workspaceItem.splitPosition
+        keyClick(Qt.Key_Right)
+        compare(shell.workspaceItem.splitPosition, unifiedPosition)
+        shell.workspaceItem.setDiffMode("split")
+        shell.workspaceItem.setSplitPosition(viewport.width / 2)
+    }
     function test_diffFileSelectionUsesBackendCommand() {
         openDiffWorkspace()
         shell.sidebarItem.fileListView.forceLayout()

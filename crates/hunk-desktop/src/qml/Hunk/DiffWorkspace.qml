@@ -8,6 +8,7 @@ Item {
     required property var backend
     focus: true
     readonly property alias diffListView: diffList
+    readonly property alias diffViewport: horizontalViewport
     readonly property alias searchInput: searchInput
     readonly property alias commentsInspector: commentsInspector
     readonly property alias leftComparePicker: leftComparePicker
@@ -21,7 +22,17 @@ Item {
         ? -1 : Math.min(selectionAnchorRow, selectionHeadRow)
     readonly property int selectionEnd: selectionAnchorRow < 0 || selectionHeadRow < 0
         ? -1 : Math.max(selectionAnchorRow, selectionHeadRow)
+    readonly property real splitMinimumPaneWidth: Math.min(240,
+        horizontalViewport.width / 2)
+    readonly property real splitPosition: Math.max(splitMinimumPaneWidth,
+        Math.min(horizontalViewport.width - splitMinimumPaneWidth,
+            horizontalViewport.width * splitRatio))
+    readonly property real splitPaneContentWidth: 1440
+    readonly property real splitScrollExtent: Math.max(0,
+        splitPaneContentWidth - Math.min(splitPosition,
+            horizontalViewport.width - splitPosition))
     property bool unifiedMode: false
+    property real splitRatio: 0.5
     property bool commentsInspectorOpen: false
     property int activeCommentRow: -1
     property int lastCommentTargetRevision: 0
@@ -146,6 +157,16 @@ Item {
 
     function setDiffMode(mode) {
         unifiedMode = mode === "unified"
+        if (unifiedMode && splitHandle.activeFocus)
+            horizontalViewport.forceActiveFocus()
+    }
+
+    function setSplitPosition(position) {
+        if (horizontalViewport.width <= 0)
+            return
+        const boundedPosition = Math.max(splitMinimumPaneWidth,
+            Math.min(horizontalViewport.width - splitMinimumPaneWidth, position))
+        splitRatio = boundedPosition / horizontalViewport.width
     }
 
     function positionSearchTarget() {
@@ -587,8 +608,7 @@ Item {
         }
 
         Text {
-            anchors.left: parent.horizontalCenter
-            anchors.leftMargin: 58
+            x: root.splitPosition + 58
             anchors.verticalCenter: parent.verticalCenter
             text: "AFTER"
             visible: !root.unifiedMode
@@ -597,14 +617,6 @@ Item {
             font.pixelSize: 9
             font.weight: Font.DemiBold
             font.letterSpacing: 0.8
-        }
-
-        Rectangle {
-            anchors.left: parent.horizontalCenter
-            width: 1
-            height: parent.height
-            color: Theme.borderStrong
-            visible: !root.unifiedMode
         }
 
         Text {
@@ -634,7 +646,9 @@ Item {
         anchors.right: commentsInspector.left
         anchors.top: columnHeader.bottom
         anchors.bottom: parent.bottom
-        contentWidth: Math.max(width, 1440)
+        contentWidth: root.unifiedMode
+            ? Math.max(width, root.splitPaneContentWidth)
+            : width + root.splitScrollExtent
         contentHeight: height
         flickableDirection: Flickable.HorizontalFlick
         boundsBehavior: Flickable.StopAtBounds
@@ -720,93 +734,110 @@ Item {
                     anchors.fill: parent
                     visible: diffRow.row_kind === "code" && !root.unifiedMode
 
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: parent.width / 2
-                        color: root.cellColor(diffRow.left_kind)
-                    }
-
-                    Rectangle {
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: parent.width / 2
-                        color: root.cellColor(diffRow.right_kind)
-                    }
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 38
-                        text: diffRow.left_line > 0 ? diffRow.left_line : ""
-                        color: Theme.faint
-                        horizontalAlignment: Text.AlignRight
-                        font.family: Theme.monoFont
-                        font.pixelSize: 9
-                    }
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 52
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: diffRow.left_kind === "removed" ? "−" : " "
-                        color: root.markerColor(diffRow.left_kind)
-                        font.family: Theme.monoFont
-                        font.pixelSize: 11
-                    }
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 68
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: root.renderMarkup(diffRow.left_markup, diffRow.left_text)
-                        color: Theme.foreground
-                        textFormat: Text.StyledText
-                        font.family: Theme.monoFont
-                        font.pixelSize: 11
-                    }
-
-                    Text {
-                        anchors.left: parent.horizontalCenter
-                        anchors.leftMargin: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 38
-                        text: diffRow.right_line > 0 ? diffRow.right_line : ""
-                        color: Theme.faint
-                        horizontalAlignment: Text.AlignRight
-                        font.family: Theme.monoFont
-                        font.pixelSize: 9
-                    }
-
-                    Text {
-                        anchors.left: parent.horizontalCenter
-                        anchors.leftMargin: 52
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: diffRow.right_kind === "added" ? "+" : " "
-                        color: root.markerColor(diffRow.right_kind)
-                        font.family: Theme.monoFont
-                        font.pixelSize: 11
-                    }
-
-                    Text {
-                        anchors.left: parent.horizontalCenter
-                        anchors.leftMargin: 68
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: root.renderMarkup(diffRow.right_markup, diffRow.right_text)
-                        color: Theme.foreground
-                        textFormat: Text.StyledText
-                        font.family: Theme.monoFont
-                        font.pixelSize: 11
-                    }
-
-                    Rectangle {
-                        anchors.left: parent.horizontalCenter
-                        width: 1
+                    Item {
+                        objectName: "diffBeforeCell"
+                        x: horizontalViewport.contentX
+                        width: root.splitPosition
                         height: parent.height
-                        color: Theme.borderStrong
+                        clip: true
+
+                        Rectangle {
+                            anchors.fill: parent
+                            color: root.cellColor(diffRow.left_kind)
+                        }
+
+                        Item {
+                            objectName: "diffBeforeContent"
+                            x: -horizontalViewport.contentX
+                            width: root.splitPaneContentWidth
+                            height: parent.height
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 38
+                                text: diffRow.left_line > 0 ? diffRow.left_line : ""
+                                color: Theme.faint
+                                horizontalAlignment: Text.AlignRight
+                                font.family: Theme.monoFont
+                                font.pixelSize: 9
+                            }
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 52
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: diffRow.left_kind === "removed" ? "−" : " "
+                                color: root.markerColor(diffRow.left_kind)
+                                font.family: Theme.monoFont
+                                font.pixelSize: 11
+                            }
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 68
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.renderMarkup(diffRow.left_markup, diffRow.left_text)
+                                color: Theme.foreground
+                                textFormat: Text.StyledText
+                                font.family: Theme.monoFont
+                                font.pixelSize: 11
+                            }
+                        }
+                    }
+
+                    Item {
+                        objectName: "diffAfterCell"
+                        x: horizontalViewport.contentX + root.splitPosition
+                        width: horizontalViewport.width - root.splitPosition
+                        height: parent.height
+                        clip: true
+
+                        Rectangle {
+                            anchors.fill: parent
+                            color: root.cellColor(diffRow.right_kind)
+                        }
+
+                        Item {
+                            objectName: "diffAfterContent"
+                            x: -horizontalViewport.contentX
+                            width: root.splitPaneContentWidth
+                            height: parent.height
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 38
+                                text: diffRow.right_line > 0 ? diffRow.right_line : ""
+                                color: Theme.faint
+                                horizontalAlignment: Text.AlignRight
+                                font.family: Theme.monoFont
+                                font.pixelSize: 9
+                            }
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 52
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: diffRow.right_kind === "added" ? "+" : " "
+                                color: root.markerColor(diffRow.right_kind)
+                                font.family: Theme.monoFont
+                                font.pixelSize: 11
+                            }
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 68
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.renderMarkup(diffRow.right_markup, diffRow.right_text)
+                                color: Theme.foreground
+                                textFormat: Text.StyledText
+                                font.family: Theme.monoFont
+                                font.pixelSize: 11
+                            }
+                        }
                     }
                 }
 
@@ -904,6 +935,68 @@ Item {
                         (point.modifiers & Qt.ShiftModifier) !== 0
                     )
                 }
+            }
+        }
+    }
+
+    Item {
+        id: splitHandle
+        objectName: "diffSplitHandle"
+        x: horizontalViewport.x + root.splitPosition - width / 2
+        anchors.top: columnHeader.top
+        anchors.bottom: parent.bottom
+        z: 20
+        width: 9
+        visible: root.backend.diffSelectedPath.length > 0 && !root.unifiedMode
+        activeFocusOnTab: true
+        Accessible.role: Accessible.Splitter
+        Accessible.name: qsTr("Resize before and after diff panes")
+        Accessible.description: qsTr("Use Left and Right Arrow keys to resize")
+        Accessible.focusable: true
+
+        Keys.onLeftPressed: event => {
+            root.setSplitPosition(root.splitPosition - 16)
+            event.accepted = true
+        }
+        Keys.onRightPressed: event => {
+            root.setSplitPosition(root.splitPosition + 16)
+            event.accepted = true
+        }
+
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: splitPointer.containsMouse || splitPointer.pressed
+                || splitHandle.activeFocus ? 2 : 1
+            height: parent.height
+            color: splitPointer.containsMouse || splitPointer.pressed
+                || splitHandle.activeFocus
+                ? Theme.accentStrong : Theme.borderStrong
+        }
+
+        MouseArea {
+            id: splitPointer
+            property real previousRootX: 0
+
+            objectName: "diffSplitPointer"
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton
+            hoverEnabled: true
+            cursorShape: Qt.SplitHCursor
+
+            onPressed: mouse => {
+                previousRootX = splitHandle.mapToItem(
+                    root, mouse.x, mouse.y).x
+                splitHandle.forceActiveFocus()
+                mouse.accepted = true
+            }
+            onPositionChanged: mouse => {
+                if (!pressed)
+                    return
+                const currentRootX = splitHandle.mapToItem(
+                    root, mouse.x, mouse.y).x
+                root.setSplitPosition(root.splitPosition
+                    + currentRootX - previousRootX)
+                previousRootX = currentRootX
             }
         }
     }
