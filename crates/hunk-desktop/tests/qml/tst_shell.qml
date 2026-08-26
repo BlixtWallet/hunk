@@ -62,6 +62,11 @@ TestCase {
         property bool failNextDiffComment: false
         property string gitRoot: "/Volumes/hulk/dev/projects/hunk"
         property string gitRepositoryName: "hunk"
+        property string aiProjectCatalogJson: JSON.stringify([
+            { project_path: "/Users/test/Documents/glab", name: "glab" },
+            { project_path: "/Users/test/Documents/lightning-service-rust", name: "lightning-service-rust" },
+            { project_path: "/Volumes/hulk/dev/projects/hunk", name: "hunk" }
+        ])
         property string gitBranchName: "migration/05-qt-git"
         property int gitChangedFileCount: 3
         property var terminalTabs: terminalTabsModel; property var terminalRows: terminalRowsModel
@@ -354,7 +359,11 @@ TestCase {
                 .map(comment => comment.clipboard_text)
                 .join("\n\n---\n\n")
         }
-        function select_git_root(root) { record("select_root", root) }
+        function select_git_root(root) {
+            record("select_root", root)
+            gitRoot = root
+            gitRepositoryName = root.slice(root.lastIndexOf("/") + 1)
+        }
         function set_terminal_open(open) { terminalOpen = open; if (open) { terminalFocusRevision += 1; terminalFocusChanged() } terminalStateChanged(); return true }
         function new_terminal_tab() { return true } function close_terminal_tab(tabId) { return tabId > 0 }
         function select_terminal_tab(tabId) { terminalActiveTabId = tabId; terminalStateChanged(); return true } function move_terminal_tab(direction) { return direction !== 0 }
@@ -924,6 +933,8 @@ TestCase {
         fakeBackend.diffCommentRecords = []
         fakeBackend.failNextDiffComment = false
         fakeBackend.gitChangedFileCount = 3
+        fakeBackend.gitRoot = "/Volumes/hulk/dev/projects/hunk"
+        fakeBackend.gitRepositoryName = "hunk"
         fakeBackend.diffCompareLeftLabel = "migration/05-qt-git"
         fakeBackend.diffCompareRightLabel = "Primary Checkout"
         fakeBackend.diffCompareLeftIndex = 1
@@ -1067,6 +1078,30 @@ TestCase {
         compare(fakeBackend.lastCommand, "select_ai_thread")
         compare(fakeBackend.lastArgument, "thread-review")
         compare(fakeBackend.aiActiveThreadId, "thread-review")
+    }
+    function test_aiProjectCatalogRoutesRememberedProjectSelection() {
+        fakeBackend.aiTurnRunning = false
+        openAiWorkspace()
+        const projectList = shell.sidebarItem.projectListView
+        projectList.forceLayout()
+        compare(projectList.count, 3)
+        compare(projectList.itemAtIndex(2).active, true)
+
+        shell.sidebarItem.selectProject("/Users/test/Documents/glab")
+
+        compare(fakeBackend.lastCommand, "select_root")
+        compare(fakeBackend.lastArgument, "/Users/test/Documents/glab")
+        compare(fakeBackend.gitRoot, "/Users/test/Documents/glab")
+        tryCompare(projectList.itemAtIndex(0), "active", true)
+
+        const lightningRow = projectList.itemAtIndex(1)
+        verify(lightningRow.activeFocusOnTab)
+        lightningRow.forceActiveFocus()
+        keyClick(Qt.Key_Return)
+        compare(fakeBackend.lastArgument,
+            "/Users/test/Documents/lightning-service-rust")
+        compare(fakeBackend.gitRoot,
+            "/Users/test/Documents/lightning-service-rust")
     }
     function test_aiBookmarksReorderAndRemainActionable() {
         openAiWorkspace()

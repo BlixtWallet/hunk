@@ -17,6 +17,7 @@ use crate::ai_attachments::{
 };
 use crate::ai_bookmarks::{AiBookmarkPersistResult, AiBookmarkTasks};
 use crate::ai_models::AiThreadListModel;
+use crate::ai_projects::ai_project_catalog_json;
 use crate::ai_requests::AiPendingRequestProjection;
 use crate::ai_runtime::AiRuntimeSlot;
 use crate::ai_session::{
@@ -163,6 +164,7 @@ pub struct Backend {
     pub(super) browser: Rc<RefCell<BrowserBridge>>,
     pub(super) updates: Rc<RefCell<UpdateBridge>>,
     pub(super) ai_threads: Rc<RefCell<AiThreadListModel>>,
+    pub(super) ai_project_catalog_json: String,
     pub(super) ai_timeline: Rc<RefCell<AiTimelineListModel>>,
     pub(super) ai_attachments: Rc<RefCell<AiAttachmentListModel>>,
     pub(super) ai_attachment_drafts: AiAttachmentDrafts,
@@ -228,6 +230,8 @@ impl Default for Backend {
         let ai_bookmarked_thread_ids = initial.ai_bookmarked_thread_ids;
         let ai_session_preferences = initial.ai_session_preferences;
         let workspace_key = git_root.to_string_lossy().to_string();
+        let ai_project_catalog_json =
+            ai_project_catalog_json(&initial.workspace_project_paths, git_root.as_path());
         let initial_session = ai_session_preferences.resolved_session(None, Some(&workspace_key));
         let ai_selected_collaboration_mode = match initial_session.collaboration_mode {
             AiCollaborationModeSelection::Default => "code",
@@ -332,6 +336,7 @@ impl Default for Backend {
             browser: BrowserBridge::default_with_attached_qobject(),
             updates: UpdateBridge::default_with_attached_qobject(),
             ai_threads: AiThreadListModel::default_with_attached_qobject(),
+            ai_project_catalog_json,
             ai_timeline: AiTimelineListModel::default_with_attached_qobject(),
             ai_attachments: AiAttachmentListModel::default_with_attached_qobject(),
             ai_attachment_drafts: AiAttachmentDrafts::default(),
@@ -394,6 +399,7 @@ impl Default for Backend {
 
 struct InitialQtState {
     git_root: PathBuf,
+    workspace_project_paths: Vec<PathBuf>,
     ai_bookmarked_thread_ids: BTreeSet<String>,
     ai_session_preferences: AiSessionPreferences,
 }
@@ -410,19 +416,21 @@ fn initial_qt_state() -> InitialQtState {
         .unwrap_or_else(|| PathBuf::from("."));
     InitialQtState {
         git_root,
+        workspace_project_paths: state.workspace_project_paths.clone(),
         ai_bookmarked_thread_ids: state.ai_bookmarked_thread_ids.clone(),
         ai_session_preferences: AiSessionPreferences::from_state(&state),
     }
 }
 
-pub(super) fn persist_active_project(root: PathBuf) -> anyhow::Result<()> {
+pub(super) fn persist_active_project(root: PathBuf) -> anyhow::Result<Vec<PathBuf>> {
     let _guard = app_state_write_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let store = AppStateStore::new()?;
     let mut state = store.load_or_default()?;
     state.activate_workspace_project(root);
-    store.save(&state)
+    store.save(&state)?;
+    Ok(state.workspace_project_paths)
 }
 
 pub(super) fn load_review_compare_selection(

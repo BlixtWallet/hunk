@@ -11,6 +11,14 @@ Item {
     property string pendingArchiveTitle: ""
     property bool archiveConfirmationVisible: false
     property Item repositoryPreviousFocusItem: null
+    readonly property var projectCatalog: {
+        try {
+            return JSON.parse(backend.aiProjectCatalogJson)
+        } catch (error) {
+            return []
+        }
+    }
+    readonly property alias projectListView: projectList
     readonly property alias threadListView: threadList
     readonly property alias archiveDialog: archiveConfirmation
     readonly property alias repositoryDialog: repositoryDialog
@@ -30,6 +38,12 @@ Item {
     function selectThread(threadId) {
         if (threadId.length > 0 && threadId !== backend.aiActiveThreadId)
             backend.select_ai_thread(threadId)
+    }
+
+    function selectProject(projectPath) {
+        if (projectPath.length > 0 && projectPath !== backend.gitRoot
+                && !backend.gitLoading && !backend.aiTurnRunning && !commandPending)
+            backend.select_git_root(projectPath)
     }
 
     function refreshThreads() {
@@ -92,7 +106,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: 108
+        height: 48
 
         Text {
             anchors.left: parent.left
@@ -117,7 +131,8 @@ Item {
             ActionButton {
                 label: "Open"
                 compact: true
-                enabled: !root.backend.aiLoading && !root.commandPending
+                enabled: !root.backend.aiLoading && !root.backend.aiTurnRunning
+                    && !root.commandPending
                 onClicked: root.openRepository()
             }
 
@@ -138,19 +153,152 @@ Item {
             }
         }
 
+        Rectangle {
+            anchors.bottom: parent.bottom
+            width: parent.width
+            height: 1
+            color: Theme.border
+        }
+    }
+
+    ListView {
+        id: projectList
+        objectName: "aiProjectList"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: catalogHeader.bottom
+        height: Math.min(contentHeight, 160)
+        clip: true
+        model: root.projectCatalog
+        boundsBehavior: Flickable.StopAtBounds
+        reuseItems: true
+        cacheBuffer: 160
+
+        delegate: Rectangle {
+            id: projectRow
+
+            required property string project_path
+            required property string name
+            readonly property bool active: project_path === root.backend.gitRoot
+
+            width: projectList.width
+            height: 40
+            color: active ? Theme.selected
+                : (projectHover.hovered ? Theme.hover : Theme.transparent)
+                                activeFocusOnTab: true
+            Accessible.role: Accessible.ListItem
+            Accessible.name: active ? qsTr("%1, active project").arg(name) : name
+            Accessible.onPressAction: {
+                if (projectPointer.enabled)
+                    root.selectProject(projectRow.project_path)
+            }
+
+            Keys.onReturnPressed: event => {
+                root.selectProject(projectRow.project_path)
+                event.accepted = true
+            }
+            Keys.onEnterPressed: event => {
+                root.selectProject(projectRow.project_path)
+                event.accepted = true
+            }
+            Keys.onSpacePressed: event => {
+                root.selectProject(projectRow.project_path)
+                event.accepted = true
+            }
+
+            HoverHandler {
+                id: projectHover
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                width: 2
+                height: 24
+                color: projectRow.active ? Theme.accentStrong : Theme.transparent
+            }
+
+            Column {
+                anchors.left: parent.left
+                anchors.right: projectState.left
+                anchors.leftMargin: 16
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 2
+
+                Text {
+                    width: parent.width
+                    text: projectRow.name
+                    textFormat: Text.PlainText
+                    color: projectRow.active ? Theme.foreground : Theme.muted
+                    elide: Text.ElideRight
+                    font.family: Theme.uiFont
+                    font.pixelSize: 12
+                    font.weight: projectRow.active ? Font.DemiBold : Font.Normal
+                }
+
+                Text {
+                    width: parent.width
+                    text: projectRow.project_path
+                    textFormat: Text.PlainText
+                    color: Theme.faint
+                    elide: Text.ElideMiddle
+                    font.family: Theme.monoFont
+                    font.pixelSize: 8
+                }
+            }
+
+            Text {
+                id: projectState
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                visible: projectRow.active
+                text: qsTr("ACTIVE")
+                color: Theme.accent
+                font.family: Theme.monoFont
+                font.pixelSize: 8
+                font.letterSpacing: 0.5
+            }
+
+            MouseArea {
+                id: projectPointer
+                anchors.fill: parent
+                enabled: !projectRow.active && !root.backend.gitLoading
+                    && !root.backend.aiTurnRunning && !root.commandPending
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: root.selectProject(projectRow.project_path)
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                color: Theme.transparent
+                border.width: projectRow.activeFocus ? 1 : 0
+                border.color: Theme.accentStrong
+            }
+        }
+    }
+
+    Item {
+        id: activeProjectHeader
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: projectList.bottom
+        height: 60
+
         Text {
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.top: parent.top
             anchors.leftMargin: 16
             anchors.rightMargin: 16
-            anchors.topMargin: 43
+            anchors.top: parent.top
+            anchors.topMargin: 10
             text: root.backend.gitRepositoryName || "Repository"
             textFormat: Text.PlainText
             color: Theme.foreground
             elide: Text.ElideRight
             font.family: Theme.uiFont
-            font.pixelSize: 15
+            font.pixelSize: 13
             font.weight: Font.DemiBold
         }
 
@@ -158,7 +306,7 @@ Item {
             anchors.left: parent.left
             anchors.leftMargin: 16
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: 10
+            anchors.bottomMargin: 9
             spacing: 8
 
             Text {
@@ -212,7 +360,7 @@ Item {
         objectName: "aiThreadList"
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: catalogHeader.bottom
+        anchors.top: activeProjectHeader.bottom
         anchors.bottom: parent.bottom
         clip: true
         model: root.backend.aiThreads

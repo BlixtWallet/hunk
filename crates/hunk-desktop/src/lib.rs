@@ -3,6 +3,7 @@ mod ai_bookmarks;
 mod ai_completions;
 mod ai_composer;
 mod ai_models;
+mod ai_projects;
 mod ai_queue;
 mod ai_requests;
 mod ai_runtime;
@@ -46,6 +47,7 @@ pub use ai_completions::{
 };
 pub use ai_composer::AiPromptReceipt;
 pub use ai_models::{AiThreadCatalogProjection, AiThreadItem, AiThreadListModel};
+pub use ai_projects::{AiProjectCatalogItem, ai_project_catalog, ai_project_catalog_json};
 pub use ai_queue::{
     AI_MESSAGE_QUEUE_MAX_ITEMS, AI_MESSAGE_QUEUE_MAX_PROMPT_BYTES,
     AI_MESSAGE_QUEUE_MAX_RETAINED_BYTES, AiMessageQueue, AiQueueProjection,

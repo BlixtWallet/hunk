@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::ai_projects::ai_project_catalog_json;
 use crate::backend_state::persist_active_project;
 use crate::git_models::GitSnapshotPayload;
 use crate::{Backend, Workspace};
@@ -30,8 +31,16 @@ impl Backend {
         }
         if self.git_root_pending_persist {
             self.git_root_pending_persist = false;
-            if let Err(error) = persist_active_project(PathBuf::from(self.git_root.as_str())) {
-                self.git_error = format!("Repository loaded; failed to save selection: {error:#}");
+            let root = PathBuf::from(self.git_root.as_str());
+            match persist_active_project(root.clone()) {
+                Ok(paths) => {
+                    self.ai_project_catalog_json =
+                        ai_project_catalog_json(paths.as_slice(), root.as_path());
+                }
+                Err(error) => {
+                    self.git_error =
+                        format!("Repository loaded; failed to save selection: {error:#}");
+                }
             }
         }
         self.git_state_changed();

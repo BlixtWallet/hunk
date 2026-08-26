@@ -189,6 +189,11 @@ impl Backend {
     );
     qproperty!("gitRoot", Member = git_root, Notify = git_state_changed);
     qproperty!(
+        "aiProjectCatalogJson",
+        Member = ai_project_catalog_json,
+        Notify = git_state_changed
+    );
+    qproperty!(
         "gitRepositoryName",
         Member = git_repository_name,
         Notify = git_state_changed
