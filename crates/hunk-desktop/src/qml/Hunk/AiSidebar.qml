@@ -22,7 +22,8 @@ Item {
     readonly property alias threadListView: threadList
     readonly property alias archiveDialog: archiveConfirmation
     readonly property alias repositoryDialog: repositoryDialog
-    readonly property bool loadingStateVisible: backend.aiLoading && !backend.aiReady
+    readonly property bool loadingStateVisible: backend.aiLoading
+    readonly property bool threadListStateVisible: !loadingStateVisible
     readonly property bool emptyStateVisible: threadList.count === 0
         && backend.aiReady && !backend.aiLoading
     readonly property bool commandPending: backend.aiThreadActionPending
@@ -364,6 +365,7 @@ Item {
         anchors.bottom: parent.bottom
         clip: true
         model: root.backend.aiThreads
+        visible: root.threadListStateVisible
         boundsBehavior: Flickable.StopAtBounds
         reuseItems: true
         cacheBuffer: Theme.aiThreadRowHeight * 4

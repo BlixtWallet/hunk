@@ -16,10 +16,13 @@ Item {
     readonly property alias composer: composer
     readonly property alias requestPanel: requestPanel
     readonly property alias forkButton: forkAction
+    readonly property real conversationWidth: Math.max(0,
+        Math.min(680, width - 32))
     readonly property bool commandPending: backend.aiThreadActionPending || backend.aiPromptPending || backend.aiInterruptPending || backend.aiRequestResolving || backend.aiRequestId.length > 0
     readonly property bool errorStateVisible: backend.aiError.length > 0 && !backend.aiReady
-    readonly property bool loadingStateVisible: backend.aiLoading && !backend.aiReady && !errorStateVisible
-    readonly property bool timelineStateVisible: backend.aiActiveThreadId.length > 0 && timeline.count > 0 && !errorStateVisible
+    readonly property bool loadingStateVisible: backend.aiLoading && !errorStateVisible
+    readonly property bool timelineStateVisible: backend.aiActiveThreadId.length > 0
+        && timeline.count > 0 && !errorStateVisible && !loadingStateVisible
     readonly property bool authenticationStateVisible: backend.aiRequiresAuthentication && !timelineStateVisible && !errorStateVisible && !loadingStateVisible
     readonly property bool emptyStateVisible: !timelineStateVisible && !errorStateVisible && !loadingStateVisible && !authenticationStateVisible
     readonly property bool browserVisible: backend.browser.open
@@ -187,7 +190,10 @@ Item {
         anchors.top: workspaceHeader.bottom
         height: visible ? 34 : 0
         visible: root.backend.aiError.length > 0 || root.backend.aiRequiresAuthentication || root.backend.aiLoading || root.backend.aiStatusMessage.length > 0
-        color: root.backend.aiError.length > 0 ? Theme.negativeMuted : (root.backend.aiRequiresAuthentication ? Theme.accentMuted : Theme.raised)
+        color: root.backend.aiError.length > 0 ? Theme.negativeMuted
+            : (root.backend.aiLoading ? Theme.raised
+                : (root.backend.aiRequiresAuthentication ? Theme.accentMuted
+                    : Theme.raised))
 
         Text {
             anchors.left: parent.left
@@ -195,7 +201,11 @@ Item {
             anchors.leftMargin: 20
             anchors.rightMargin: 12
             anchors.verticalCenter: parent.verticalCenter
-            text: root.backend.aiError.length > 0 ? root.backend.aiError : (root.backend.aiRequiresAuthentication ? "OpenAI authentication is required." : (root.backend.aiLoading ? "Loading Codex threads…" : root.backend.aiStatusMessage))
+            text: root.backend.aiError.length > 0 ? root.backend.aiError
+                : (root.backend.aiLoading ? "Loading Codex threads…"
+                    : (root.backend.aiRequiresAuthentication
+                        ? "OpenAI authentication is required."
+                        : root.backend.aiStatusMessage))
             textFormat: Text.PlainText
             color: root.backend.aiError.length > 0 ? Theme.negative : Theme.muted
             elide: Text.ElideRight
@@ -208,7 +218,10 @@ Item {
             anchors.right: parent.right
             anchors.rightMargin: 20
             anchors.verticalCenter: parent.verticalCenter
-            text: root.backend.aiError.length > 0 ? "ERROR" : (root.backend.aiRequiresAuthentication ? "SIGN IN" : (root.backend.aiLoading ? "LOADING" : "STATUS"))
+            text: root.backend.aiError.length > 0 ? "ERROR"
+                : (root.backend.aiLoading ? "LOADING"
+                    : (root.backend.aiRequiresAuthentication ? "SIGN IN"
+                        : "STATUS"))
             color: Theme.faint
             font.family: Theme.monoFont
             font.pixelSize: 9
@@ -259,7 +272,7 @@ Item {
             anchors.top: historyNotice.bottom
             anchors.bottom: parent.bottom
             anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.min(780, parent.width - 48)
+            width: root.conversationWidth
             visible: root.timelineStateVisible
             clip: true
             spacing: 2
@@ -289,7 +302,7 @@ Item {
 
         Column {
             anchors.centerIn: parent
-            width: Math.min(460, parent.width - 48)
+            width: Math.min(460, root.conversationWidth)
             spacing: 8
             visible: root.errorStateVisible || root.loadingStateVisible || root.authenticationStateVisible || root.emptyStateVisible
 
@@ -318,9 +331,9 @@ Item {
 
     AiRequestPanel {
         id: requestPanel
-        anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: composer.top
+        width: root.conversationWidth
         height: implicitHeight
         backend: root.backend
         answerStore: root.requestAnswerStore
@@ -329,9 +342,9 @@ Item {
 
     AiComposer {
         id: composer
-        anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
+        width: root.conversationWidth
         backend: root.backend
         draftStore: root.draftStore
         visible: !root.browserVisible

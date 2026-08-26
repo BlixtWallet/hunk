@@ -797,3 +797,25 @@ append a correction when later evidence changes one.
   Application Support; `~/.hunkdiff` owns Hunk worktrees and chats. Clear or
   switch only the project-selection fields when preparing a permission-safe
   Documents-based parity run.
+
+## 2026-08-26 — Native parity iteration
+
+- Cargo's progress denominator describes the full unit graph, not the amount
+  rebuilt. A warm QML edit jumped directly to the final desktop units, and
+  repeated app bundles completed in under three seconds while reusing the
+  default external-volume `target/` and staged CEF runtime. Keep targeted app
+  builds in the parity loop and reserve incompatible test/Clippy artifact sets
+  for their actual gates. The functional launcher also builds the desktop CEF
+  feature graph and helper subprocess feature graph separately; both caches are
+  reusable, but their first builds should not be mistaken for one shared warm
+  artifact set.
+- A Codex snapshot emitted immediately after transport connection is partial:
+  thread listing, account state, session metadata, and timeline hydration still
+  follow. Do not clear the UI loading state on that first snapshot; only the
+  explicit sync-completed event proves the initial catalog is ready. Emit that
+  event after reconnect synchronization too, so partial reconnect snapshots do
+  not claim the connection is ready prematurely.
+- Threshold-based drag handlers can look inert to one-step desktop automation
+  because most pointer motion occurs before the handler becomes active. A
+  direct overlay pointer surface is simpler and makes native debug interaction
+  deterministic for narrow splitters.

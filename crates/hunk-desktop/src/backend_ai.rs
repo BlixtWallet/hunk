@@ -96,8 +96,9 @@ pub(super) fn apply_ai_runtime_events(backend: &mut Backend, events: Vec<AiRunti
                     AiWorkerEventPayload::Snapshot(_) => {
                         unreachable!("AI snapshots are projected before reaching the Qt thread")
                     }
-                    AiWorkerEventPayload::BootstrapCompleted => {
+                    AiWorkerEventPayload::SyncCompleted => {
                         backend.ai_loading = false;
+                        backend.ai_connection_state = "ready".to_owned();
                     }
                     AiWorkerEventPayload::ThreadStarted { thread_id } => {
                         let recorded = backend
@@ -281,8 +282,6 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     }
     backend.ai_requires_authentication = authentication_required;
     backend.ai_ready = true;
-    backend.ai_loading = false;
-    backend.ai_connection_state = "ready".to_owned();
     backend.ai_error.clear();
     if let Some(receipt) = completed_thread_action {
         backend.ai_status_message = receipt.completion_message().to_owned();

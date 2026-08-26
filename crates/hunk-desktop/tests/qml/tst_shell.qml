@@ -1222,10 +1222,17 @@ TestCase {
         fakeBackend.aiReady = false
         fakeBackend.aiLoading = true
         verify(shell.workspaceItem.loadingStateVisible)
-        fakeBackend.aiLoading = false
         fakeBackend.aiReady = true
         fakeBackend.aiRequiresAuthentication = true
+        verify(shell.workspaceItem.loadingStateVisible)
+        verify(!shell.workspaceItem.authenticationStateVisible)
+        verify(!shell.workspaceItem.emptyStateVisible)
+        verify(shell.sidebarItem.loadingStateVisible)
+        verify(!shell.sidebarItem.threadListStateVisible)
+        fakeBackend.aiLoading = false
+        fakeBackend.aiReady = true
         verify(shell.workspaceItem.authenticationStateVisible)
+        verify(shell.sidebarItem.threadListStateVisible)
         fakeBackend.aiRequiresAuthentication = false
         fakeBackend.aiReady = false
         fakeBackend.aiError = "Codex worker disconnected"
@@ -1234,6 +1241,27 @@ TestCase {
     function test_aiWorkspaceRendersAtDesktopSize() {
         openAiWorkspace()
         captureSnapshot("target/hunk-desktop-ai.png")
+    }
+    function test_aiConversationUsesABoundedCenteredColumn() {
+        openAiWorkspace()
+        const workspace = shell.workspaceItem
+        const timeline = workspace.timelineListView
+        const composer = workspace.composer
+        const requestPanel = workspace.requestPanel
+        compare(workspace.conversationWidth, 680)
+        compare(timeline.width, workspace.conversationWidth)
+        compare(composer.width, workspace.conversationWidth)
+        compare(requestPanel.width, workspace.conversationWidth)
+        compare(Math.round(composer.x + composer.width / 2),
+            Math.round(workspace.width / 2))
+        compare(Math.round(timeline.x + timeline.width / 2),
+            Math.round(workspace.width / 2))
+
+        shell.width = 720
+        wait(0)
+        compare(workspace.conversationWidth, workspace.width - 32)
+        compare(composer.width, workspace.conversationWidth)
+        compare(timeline.width, workspace.conversationWidth)
     }
     function test_aiComposerFooterStaysInsideItsNarrowWidth() {
         shell.width = 520
