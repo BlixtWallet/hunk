@@ -7,7 +7,8 @@ This audit compares the installed GPUI application with the Qt migration build. 
 ## Discovery environment
 
 - GPUI baseline: `/Applications/Hunk.app`
-- Qt build: the external-volume workspace's shared `target/` build, launched with the retained CEF feature
+- Qt build: `target/functional/HunkQt.app` on the external-volume workspace, with an independent functional-test bundle identifier and the retained CEF feature
+- Native test repositories: `~/Documents/glab`, `~/Documents/lightning-service-rust`, and `~/Documents/zbd-bdk-wallet`
 - QtBridge revision: `cad0d6cd81d1af294ec87c67f21d39133196dbc1`
 - Qt: 6.11.2
 - Rust: 1.98.0
@@ -40,6 +41,8 @@ An attached child `QListModel` was reset while the parent `Backend` still held a
 
 The same discovery pass also found that the Qt Diff product had lost the GPUI branch/worktree comparison controls and that the reusable macOS terminal build failed when the dependency's simdutf namespace patch was applied twice.
 
+The final native pass found two additional AI-boundary defects. `BrowserBridge::set_active_thread` emitted a child-object signal synchronously while QtBridge still held its mutable Rust borrow, so the AI page could abort before CEF initialized. The bridge now queues its property-notification signals by their registered snake-case Qt meta-method names. Qt also treated Codex's `requires_openai_auth` provider capability as a logged-out state even when `account/read` returned a populated ChatGPT account. The desktop projection now requires sign-in only when the provider needs OpenAI authentication and the account is absent.
+
 ## Repair batch
 
 1. Queue attached model mutations so QML cannot re-enter a mutably borrowed parent backend.
@@ -48,6 +51,8 @@ The same discovery pass also found that the Qt Diff product had lost the GPUI br
 4. Reduce the application shell to Diff and AI, move repository selection into AI, and remove Git/Forge desktop UI and bridge state.
 5. Keep PR Linux checks on `ubuntu-self-hosted` with Qt provisioned by Nix.
 6. Keep Cargo's shared workspace `target/` directory and reuse the external CEF and dependency caches.
+7. Queue `BrowserBridge` notifications outside QtBridge's mutable borrow and distinguish provider authentication requirements from a missing login.
+8. Build a reusable, independently addressable macOS debug app under `target/functional`, reusing the staged CEF runtime and normal Cargo cache.
 
 ## Automated verification
 
@@ -68,16 +73,16 @@ All macOS Rust and Qt commands ran through `nix develop`. No alternate Cargo tar
 
 ## Final native interaction matrix
 
-The CEF-enabled Qt binary is built and running, but the final interaction pass is pending because the macOS session locked during validation. These rows stay unclaimed until both applications can be observed directly.
+Both applications were exercised directly on macOS. Installed GPUI Hunk supplied the behavioral baseline; the independently addressable Qt debug app allowed automation to target the migration build without confusing it with `/Applications/Hunk.app`.
 
 | Workflow | GPUI baseline | Qt result |
 | --- | --- | --- |
-| Launch and two-tab shell | Pending final observation | Pending final observation |
-| Diff comparison and file navigation | Pending final observation | Pending final observation |
-| Diff comments and refresh | Pending final observation | Pending final observation |
-| AI navigation and thread catalog | Pending final observation | Pending final observation |
-| Terminal open, input, close, and focus restoration | Pending final observation | Pending final observation |
-| CEF browser open, navigation, frame, and close | Pending final observation | Pending final observation |
-| Shutdown | Pending final observation | Pending final observation |
+| Launch and two-tab shell | Launches and restores a repository; includes the intentionally removed legacy products | Pass: launches with exactly Diff and AI and restores a `~/Documents` repository |
+| Diff comparison and file navigation | Pass: source selection, files, split diff, and search render | Pass: `main` to Primary Checkout, three files, file switching, 4-result search, and split/unified rendering |
+| Diff comments and refresh | Pass | Pass: row selection enables Comment; composer opens and cancels without persisting test data |
+| AI navigation and thread catalog | Pass: catalog, transcript, composer, and controls render | Pass: four real threads and a 94-turn transcript load; logged-in controls, context, draft enablement, and attachment action work without the startup abort |
+| Terminal open, input, close, and focus restoration | Pass: safe command input and output | Pass: `printf` and `pwd` execute in `~/Documents/zbd-bdk-wallet`; drawer closes and the app remains responsive |
+| CEF browser open, navigation, frame, and close | Installed baseline exited when its browser control was opened | Pass: cef-rs `cef-v151.8.0+151.3.24` / Chromium 151.0.7922.174 renders `https://example.com`; GPU, network, storage, and renderer helpers remain live |
+| Shutdown | Pass outside the baseline browser failure | Pass: repeated quit/relaunch cycles are clean and no new native crash report is produced |
 
-The PR should not claim native parity until this matrix is completed.
+The native macOS parity matrix is complete. Windows and Linux packaging remain release-hardening work rather than blockers for the Qt product cutover.

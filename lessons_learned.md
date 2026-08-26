@@ -780,3 +780,20 @@ append a correction when later evidence changes one.
 - A CEF-enabled compile proves dependency and helper compatibility, not browser
   behavior. Keep browser, terminal, AI, Diff, and shutdown rows unclaimed until
   the native Qt app is directly exercised alongside the installed baseline.
+- QtBridge child-object signals can trigger the same re-entrant borrow failure as
+  attached model resets. Queue property notifications through the object's QML
+  invoker, and use the registered snake-case signal name; a camel-case no-op can
+  hide the crash while silently starving bindings.
+- Codex `requires_openai_auth` describes the selected model provider, not the
+  current login state. Gate sign-in UI on that flag only when `account/read`
+  returns no account, otherwise a valid ChatGPT session is incorrectly disabled.
+- A raw macOS Mach-O can display a window but is not reliably addressable by
+  bundle-aware automation. A small debug `.app` with its own bundle identifier
+  lets native testing target Qt Hunk independently from installed GPUI Hunk.
+- Source Qt environment setup only after the Nix Cargo build in a debug bundler.
+  Leaking host SDK flags into `cargo build` changes fingerprints and defeats the
+  shared external-volume cache.
+- Remembered projects live in the shared application-state TOML under macOS
+  Application Support; `~/.hunkdiff` owns Hunk worktrees and chats. Clear or
+  switch only the project-selection fields when preparing a permission-safe
+  Documents-based parity run.

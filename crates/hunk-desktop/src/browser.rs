@@ -19,7 +19,7 @@ use hunk_browser::{
 #[cfg(feature = "cef-browser")]
 use hunk_browser::{BrowserRuntimeConfig, BrowserStoragePaths};
 use hunk_codex::protocol::{DynamicToolCallParams, DynamicToolCallResponse};
-use qtbridge::{QObjectHolder, qobject};
+use qtbridge::{QObjectHolder, invoke_method, qobject};
 
 use crate::browser_frame::{clear_browser_frame, publish_browser_frame};
 use crate::browser_models::{
@@ -100,6 +100,26 @@ impl BrowserBridge {
             let _ = pending.response_tx.send(response);
         }
         self.runtime.shutdown_backend();
+    }
+
+    fn notify_state_changed(&self) {
+        let invoker = self.get_qml_method_invoker();
+        invoke_method!(invoker, "state_changed");
+    }
+
+    fn notify_approval_changed(&self) {
+        let invoker = self.get_qml_method_invoker();
+        invoke_method!(invoker, "approval_changed");
+    }
+
+    fn notify_context_changed(&self) {
+        let invoker = self.get_qml_method_invoker();
+        invoke_method!(invoker, "context_changed");
+    }
+
+    fn notify_context_menu_requested(&self, x: i32, y: i32) {
+        let invoker = self.get_qml_method_invoker();
+        invoke_method!(invoker, "context_menu_requested", x, y);
     }
 }
 
@@ -194,7 +214,7 @@ impl BrowserBridge {
                     .runtime
                     .focus_backend_session(thread_id.as_str(), false);
             }
-            self.state_changed();
+            self.notify_state_changed();
             return true;
         }
 
@@ -209,7 +229,7 @@ impl BrowserBridge {
         }
         self.open = true;
         self.sync_projection();
-        self.state_changed();
+        self.notify_state_changed();
         true
     }
 
@@ -513,7 +533,7 @@ impl BrowserBridge {
         self.approval_pending = false;
         self.approval_kind.clear();
         self.approval_summary.clear();
-        self.approval_changed();
+        self.notify_approval_changed();
         true
     }
 
@@ -536,8 +556,8 @@ impl BrowserBridge {
         self.active_thread_id = thread_id;
         self.context_target = None;
         self.context_target_json.clear();
-        self.context_changed();
-        self.state_changed();
+        self.notify_context_changed();
+        self.notify_state_changed();
         if self.active_thread_id.is_empty() {
             self.open = false;
             self.pump_active = false;
@@ -585,8 +605,8 @@ impl BrowserBridge {
                 params,
                 response_tx,
             });
-            self.approval_changed();
-            self.state_changed();
+            self.notify_approval_changed();
+            self.notify_state_changed();
             return;
         }
 
@@ -612,7 +632,7 @@ impl BrowserBridge {
             safety_mode,
         );
         self.sync_projection();
-        self.state_changed();
+        self.notify_state_changed();
         response
     }
 
@@ -640,7 +660,7 @@ impl BrowserBridge {
         {
             if self.runtime.status() == BrowserRuntimeStatus::Disabled {
                 self.runtime_status = "starting".to_owned();
-                self.state_changed();
+                self.notify_state_changed();
                 self.runtime = BrowserRuntime::new_configured(browser_runtime_config()?);
             }
             self.runtime.initialize_backend().map_err(|error| {
@@ -738,7 +758,7 @@ impl BrowserBridge {
             self.frame_source = frame_source;
         }
         if scalar_changed {
-            self.state_changed();
+            self.notify_state_changed();
         }
     }
 
@@ -761,12 +781,12 @@ impl BrowserBridge {
         if self.frame_source.take().is_some() {
             clear_browser_frame();
         }
-        self.state_changed();
+        self.notify_state_changed();
     }
 
     fn set_status(&mut self, message: impl Into<String>) {
         self.status_message = message.into();
-        self.state_changed();
+        self.notify_state_changed();
     }
 
     fn sync_context_menu(&mut self) {
@@ -780,8 +800,8 @@ impl BrowserBridge {
         let y = target.y;
         self.context_target_json = serde_json::to_string(&target).unwrap_or_default();
         self.context_target = Some(target);
-        self.context_changed();
-        self.context_menu_requested(x, y);
+        self.notify_context_changed();
+        self.notify_context_menu_requested(x, y);
     }
 
     fn run_context_action(&mut self, action: &str) -> bool {
@@ -836,7 +856,7 @@ impl BrowserBridge {
         if result {
             self.context_target = None;
             self.context_target_json.clear();
-            self.context_changed();
+            self.notify_context_changed();
         }
         result
     }
@@ -846,7 +866,7 @@ impl BrowserBridge {
             return false;
         };
         self.context_clipboard_text = text;
-        self.context_changed();
+        self.notify_context_changed();
         true
     }
 

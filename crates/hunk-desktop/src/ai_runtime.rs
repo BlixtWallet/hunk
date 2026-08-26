@@ -18,7 +18,7 @@ use crate::ai_timeline_models::AiTimelineProjection;
 
 pub struct AiProjectedSnapshot {
     pub workspace_key: String,
-    pub requires_openai_auth: bool,
+    pub authentication_required: bool,
     pub threads: AiThreadCatalogProjection,
     pub timeline: AiTimelineProjection,
     pub queue: AiQueueProjection,
@@ -277,7 +277,8 @@ fn project_worker_event(
     } = event;
     match payload {
         AiWorkerEventPayload::Snapshot(snapshot) => {
-            let requires_openai_auth = snapshot.requires_openai_auth;
+            let authentication_required =
+                snapshot.requires_openai_auth && snapshot.account.is_none();
             let session = AiSessionCatalogProjection::from_snapshot(
                 &snapshot.state,
                 snapshot.active_thread_id.as_deref(),
@@ -310,7 +311,7 @@ fn project_worker_event(
             threads.mark_attention(requests.attention_thread_ids());
             AiRuntimeEvent::Snapshot(Box::new(AiProjectedSnapshot {
                 workspace_key,
-                requires_openai_auth,
+                authentication_required,
                 threads,
                 timeline,
                 queue,

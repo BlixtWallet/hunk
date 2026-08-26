@@ -1,5 +1,7 @@
 use hunk_desktop::{Workspace, local_path_from_qml_folder_url};
 
+const BROWSER_BRIDGE: &str = include_str!("../src/browser.rs");
+
 #[test]
 fn exposes_only_retained_workspaces() {
     assert_eq!(Workspace::ALL.map(Workspace::as_str), ["diff", "ai"]);
@@ -18,6 +20,16 @@ fn qml_shell_does_not_restore_the_removed_files_product() {
     assert!(!shell.contains("workspace: \"git\""));
     assert!(!shell.contains("GitWorkspace"));
     assert!(!shell.contains("GitSidebar"));
+}
+
+#[test]
+fn browser_notifications_leave_the_rust_borrow_before_qml_reads_properties() {
+    assert!(BROWSER_BRIDGE.contains("invoke_method!(invoker, \"state_changed\")"));
+    assert!(BROWSER_BRIDGE.contains("invoke_method!(invoker, \"approval_changed\")"));
+    assert!(BROWSER_BRIDGE.contains("invoke_method!(invoker, \"context_changed\")"));
+    assert!(!BROWSER_BRIDGE.contains("self.state_changed();"));
+    assert!(!BROWSER_BRIDGE.contains("self.approval_changed();"));
+    assert!(!BROWSER_BRIDGE.contains("self.context_changed();"));
 }
 
 #[test]

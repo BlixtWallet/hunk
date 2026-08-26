@@ -176,7 +176,7 @@ pub(super) fn apply_ai_runtime_events(backend: &mut Backend, events: Vec<AiRunti
 
 fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     let AiProjectedSnapshot {
-        requires_openai_auth,
+        authentication_required,
         threads: mut projection,
         timeline,
         queue,
@@ -279,7 +279,7 @@ fn apply_ai_snapshot(backend: &mut Backend, projected: AiProjectedSnapshot) {
     {
         backend.ai_session_state_changed();
     }
-    backend.ai_requires_authentication = requires_openai_auth;
+    backend.ai_requires_authentication = authentication_required;
     backend.ai_ready = true;
     backend.ai_loading = false;
     backend.ai_connection_state = "ready".to_owned();

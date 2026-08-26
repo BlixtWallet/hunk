@@ -1,5 +1,5 @@
 use hunk_app::ai::{AiSnapshot, AiWorkerEvent, AiWorkerEventPayload};
-use hunk_codex::protocol::DynamicToolCallParams;
+use hunk_codex::protocol::{Account, DynamicToolCallParams};
 use hunk_codex::state::{AiState, ThreadLifecycleStatus, ThreadSummary};
 use hunk_desktop::{AiEventMailbox, AiRuntimeEvent};
 use std::collections::BTreeSet;
@@ -123,6 +123,37 @@ fn mailbox_projects_bookmarks_before_bounding_the_thread_catalog() {
     };
 
     assert!(snapshot.threads.items[0].bookmarked);
+}
+
+#[test]
+fn mailbox_requires_login_only_when_an_openai_account_is_missing() {
+    let mailbox = AiEventMailbox::default();
+    mailbox.reset(10);
+
+    let mut logged_in = snapshot("logged-in");
+    logged_in.requires_openai_auth = true;
+    logged_in.account = Some(Account::ApiKey {});
+    assert!(mailbox.enqueue_worker(
+        10,
+        event(AiWorkerEventPayload::Snapshot(Box::new(logged_in)))
+    ));
+    let events = mailbox.take(10);
+    let AiRuntimeEvent::Snapshot(projected) = &events[0] else {
+        panic!("expected a projected snapshot");
+    };
+    assert!(!projected.authentication_required);
+
+    let mut logged_out = snapshot("logged-out");
+    logged_out.requires_openai_auth = true;
+    assert!(mailbox.enqueue_worker(
+        10,
+        event(AiWorkerEventPayload::Snapshot(Box::new(logged_out)))
+    ));
+    let events = mailbox.take(10);
+    let AiRuntimeEvent::Snapshot(projected) = &events[0] else {
+        panic!("expected a projected snapshot");
+    };
+    assert!(projected.authentication_required);
 }
 
 #[test]
